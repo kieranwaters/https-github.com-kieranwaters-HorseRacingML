@@ -135,7 +135,20 @@ namespace HorseRacingML.Scraping
                 }
                 catch { return null; }
             }
-            private static (byte? age, byte? lbs, string weightTxt) ParseAgeWeight(string s)
+        private static string ParseOutcomeCode(string posText)
+        {
+            if (string.IsNullOrWhiteSpace(posText)) return ""; //no text => no special outcome
+            var t = posText.Trim().ToUpperInvariant(); //normalize
+            var letters = new string(t.Where(char.IsLetter).ToArray()); //keep only letters (e.g., "PU","UR","F")
+            if (letters.Length == 0) return ""; //pure number like "1" or "2nd" => finished position, no code
+            switch (letters) //map common UK result codes; return as-is otherwise
+            {
+                case "PU": case "F": case "UR": case "RO": case "DSQ": case "BD": case "SU": case "RR": case "REF": case "WD": case "NR": case "VOID": case "CO": case "DNF": return letters; //known codes
+                default: return letters; //fallback to whatever the page shows
+            }
+        }
+
+        private static (byte? age, byte? lbs, string weightTxt) ParseAgeWeight(string s)
             {
                 if (string.IsNullOrWhiteSpace(s)) return (null, null, ""); //expects like "(4) 9-12"
                 byte? age = null; var ageMatch = System.Text.RegularExpressions.Regex.Match(s, @"\((\d{1,2})\)"); if (ageMatch.Success) age = byte.Parse(ageMatch.Groups[1].Value); string wt = System.Text.RegularExpressions.Regex.Match(s, @"\d{1,2}-\d{1,2}").Value; byte? lbs = null; if (!string.IsNullOrEmpty(wt)) { var parts = wt.Split('-'); lbs = (byte)(int.Parse(parts[0]) * 14 + int.Parse(parts[1])); }
