@@ -28,37 +28,53 @@ namespace HorseRacingML.Scraping
 
             for (var date = startDate; date <= endDate; date = date.AddDays(1))
             {
-
-                var url = $"https://www.sportinglife.com/racing/results/{date:yyyy-MM-dd}";
-                driver.Navigate().GoToUrl(url);
-
-                AcceptTermsIfPresent(driver);
-
-                // Some pages expose region buttons (e.g. "UK & Ireland", "International")
-                // that must be clicked before the meeting tabs become visible. Try to
-                // iterate through those first, falling back to processing meetings
-                // directly if none are found.
-                var regionNames = new[] { "UK & Ireland", "International" };
-                var regionFound = false;
-                foreach (var region in regionNames)
+                try
                 {
-                    var regionButton = driver
-                        .FindElements(By.XPath($"//button[contains(., '{region}')]"))
-                        .FirstOrDefault(b => b.Displayed && b.Enabled);
-                    if (regionButton != null)
+                    var url = $"https://www.sportinglife.com/racing/results/{date:yyyy-MM-dd}";
+                    driver.Navigate().GoToUrl(url);
+
+                    AcceptTermsIfPresent(driver);
+
+                    // Some pages expose region buttons (e.g. "UK & Ireland", "International")
+                    // that must be clicked before the meeting tabs become visible. Try to
+                    // iterate through those first, falling back to processing meetings
+                    // directly if none are found.
+                    var regionNames = new[] { "UK & Ireland", "International" };
+                    var regionFound = false;
+                    foreach (var region in regionNames)
                     {
-                        regionFound = true;
-                        regionButton.Click();
+                        try
+                        {
+                            var regionButton = driver
+                                .FindElements(By.XPath($"//button[contains(., '{region}')]"))
+                                .FirstOrDefault(b => b.Displayed && b.Enabled);
+                            if (regionButton != null)
+                            {
+                                regionFound = true;
+                                regionButton.Click();
+                                ScrapeMeetingTabs(driver, wait);
+                            }
+                        }
+                        catch (WebDriverException)
+                        {
+                            // Continue with next region/date if the page state changes unexpectedly
+                            continue;
+                        }
+                    }
+
+                    if (!regionFound)
+                    {
                         ScrapeMeetingTabs(driver, wait);
                     }
                 }
-
-                if (!regionFound)
+                catch (WebDriverException ex)
                 {
-                    ScrapeMeetingTabs(driver, wait);
+                    // if anything goes wrong for this date, log it and continue to the next day
+                    Console.WriteLine($"Skipping {date:yyyy-MM-dd}: {ex.Message}");
                 }
             }
         }
+
 
         /// <summary>
         /// Clicks through all meeting tabs on the current page and opens each race
