@@ -67,18 +67,28 @@ namespace HorseRacingML.Scraping
         private static void ScrapeMeetingTabs(IWebDriver driver, WebDriverWait wait)
         {
             // iterate through available meeting tabs; fall back to new-switch-button if
-            // generic tabs are not present
-            string tabSelector = "[data-test-id='generic-tab']";
-            try
+            // generic tabs are not present. If neither is found, simply return so the
+            // scraper can continue without failing.
+            string? tabSelector = null;
+            foreach (var selector in new[] { "[data-test-id='generic-tab']", "[data-test-id='new-switch-button']" })
             {
-                wait.Until(d => d.FindElements(By.CssSelector(tabSelector)).Count > 0);
-            }
-            catch (WebDriverTimeoutException)
-            {
-                tabSelector = "[data-test-id='new-switch-button']";
-                wait.Until(d => d.FindElements(By.CssSelector(tabSelector)).Count > 0);
+                try
+                {
+                    wait.Until(d => d.FindElements(By.CssSelector(selector)).Count > 0);
+                    tabSelector = selector;
+                    break;
+                }
+                catch (WebDriverTimeoutException)
+                {
+                    // try the next selector
+                }
             }
 
+            if (tabSelector == null)
+            {
+                // no meeting tabs were found; nothing to do on this page
+                return;
+            }
             int tabIndex = 0;
             while (true)
             {
