@@ -29,60 +29,90 @@ namespace HorseRacingML.Scraping
             for (var date = startDate; date <= endDate; date = date.AddDays(1))
             {
 
-                // iterate through all generic tabs
                 var url = $"https://www.sportinglife.com/racing/results/{date:yyyy-MM-dd}";
                 driver.Navigate().GoToUrl(url);
 
                 AcceptTermsIfPresent(driver);
 
-                // iterate through available tabs; fall back to new-switch-button if generic tabs not found
-                string tabSelector = "[data-test-id='generic-tab']";
-                try
+                // Some pages expose region buttons (e.g. "UK & Ireland", "International")
+                // that must be clicked before the meeting tabs become visible. Try to
+                // iterate through those first, falling back to processing meetings
+                // directly if none are found.
+                var regionNames = new[] { "UK & Ireland", "International" };
+                var regionFound = false;
+                foreach (var region in regionNames)
                 {
-                    wait.Until(d => d.FindElements(By.CssSelector(tabSelector)).Count > 0);
+                    var regionButton = driver
+                        .FindElements(By.XPath($"//button[contains(., '{region}')]"))
+                        .FirstOrDefault(b => b.Displayed && b.Enabled);
+                    if (regionButton != null)
+                    {
+                        regionFound = true;
+                        regionButton.Click();
+                        ScrapeMeetingTabs(driver, wait);
+                    }
                 }
-                catch (WebDriverTimeoutException)
+
+                if (!regionFound)
                 {
-                    tabSelector = "[data-test-id='new-switch-button']";
-                    wait.Until(d => d.FindElements(By.CssSelector(tabSelector)).Count > 0);
-                }
-
-                int tabIndex = 0;
-                while (true)
-                {
-                    var tabs = driver.FindElements(By.CssSelector(tabSelector));
-                    if (tabIndex >= tabs.Count)
-                        break;
-
-                    tabs[tabIndex].Click();
-                    // wait for time-short elements to appear
-                    try
-                    {
-                        wait.Until(d => d.FindElements(By.CssSelector(".time-short")).Count > 0);
-                    }
-                    catch (WebDriverTimeoutException)
-                    {
-                        // if no races are available under this tab, skip to next tab
-                        tabIndex++;
-                        continue;
-                    }
-
-                    var races = driver.FindElements(By.CssSelector(".time-short a"));
-                    foreach (var race in races)
-                    {
-                        var href = race.GetAttribute("href");
-                        if (!string.IsNullOrEmpty(href))
-                        {
-                            // open in a new tab
-                            ((IJavaScriptExecutor)driver).ExecuteScript("window.open(arguments[0], '_blank');", href);
-                        }
-                    }
-
-                    tabIndex++;
+                    ScrapeMeetingTabs(driver, wait);
                 }
             }
         }
 
+        /// <summary>
+        /// Clicks through all meeting tabs on the current page and opens each race
+        /// link in a new browser tab.
+        /// </summary>
+        private static void ScrapeMeetingTabs(IWebDriver driver, WebDriverWait wait)
+        {
+            // iterate through available meeting tabs; fall back to new-switch-button if
+            // generic tabs are not present
+            string tabSelector = "[data-test-id='generic-tab']";
+            try
+            {
+                wait.Until(d => d.FindElements(By.CssSelector(tabSelector)).Count > 0);
+            }
+            catch (WebDriverTimeoutException)
+            {
+                tabSelector = "[data-test-id='new-switch-button']";
+                wait.Until(d => d.FindElements(By.CssSelector(tabSelector)).Count > 0);
+            }
+
+            int tabIndex = 0;
+            while (true)
+            {
+                var tabs = driver.FindElements(By.CssSelector(tabSelector));
+                if (tabIndex >= tabs.Count)
+                    break;
+
+                tabs[tabIndex].Click();
+                // wait for time-short elements to appear
+                try
+                {
+                    wait.Until(d => d.FindElements(By.CssSelector(".time-short")).Count > 0);
+                }
+                catch (WebDriverTimeoutException)
+                {
+                    // if no races are available under this tab, skip to next tab
+                    tabIndex++;
+                    continue;
+                }
+
+                var races = driver.FindElements(By.CssSelector(".time-short a"));
+                foreach (var race in races)
+                {
+                    var href = race.GetAttribute("href");
+                    if (!string.IsNullOrEmpty(href))
+                    {
+                        // open in a new tab
+                        ((IJavaScriptExecutor)driver).ExecuteScript("window.open(arguments[0], '_blank');", href);
+                    }
+                }
+
+                tabIndex++;
+            }
+        }
         /// <summary>
         /// Attempts to accept terms and conditions if a pop-up is present.
         /// </summary>
