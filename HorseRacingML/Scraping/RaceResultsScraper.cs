@@ -52,7 +52,10 @@ namespace HorseRacingML.Scraping
                             {
                                 regionFound = true;
                                 regionButton.Click();
-                                ScrapeMeetingTabs(driver, wait);
+                                if (!ScrapeMeetingTabs(driver, wait))
+                                {
+                                    Console.WriteLine($"No meeting tabs found for region: {region}");
+                                }
                             }
                         }
                         catch (WebDriverException)
@@ -64,7 +67,10 @@ namespace HorseRacingML.Scraping
 
                     if (!regionFound)
                     {
-                        ScrapeMeetingTabs(driver, wait);
+                        if (!ScrapeMeetingTabs(driver, wait))
+                        {
+                            Console.WriteLine("No meeting tabs found on page.");
+                        }
                     }
                 }
                 catch (WebDriverException ex)
@@ -80,7 +86,7 @@ namespace HorseRacingML.Scraping
         /// Clicks through all meeting tabs on the current page and opens each race
         /// link in a new browser tab.
         /// </summary>
-        private static void ScrapeMeetingTabs(IWebDriver driver, WebDriverWait wait)
+        private static bool ScrapeMeetingTabs(IWebDriver driver, WebDriverWait wait)
         {
             // iterate through available meeting tabs; fall back to new-switch-button if
             // generic tabs are not present. If neither is found, simply return so the
@@ -103,7 +109,7 @@ namespace HorseRacingML.Scraping
             if (tabSelector == null)
             {
                 // no meeting tabs were found; nothing to do on this page
-                return;
+                return false; 
             }
             int tabIndex = 0;
             while (true)
@@ -138,6 +144,7 @@ namespace HorseRacingML.Scraping
 
                 tabIndex++;
             }
+            return true;
         }
         /// <summary>
         /// Attempts to accept terms and conditions if a pop-up is present.
