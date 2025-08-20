@@ -18,140 +18,57 @@ namespace HorseRacingML.Scraping
         /// </summary>
         public void Scrape(DateTime startDate, DateTime endDate)
         {
-            var options = new ChromeOptions();
-            options.AddArgument("--start-maximized");
-            // No headless argument -> Chrome is visible
-
+            var options = new ChromeOptions(); options.AddArgument("--start-maximized"); //visible browser
             using var driver = new ChromeDriver(options);
-            // give pages plenty of time to load dynamic content
-            var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10));
-
+            var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10)); //ample time for SPA updates
             for (var date = startDate; date <= endDate; date = date.AddDays(1))
             {
                 try
                 {
-                    var url = $"https://www.sportinglife.com/racing/results/{date:yyyy-MM-dd}";
-                    driver.Navigate().GoToUrl(url);
-
-                    AcceptTermsIfPresent(driver);
-
-                    // Some pages expose region buttons (e.g. "UK & Ireland", "International")
-                    // that must be clicked before the meeting tabs become visible. Try to
-                    // iterate through those first, falling back to processing meetings
-                    // directly if none are found.
-                    var regionNames = new[] { "UK & Ireland", "International" };
-                    var regionFound = false;
-                    foreach (var region in regionNames)
+                    var url = $"https://www.sportinglife.com/racing/results/{date:yyyy-MM-dd}"; driver.Navigate().GoToUrl(url); //nav to date
+                    AcceptTermsIfPresent(driver); //cookie banner if shown
+                    string[] regions = { "UK & Ireland", "International" }; //process both regions independently
+                    foreach (var region in regions)
                     {
                         try
                         {
-                            var regionButton = driver
-                                .FindElements(By.XPath($"//button[contains(., '{region}')]"))
-                                .FirstOrDefault(b => b.Displayed && b.Enabled);
-                            if (regionButton != null)
-                            {
-                                regionFound = true;
-                                regionButton.Click();
-                                if (!ScrapeMeetingTabs(driver, wait))
-                                {
-                                    Console.WriteLine($"No meeting tabs found for region: {region}");
-                                }
-                            }
-
-                            else
-                            {
-                                Console.WriteLine($"Region button not found: {region}");
-                            }
+                            var regionBtn = driver.FindElements(By.XPath($"//*[self::button or self::span][contains(normalize-space(.), '{region}') and ancestor::*[@data-test-id='new-switch-button']]")).FirstOrDefault(e => e.Displayed && e.Enabled); //find visible region control
+                            if (regionBtn == null) { continue; } //region not present on this date
+                            ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].click();", regionBtn); //robust click through React overlay
+                            wait.Until(d => d.FindElements(By.CssSelector("[data-test-id='generic-tab']")).Count > 0); //wait for meeting tabs
+                            if (!ScrapeMeetingTabs(driver, wait)) { Console.WriteLine($"No meeting tabs under region '{region}' on {date:yyyy-MM-dd}"); } //scrape meetings
                         }
-                        catch (WebDriverException ex)
-                        {
-                            // Log the reason and continue with the next region/date
-                            Console.WriteLine($"Error processing region {region}: {ex.Message}");
-                        }
-
-                        if (!regionFound)
-                        {
-                            if (!ScrapeMeetingTabs(driver, wait))
-                            {
-                                Console.WriteLine("No meeting tabs found on page.");
-                            }
-                        }
+                        catch (WebDriverException ex) { Console.WriteLine($"Region '{region}' error on {date:yyyy-MM-dd}: {ex.Message}"); } //log and move on
                     }
+                    //fallback if no region switchers existed at all
+                    if (driver.FindElements(By.CssSelector("[data-test-id='new-switch-button']")).Count == 0) { if (!ScrapeMeetingTabs(driver, wait)) { Console.WriteLine("No meeting tabs found on page."); } } //process page without regions
                 }
-                catch (WebDriverException ex)
-                {
-                    // if anything goes wrong for this date, log it and continue to the next day
-                    Console.WriteLine($"Skipping {date:yyyy-MM-dd}: {ex.Message}");
-                }
+                catch (WebDriverException ex) { Console.WriteLine($"Skipping {date:yyyy-MM-dd}: {ex.Message}"); } //continue to next day
             }
         }
 
-
-        /// <summary>
-        /// Clicks through all meeting tabs on the current page and opens each race
-        /// link in a new browser tab.
-        /// </summary>
         private static bool ScrapeMeetingTabs(IWebDriver driver, WebDriverWait wait)
         {
-            // iterate through available meeting tabs; fall back to new-switch-button if
-            // generic tabs are not present. If neither is found, simply return so the
-            // scraper can continue without failing.
-            string? tabSelector = null;
-            foreach (var selector in new[] { "[data-test-id='generic-tab']", "[data-test-id='new-switch-button']" })
-            {
-                try
-                {
-                    wait.Until(d => d.FindElements(By.CssSelector(selector)).Count > 0);
-                    tabSelector = selector;
-                    break;
-                }
-                catch (WebDriverTimeoutException)
-                {
-                    // try the next selector
-                }
-            }
-
-            if (tabSelector == null)
-            {
-                // no meeting tabs were found; nothing to do on this page
-                Console.WriteLine("Meeting tab elements not found with expected selectors.");
-                return false;
-            }
-            int tabIndex = 0;
+            IReadOnlyCollection<IWebElement> initialTabs;
+            try { wait.Until(d => d.FindElements(By.CssSelector("[data-test-id='generic-tab']")).Count > 0); initialTabs = driver.FindElements(By.CssSelector("[data-test-id='generic-tab']")); } catch { Console.WriteLine("Meeting tab elements not found with expected selectors."); return false; } //ensure tabs exist
+            int tabIndex = 0; //index over live queries
             while (true)
             {
-                var tabs = driver.FindElements(By.CssSelector(tabSelector));
-                if (tabIndex >= tabs.Count)
-                    break;
-
-                tabs[tabIndex].Click();
-                // wait for time-short elements to appear
-                try
+                var tabs = driver.FindElements(By.CssSelector("[data-test-id='generic-tab']")); if (tabIndex >= tabs.Count) break; //no more tabs
+                var tab = tabs[tabIndex];
+                try { ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].scrollIntoView({block:'center'});", tab); ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].click();", tab); } catch { tabIndex++; continue; } //robust click
+                try { wait.Until(d => d.FindElements(By.CssSelector("[data-test-id='race-container'] a[href]")).Count > 0 || d.FindElements(By.CssSelector("[data-test-id='race-container']")).Count > 0); } catch { tabIndex++; continue; } //wait for races or an empty container
+                var raceLinks = driver.FindElements(By.CssSelector("[data-test-id='race-container'] a[href]")); //anchors for each race
+                foreach (var a in raceLinks)
                 {
-                    wait.Until(d => d.FindElements(By.CssSelector(".time-short")).Count > 0);
+                    var href = a.GetAttribute("href"); if (string.IsNullOrWhiteSpace(href)) continue; //skip if no link
+                    ((IJavaScriptExecutor)driver).ExecuteScript("window.open(arguments[0], '_blank');", href); //open race in new tab
                 }
-                catch (WebDriverTimeoutException)
-                {
-                    // if no races are available under this tab, skip to next tab
-                    tabIndex++;
-                    continue;
-                }
-
-                var races = driver.FindElements(By.CssSelector(".time-short a"));
-                foreach (var race in races)
-                {
-                    var href = race.GetAttribute("href");
-                    if (!string.IsNullOrEmpty(href))
-                    {
-                        // open in a new tab
-                        ((IJavaScriptExecutor)driver).ExecuteScript("window.open(arguments[0], '_blank');", href);
-                    }
-                }
-
-                tabIndex++;
+                tabIndex++; //next meeting tab
             }
-            return true;
+            return true; //processed at least the tab loop
         }
+
         /// <summary>
         /// Attempts to accept terms and conditions if a pop-up is present.
         /// </summary>
