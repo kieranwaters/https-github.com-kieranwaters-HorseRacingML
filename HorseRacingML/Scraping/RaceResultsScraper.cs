@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq;
 using System.Threading;
 using OpenQA.Selenium;
 using OpenQA.Selenium.Chrome;
@@ -32,6 +33,8 @@ namespace HorseRacingML.Scraping
                 var url = $"https://www.sportinglife.com/racing/results/{date:yyyy-MM-dd}";
                 driver.Navigate().GoToUrl(url);
 
+                AcceptTermsIfPresent(driver);
+
                 // iterate through all generic tabs
                 int tabIndex = 0;
                 while (true)
@@ -57,6 +60,28 @@ namespace HorseRacingML.Scraping
 
                     tabIndex++;
                 }
+            }
+        }
+
+        /// <summary>
+        /// Attempts to accept terms and conditions if a pop-up is present.
+        /// </summary>
+        /// <param name="driver">The Selenium WebDriver instance.</param>
+        private static void AcceptTermsIfPresent(IWebDriver driver)
+        {
+            try
+            {
+                var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(2));
+                var acceptButton = wait.Until(d =>
+                {
+                    var buttons = d.FindElements(By.XPath("//button[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'allow all cookies')]"));
+                    return buttons.FirstOrDefault(b => b.Displayed && b.Enabled);
+                });
+                acceptButton?.Click();
+            }
+            catch (WebDriverTimeoutException)
+            {
+                // Pop-up not present; nothing to accept.
             }
         }
     }
