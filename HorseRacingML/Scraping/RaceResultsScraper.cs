@@ -74,10 +74,12 @@ namespace HorseRacingML.Scraping
                 TimeSpan? scheduledOff = ExtractScheduledOffFromHeader(TextOrEmpty(driver, By.CssSelector("p.CourseListingHeader__StyledMainTitle"))); //time in the header
                 TimeSpan? actualOff = ParseClockTime(offTime); //actual off
                 int? winningMs = ParseWinningMs(winTime); //ms or null
-                                                          //TODO: Upsert Course(courseName,country: null) -> get courseId
-                                                          //TODO: Upsert Race with: CourseId, RaceDate=raceDate, ScheduledOff=scheduledOff??TimeSpan.Zero, ActualOff=actualOff, Title=raceTitle, RaceType=InferRaceType(raceTitle), Class=ExtractClass(addInfo), AgeRestriction=ageRestriction, Surface=InferSurface(addInfo), Going=going, DistanceYards=distanceYards, DistanceText=distanceText, RunnerCount=(byte?)runnerCount, Status=status, WinningTimeMs=winningMs, WinningTimeText=winTime
-                                                          //Runners --------------------------------------------------------------------------------------
-                wait.Until(d => d.FindElements(By.CssSelector("[class*='ResultRunner__StyledResultRunnerWrapper']")).Count > 0 || d.FindElements(By.CssSelector("[data-test-id='horse-sub-info']")).Count > 0); //ensure table visible
+            Console.WriteLine($"Parsing race: {raceTitle} at {courseName} on {raceDate:yyyy-MM-dd}");
+            Console.WriteLine($"  Distance: {distanceText}, Going: {going}, Runners: {runnerCount}, Status: {status}");
+            //TODO: Upsert Course(courseName,country: null) -> get courseId
+            //TODO: Upsert Race with: CourseId, RaceDate=raceDate, ScheduledOff=scheduledOff??TimeSpan.Zero, ActualOff=actualOff, Title=raceTitle, RaceType=InferRaceType(raceTitle), Class=ExtractClass(addInfo), AgeRestriction=ageRestriction, Surface=InferSurface(addInfo), Going=going, DistanceYards=distanceYards, DistanceText=distanceText, RunnerCount=(byte?)runnerCount, Status=status, WinningTimeMs=winningMs, WinningTimeText=winTime
+            //Runners --------------------------------------------------------------------------------------
+            wait.Until(d => d.FindElements(By.CssSelector("[class*='ResultRunner__StyledResultRunnerWrapper']")).Count > 0 || d.FindElements(By.CssSelector("[data-test-id='horse-sub-info']")).Count > 0); //ensure table visible
                 var rows = driver.FindElements(By.CssSelector("[class*='ResultRunner__StyledResultRunnerWrapper']")); foreach (var row in rows)
                 {
                     string posText = SafeText(row, By.CssSelector("[data-test-id='position-no'], .position-no .ordinal")); int? finishPos = TryParseInt(posText); string outcome = ParseOutcomeCode(posText); //position/outcome
@@ -96,9 +98,9 @@ namespace HorseRacingML.Scraping
                     string opTxt = SafeText(row, By.XPath(".//*[contains(.,'op ') and contains(@class,'small')]")); string tchTxt = SafeText(row, By.XPath(".//*[contains(.,'tchd ') or contains(.,'tch ') and contains(@class,'small')]")); string opFrac = ExtractOddsToken(opTxt, "op"); (string? tchLow, string? tchHigh) = ExtractTouchedTokens(tchTxt); //market moves
                                                                                                                                                                                                                                                                                                                                                               //Comment line
                     string comment = SafeText(row, By.CssSelector("[data-test-id='ride-description'], [class*='StyledRideDescription']")); //race reader note
-                                                                                                                                           //TODO: Upsert Horse/Trainer/Jockey -> get IDs
-                                                                                                                                           //TODO: Insert RunnerResult with parsed fields mapped to your schema
-                }
+                Console.WriteLine($"    Pos: {finishPos?.ToString() ?? outcome} Horse: {horseName} Jockey: {jockey} Trainer: {trainer} SP: {spFrac} Beaten: {beatenTxt}");                                                                                                                   //TODO: Upsert Horse/Trainer/Jockey -> get IDs
+                                                                                                                                                                                                                                                                                             //TODO: Insert RunnerResult with parsed fields mapped to your schema
+            }
             }
             private static string GuessCourseFromBreadcrumb(IWebDriver d) { try { return d.FindElements(By.CssSelector("p.CourseListingHeader__StyledMainTitle")).FirstOrDefault()?.Text?.Split(' ').LastOrDefault() ?? ""; } catch { return ""; } } //fallback
             private static string ExtractCourseNameFromHeader(string header) { if (string.IsNullOrWhiteSpace(header)) return ""; var parts = header.Trim().Split(' ', 2); if (parts.Length < 2) return ""; return parts[1].Trim(); } //from "14:10 Beverley"
