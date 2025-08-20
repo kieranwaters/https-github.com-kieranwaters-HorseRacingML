@@ -36,6 +36,7 @@ namespace HorseRacingML.Scraping
                 AcceptTermsIfPresent(driver);
 
                 // iterate through all generic tabs
+                wait.Until(d => d.FindElements(By.CssSelector("[data-test-id='generic-tab']")).Count > 0);
                 int tabIndex = 0;
                 while (true)
                 {
