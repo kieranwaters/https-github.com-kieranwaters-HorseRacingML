@@ -57,19 +57,24 @@ namespace HorseRacingML.Scraping
                                     Console.WriteLine($"No meeting tabs found for region: {region}");
                                 }
                             }
-                        }
-                        catch (WebDriverException)
-                        {
-                            // Continue with next region/date if the page state changes unexpectedly
-                            continue;
-                        }
-                    }
 
-                    if (!regionFound)
-                    {
-                        if (!ScrapeMeetingTabs(driver, wait))
+                            else
+                            {
+                                Console.WriteLine($"Region button not found: {region}");
+                            }
+                        }
+                        catch (WebDriverException ex)
                         {
-                            Console.WriteLine("No meeting tabs found on page.");
+                            // Log the reason and continue with the next region/date
+                            Console.WriteLine($"Error processing region {region}: {ex.Message}");
+                        }
+
+                        if (!regionFound)
+                        {
+                            if (!ScrapeMeetingTabs(driver, wait))
+                            {
+                                Console.WriteLine("No meeting tabs found on page.");
+                            }
                         }
                     }
                 }
@@ -109,7 +114,8 @@ namespace HorseRacingML.Scraping
             if (tabSelector == null)
             {
                 // no meeting tabs were found; nothing to do on this page
-                return false; 
+                Console.WriteLine("Meeting tab elements not found with expected selectors.");
+                return false;
             }
             int tabIndex = 0;
             while (true)
