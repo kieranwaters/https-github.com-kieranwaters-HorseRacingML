@@ -1,8 +1,7 @@
-using System;
-using System.Diagnostics;
 using HorseRacingML.Models;
 using HorseRacingML.Scraping;
 using Microsoft.AspNetCore.Mvc;
+using System.Diagnostics;
 
 namespace HorseRacingML.Controllers
 {
@@ -27,12 +26,18 @@ namespace HorseRacingML.Controllers
 
         /// <summary>
         /// Triggers the race results scraping process using Selenium.
-        /// Currently scrapes results for today only and then redirects back to the home page.
+        /// Defaults to scraping results for 13 April 2005 unless start and end
+        /// dates are provided via query parameters.
         /// </summary>
-        public IActionResult Scrape()
+        /// <param name="startDate">Optional start date for scraping.</param>
+        /// <param name="endDate">Optional end date for scraping.</param>
+        public IActionResult Scrape(DateTime? startDate, DateTime? endDate)
         {
+            var start = startDate ?? new DateTime(2005, 4, 13);
+            var end = endDate ?? start;
+
             var scraper = new RaceResultsScraper();
-            scraper.Scrape(DateTime.Today, DateTime.Today);
+            scraper.Scrape(start, end);
             return RedirectToAction("Index");
         }
 
