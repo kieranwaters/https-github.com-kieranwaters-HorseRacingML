@@ -44,15 +44,30 @@ namespace HorseRacingML.Scraping
                     var tabs = driver.FindElements(By.CssSelector("[data-test-id='generic-tab']")); if (tabIndex >= tabs.Count) break; //done
                     var tab = tabs[tabIndex]; try { ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].scrollIntoView({block:'center'});", tab); ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].click();", tab); } catch { tabIndex++; continue; } //click meeting
                     try { wait.Until(d => d.FindElements(By.CssSelector("[data-test-id='race-container'] a[href]")).Count > 0 || d.FindElements(By.CssSelector("[data-test-id='race-container']")).Count > 0); } catch { tabIndex++; continue; } //wait races
-                    var raceLinks = driver.FindElements(By.CssSelector("[data-test-id='race-container'] a[href]")); foreach (var a in raceLinks)
-                    {
-                        var href = a.GetAttribute("href"); if (string.IsNullOrWhiteSpace(href)) continue; //skip
-                        ((IJavaScriptExecutor)driver).ExecuteScript("window.open(arguments[0], '_blank');", href); //open race
-                        var handles = driver.WindowHandles; driver.SwitchTo().Window(handles.Last()); //focus new tab
-                        try { ParseRacePage(driver, wait, raceDate); } catch (Exception ex) { Console.WriteLine($"Parse error: {ex.Message}"); } //parse fields
-                        driver.Close(); driver.SwitchTo().Window(handles.First()); //close and back
+                var raceLinks = driver.FindElements(By.CssSelector("[data-test-id='race-container'] a[href]"));
+                var mainHandle = driver.CurrentWindowHandle; //remember listing tab
+
+                // open all races first so they can load in parallel
+                var existingHandles = driver.WindowHandles.ToList();
+                foreach (var a in raceLinks)
+                {
+                    var href = a.GetAttribute("href");
+                    if (string.IsNullOrWhiteSpace(href)) continue; //skip
+                    ((IJavaScriptExecutor)driver).ExecuteScript("window.open(arguments[0], '_blank');", href); //open race
                     }
-                    tabIndex++; //next meeting
+                // collect newly opened race tabs
+                var newHandles = driver.WindowHandles.Except(existingHandles).ToList();
+
+                // now parse each race tab and close it
+                foreach (var handle in newHandles)
+                {
+                    driver.SwitchTo().Window(handle); //focus race tab
+                    try { ParseRacePage(driver, wait, raceDate); } catch (Exception ex) { Console.WriteLine($"Parse error: {ex.Message}"); }
+                    driver.Close();
+                }
+
+                driver.SwitchTo().Window(mainHandle); //back to meeting listing
+                tabIndex++; //next meeting
                 }
             }
             private static void ParseRacePage(IWebDriver driver, WebDriverWait wait, DateTime defaultDate)
