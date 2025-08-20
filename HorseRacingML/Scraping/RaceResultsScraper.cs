@@ -1,7 +1,4 @@
-﻿using System;
-using System.Linq;
-using System.Threading;
-using OpenQA.Selenium;
+﻿using OpenQA.Selenium;
 using OpenQA.Selenium.Chrome;
 using OpenQA.Selenium.Interactions;
 using OpenQA.Selenium.Support.UI;
@@ -26,27 +23,49 @@ namespace HorseRacingML.Scraping
             // No headless argument -> Chrome is visible
 
             using var driver = new ChromeDriver(options);
+            // give pages plenty of time to load dynamic content
             var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10));
 
             for (var date = startDate; date <= endDate; date = date.AddDays(1))
             {
+
+                // iterate through all generic tabs
                 var url = $"https://www.sportinglife.com/racing/results/{date:yyyy-MM-dd}";
                 driver.Navigate().GoToUrl(url);
 
                 AcceptTermsIfPresent(driver);
 
-                // iterate through all generic tabs
-                wait.Until(d => d.FindElements(By.CssSelector("[data-test-id='generic-tab']")).Count > 0);
+                // iterate through available tabs; fall back to new-switch-button if generic tabs not found
+                string tabSelector = "[data-test-id='generic-tab']";
+                try
+                {
+                    wait.Until(d => d.FindElements(By.CssSelector(tabSelector)).Count > 0);
+                }
+                catch (WebDriverTimeoutException)
+                {
+                    tabSelector = "[data-test-id='new-switch-button']";
+                    wait.Until(d => d.FindElements(By.CssSelector(tabSelector)).Count > 0);
+                }
+
                 int tabIndex = 0;
                 while (true)
                 {
-                    var tabs = driver.FindElements(By.CssSelector("[data-test-id='generic-tab']"));
+                    var tabs = driver.FindElements(By.CssSelector(tabSelector));
                     if (tabIndex >= tabs.Count)
                         break;
 
                     tabs[tabIndex].Click();
                     // wait for time-short elements to appear
-                    wait.Until(d => d.FindElements(By.CssSelector(".time-short")).Count > 0);
+                    try
+                    {
+                        wait.Until(d => d.FindElements(By.CssSelector(".time-short")).Count > 0);
+                    }
+                    catch (WebDriverTimeoutException)
+                    {
+                        // if no races are available under this tab, skip to next tab
+                        tabIndex++;
+                        continue;
+                    }
 
                     var races = driver.FindElements(By.CssSelector(".time-short a"));
                     foreach (var race in races)
@@ -68,7 +87,7 @@ namespace HorseRacingML.Scraping
         /// Attempts to accept terms and conditions if a pop-up is present.
         /// </summary>
         /// <param name="driver">The Selenium WebDriver instance.</param>
-        private static void AcceptTermsIfPresent(IWebDriver driver)
+        private static bool AcceptTermsIfPresent(IWebDriver driver)
         {
             try
             {
@@ -78,11 +97,14 @@ namespace HorseRacingML.Scraping
                     var buttons = d.FindElements(By.XPath("//button[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'allow all cookies')]"));
                     return buttons.FirstOrDefault(b => b.Displayed && b.Enabled);
                 });
+
                 acceptButton?.Click();
+                return acceptButton != null;
             }
             catch (WebDriverTimeoutException)
             {
                 // Pop-up not present; nothing to accept.
+                return false;
             }
         }
     }
