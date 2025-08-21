@@ -9,152 +9,88 @@ namespace HorseRacingML.Scraping
     {
         public void Scrape(DateTime startDate, DateTime endDate)
         {
-            var start = startDate.Date;
-            var end = endDate.Date;
-
-            if (end < start)
+            var start = startDate.Date; var end = endDate.Date; if (end < start) { var tmp = start; start = end; end = tmp; } // normalize range
+            if (start == end) { Console.WriteLine("[Info] endDate equals startDate; expanding range to today"); end = DateTime.Today; } // expand single-day default to multi-day
+            if (end > DateTime.Today) end = DateTime.Today; // cap to today
+            Console.WriteLine("[Driver] Starting ChromeDriver service"); using (var svc = ChromeDriverService.CreateDefaultService())
             {
-                var tmp = start;
-                start = end;
-                end = tmp;
-            }
-
-            if (end > DateTime.Today)
-                end = DateTime.Today;
-
-            Console.WriteLine("[Driver] Starting ChromeDriver service");
-            using (var svc = ChromeDriverService.CreateDefaultService())
-            {
-                svc.HideCommandPromptWindow = true;
-                var options = new ChromeOptions();
-                options.AddArgument("--start-maximized");
-                options.AddArgument("--disable-dev-shm-usage");
-                options.AddArgument("--disable-gpu");
-                options.AddArgument("--no-sandbox");
-
+                svc.HideCommandPromptWindow = true; var options = new ChromeOptions(); options.AddArgument("--start-maximized"); options.AddArgument("--disable-dev-shm-usage"); options.AddArgument("--disable-gpu"); options.AddArgument("--no-sandbox"); // stable options
+                                                                                                                                                                                                                                                            // options.AddArgument("--detach"); // optional: keep Chrome open for debugging
                 using (var driver = new ChromeDriver(svc, options, TimeSpan.FromSeconds(60)))
                 {
-                    driver.Manage().Timeouts().PageLoad = TimeSpan.FromSeconds(45);
-                    driver.Manage().Timeouts().AsynchronousJavaScript = TimeSpan.FromSeconds(15);
-                    driver.Manage().Timeouts().ImplicitWait = TimeSpan.FromSeconds(0);
-
+                    driver.Manage().Timeouts().PageLoad = TimeSpan.FromSeconds(45); driver.Manage().Timeouts().AsynchronousJavaScript = TimeSpan.FromSeconds(15); driver.Manage().Timeouts().ImplicitWait = TimeSpan.FromSeconds(0); // timeouts
                     for (var date = start; date <= end; date = date.AddDays(1))
                     {
                         Console.WriteLine($"[Processing] {date:yyyy-MM-dd}");
-
                         try
                         {
-                            var url = $"https://www.sportinglife.com/racing/results/{date:yyyy-MM-dd}";
-                            Console.WriteLine($"[Scrape] {url}");
-                            driver.Navigate().GoToUrl(url);
-
-                            AcceptTermsIfPresent(driver);
-
-                            string[] regions = { "UK & Ireland", "International" };
-                            bool hasRegionToggle = driver.FindElements(By.CssSelector("[data-test-id='new-switch-button']")).Count > 0;
-
+                            var url = $"https://www.sportinglife.com/racing/results/{date:yyyy-MM-dd}"; Console.WriteLine($"[Scrape] {url}"); driver.Navigate().GoToUrl(url); // go to date page
+                            AcceptTermsIfPresent(driver); // cookies
+                            var dayHandle = driver.CurrentWindowHandle; // remember the top-level window for this day
+                            string[] regions = { "UK & Ireland", "International" }; bool hasRegionToggle = driver.FindElements(By.CssSelector("[data-test-id='new-switch-button']")).Count > 0; // detect region toggle
+                            bool anyMeetingsProcessed = false; // track if we managed to scrape anything
                             if (hasRegionToggle)
                             {
                                 foreach (var region in regions)
                                 {
                                     try
                                     {
-                                        var regionBtn = driver.FindElements(By.XPath($"//*[self::button or self::span][contains(normalize-space(.), '{region}') and ancestor::*[@data-test-id='new-switch-button']]"))
-                                            .FirstOrDefault(e => e.Displayed && e.Enabled);
-
-                                        if (regionBtn == null)
-                                        {
-                                            Console.WriteLine($"[{date:yyyy-MM-dd}] Region '{region}' not present");
-                                            continue;
-                                        }
-
-                                        ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].click();", regionBtn);
-
-                                        // Wait for content to load
-                                        var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10));
-                                        wait.Until(d => d.FindElements(By.CssSelector("[data-test-id='generic-tab']")).Count > 0 ||
-                                                        d.FindElements(By.CssSelector("[data-test-id*='no-meetings']")).Count > 0);
-
-                                        ScrapeMeetingTabs(driver, new WebDriverWait(driver, TimeSpan.FromSeconds(12)), date);
+                                        var regionBtn = driver.FindElements(By.XPath($"//*[self::button or self::span][contains(normalize-space(.), '{region}') and ancestor::*[@data-test-id='new-switch-button']]")).FirstOrDefault(e => e.Displayed && e.Enabled); if (regionBtn == null) { Console.WriteLine($"[{date:yyyy-MM-dd}] Region '{region}' not present"); continue; } // skip missing region
+                                        ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].click();", regionBtn); // click region
+                                        var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10)); wait.Until(d => d.FindElements(By.CssSelector("[data-test-id='generic-tab']")).Count > 0 || d.FindElements(By.CssSelector("[data-test-id*='no-meetings']")).Count > 0); // wait meetings
+                                        ScrapeMeetingTabs(driver, new WebDriverWait(driver, TimeSpan.FromSeconds(12)), date, dayHandle); anyMeetingsProcessed = true; // scrape meetings for this region
                                     }
-                                    catch (WebDriverException ex)
-                                    {
-                                        Console.WriteLine($"[{date:yyyy-MM-dd}] Region '{region}' error: {ex.Message}");
-                                    }
-                                    catch (Exception ex)
-                                    {
-                                        Console.WriteLine($"[{date:yyyy-MM-dd}] Unexpected region error '{region}': {ex.Message}");
-                                    }
+                                    catch (WebDriverException ex) { Console.WriteLine($"[{date:yyyy-MM-dd}] Region '{region}' error: {ex.Message}"); }
+                                    catch (Exception ex) { Console.WriteLine($"[{date:yyyy-MM-dd}] Unexpected region error '{region}': {ex.Message}"); }
                                 }
+                                if (!anyMeetingsProcessed) { Console.WriteLine($"[{date:yyyy-MM-dd}] Region toggle timeout or empty, scraping without toggle"); ScrapeMeetingTabs(driver, new WebDriverWait(driver, TimeSpan.FromSeconds(12)), date, dayHandle); } // fallback if toggle failed
                             }
-                            else
-                            {
-                                ScrapeMeetingTabs(driver, new WebDriverWait(driver, TimeSpan.FromSeconds(12)), date);
-                            }
-
+                            else { ScrapeMeetingTabs(driver, new WebDriverWait(driver, TimeSpan.FromSeconds(12)), date, dayHandle); } // no toggle present, scrape directly
                             Console.WriteLine($"[Done] {date:yyyy-MM-dd}");
                         }
-                        catch (WebDriverException ex)
-                        {
-                            Console.WriteLine($"[Skip Day] {date:yyyy-MM-dd} WebDriverException: {ex.Message}");
-                        }
-                        catch (OperationCanceledException ex)
-                        {
-                            Console.WriteLine($"[Skip Day] {date:yyyy-MM-dd} OperationCanceled: {ex.Message}");
-                        }
-                        catch (Exception ex)
-                        {
-                            Console.WriteLine($"[Skip Day] {date:yyyy-MM-dd} Unexpected: {ex.Message}");
-                        }
-
-                        // Small pause between days
-                        Thread.Sleep(1000);
+                        catch (WebDriverException ex) { Console.WriteLine($"[Skip Day] {date:yyyy-MM-dd} WebDriverException: {ex.Message}"); }
+                        catch (OperationCanceledException ex) { Console.WriteLine($"[Skip Day] {date:yyyy-MM-dd} OperationCanceled: {ex.Message}"); }
+                        catch (Exception ex) { Console.WriteLine($"[Skip Day] {date:yyyy-MM-dd} Unexpected: {ex.Message}"); }
+                        try { _ = driver.WindowHandles.Count; } catch (Exception ex) { Console.WriteLine($"[Warning] Driver session not healthy before next day: {ex.Message}"); break; } // keep-alive sanity check
+                        Thread.Sleep(1000); // small pause between days
                     }
-                } // Driver will be disposed after processing all days
-            } // Service will be disposed after processing all days
+                } // driver disposed after all days
+            } // service disposed after all days
         }
-        private static void ScrapeMeetingTabs(IWebDriver driver, WebDriverWait wait, DateTime raceDate)
+        private static void ScrapeMeetingTabs(IWebDriver driver, WebDriverWait wait, DateTime raceDate, string dayHandle)
         {
-            try { wait.Until(d => d.FindElements(By.CssSelector("[data-test-id='generic-tab']")).Count > 0); } catch { Console.WriteLine("Meeting tab elements not found."); return; } // ensure tabs
-            int tabIndex = 0;
-            while (true)
+            try { wait.Until(d => d.FindElements(By.CssSelector("[data-test-id='generic-tab']")).Count > 0 || d.FindElements(By.CssSelector("[data-test-id*='no-meetings']")).Count > 0); } catch { Console.WriteLine("Meeting tab elements not found."); return; } // ensure tabs or no-meetings
+            int tabIndex = 0; while (true)
             {
                 var tabs = driver.FindElements(By.CssSelector("[data-test-id='generic-tab']")); if (tabIndex >= tabs.Count) break; // done
                 var tab = tabs[tabIndex];
-                try { ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].scrollIntoView({block:'center'});", tab); ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].click();", tab); } catch { tabIndex++; continue; } // next meeting
+                try { ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].scrollIntoView({block:'center'});", tab); ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].click();", tab); } catch { tabIndex++; continue; } // click meeting tab
                 try { wait.Until(d => d.FindElements(By.CssSelector("[data-test-id='race-container'] a[href]")).Count > 0 || d.FindElements(By.CssSelector("[data-test-id='race-container']")).Count > 0); } catch { tabIndex++; continue; } // wait races
-                var raceLinks = driver.FindElements(By.CssSelector("[data-test-id='race-container'] a[href]"))
-                                     .Select(a => a.GetAttribute("href"))
-                                     .Where(href => !string.IsNullOrWhiteSpace(href))
-                                     .Distinct()
-                                     .ToList();
-
-                foreach (var href in raceLinks)
+                var raceLinks = driver.FindElements(By.CssSelector("[data-test-id='race-container'] a[href]")); var meetingHandle = driver.CurrentWindowHandle; // remember meeting page handle
+                foreach (var a in raceLinks)
                 {
+                    var href = a.GetAttribute("href"); if (string.IsNullOrWhiteSpace(href)) continue; // skip bad links
+                    var beforeOpen = driver.WindowHandles.ToList(); ((IJavaScriptExecutor)driver).ExecuteScript("window.open(arguments[0], '_blank');", href); // open race in new tab
+                    var newHandle = driver.WindowHandles.Except(beforeOpen).FirstOrDefault(); if (string.IsNullOrEmpty(newHandle)) { Console.WriteLine("Failed to detect new tab handle, skipping."); continue; } // ensure new tab
+                    try { driver.SwitchTo().Window(newHandle); } catch (WebDriverException ex) { Console.WriteLine($"Switch to new tab error: {ex.Message}"); continue; } // switch to race
+                    try { ParseRacePage(driver, wait, raceDate); } catch (Exception ex) { Console.WriteLine($"Parse error: {ex.Message}"); } // parse race
                     try
                     {
-                        driver.Navigate().GoToUrl(href);
-                        ParseRacePage(driver, wait, raceDate);
+                        var handlesNow = driver.WindowHandles; if (handlesNow.Count > 1) { driver.Close(); } else { Console.WriteLine("Skip Close(): only one window left."); } // avoid closing last window
                     }
-                    catch (Exception ex)
+                    catch (WebDriverException ex) { Console.WriteLine($"Close tab error: {ex.Message}"); } // safe close
+                    try
                     {
-                        Console.WriteLine($"Parse error: {ex.Message}");
+                        var handlesAfterClose = driver.WindowHandles; // remaining windows
+                        string target = null; if (handlesAfterClose.Contains(meetingHandle)) target = meetingHandle; else if (handlesAfterClose.Contains(dayHandle)) target = dayHandle; else if (handlesAfterClose.Count > 0) target = handlesAfterClose.First(); // choose best remaining
+                        if (target == null) { Console.WriteLine("No remaining window to switch to, breaking out of races."); break; } // nothing to switch
+                        driver.SwitchTo().Window(target); // back to meeting or day
+                        if (target == dayHandle) { meetingHandle = dayHandle; } // reset meeting handle if we lost it
                     }
-                    finally
-                    {
-                        try
-                        {
-                            driver.Navigate().Back();
-                            wait.Until(d => d.FindElements(By.CssSelector("[data-test-id='race-container'] a[href]")).Count > 0);
-                        }
-                        catch (Exception backEx)
-                        {
-                            Console.WriteLine($"Return to meeting page error: {backEx.Message}");
-                            break;
-                        }
-                    }
+                    catch (WebDriverException ex) { Console.WriteLine($"Switch back error: {ex.Message}"); break; } // bail out cleanly for this meeting
                 }
                 tabIndex++; // next meeting
+                try { if (!driver.WindowHandles.Contains(dayHandle)) { dayHandle = driver.WindowHandles.FirstOrDefault() ?? dayHandle; } } catch { } // keep dayHandle valid
             }
         }
 
