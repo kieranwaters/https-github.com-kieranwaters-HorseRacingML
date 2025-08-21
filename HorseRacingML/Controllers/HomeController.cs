@@ -24,20 +24,19 @@ namespace HorseRacingML.Controllers
             return View();
         }
 
-        /// <summary>
-        /// Triggers the race results scraping process using Selenium.
-        /// Defaults to scraping results for 13 April 2005 unless start and end
-        /// dates are provided via query parameters.
-        /// </summary>
-        /// <param name="startDate">Optional start date for scraping.</param>
-        /// <param name="endDate">Optional end date for scraping.</param>
         public IActionResult Scrape(DateTime? startDate, DateTime? endDate)
         {
             var start = startDate ?? new DateTime(2005, 4, 13);
             var end = endDate ?? start;
 
             var scraper = new RaceResultsScraper();
-            scraper.Scrape(start, end);
+            scraper.Scrape(start, start);
+
+            if (start < end)
+            {
+                return RedirectToAction(nameof(Scrape), new { startDate = start.AddDays(1), endDate = end });
+            }
+
             return RedirectToAction("Index");
         }
 
