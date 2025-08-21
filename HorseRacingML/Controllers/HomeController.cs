@@ -30,12 +30,7 @@ namespace HorseRacingML.Controllers
             var end = endDate ?? start;
 
             var scraper = new RaceResultsScraper();
-            scraper.Scrape(start, start);
-
-            if (start < end)
-            {
-                return RedirectToAction(nameof(Scrape), new { startDate = start.AddDays(1), endDate = end });
-            }
+            scraper.Scrape(start, end);
 
             return RedirectToAction("Index");
         }
