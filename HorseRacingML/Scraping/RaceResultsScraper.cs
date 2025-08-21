@@ -2,11 +2,20 @@
 using OpenQA.Selenium.Chrome;
 using OpenQA.Selenium.Support.UI;
 using System.Globalization;
+using HorseRacingML.Data;
+using HorseRacingML.Models;
 
 namespace HorseRacingML.Scraping
 {
     public class RaceResultsScraper
     {
+        private readonly RacingRepository _repo;
+
+        public RaceResultsScraper(RacingRepository repo)
+        {
+            _repo = repo;
+        }
+
         public void Scrape(DateTime startDate, DateTime endDate)
         {
             var start = startDate.Date; var end = endDate.Date; if (end < start) { var tmp = start; start = end; end = tmp; } // normalize range
@@ -57,7 +66,7 @@ namespace HorseRacingML.Scraping
                 } // driver disposed after all days
             } // service disposed after all days
         }
-        private static void ScrapeMeetingTabs(IWebDriver driver, WebDriverWait wait, DateTime raceDate, string dayHandle)
+        private void ScrapeMeetingTabs(IWebDriver driver, WebDriverWait wait, DateTime raceDate, string dayHandle)
         {
             try { wait.Until(d => d.FindElements(By.CssSelector("[data-test-id='generic-tab']")).Count > 0 || d.FindElements(By.CssSelector("[data-test-id*='no-meetings']")).Count > 0); } catch { Console.WriteLine("Meeting tab elements not found."); return; } // ensure tabs or no-meetings
             int tabIndex = 0; while (true)
@@ -96,7 +105,7 @@ namespace HorseRacingML.Scraping
 
 
 
-        private static void ParseRacePage(IWebDriver driver, WebDriverWait wait, DateTime defaultDate)
+        private void ParseRacePage(IWebDriver driver, WebDriverWait wait, DateTime defaultDate)
         {
             var headerText = TextOrEmpty(driver, By.CssSelector("p[class*='CourseListingHeader__StyledMainTitle']"));
             if (string.IsNullOrWhiteSpace(headerText))
@@ -126,6 +135,27 @@ namespace HorseRacingML.Scraping
             int? winningMs = ParseWinningMs(winTime);
             Console.WriteLine($"Parsing race: {raceTitle} at {courseName} on {raceDate:yyyy-MM-dd}");
             Console.WriteLine($"  Distance: {distanceText}, Going: {going}, Runners: {runnerCount}, Status: {status}");
+            var courseId = _repo.InsertCourse(new Course { Name = courseName });
+            var raceEntity = new Race
+            {
+                CourseId = courseId,
+                RaceDate = raceDate,
+                ScheduledOff = scheduledOff ?? TimeSpan.Zero,
+                ActualOff = actualOff,
+                Title = raceTitle,
+                RaceType = string.Empty,
+                Class = null,
+                AgeRestriction = ageRestriction,
+                Surface = null,
+                Going = going,
+                DistanceYards = distanceYards,
+                DistanceText = distanceText ?? string.Empty,
+                RunnerCount = runnerCount.HasValue ? (byte?)runnerCount : null,
+                Status = status,
+                WinningTimeMs = winningMs,
+                WinningTimeText = winTime
+            };
+            var raceId = _repo.InsertRace(raceEntity);
             wait.Until(d => d.FindElements(By.CssSelector("[class*='ResultRunner__StyledResultRunnerWrapper']")).Count > 0 || d.FindElements(By.CssSelector("[data-test-id='horse-sub-info']")).Count > 0);
             var rows = driver.FindElements(By.CssSelector("[class*='ResultRunner__StyledResultRunnerWrapper']"));
             foreach (var row in rows)
@@ -152,6 +182,34 @@ namespace HorseRacingML.Scraping
                 (string? tchLow, string? tchHigh) = ExtractTouchedTokens(tchTxt);
                 string comment = SafeText(row, By.CssSelector("[data-test-id='ride-description'], [class*='StyledRideDescription']"));
                 Console.WriteLine($"    Pos: {(finishPos.HasValue ? finishPos.ToString() : outcome)} Horse: {horseName} Jockey: {jockey} Trainer: {trainer} SP: {spFrac} Beaten: {beatenTxt}");
+                var trainerId = string.IsNullOrWhiteSpace(trainer) ? (int?)null : _repo.InsertTrainer(new Trainer { Name = trainer });
+                var jockeyId = string.IsNullOrWhiteSpace(jockey) ? (int?)null : _repo.InsertJockey(new Jockey { Name = jockey });
+                var horseId = _repo.InsertHorse(new Horse { Name = horseName });
+
+                var result = new RunnerResult
+                {
+                    RaceId = raceId,
+                    HorseId = horseId,
+                    TrainerId = trainerId,
+                    JockeyId = jockeyId,
+                    SaddleclothNumber = saddle,
+                    Draw = stall,
+                    Age = age,
+                    WeightLbs = weightLbs,
+                    WeightText = weightTxt,
+                    FinishPos = finishPos,
+                    OutcomeCode = outcome,
+                    DistanceBeatenText = beatenTxt,
+                    DistanceBeatenLengths = beatenLen,
+                    SP_Fraction = spFrac,
+                    SP_Decimal = spDec,
+                    FavTag = favTag,
+                    OpeningFraction = opFrac,
+                    TouchedHighFraction = tchHigh,
+                    TouchedLowFraction = tchLow,
+                    Comment = comment
+                };
+                _repo.InsertRunnerResult(result);
             }
         }
 

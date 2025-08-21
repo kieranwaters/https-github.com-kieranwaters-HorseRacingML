@@ -1,5 +1,6 @@
 using HorseRacingML.Models;
 using HorseRacingML.Scraping;
+using HorseRacingML.Data;
 using Microsoft.AspNetCore.Mvc;
 using System.Diagnostics;
 
@@ -8,10 +9,12 @@ namespace HorseRacingML.Controllers
     public class HomeController : Controller
     {
         private readonly ILogger<HomeController> _logger;
+        private readonly RacingRepository _repository;
 
-        public HomeController(ILogger<HomeController> logger)
+        public HomeController(ILogger<HomeController> logger, RacingRepository repository)
         {
             _logger = logger;
+            _repository = repository;
         }
 
         public IActionResult Index()
@@ -29,7 +32,7 @@ namespace HorseRacingML.Controllers
             var start = startDate ?? new DateTime(2005, 4, 13);
             var end = endDate ?? start;
 
-            var scraper = new RaceResultsScraper();
+            var scraper = new RaceResultsScraper(_repository);
             scraper.Scrape(start, end);
 
             return RedirectToAction("Index");
