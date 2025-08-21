@@ -197,7 +197,7 @@ namespace HorseRacingML.Scraping
                     Age = age,
                     WeightLbs = weightLbs,
                     WeightText = weightTxt,
-                    FinishPos = finishPos,
+                    FinishPos = finishPos.HasValue ? (short?)finishPos.Value : null,
                     OutcomeCode = outcome,
                     DistanceBeatenText = beatenTxt,
                     DistanceBeatenLengths = beatenLen,
