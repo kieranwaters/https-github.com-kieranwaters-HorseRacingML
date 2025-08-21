@@ -71,6 +71,7 @@ namespace HorseRacingML.Scraping
 
                 foreach (var handle in newHandles)
                 {
+                    if (handle == mainHandle) { continue; } // avoid closing primary window
                     driver.SwitchTo().Window(handle); // focus
                     try { ParseRacePage(driver, wait, raceDate); } catch (Exception ex) { Console.WriteLine($"Parse error: {ex.Message}"); } // parse
                     driver.Close(); // close tab
