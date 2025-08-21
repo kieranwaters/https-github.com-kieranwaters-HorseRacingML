@@ -22,27 +22,28 @@ namespace HorseRacingML.Scraping
             if (end > DateTime.Today)
                 end = DateTime.Today;
 
-            for (var date = start; date <= end; date = date.AddDays(1))
+            Console.WriteLine("[Driver] Starting ChromeDriver service");
+            using (var svc = ChromeDriverService.CreateDefaultService())
             {
-                Console.WriteLine($"[Processing] {date:yyyy-MM-dd}");
+                svc.HideCommandPromptWindow = true;
+                var options = new ChromeOptions();
+                options.AddArgument("--start-maximized");
+                options.AddArgument("--disable-dev-shm-usage");
+                options.AddArgument("--disable-gpu");
+                options.AddArgument("--no-sandbox");
 
-                try
+                using (var driver = new ChromeDriver(svc, options, TimeSpan.FromSeconds(60)))
                 {
-                    using (var svc = ChromeDriverService.CreateDefaultService())
+                    driver.Manage().Timeouts().PageLoad = TimeSpan.FromSeconds(45);
+                    driver.Manage().Timeouts().AsynchronousJavaScript = TimeSpan.FromSeconds(15);
+                    driver.Manage().Timeouts().ImplicitWait = TimeSpan.FromSeconds(0);
+
+                    for (var date = start; date <= end; date = date.AddDays(1))
                     {
-                        svc.HideCommandPromptWindow = true;
-                        var options = new ChromeOptions();
-                        options.AddArgument("--start-maximized");
-                        options.AddArgument("--disable-dev-shm-usage");
-                        options.AddArgument("--disable-gpu");
-                        options.AddArgument("--no-sandbox");
+                        Console.WriteLine($"[Processing] {date:yyyy-MM-dd}");
 
-                        using (var driver = new ChromeDriver(svc, options, TimeSpan.FromSeconds(60)))
+                        try
                         {
-                            driver.Manage().Timeouts().PageLoad = TimeSpan.FromSeconds(45);
-                            driver.Manage().Timeouts().AsynchronousJavaScript = TimeSpan.FromSeconds(15);
-                            driver.Manage().Timeouts().ImplicitWait = TimeSpan.FromSeconds(0);
-
                             var url = $"https://www.sportinglife.com/racing/results/{date:yyyy-MM-dd}";
                             Console.WriteLine($"[Scrape] {url}");
                             driver.Navigate().GoToUrl(url);
@@ -92,25 +93,25 @@ namespace HorseRacingML.Scraping
                             }
 
                             Console.WriteLine($"[Done] {date:yyyy-MM-dd}");
-                        } // Driver will be automatically disposed here
-                    } // Service will be automatically disposed here
-                }
-                catch (WebDriverException ex)
-                {
-                    Console.WriteLine($"[Skip Day] {date:yyyy-MM-dd} WebDriverException: {ex.Message}");
-                }
-                catch (OperationCanceledException ex)
-                {
-                    Console.WriteLine($"[Skip Day] {date:yyyy-MM-dd} OperationCanceled: {ex.Message}");
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[Skip Day] {date:yyyy-MM-dd} Unexpected: {ex.Message}");
-                }
+                        }
+                        catch (WebDriverException ex)
+                        {
+                            Console.WriteLine($"[Skip Day] {date:yyyy-MM-dd} WebDriverException: {ex.Message}");
+                        }
+                        catch (OperationCanceledException ex)
+                        {
+                            Console.WriteLine($"[Skip Day] {date:yyyy-MM-dd} OperationCanceled: {ex.Message}");
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"[Skip Day] {date:yyyy-MM-dd} Unexpected: {ex.Message}");
+                        }
 
-                // Small pause between days
-                Thread.Sleep(1000);
-            }
+                        // Small pause between days
+                        Thread.Sleep(1000);
+                    }
+                } // Driver will be disposed after processing all days
+            } // Service will be disposed after processing all days
         }
         private static void ScrapeMeetingTabs(IWebDriver driver, WebDriverWait wait, DateTime raceDate)
         {
