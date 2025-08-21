@@ -5,6 +5,9 @@ using HorseRacingML.Models;
 using Microsoft.Extensions.Hosting;
 using System.Diagnostics;
 using System.Net.Sockets;
+using System.Linq;
+using System.Reflection;
+using System.Text.RegularExpressions;
 
 namespace HorseRacingML.Data
 {
@@ -14,6 +17,26 @@ namespace HorseRacingML.Data
     public class RacingRepository
     {
         private readonly string _connectionString;
+        private static readonly Regex BracketTextRegex =
+            new Regex("\\s*\\([^\\)]*\\)|\\s*\\[[^\\]]*\\]", RegexOptions.Compiled);
+
+        private static string RemoveBracketedText(string input)
+            => string.IsNullOrWhiteSpace(input) ? input : BracketTextRegex.Replace(input, string.Empty).Trim();
+
+        private static void StripBracketedText<T>(T obj)
+        {
+            if (obj == null) return;
+
+            var stringProps = typeof(T).GetProperties()
+                .Where(p => p.PropertyType == typeof(string) && p.CanRead && p.CanWrite);
+
+            foreach (var prop in stringProps)
+            {
+                var value = prop.GetValue(obj) as string;
+                if (!string.IsNullOrWhiteSpace(value))
+                    prop.SetValue(obj, RemoveBracketedText(value));
+            }
+        }
 
         public RacingRepository(string connectionString)
         {
@@ -23,6 +46,7 @@ namespace HorseRacingML.Data
 
         public int InsertCourse(Course course)
         {
+            StripBracketedText(course);
             const string sql = @"
 IF EXISTS (SELECT CourseId FROM Course WHERE Name = @Name AND ISNULL(Country,'') = ISNULL(@Country,''))
     SELECT CourseId FROM Course WHERE Name = @Name AND ISNULL(Country,'') = ISNULL(@Country,'');
@@ -37,6 +61,7 @@ END";
 
         public int InsertRace(Race race)
         {
+            StripBracketedText(race);
             const string sql = @"
 IF EXISTS (SELECT RaceId FROM Race WHERE CourseId=@CourseId AND RaceDate=@RaceDate AND ScheduledOff=@ScheduledOff AND Title=@Title)
     SELECT RaceId FROM Race WHERE CourseId=@CourseId AND RaceDate=@RaceDate AND ScheduledOff=@ScheduledOff AND Title=@Title;
@@ -52,6 +77,7 @@ END";
 
         public int InsertTrainer(Trainer trainer)
         {
+            StripBracketedText(trainer);
             const string sql = @"
 IF EXISTS (SELECT TrainerId FROM Trainer WHERE Name=@Name)
     SELECT TrainerId FROM Trainer WHERE Name=@Name;
@@ -66,6 +92,7 @@ END";
 
         public int InsertJockey(Jockey jockey)
         {
+            StripBracketedText(jockey);
             const string sql = @"
 IF EXISTS (SELECT JockeyId FROM Jockey WHERE Name=@Name)
     SELECT JockeyId FROM Jockey WHERE Name=@Name;
@@ -80,6 +107,7 @@ END";
 
         public int InsertHorse(Horse horse)
         {
+            StripBracketedText(horse);
             const string sql = @"
 IF EXISTS (SELECT HorseId FROM Horse WHERE Name=@Name)
     SELECT HorseId FROM Horse WHERE Name=@Name;
@@ -94,6 +122,7 @@ END";
 
         public int InsertRunnerResult(RunnerResult result)
         {
+            StripBracketedText(result);
             const string sql = @"
 IF EXISTS (SELECT RunnerResultId FROM RunnerResult WHERE RaceId=@RaceId AND HorseId=@HorseId)
     SELECT RunnerResultId FROM RunnerResult WHERE RaceId=@RaceId AND HorseId=@HorseId;
