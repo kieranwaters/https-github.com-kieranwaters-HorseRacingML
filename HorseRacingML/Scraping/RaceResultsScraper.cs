@@ -75,23 +75,37 @@ namespace HorseRacingML.Scraping
                 var tab = tabs[tabIndex];
                 try { ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].scrollIntoView({block:'center'});", tab); ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].click();", tab); } catch { tabIndex++; continue; } // click meeting tab
                 try { wait.Until(d => d.FindElements(By.CssSelector("[data-test-id='race-container'] a[href]")).Count > 0 || d.FindElements(By.CssSelector("[data-test-id='race-container']")).Count > 0); } catch { tabIndex++; continue; } // wait races
-                var raceLinks = driver.FindElements(By.CssSelector("[data-test-id='race-container'] a[href]")); var meetingHandle = driver.CurrentWindowHandle; // remember meeting page handle
+                var raceLinks = driver.FindElements(By.CssSelector("[data-test-id='race-container'] a[href]"));
+                var meetingHandle = driver.CurrentWindowHandle; // remember meeting page handle
+                var raceHandles = new List<string>();
                 foreach (var a in raceLinks)
                 {
-                    var href = a.GetAttribute("href"); if (string.IsNullOrWhiteSpace(href)) continue; // skip bad links
-                    var beforeOpen = driver.WindowHandles.ToList(); ((IJavaScriptExecutor)driver).ExecuteScript("window.open(arguments[0], '_blank');", href); // open race in new tab
-                    var newHandle = driver.WindowHandles.Except(beforeOpen).FirstOrDefault(); if (string.IsNullOrEmpty(newHandle)) { Console.WriteLine("Failed to detect new tab handle, skipping."); continue; } // ensure new tab
-                    try { driver.SwitchTo().Window(newHandle); } catch (WebDriverException ex) { Console.WriteLine($"Switch to new tab error: {ex.Message}"); continue; } // switch to race
-                    try { ParseRacePage(driver, wait, raceDate); } catch (Exception ex) { Console.WriteLine($"Parse error: {ex.Message}"); } // parse race
+                    var href = a.GetAttribute("href");
+                    if (string.IsNullOrWhiteSpace(href)) continue; // skip bad links
+                    var beforeOpen = driver.WindowHandles.ToList();
+                    ((IJavaScriptExecutor)driver).ExecuteScript("window.open(arguments[0], '_blank');", href); // open race in new tab
+                    var handle = driver.WindowHandles.Except(beforeOpen).FirstOrDefault();
+                    if (!string.IsNullOrEmpty(handle)) raceHandles.Add(handle); else Console.WriteLine("Failed to detect new tab handle, skipping.");
+                }
+                foreach (var newHandle in raceHandles)
+                {
+                    try { driver.SwitchTo().Window(newHandle); }
+                    catch (WebDriverException ex) { Console.WriteLine($"Switch to race tab error: {ex.Message}"); continue; } // switch to race
+                    try { ParseRacePage(driver, wait, raceDate); }
+                    catch (Exception ex) { Console.WriteLine($"Parse error: {ex.Message}"); } // parse race
                     try
                     {
-                        var handlesNow = driver.WindowHandles; if (handlesNow.Count > 1) { driver.Close(); } else { Console.WriteLine("Skip Close(): only one window left."); } // avoid closing last window
+                        var handlesNow = driver.WindowHandles;
+                        if (handlesNow.Count > 1) { driver.Close(); } else { Console.WriteLine("Skip Close(): only one window left."); } // avoid closing last window
                     }
                     catch (WebDriverException ex) { Console.WriteLine($"Close tab error: {ex.Message}"); } // safe close
                     try
                     {
                         var handlesAfterClose = driver.WindowHandles; // remaining windows
-                        string target = null; if (handlesAfterClose.Contains(meetingHandle)) target = meetingHandle; else if (handlesAfterClose.Contains(dayHandle)) target = dayHandle; else if (handlesAfterClose.Count > 0) target = handlesAfterClose.First(); // choose best remaining
+                        string target = null;
+                        if (handlesAfterClose.Contains(meetingHandle)) target = meetingHandle;
+                        else if (handlesAfterClose.Contains(dayHandle)) target = dayHandle;
+                        else if (handlesAfterClose.Count > 0) target = handlesAfterClose.First(); // choose best remaining
                         if (target == null) { Console.WriteLine("No remaining window to switch to, breaking out of races."); break; } // nothing to switch
                         driver.SwitchTo().Window(target); // back to meeting or day
                         if (target == dayHandle) { meetingHandle = dayHandle; } // reset meeting handle if we lost it
