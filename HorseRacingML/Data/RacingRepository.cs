@@ -8,6 +8,7 @@ using System.Net.Sockets;
 using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
+using System.Collections.Generic;
 
 namespace HorseRacingML.Data
 {
@@ -37,7 +38,20 @@ namespace HorseRacingML.Data
                     prop.SetValue(obj, RemoveBracketedText(value));
             }
         }
-
+        public void InsertRunnerResults(IEnumerable<RunnerResult> results)
+        {
+            var list = results.ToList();
+            foreach (var r in list)
+            {
+                StripBracketedText(r);
+            }
+            const string sql = @"
+IF NOT EXISTS (SELECT 1 FROM RunnerResult WHERE RaceId=@RaceId AND HorseId=@HorseId)
+    INSERT INTO RunnerResult(RaceId, HorseId, TrainerId, JockeyId, SaddleclothNumber, Draw, Age, WeightLbs, WeightText, FinishPos, OutcomeCode, DistanceBeatenText, DistanceBeatenLengths, SP_Fraction, SP_Decimal, FavTag, OpeningFraction, TouchedHighFraction, TouchedLowFraction, Comment)
+    VALUES(@RaceId, @HorseId, @TrainerId, @JockeyId, @SaddleclothNumber, @Draw, @Age, @WeightLbs, @WeightText, @FinishPos, @OutcomeCode, @DistanceBeatenText, @DistanceBeatenLengths, @SP_Fraction, @SP_Decimal, @FavTag, @OpeningFraction, @TouchedHighFraction, @TouchedLowFraction, @Comment);";
+            using var conn = OpenConnection();
+            conn.Execute(sql, list);
+        }
         public RacingRepository(string connectionString)
         {
             _connectionString = connectionString;

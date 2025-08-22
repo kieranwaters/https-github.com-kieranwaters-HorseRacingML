@@ -8,6 +8,7 @@ using System.Collections.Concurrent;
 using System.Threading.Tasks;
 using System.Threading;
 using System.IO;
+using System.Collections.Generic;
 
 namespace HorseRacingML.Scraping
 {
@@ -149,6 +150,7 @@ namespace HorseRacingML.Scraping
             var raceEntity = new Race { CourseId = courseId, RaceDate = raceDate, ScheduledOff = scheduledOff ?? TimeSpan.Zero, ActualOff = actualOff, Title = raceTitle, RaceType = string.Empty, Class = classVal, AgeRestriction = ageRestriction, Surface = surface, Going = going, DistanceYards = distanceYards, DistanceText = distanceText ?? string.Empty, RunnerCount = runnerCount.HasValue ? (byte?)runnerCount : null, Status = status, WinningTimeMs = winningMs, WinningTimeText = winTime }; var raceId = _repo.InsertRace(raceEntity); // race insert
             wait.Until(d => d.FindElements(By.CssSelector("[class*='ResultRunner__StyledResultRunnerWrapper']")).Count > 0 || d.FindElements(By.CssSelector("[data-test-id='horse-sub-info']")).Count > 0); // rows ready
             var rows = driver.FindElements(By.CssSelector("[class*='ResultRunner__StyledResultRunnerWrapper']")); // rows
+            var results = new List<RunnerResult>();
             foreach (var row in rows)
             {
                 string posRaw = SafeText(row, By.CssSelector("[data-test-id='position-no'], .position-no .ordinal")); int? finishPos = TryParseOrdinalInt(posRaw); string outcome = finishPos.HasValue ? "" : ParseOutcomeCode(posRaw); // position/outcome
@@ -163,7 +165,12 @@ namespace HorseRacingML.Scraping
                 string opTxt = SafeText(row, By.XPath(".//*[contains(.,'op ') and contains(@class,'small')]")); string tchTxt = SafeText(row, By.XPath(".//*[contains(.,'tchd ') or contains(.,'tch ') and contains(@class,'small')]")); string opFrac = ExtractOddsToken(opTxt, "op"); (string? tchLow, string? tchHigh) = ExtractTouchedTokens(tchTxt); // market moves
                 string comment = SafeText(row, By.CssSelector("[data-test-id='ride-description'], [class*='StyledRideDescription']")); // comment
                 var trainerId = string.IsNullOrWhiteSpace(trainer) ? (int?)null : _repo.InsertTrainer(new Trainer { Name = trainer }); var jockeyId = string.IsNullOrWhiteSpace(jockey) ? (int?)null : _repo.InsertJockey(new Jockey { Name = jockey }); var horseId = _repo.InsertHorse(new Horse { Name = horseName }); // ids
-                var result = new RunnerResult { RaceId = raceId, HorseId = horseId, TrainerId = trainerId, JockeyId = jockeyId, SaddleclothNumber = saddle, Draw = stall, Age = age, WeightLbs = weightLbs, WeightText = weightTxt, FinishPos = finishPos.HasValue ? (short?)finishPos.Value : null, OutcomeCode = outcome, DistanceBeatenText = beatenTxt, DistanceBeatenLengths = beatenLen, SP_Fraction = spFrac, SP_Decimal = spDec, FavTag = favTag, OpeningFraction = opFrac, TouchedHighFraction = tchHigh, TouchedLowFraction = tchLow, Comment = comment }; _repo.InsertRunnerResult(result); // save
+                var result = new RunnerResult { RaceId = raceId, HorseId = horseId, TrainerId = trainerId, JockeyId = jockeyId, SaddleclothNumber = saddle, Draw = stall, Age = age, WeightLbs = weightLbs, WeightText = weightTxt, FinishPos = finishPos.HasValue ? (short?)finishPos.Value : null, OutcomeCode = outcome, DistanceBeatenText = beatenTxt, DistanceBeatenLengths = beatenLen, SP_Fraction = spFrac, SP_Decimal = spDec, FavTag = favTag, OpeningFraction = opFrac, TouchedHighFraction = tchHigh, TouchedLowFraction = tchLow, Comment = comment };
+                results.Add(result);
+            }
+            if (results.Count > 0)
+            {
+                _repo.InsertRunnerResults(results);
             }
         }
 
