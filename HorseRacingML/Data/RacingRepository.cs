@@ -20,7 +20,22 @@ namespace HorseRacingML.Data
         private readonly string _connectionString;
         private static readonly Regex BracketTextRegex =
             new Regex("\\s*\\([^\\)]*\\)|\\s*\\[[^\\]]*\\]", RegexOptions.Compiled);
+        private const int GoingMaxLength = 30;
 
+        private static string? NormalizeGoing(string? going)
+        {
+            if (string.IsNullOrWhiteSpace(going)) return going;
+
+            var g = Regex.Replace(going, @"[,;]?\s*in places.*$", string.Empty, RegexOptions.IgnoreCase);
+            g = Regex.Replace(g, @"\s+on\s+.*$", string.Empty, RegexOptions.IgnoreCase);
+            g = g.Trim();
+
+            if (g.Length > GoingMaxLength)
+            {
+                g = g.Substring(0, GoingMaxLength);
+            }
+            return g;
+        }
         private static string RemoveBracketedText(string input)
             => string.IsNullOrWhiteSpace(input) ? input : BracketTextRegex.Replace(input, string.Empty).Trim();
 
@@ -76,6 +91,7 @@ END";
         public int InsertRace(Race race)
         {
             StripBracketedText(race);
+            race.Going = NormalizeGoing(race.Going);
             const string sql = @"
 IF EXISTS (SELECT RaceId FROM Race WHERE CourseId=@CourseId AND RaceDate=@RaceDate AND ScheduledOff=@ScheduledOff AND Title=@Title)
     SELECT RaceId FROM Race WHERE CourseId=@CourseId AND RaceDate=@RaceDate AND ScheduledOff=@ScheduledOff AND Title=@Title;
