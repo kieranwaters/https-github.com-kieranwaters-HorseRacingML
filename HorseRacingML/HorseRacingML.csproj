@@ -5,6 +5,13 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="Views\NewFolder\**" />
+    <Content Remove="Views\NewFolder\**" />
+    <EmbeddedResource Remove="Views\NewFolder\**" />
+    <None Remove="Views\NewFolder\**" />
+  </ItemGroup>
 <ItemGroup>
     <PackageReference Include="Selenium.WebDriver" Version="4.17.0" />
     <PackageReference Include="Selenium.Support" Version="4.17.0" />
@@ -19,5 +26,9 @@
 		<!-- Data access packages for inserting parsed race data -->
 		<PackageReference Include="Dapper" Version="2.1.24" />
 		<PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.0" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <Folder Include="Views\NewFolder1\" />
 	</ItemGroup>
 </Project>

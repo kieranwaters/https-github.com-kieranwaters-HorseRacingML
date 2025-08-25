@@ -1,0 +1,29 @@
+﻿using System;
+using System.ComponentModel.DataAnnotations;
+
+namespace HorseRacingML.Models
+{
+    public class MLParameter
+    {
+        public int Id { get; set; }
+        public DateTime RunDate { get; set; }
+        [Required]
+        public int Units { get; set; }
+        [Required]
+        public double Dropout { get; set; }
+        [Required]
+        public int Layers { get; set; }
+        [Required]
+        public double LearningRate { get; set; }
+        [Required]
+        public int Epochs { get; set; }
+        [Required]
+        public int BatchSize { get; set; }
+        public double? TrainAccuracy { get; set; }
+        public double? ValidationAccuracy { get; set; }
+        public double? ValidationLoss { get; set; }
+        public double? TrainLoss { get; set; }
+        public int? Fold { get; set; }
+        public double? ValidationBrier { get; set; }
+    }
+}

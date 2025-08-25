@@ -87,6 +87,15 @@ END";
             using var conn = OpenConnection();
             return conn.QuerySingle<int>(sql, course);
         }
+        public int InsertMLParameter(MLParameter param)
+        {
+            const string sql = @"
+INSERT INTO MLParameters(RunDate, Units, Dropout, Layers, LearningRate, TrainAccuracy, ValidationAccuracy, ValidationLoss, Epochs, BatchSize, TrainLoss, Fold, ValidationBrier)
+VALUES(@RunDate, @Units, @Dropout, @Layers, @LearningRate, @TrainAccuracy, @ValidationAccuracy, @ValidationLoss, @Epochs, @BatchSize, @TrainLoss, @Fold, @ValidationBrier);
+SELECT CAST(SCOPE_IDENTITY() as int);";
+            using var conn = OpenConnection();
+            return conn.QuerySingle<int>(sql, param);
+        }
 
         public int InsertRace(Race race)
         {
