@@ -29,7 +29,7 @@ namespace HorseRacingML.Controllers
 
         public IActionResult Scrape(DateTime? startDate, DateTime? endDate)
         {
-            var start = startDate ?? new DateTime(2010, 5, 9);
+            var start = startDate ?? new DateTime(2010, 9, 10);
             var end = endDate ?? start;
 
             var scraper = new RaceResultsScraper(_repository);
