@@ -1,7 +1,4 @@
-﻿using Tensorflow.Keras;
-using static Tensorflow.KerasApi;
-
-namespace HorseRacingML.ML
+﻿namespace HorseRacingML.ML
 {
     /// <summary>
     /// Provides custom loss functions used throughout the project.
@@ -9,13 +6,13 @@ namespace HorseRacingML.ML
     public static class LossesOnly
     {
         /// <summary>
-        /// Wrapper around TensorFlow's <see cref="BinaryCrossentropy"/> loss.
-        /// Added to satisfy references expecting a custom loss named
-        /// <c>Bfair_Crossentropy</c>.
+        /// Returns the identifier for TensorFlow's binary cross entropy loss.
+        /// The Keras API in TensorFlow.NET accepts loss names as strings, so
+        /// this method simply exposes the expected name while retaining the
+        /// original call pattern.
         /// </summary>
-        /// <param name="from_logits">Whether the predictions are logits.</param>
-        /// <returns>A binary cross entropy loss function.</returns>
-        public static ILossFunc Bfair_Crossentropy(bool from_logits = false)
-            => keras.losses.BinaryCrossentropy(from_logits: from_logits);
+        /// <param name="from_logits">Unused – retained for compatibility.</param>
+        public static string Bfair_Crossentropy(bool from_logits = false) =>
+            "binary_crossentropy";
     }
 }

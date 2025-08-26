@@ -121,10 +121,15 @@ namespace HorseRacingML.ML
                 labelList.Add(dict.TryGetValue("FinishPos", out var f) && f != null && Convert.ToInt32(f) == 1 ? 1f : 0f);
             }
 
-            var x = np.array(featureList.ToArray());
-            var y = np.array(labelList.ToArray()).reshape(new Shape(featureList.Count, 1));
+            int totalCount = featureList.Count;
+            int trainCount = (int)(totalCount * 0.8);
 
-            int featureCount = (int)x.shape[1];
+            var xTrain = np.array(featureList.Take(trainCount).ToArray());
+            var yTrain = np.array(labelList.Take(trainCount).ToArray()).reshape(new Shape(trainCount, 1));
+            var xVal = np.array(featureList.Skip(trainCount).ToArray());
+            var yVal = np.array(labelList.Skip(trainCount).ToArray()).reshape(new Shape(totalCount - trainCount, 1));
+
+            int featureCount = (int)xTrain.shape[1];
 
             // Build a simple sequential model
             var model = keras.Sequential();
@@ -143,28 +148,23 @@ namespace HorseRacingML.ML
             model.add(keras.layers.Dense(units: 1));
 
             var optimizer = keras.optimizers.Adam((float)param.LearningRate);
-            var loss = LossesOnly.Bfair_Crossentropy(from_logits: true);
-            var metric = MetricsCalc.Bfair_Calc();
+            model.compile(optimizer: optimizer,
+                          loss: LossesOnly.Bfair_Crossentropy(from_logits: true),
+                          metrics: new[] { MetricsCalc.Bfair_Calc() });
 
-            model.compile(optimizer: optimizer, loss: loss, metrics: new[] { metric });
+            // Train the model
+            model.fit(xTrain, yTrain,
+                      batch_size: param.BatchSize,
+                      epochs: param.Epochs,
+                      verbose: 0);
 
-            // Train the model (use validation_split to get validation metrics)
-            var history = model.fit(x, y,
-                                    batch_size: param.BatchSize,
-                                    epochs: param.Epochs,
-                                    validation_split: 0.2f,
-                                    verbose: 0);
-            var hist = history.history;
+            var trainResults = model.evaluate(xTrain, yTrain, verbose: 0);
+            var valResults = model.evaluate(xVal, yVal, verbose: 0);
 
-            double trainLoss = ((NDArray)hist["loss"])[-1].ToArray<double>().First();
-
-            string accKey = hist.ContainsKey("binary_accuracy") ? "binary_accuracy" : "accuracy";
-            double trainAcc = ((NDArray)hist[accKey])[-1].ToArray<double>().First();
-
-            double valLoss = ((NDArray)hist["val_loss"])[-1].ToArray<double>().First();
-
-            string valAccKey = hist.ContainsKey("val_binary_accuracy") ? "val_binary_accuracy" : "val_accuracy";
-            double valAcc = ((NDArray)hist[valAccKey])[-1].ToArray<double>().First();
+            double trainLoss = trainResults[0];
+            double trainAcc = trainResults[1];
+            double valLoss = valResults[0];
+            double valAcc = valResults[1];
 
             return (trainAcc, trainLoss, valAcc, valLoss);
         }
