@@ -27,7 +27,6 @@
 	</ItemGroup>
 	<ItemGroup>
 		<PackageReference Include="TensorFlow.NET" Version="0.110.0" />
-		<PackageReference Include="TensorFlow.Keras" Version="0.110.0" />
 		<!-- keep -->
 		<PackageReference Include="SciSharp.TensorFlow.Redist-Windows-GPU" Version="2.10.1" Condition="'$(OS)'=='Windows_NT'" />
 		<PackageReference Include="SciSharp.TensorFlow.Redist-Linux-GPU" Version="2.10.1" Condition="'$(OS)'!='Windows_NT'" />

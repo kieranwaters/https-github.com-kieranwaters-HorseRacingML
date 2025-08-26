@@ -1,8 +1,6 @@
 ﻿using Tensorflow;
 using Tensorflow.NumPy;
-using Tensorflow.Keras;
 using static Tensorflow.Binding;
-using static Tensorflow.KerasApi;
 using HorseRacingML.Models;
 using Dapper;
 using Microsoft.Data.SqlClient;
@@ -10,6 +8,7 @@ using Microsoft.Extensions.Configuration;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using TensorShape = Tensorflow.Shape;
 
 namespace HorseRacingML.ML
 {
@@ -131,40 +130,47 @@ namespace HorseRacingML.ML
 
             int featureCount = (int)xTrain.shape[1];
 
-            // Build a simple sequential model
-            var model = keras.Sequential();
-            model.add(keras.layers.Dense(units: param.Units, activation: keras.activations.Relu, input_shape: new Shape(featureCount)));
-            if (param.Dropout > 0)
-                model.add(keras.layers.Dropout((float)param.Dropout));
+            var graph = tf.Graph().as_default();
 
-            for (int i = 1; i < param.Layers; i++)
+            var x = tf.placeholder(tf.float32, shape: new TensorShape(-1, featureCount), name: "x");
+            var y = tf.placeholder(tf.float32, shape: new TensorShape(-1, 1), name: "y");
+
+            Tensor layer = x;
+            int inputDim = featureCount;
+            for (int i = 0; i < param.Layers; i++)
             {
-                model.add(keras.layers.Dense(units: param.Units, activation: keras.activations.Relu));
+                var w = tf.Variable(tf.random.normal((inputDim, param.Units)), name: $"w{i}");
+                var b = tf.Variable(tf.zeros(param.Units), name: $"b{i}");
+                layer = tf.nn.relu(tf.matmul(layer, w) + b);
                 if (param.Dropout > 0)
-                    model.add(keras.layers.Dropout((float)param.Dropout));
+                {
+                    layer = tf.nn.dropout(layer, rate: (float)param.Dropout);
+                }
+                inputDim = param.Units;
             }
 
-            // Output layer (logits)
-            model.add(keras.layers.Dense(units: 1));
+            var wOut = tf.Variable(tf.random.normal((inputDim, 1)), name: "wOut");
+            var bOut = tf.Variable(tf.zeros(1), name: "bOut");
+            var logits = tf.matmul(layer, wOut) + bOut;
 
-            var optimizer = keras.optimizers.Adam((float)param.LearningRate);
-            model.compile(optimizer: optimizer,
-                          loss: LossesOnly.Bfair_Crossentropy(from_logits: true),
-                          metrics: new[] { MetricsCalc.Bfair_Calc() });
+            var loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels: y, logits: logits));
+            var optimizer = tf.train.AdamOptimizer((float)param.LearningRate).minimize(loss);
 
-            // Train the model
-            model.fit(xTrain, yTrain,
-                      batch_size: param.BatchSize,
-                      epochs: param.Epochs,
-                      verbose: 0);
+            var prediction = tf.sigmoid(logits);
+            var accuracy = tf.reduce_mean(tf.cast(tf.equal(tf.round(prediction), y), tf.float32));
 
-            var trainResults = model.evaluate(xTrain, yTrain, verbose: 0).ToArray<float>();
-            var valResults = model.evaluate(xVal, yVal, verbose: 0).ToArray<float>();
+            using var sess = tf.Session(graph);
+            sess.run(tf.global_variables_initializer());
 
-            double trainLoss = trainResults[0];
-            double trainAcc = trainResults[1];
-            double valLoss = valResults[0];
-            double valAcc = valResults[1];
+            for (int epoch = 0; epoch < param.Epochs; epoch++)
+            {
+                sess.run(optimizer, new FeedItem(x, xTrain), new FeedItem(y, yTrain));
+            }
+
+            double trainLoss = sess.run(loss, new FeedItem(x, xTrain), new FeedItem(y, yTrain)).ToArray<float>()[0];
+            double trainAcc = sess.run(accuracy, new FeedItem(x, xTrain), new FeedItem(y, yTrain)).ToArray<float>()[0];
+            double valLoss = sess.run(loss, new FeedItem(x, xVal), new FeedItem(y, yVal)).ToArray<float>()[0];
+            double valAcc = sess.run(accuracy, new FeedItem(x, xVal), new FeedItem(y, yVal)).ToArray<float>()[0];
 
             return (trainAcc, trainLoss, valAcc, valLoss);
         }
