@@ -16,29 +16,42 @@ namespace HorseRacingML.Controllers
             _repository = repository;
             _trainer = trainer;
         }
-
-        [HttpGet]
-        public IActionResult Custom()
-        {
-            return View(new MLParameter { RunDate = DateTime.UtcNow });
-        }
-
         [HttpPost]
         [ValidateAntiForgeryToken]
         public IActionResult Custom(MLParameter model)
         {
             if (ModelState.IsValid)
             {
-                var result = _trainer.Train(model);
-                model.TrainAccuracy = result.TrainAccuracy;
-                model.TrainLoss = result.TrainLoss;
-                model.ValidationAccuracy = result.ValidationAccuracy;
-                model.ValidationLoss = result.ValidationLoss;
-                _repository.InsertMLParameter(model);
+                for (int i = 0; i < model.Folds; i++)
+                {
+                    var result = _trainer.Train(model, i, model.Folds);
+                    var foldModel = new MLParameter
+                    {
+                        RunDate = model.RunDate,
+                        Units = model.Units,
+                        Dropout = model.Dropout,
+                        Layers = model.Layers,
+                        LearningRate = model.LearningRate,
+                        Epochs = model.Epochs,
+                        BatchSize = model.BatchSize,
+                        TrainAccuracy = result.TrainAccuracy,
+                        TrainLoss = result.TrainLoss,
+                        ValidationAccuracy = result.ValidationAccuracy,
+                        ValidationLoss = result.ValidationLoss,
+                        Fold = i + 1
+                    };
+                    _repository.InsertMLParameter(foldModel);
+                }
                 return RedirectToAction("Index", "Home");
             }
 
             return View(model);
+        }
+
+        [HttpGet]
+        public IActionResult Custom()
+        {
+            return View(new MLParameter { RunDate = DateTime.UtcNow });
         }
     }
 }

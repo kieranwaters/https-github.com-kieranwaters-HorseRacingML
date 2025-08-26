@@ -40,7 +40,7 @@ namespace HorseRacingML.ML
             };
         }
 
-        public (double TrainAccuracy, double TrainLoss, double ValidationAccuracy, double ValidationLoss) Train(MLParameter param)
+        public (double TrainAccuracy, double TrainLoss, double ValidationAccuracy, double ValidationLoss) Train(MLParameter param, int foldIndex, int foldCount)
         {
             // Enable GPU if available
             var gpus = tf.config.list_physical_devices("GPU");
@@ -121,30 +121,33 @@ namespace HorseRacingML.ML
             }
 
             int totalCount = featureList.Count;
-            int trainCount = (int)(totalCount * 0.8);
 
             int featureCount = keys.Count;
+            int foldSize = totalCount / foldCount;
+            int valStart = foldIndex * foldSize;
+            int valEnd = foldIndex == foldCount - 1 ? totalCount : valStart + foldSize;
 
-            // TensorFlow.NET does not currently support creating tensors directly from
-            // jagged arrays (float[][]). The original code attempted to pass the
-            // feature list to np.array which resulted in a NotImplementedException.
-            // Flatten the features into a single array and then reshape to the
-            // desired two-dimensional structure so that a tensor can be created.
-            var xTrain = np.array(featureList
-                .Take(trainCount)
+            var valFeatures = featureList.Skip(valStart).Take(valEnd - valStart).ToList();
+            var valLabels = labelList.Skip(valStart).Take(valEnd - valStart).ToList();
+
+            var trainFeatures = featureList.Take(valStart).Concat(featureList.Skip(valEnd)).ToList();
+            var trainLabels = labelList.Take(valStart).Concat(labelList.Skip(valEnd)).ToList();
+
+            int trainCount = trainFeatures.Count;
+            int valCount = valFeatures.Count;
+            var xTrain = np.array(trainFeatures
                 .SelectMany(f => f)
                 .ToArray())
                 .reshape(new Shape(trainCount, featureCount));
-            var yTrain = np.array(labelList.Take(trainCount).ToArray())
+            var yTrain = np.array(trainLabels.ToArray())
                 .reshape(new Shape(trainCount, 1));
 
-            var xVal = np.array(featureList
-                .Skip(trainCount)
+            var xVal = np.array(valFeatures
                 .SelectMany(f => f)
                 .ToArray())
-                .reshape(new Shape(totalCount - trainCount, featureCount));
-            var yVal = np.array(labelList.Skip(trainCount).ToArray())
-                .reshape(new Shape(totalCount - trainCount, 1));
+                .reshape(new Shape(valCount, featureCount));
+            var yVal = np.array(valLabels.ToArray())
+                .reshape(new Shape(valCount, 1));
 
             var graph = tf.Graph().as_default();
 

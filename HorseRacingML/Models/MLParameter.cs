@@ -19,6 +19,8 @@ namespace HorseRacingML.Models
         public int Epochs { get; set; }
         [Required]
         public int BatchSize { get; set; }
+        [Required]
+        public int Folds { get; set; }
         public double? TrainAccuracy { get; set; }
         public double? ValidationAccuracy { get; set; }
         public double? ValidationLoss { get; set; }

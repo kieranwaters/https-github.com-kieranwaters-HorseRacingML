@@ -36,6 +36,11 @@
         <input asp-for="BatchSize" class="form-control" />
         <span asp-validation-for="BatchSize" class="text-danger"></span>
     </div>
+    <div class="mb-3">
+        <label asp-for="Folds" class="form-label"></label>
+        <input asp-for="Folds" class="form-control" />
+        <span asp-validation-for="Folds" class="text-danger"></span>
+    </div>
     <input type="hidden" asp-for="RunDate" />
     <button type="submit" class="btn btn-primary">Save</button>
 </form>
