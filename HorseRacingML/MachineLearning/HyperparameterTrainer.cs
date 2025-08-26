@@ -149,7 +149,12 @@ namespace HorseRacingML.ML
             model.compile(optimizer: optimizer, loss: loss, metrics: new[] { metric });
 
             // Train the model (use validation_split to get validation metrics)
-            var hist = history.History;
+            var history = model.fit(x, y,
+                                    batch_size: param.BatchSize,
+                                    epochs: param.Epochs,
+                                    validation_split: 0.2f,
+                                    verbose: 0);
+            var hist = history.history;
 
             double trainLoss = ((NDArray)hist["loss"])[-1].ToArray<double>().First();
 
