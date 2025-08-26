@@ -181,6 +181,9 @@ namespace HorseRacingML.ML
             for (int epoch = 0; epoch < param.Epochs; epoch++)
             {
                 sess.run(optimizer, new FeedItem(x, xTrain), new FeedItem(y, yTrain));
+                double epochLoss = sess.run(loss, new FeedItem(x, xTrain), new FeedItem(y, yTrain)).ToArray<float>()[0];
+                double epochAcc = sess.run(accuracy, new FeedItem(x, xTrain), new FeedItem(y, yTrain)).ToArray<float>()[0];
+                Console.WriteLine($"Epoch {epoch + 1}/{param.Epochs} - loss: {epochLoss:F4} - acc: {epochAcc:F4}");
             }
 
             double trainLoss = sess.run(loss, new FeedItem(x, xTrain), new FeedItem(y, yTrain)).ToArray<float>()[0];
