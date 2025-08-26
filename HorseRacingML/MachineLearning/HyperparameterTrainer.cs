@@ -9,6 +9,9 @@ using Microsoft.Extensions.Configuration;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Tensorflow.Keras.Losses;
+using Tensorflow.Keras.Metrics;
+using Tensorflow.Keras.Engine;
 
 namespace HorseRacingML.ML
 {
@@ -142,17 +145,17 @@ namespace HorseRacingML.ML
             model.add(keras.layers.Dense(units: 1));
 
             var optimizer = keras.optimizers.Adam((float)param.LearningRate);
-            var loss = keras.losses.BinaryCrossentropy(from_logits: true);
-            var metric = keras.metrics.BinaryAccuracy();
+            var loss = new BinaryCrossentropy(from_logits: true);
+            var metric = new BinaryAccuracy();
 
             model.compile(optimizer: optimizer, loss: loss, metrics: new[] { metric });
 
             // Train the model (use validation_split to get validation metrics)
-            var history = model.fit(x: x, y: y,
-                                    batch_size: param.BatchSize,
-                                    epochs: param.Epochs,
-                                    validation_split: 0.2f,
-                                    verbose: 0);
+            History history = model.fit(x: x, y: y,
+                                       batch_size: param.BatchSize,
+                                       epochs: param.Epochs,
+                                       validation_split: 0.2f,
+                                       verbose: 0);
 
             var hist = history.history;
             double trainLoss = ((NDArray)hist["loss"])[-1].AsScalar<double>();
