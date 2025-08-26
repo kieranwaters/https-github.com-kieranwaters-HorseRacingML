@@ -9,6 +9,10 @@ using Microsoft.Extensions.Configuration;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Tensorflow.Keras.Losses;
+using Tensorflow.Keras.Metrics;
+using Tensorflow.Keras.Engine;
+using Tensorflow.Keras.Losses;
 
 namespace HorseRacingML.ML
 {
@@ -121,9 +125,9 @@ namespace HorseRacingML.ML
             }
 
             var x = np.array(featureList.ToArray());
-            var y = np.array(labelList.ToArray()).reshape(featureList.Count, 1);
+            var y = np.array(labelList.ToArray()).reshape(new Shape(featureList.Count, 1));
 
-            int featureCount = x.shape[1];
+            int featureCount = (int)x.shape[1];
 
             // Build a simple sequential model
             var model = keras.Sequential();
@@ -142,17 +146,17 @@ namespace HorseRacingML.ML
             model.add(keras.layers.Dense(units: 1));
 
             var optimizer = keras.optimizers.Adam((float)param.LearningRate);
-            var loss = keras.losses.BinaryCrossentropy(from_logits: true);
-            var metric = keras.metrics.BinaryAccuracy();
+            var loss = new BinaryCrossentropy(from_logits: true);
+            var metric = new BinaryAccuracy();
 
-            model.compile(optimizer: optimizer, loss: loss, metrics: new Tensorflow.Keras.Metrics.IMetricFunc[] { metric });
+            model.compile(optimizer: optimizer, loss: loss, metrics: new IMetricFunc[] { metric });
 
             // Train the model (use validation_split to get validation metrics)
-            var history = model.fit(x: x, y: y,
-                                   batch_size: param.BatchSize,
-                                   epochs: param.Epochs,
-                                   validation_split: 0.2f,
-                                   verbose: 0);
+            var history = model.Fit(x: x, y: y,
+                                                batch_size: param.BatchSize,
+                                                epochs: param.Epochs,
+                                                validation_split: 0.2f,
+                                                verbose: 0);
 
             var hist = history.history;
             double trainLoss = ((NDArray)hist["loss"])[-1].AsScalar<double>();
