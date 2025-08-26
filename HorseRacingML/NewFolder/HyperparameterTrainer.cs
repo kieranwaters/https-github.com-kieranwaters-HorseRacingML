@@ -49,10 +49,17 @@ namespace HorseRacingML.ML
             model.add(keras.layers.Dense(1, activation: keras.activations.Sigmoid));
 
             var optimizer = keras.optimizers.Adam((float)param.LearningRate);
-            model.compile(optimizer: optimizer, loss: "binary_crossentropy", metrics: new[] { "accuracy" });
+            model.compile(optimizer: optimizer,
+                         loss: keras.losses.BinaryCrossentropy(),
+                         metrics: new[] { "accuracy" });
 
-            model.fit(xTrain, yTrain, batch_size: param.BatchSize, epochs: param.Epochs,
-                      validation_data: (xVal, yVal), verbose: 0);
+            // Pass validation data as an array to avoid named/positional argument
+            // conflicts and ensure correct type inference.
+            model.fit(xTrain, yTrain,
+                      batch_size: param.BatchSize,
+                      epochs: param.Epochs,
+                      validation_data: new NDArray[] { xVal, yVal },
+                      verbose: 0);
 
             var trainEval = model.evaluate(xTrain, yTrain, verbose: 0);
             var valEval = model.evaluate(xVal, yVal, verbose: 0);
