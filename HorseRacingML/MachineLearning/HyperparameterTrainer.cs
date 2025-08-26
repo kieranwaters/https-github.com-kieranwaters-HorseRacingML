@@ -145,8 +145,8 @@ namespace HorseRacingML.ML
             model.add(keras.layers.Dense(units: 1));
 
             var optimizer = keras.optimizers.Adam((float)param.LearningRate);
-            var loss = keras.losses.BinaryCrossentropy(from_logits: true);
-            var metric = keras.metrics.BinaryAccuracy();
+            var loss = LossesOnly.Bfair_Crossentropy(from_logits: true);
+            var metric = MetricsCalc.Bfair_Calc();
 
             model.compile(optimizer: optimizer, loss: loss, metrics: new[] { metric });
 

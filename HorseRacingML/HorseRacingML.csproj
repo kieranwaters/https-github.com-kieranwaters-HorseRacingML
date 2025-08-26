@@ -17,7 +17,10 @@
 		<PackageReference Include="Selenium.Support" Version="4.35.0" />
 		<PackageReference Include="Selenium.WebDriver" Version="4.35.0" />
 		<PackageReference Include="Selenium.WebDriver.ChromeDriver" Version="139.0.7258.6800" />
+		<!-- Explicit reference to resolve package downgrade warning -->
+		<PackageReference Include="BrunoSoft.Bars" Version="1.0.50" />
 	</ItemGroup>
+
 
 	<ItemGroup>
 		<!-- Data access packages for inserting parsed race data -->
