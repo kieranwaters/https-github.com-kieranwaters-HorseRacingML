@@ -23,31 +23,33 @@ namespace HorseRacingML.ML
             }
 
             // Example dataset - random data for demonstration purposes
-            var x = np.random.rand(1000, 10).astype(np.float32);
-            var y = np.random.randint(0, 2, (1000, 1)).astype(np.float32);
+            // Tensorflow.NET's NumPy bindings expose ``random`` but not ``rand``.
+            // Use ``random``/``int`` helpers to create sample data.
+            var x = np.random.random(new Shape(1000, 10)).astype(np.float32);
+            var y = np.random.randint(0, 2, new Shape(1000, 1)).astype(np.float32);
 
             var xTrain = x[new Slice(0, 800)];
             var yTrain = y[new Slice(0, 800)];
             var xVal = x[new Slice(800, 1000)];
             var yVal = y[new Slice(800, 1000)];
 
-            var layers = new Tensorflow.Keras.LayersApi();
             var model = keras.Sequential();
-            model.add(layers.Dense(param.Units, activation: keras.activations.Relu, input_shape: new Shape(10)));
+            model.add(keras.layers.Dense(param.Units, activation: keras.activations.Relu,
+                                         input_shape: new Shape(10)));
             if (param.Dropout > 0)
-                model.add(layers.Dropout(param.Dropout));
+                model.add(keras.layers.Dropout((float)param.Dropout));
 
             for (int i = 1; i < param.Layers; i++)
             {
-                model.add(layers.Dense(param.Units, activation: keras.activations.Relu));
+                model.add(keras.layers.Dense(param.Units, activation: keras.activations.Relu));
                 if (param.Dropout > 0)
-                    model.add(layers.Dropout(param.Dropout));
+                    model.add(keras.layers.Dropout((float)param.Dropout));
             }
 
-            model.add(layers.Dense(1, activation: keras.activations.Sigmoid));
+            model.add(keras.layers.Dense(1, activation: keras.activations.Sigmoid));
 
-            var optimizer = keras.optimizers.Adam(param.LearningRate);
-            model.compile(optimizer, keras.losses.BinaryCrossentropy(), new[] { "accuracy" });
+            var optimizer = keras.optimizers.Adam((float)param.LearningRate);
+            model.compile(optimizer: optimizer, loss: "binary_crossentropy", metrics: new[] { "accuracy" });
 
             model.fit(xTrain, yTrain, batch_size: param.BatchSize, epochs: param.Epochs,
                       validation_data: (xVal, yVal), verbose: 0);
