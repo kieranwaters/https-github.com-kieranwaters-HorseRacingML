@@ -158,8 +158,8 @@ namespace HorseRacingML.ML
                       epochs: param.Epochs,
                       verbose: 0);
 
-            var trainResults = model.evaluate(xTrain, yTrain, verbose: 0);
-            var valResults = model.evaluate(xVal, yVal, verbose: 0);
+            var trainResults = model.evaluate(xTrain, yTrain).ToArray<float>();
+            var valResults = model.evaluate(xVal, yVal).ToArray<float>();
 
             double trainLoss = trainResults[0];
             double trainAcc = trainResults[1];

@@ -1,4 +1,7 @@
-﻿namespace HorseRacingML.ML
+﻿using Tensorflow.Keras.Metrics;
+using static Tensorflow.KerasApi;
+
+namespace HorseRacingML.ML
 {
     /// <summary>
     /// Provides custom metric functions used throughout the project.
@@ -6,11 +9,9 @@
     public static class MetricsCalc
     {
         /// <summary>
-        /// Returns the identifier for TensorFlow's binary accuracy metric.
-        /// Similar to the loss wrapper, this keeps existing references while
-        /// relying on the string-based API exposed by TensorFlow.NET's Keras
-        /// bindings.
+        /// Wraps TensorFlow's binary accuracy metric.
         /// </summary>
-        public static string Bfair_Calc() => "binary_accuracy";
+        public static IMetricFunc Bfair_Calc() =>
+            keras.metrics.BinaryAccuracy();
     }
 }
