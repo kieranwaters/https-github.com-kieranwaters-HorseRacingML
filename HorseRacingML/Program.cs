@@ -1,4 +1,5 @@
 using HorseRacingML.Data;
+using HorseRacingML.ML;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -8,6 +9,9 @@ builder.Services.AddControllersWithViews();
 // Register the repository so parsed data can be inserted into the database
 builder.Services.AddScoped<RacingRepository>(sp =>
     new RacingRepository(builder.Configuration.GetConnectionString("HorseRacingDb")!));
+
+// TensorFlow trainer for running models on the GPU
+builder.Services.AddSingleton<HyperparameterTrainer>();
 
 var app = builder.Build();
 
