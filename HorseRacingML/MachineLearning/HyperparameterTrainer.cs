@@ -123,12 +123,28 @@ namespace HorseRacingML.ML
             int totalCount = featureList.Count;
             int trainCount = (int)(totalCount * 0.8);
 
-            var xTrain = np.array(featureList.Take(trainCount).ToArray());
-            var yTrain = np.array(labelList.Take(trainCount).ToArray()).reshape(new Shape(trainCount, 1));
-            var xVal = np.array(featureList.Skip(trainCount).ToArray());
-            var yVal = np.array(labelList.Skip(trainCount).ToArray()).reshape(new Shape(totalCount - trainCount, 1));
+            int featureCount = keys.Count;
 
-            int featureCount = (int)xTrain.shape[1];
+            // TensorFlow.NET does not currently support creating tensors directly from
+            // jagged arrays (float[][]). The original code attempted to pass the
+            // feature list to np.array which resulted in a NotImplementedException.
+            // Flatten the features into a single array and then reshape to the
+            // desired two-dimensional structure so that a tensor can be created.
+            var xTrain = np.array(featureList
+                .Take(trainCount)
+                .SelectMany(f => f)
+                .ToArray())
+                .reshape(new Shape(trainCount, featureCount));
+            var yTrain = np.array(labelList.Take(trainCount).ToArray())
+                .reshape(new Shape(trainCount, 1));
+
+            var xVal = np.array(featureList
+                .Skip(trainCount)
+                .SelectMany(f => f)
+                .ToArray())
+                .reshape(new Shape(totalCount - trainCount, featureCount));
+            var yVal = np.array(labelList.Skip(trainCount).ToArray())
+                .reshape(new Shape(totalCount - trainCount, 1));
 
             var graph = tf.Graph().as_default();
 
