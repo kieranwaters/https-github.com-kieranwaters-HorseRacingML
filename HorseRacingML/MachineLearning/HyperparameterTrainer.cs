@@ -145,18 +145,17 @@ namespace HorseRacingML.ML
             model.add(keras.layers.Dense(units: 1));
 
             var optimizer = keras.optimizers.Adam((float)param.LearningRate);
-            var loss = new BinaryCrossentropy(from_logits: true);
-            var metric = new BinaryAccuracy();
+            var loss = keras.losses.BinaryCrossentropy(from_logits: true);
+            var metric = keras.metrics.BinaryAccuracy();
 
             model.compile(optimizer: optimizer, loss: loss, metrics: new[] { metric });
 
             // Train the model (use validation_split to get validation metrics)
-            History history = model.fit(x: x, y: y,
-                                       batch_size: param.BatchSize,
-                                       epochs: param.Epochs,
-                                       validation_split: 0.2f,
-                                       verbose: 0);
-
+            var history = model.fit(x: x, y: y,
+                                   batch_size: param.BatchSize,
+                                   epochs: param.Epochs,
+                                   validation_split: 0.2f,
+                                   verbose: 0);
             var hist = history.history;
             double trainLoss = ((NDArray)hist["loss"])[-1].AsScalar<double>();
             string accKey = hist.ContainsKey("binary_accuracy") ? "binary_accuracy" : "accuracy";
