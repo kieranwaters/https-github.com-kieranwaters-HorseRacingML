@@ -317,23 +317,26 @@ namespace HorseRacingML.ML
             var rnd = new Random();
             for (int epoch = 0; epoch < param.Epochs; epoch++)
             {
-                var indices = Enumerable.Range(0, trainCount)
+                var raceToIndices = trainRaceIds
+                    .Select((raceId, idx) => new { raceId, idx })
+                    .GroupBy(x => x.raceId)
+                    .ToDictionary(g => g.Key, g => g.Select(x => x.idx).ToList());
+
+                var shuffledRaces = raceToIndices.Keys
                     .OrderBy(_ => rnd.Next())
-                    .ToArray();
+                    .ToList();
+
                 double totalLoss = 0;
                 double totalAcc = 0;
                 int batchCount = 0;
+                var currentBatch = new List<int>();
 
-                for (int start = 0; start < trainCount; start += param.BatchSize)
+                void ProcessBatch(List<int> batchIdx)
                 {
-                    var batchIdx = indices.Skip(start)
-                        .Take(Math.Min(param.BatchSize, trainCount - start))
-                        .ToArray();
-
                     var batchX = np.array(batchIdx.SelectMany(i => trainFeatures[i]).ToArray())
-                        .reshape(new Shape(batchIdx.Length, featureCount));
+                        .reshape(new Shape(batchIdx.Count, featureCount));
                     var batchY = np.array(batchIdx.Select(i => trainLabels[i]).ToArray())
-                        .reshape(new Shape(batchIdx.Length, 1));
+                        .reshape(new Shape(batchIdx.Count, 1));
 
                     sess.run(optimizer, new FeedItem(x, batchX), new FeedItem(y, batchY));
 
@@ -347,7 +350,28 @@ namespace HorseRacingML.ML
                     totalAcc += ComputeWinnerAccuracy(batchRaceIds, batchPreds, batchLabels);
                     batchCount++;
                 }
+                foreach (var raceId in shuffledRaces)
+                {
+                    var indices = raceToIndices[raceId];
+                    if (currentBatch.Count + indices.Count > param.BatchSize && currentBatch.Count > 0)
+                    {
+                        ProcessBatch(currentBatch);
+                        currentBatch.Clear();
+                    }
 
+                    currentBatch.AddRange(indices);
+
+                    if (currentBatch.Count >= param.BatchSize)
+                    {
+                        ProcessBatch(currentBatch);
+                        currentBatch.Clear();
+                    }
+                }
+
+                if (currentBatch.Count > 0)
+                {
+                    ProcessBatch(currentBatch);
+                }
                 double epochLoss = batchCount > 0 ? totalLoss / batchCount : 0;
                 double epochAcc = batchCount > 0 ? totalAcc / batchCount : 0;
                 Console.WriteLine($"Epoch {epoch + 1}/{param.Epochs} - loss: {epochLoss:F4} - winner acc: {epochAcc:F4}");
