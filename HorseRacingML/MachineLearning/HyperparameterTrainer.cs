@@ -39,6 +39,35 @@ namespace HorseRacingML.ML
                 _ => Convert.ToSingle(value)
             };
         }
+        private static void AddDerivedFeatures(List<Dictionary<string, object>> rows)
+        {
+            var ordered = rows
+                .OrderBy(r => Convert.ToInt32(r["HorseId"]))
+                .ThenBy(r => (DateTime)r["RaceDate"])
+                .ToList();
+
+            var lastRace = new Dictionary<int, (DateTime date, short? finish)>();
+
+            foreach (var row in ordered)
+            {
+                int horseId = Convert.ToInt32(row["HorseId"]);
+                DateTime date = (DateTime)row["RaceDate"];
+                short? finish = row["FinishPos"] != null ? (short?)Convert.ToInt16(row["FinishPos"]) : null;
+
+                if (lastRace.TryGetValue(horseId, out var info))
+                {
+                    row["DaysSinceLastRace"] = (float)(date - info.date).TotalDays;
+                    row["LastFinishPos"] = info.finish ?? 0;
+                }
+                else
+                {
+                    row["DaysSinceLastRace"] = 0f;
+                    row["LastFinishPos"] = 0;
+                }
+
+                lastRace[horseId] = (date, finish);
+            }
+        }
 
         public (double TrainAccuracy, double TrainLoss, double ValidationAccuracy, double ValidationLoss) Train(MLParameter param, int foldIndex, int foldCount)
         {
@@ -96,13 +125,18 @@ namespace HorseRacingML.ML
                         LEFT JOIN Trainer t ON rr.TrainerId = t.TrainerId
                         LEFT JOIN Jockey j ON rr.JockeyId = j.JockeyId";
 
-            var rows = conn.Query(sql).ToList();
+            var rows = conn.Query(sql)
+                .Select(r => ((IDictionary<string, object>)r)
+                    .ToDictionary(k => k.Key, k => k.Value))
+                .ToList();
             if (rows.Count == 0)
             {
                 throw new InvalidOperationException("No training data found.");
             }
 
-            var keys = ((IDictionary<string, object>)rows[0]).Keys.ToList();
+            AddDerivedFeatures(rows);
+
+            var keys = rows[0].Keys.ToList();
             keys.Remove("FinishPos"); // we'll use this as the label
 
             var featureList = new List<float[]>();
@@ -114,10 +148,10 @@ namespace HorseRacingML.ML
                 var features = new float[keys.Count];
                 for (int i = 0; i < keys.Count; i++)
                 {
-                    features[i] = ConvertToFloat(dict[keys[i]]);
+                    features[i] = ConvertToFloat(row[keys[i]]);
                 }
                 featureList.Add(features);
-                labelList.Add(dict.TryGetValue("FinishPos", out var f) && f != null && Convert.ToInt32(f) == 1 ? 1f : 0f);
+                labelList.Add(row.TryGetValue("FinishPos", out var f) && f != null && Convert.ToInt32(f) == 1 ? 1f : 0f);
             }
 
             int totalCount = featureList.Count;
