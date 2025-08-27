@@ -307,14 +307,42 @@ namespace HorseRacingML.ML
 
             using var sess = tf.Session(graph);
             sess.run(tf.global_variables_initializer());
-
+            var rnd = new Random();
             for (int epoch = 0; epoch < param.Epochs; epoch++)
             {
-                sess.run(optimizer, new FeedItem(x, xTrain), new FeedItem(y, yTrain));
-                double epochLoss = sess.run(loss, new FeedItem(x, xTrain), new FeedItem(y, yTrain)).ToArray<float>()[0];
-                double epochAcc = ComputeWinnerAccuracy(trainRaceIds,
-                    sess.run(prediction, new FeedItem(x, xTrain)).ToArray<float>(),
-                    trainLabels);
+                var indices = Enumerable.Range(0, trainCount)
+                    .OrderBy(_ => rnd.Next())
+                    .ToArray();
+                double totalLoss = 0;
+                double totalAcc = 0;
+                int batchCount = 0;
+
+                for (int start = 0; start < trainCount; start += param.BatchSize)
+                {
+                    var batchIdx = indices.Skip(start)
+                        .Take(Math.Min(param.BatchSize, trainCount - start))
+                        .ToArray();
+
+                    var batchX = np.array(batchIdx.SelectMany(i => trainFeatures[i]).ToArray())
+                        .reshape(new Shape(batchIdx.Length, featureCount));
+                    var batchY = np.array(batchIdx.Select(i => trainLabels[i]).ToArray())
+                        .reshape(new Shape(batchIdx.Length, 1));
+
+                    sess.run(optimizer, new FeedItem(x, batchX), new FeedItem(y, batchY));
+
+                    double batchLoss = sess.run(loss, new FeedItem(x, batchX), new FeedItem(y, batchY)).ToArray<float>()[0];
+                    var batchPreds = sess.run(prediction, new FeedItem(x, batchX)).ToArray<float>();
+
+                    var batchRaceIds = batchIdx.Select(i => trainRaceIds[i]).ToList();
+                    var batchLabels = batchIdx.Select(i => trainLabels[i]).ToList();
+
+                    totalLoss += batchLoss;
+                    totalAcc += ComputeWinnerAccuracy(batchRaceIds, batchPreds, batchLabels);
+                    batchCount++;
+                }
+
+                double epochLoss = batchCount > 0 ? totalLoss / batchCount : 0;
+                double epochAcc = batchCount > 0 ? totalAcc / batchCount : 0;
                 Console.WriteLine($"Epoch {epoch + 1}/{param.Epochs} - loss: {epochLoss:F4} - winner acc: {epochAcc:F4}");
             }
 
