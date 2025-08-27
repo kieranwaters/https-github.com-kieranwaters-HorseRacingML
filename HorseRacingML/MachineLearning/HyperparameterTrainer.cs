@@ -50,7 +50,7 @@ namespace HorseRacingML.ML
             return total == 0 ? 0 : (double)correct / total;
         }
         private const int StringVectorSize = 4;
-
+        private static readonly DateTime BaseDate = new DateTime(2005, 1, 1);
         private static float[] EncodeFeature(object? value, int dim)
         {
             if (value == null)
@@ -58,12 +58,25 @@ namespace HorseRacingML.ML
 
             return value switch
             {
-                DateTime dt => new[] { (float)dt.Ticks },
+                // Convert to days relative to a recent base date to avoid huge tick values
+                DateTime dt => new[] { (float)(dt - BaseDate).TotalDays },
+                // Seconds are a reasonable scale for durations
                 TimeSpan ts => new[] { (float)ts.TotalSeconds },
                 string s => EncodeString(s, dim),
                 bool b => new[] { b ? 1f : 0f },
-                _ => new[] { Convert.ToSingle(value) }
+                // Scale down very large numeric values to keep them in a manageable range
+                _ => EncodeNumeric(value, dim)
             };
+        }
+
+        private static float[] EncodeNumeric(object value, int dim)
+        {
+            float f = Convert.ToSingle(value);
+            if (Math.Abs(f) > 1_000_000f)
+                f /= 1_000_000f;
+            var arr = new float[dim];
+            arr[0] = f;
+            return arr;
         }
 
         private static float[] EncodeString(string s, int dim)
