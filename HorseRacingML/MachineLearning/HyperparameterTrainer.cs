@@ -26,7 +26,24 @@ namespace HorseRacingML.ML
             _connectionString = configuration.GetConnectionString("HorseRacingDb")
                 ?? throw new InvalidOperationException("Connection string 'HorseRacingDb' not found.");
         }
+        private static double ComputeWinnerAccuracy(IReadOnlyList<int> raceIds,
+            IReadOnlyList<float> preds, IReadOnlyList<float> labels)
+        {
+            var grouped = raceIds.Select((raceId, idx) => new { raceId, idx })
+                                 .GroupBy(x => x.raceId);
 
+            int correct = 0;
+            int total = 0;
+
+            foreach (var group in grouped)
+            {
+                total++;
+                var best = group.OrderByDescending(g => preds[g.idx]).First().idx;
+                if (labels[best] == 1f) correct++;
+            }
+
+            return total == 0 ? 0 : (double)correct / total;
+        }
         private static float ConvertToFloat(object? value)
         {
             if (value == null) return 0f;
@@ -141,6 +158,7 @@ namespace HorseRacingML.ML
 
             var featureList = new List<float[]>();
             var labelList = new List<float>();
+            var raceIdList = new List<int>();
 
             foreach (var row in rows)
             {
@@ -152,6 +170,7 @@ namespace HorseRacingML.ML
                 }
                 featureList.Add(features);
                 labelList.Add(row.TryGetValue("FinishPos", out var f) && f != null && Convert.ToInt32(f) == 1 ? 1f : 0f);
+                raceIdList.Add(Convert.ToInt32(row["RaceId"]));
             }
 
             int totalCount = featureList.Count;
@@ -163,9 +182,11 @@ namespace HorseRacingML.ML
 
             var valFeatures = featureList.Skip(valStart).Take(valEnd - valStart).ToList();
             var valLabels = labelList.Skip(valStart).Take(valEnd - valStart).ToList();
+            var valRaceIds = raceIdList.Skip(valStart).Take(valEnd - valStart).ToList();
 
             var trainFeatures = featureList.Take(valStart).Concat(featureList.Skip(valEnd)).ToList();
             var trainLabels = labelList.Take(valStart).Concat(labelList.Skip(valEnd)).ToList();
+            var trainRaceIds = raceIdList.Take(valStart).Concat(raceIdList.Skip(valEnd)).ToList();
 
             int trainCount = trainFeatures.Count;
             int valCount = valFeatures.Count;
@@ -210,7 +231,6 @@ namespace HorseRacingML.ML
             var optimizer = tf.train.AdamOptimizer((float)param.LearningRate).minimize(loss);
 
             var prediction = tf.sigmoid(logits);
-            var accuracy = tf.reduce_mean(tf.cast(tf.equal(tf.round(prediction), y), tf.float32));
 
             using var sess = tf.Session(graph);
             sess.run(tf.global_variables_initializer());
@@ -219,14 +239,19 @@ namespace HorseRacingML.ML
             {
                 sess.run(optimizer, new FeedItem(x, xTrain), new FeedItem(y, yTrain));
                 double epochLoss = sess.run(loss, new FeedItem(x, xTrain), new FeedItem(y, yTrain)).ToArray<float>()[0];
-                double epochAcc = sess.run(accuracy, new FeedItem(x, xTrain), new FeedItem(y, yTrain)).ToArray<float>()[0];
-                Console.WriteLine($"Epoch {epoch + 1}/{param.Epochs} - loss: {epochLoss:F4} - acc: {epochAcc:F4}");
+                double epochAcc = ComputeWinnerAccuracy(trainRaceIds,
+                    sess.run(prediction, new FeedItem(x, xTrain)).ToArray<float>(),
+                    trainLabels);
+                Console.WriteLine($"Epoch {epoch + 1}/{param.Epochs} - loss: {epochLoss:F4} - winner acc: {epochAcc:F4}");
             }
 
             double trainLoss = sess.run(loss, new FeedItem(x, xTrain), new FeedItem(y, yTrain)).ToArray<float>()[0];
-            double trainAcc = sess.run(accuracy, new FeedItem(x, xTrain), new FeedItem(y, yTrain)).ToArray<float>()[0];
             double valLoss = sess.run(loss, new FeedItem(x, xVal), new FeedItem(y, yVal)).ToArray<float>()[0];
-            double valAcc = sess.run(accuracy, new FeedItem(x, xVal), new FeedItem(y, yVal)).ToArray<float>()[0];
+            var trainPreds = sess.run(prediction, new FeedItem(x, xTrain)).ToArray<float>();
+            var valPreds = sess.run(prediction, new FeedItem(x, xVal)).ToArray<float>();
+
+            double trainAcc = ComputeWinnerAccuracy(trainRaceIds, trainPreds, trainLabels);
+            double valAcc = ComputeWinnerAccuracy(valRaceIds, valPreds, valLabels);
 
             return (trainAcc, trainLoss, valAcc, valLoss);
         }

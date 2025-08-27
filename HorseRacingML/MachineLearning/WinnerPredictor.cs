@@ -13,21 +13,23 @@ namespace HorseRacingML.ML
     /// </summary>
     public static class WinnerPredictor
     {
-        /// <summary>
-        /// Predicts the winner for a race using a basic scoring heuristic.
-        /// </summary>
-        /// <param name="runners">Collection of runners taking part in a race.</param>
+        /// <param name="runners">Collection of runners which may include multiple races.</param>
+        /// <param name="raceId">The specific race to evaluate.</param>
         /// <returns>The <see cref="RunnerResult"/> predicted to win the race.</returns>
-        /// <exception cref="ArgumentException">Thrown when no runners are supplied.</exception>
-        public static RunnerResult PredictWinner(IEnumerable<RunnerResult> runners)
+        /// <exception cref="ArgumentException">Thrown when no runners are supplied or none match the race.</exception>
+        public static RunnerResult PredictWinner(IEnumerable<RunnerResult> runners, int raceId)
         {
-            if (runners == null || !runners.Any())
+            if (runners == null)
                 throw new ArgumentException("At least one runner must be supplied", nameof(runners));
+
+            var raceRunners = runners.Where(r => r.RaceId == raceId).ToList();
+            if (raceRunners.Count == 0)
+                throw new ArgumentException($"No runners found for race {raceId}", nameof(raceId));
 
             RunnerResult? best = null;
             double bestScore = double.NegativeInfinity;
 
-            foreach (var r in runners)
+            foreach (var r in raceRunners)
             {
                 // Lower starting price implies higher probability of winning
                 double odds = (double)(r.SP_Decimal ?? 0m);
