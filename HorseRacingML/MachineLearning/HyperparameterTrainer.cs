@@ -10,6 +10,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
+using System.IO;
+using System.Text.Json;
 using TensorShape = Tensorflow.Shape;
 
 namespace HorseRacingML.ML
@@ -205,6 +207,33 @@ namespace HorseRacingML.ML
                 labelList.Add(row.TryGetValue("FinishPos", out var f) && f != null && Convert.ToInt32(f) == 1 ? 1f : 0f);
                 raceIdList.Add(Convert.ToInt32(row["RaceId"]));
             }
+            var means = new float[featureCount];
+            var stdDevs = new float[featureCount];
+            if (featureList.Count > 0)
+            {
+                for (int j = 0; j < featureCount; j++)
+                {
+                    double sum = 0;
+                    foreach (var f in featureList)
+                    {
+                        sum += f[j];
+                    }
+                    means[j] = (float)(sum / featureList.Count);
+
+                    double var = 0;
+                    foreach (var f in featureList)
+                    {
+                        double diff = f[j] - means[j];
+                        var += diff * diff;
+                    }
+                    stdDevs[j] = (float)Math.Sqrt(var / featureList.Count);
+                    if (stdDevs[j] == 0f) stdDevs[j] = 1f;
+                }
+
+                var normParams = new NormalizationParameters { Mean = means, StdDev = stdDevs };
+                var normPath = Path.Combine(AppContext.BaseDirectory, "normalization.json");
+                File.WriteAllText(normPath, JsonSerializer.Serialize(normParams));
+            }
 
             int totalCount = featureList.Count;
             int foldSize = totalCount / foldCount;
@@ -218,6 +247,19 @@ namespace HorseRacingML.ML
             var trainFeatures = featureList.Take(valStart).Concat(featureList.Skip(valEnd)).ToList();
             var trainLabels = labelList.Take(valStart).Concat(labelList.Skip(valEnd)).ToList();
             var trainRaceIds = raceIdList.Take(valStart).Concat(raceIdList.Skip(valEnd)).ToList();
+            void Normalize(List<float[]> data)
+            {
+                foreach (var arr in data)
+                {
+                    for (int i = 0; i < featureCount; i++)
+                    {
+                        arr[i] = (arr[i] - means[i]) / stdDevs[i];
+                    }
+                }
+            }
+
+            Normalize(trainFeatures);
+            Normalize(valFeatures);
 
             int trainCount = trainFeatures.Count;
             int valCount = valFeatures.Count;
