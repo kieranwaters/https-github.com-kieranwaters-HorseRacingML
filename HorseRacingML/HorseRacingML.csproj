@@ -32,11 +32,10 @@
 		<PackageReference Include="SciSharp.TensorFlow.Redist-Linux-GPU" Version="2.10.1" Condition="'$(OS)'!='Windows_NT'" />
 	</ItemGroup>
 	<ItemGroup>
+		<!-- ML.NET packages used for winner prediction -->
 		<PackageReference Include="Microsoft.ML" Version="2.0.0" />
 		<PackageReference Include="Microsoft.ML.LightGbm" Version="2.0.0" />
 	</ItemGroup>
-
-
 	<ItemGroup>
 		<Folder Include="Views\NewFolder1\" />
 	</ItemGroup>
