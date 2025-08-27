@@ -175,17 +175,14 @@ namespace HorseRacingML.ML
                         LEFT JOIN Trainer t ON rr.TrainerId = t.TrainerId
                         LEFT JOIN Jockey j ON rr.JockeyId = j.JockeyId";
 
+            var rnd = new Random();
             var rows = conn.Query(sql)
                 .Select(r => ((IDictionary<string, object>)r)
                     .ToDictionary(k => k.Key, k => k.Value))
-                .ToList();
-            if (rows.Count == 0)
-            {
-                throw new InvalidOperationException("No training data found.");
-            }
-
-            var raceGroups = rows.Select((r, idx) => new { raceId = Convert.ToInt32(r["RaceId"]), idx })
-                                 .GroupBy(x => x.raceId)
+                // Randomize runner order within each race to avoid leaking
+                // finish position via default row ordering from the database.
+                .GroupBy(r => Convert.ToInt32(r["RaceId"]))
+                .SelectMany(g => g.OrderBy(_ => rnd.Next()))
                                  .ToList();
 
             int totalRaces = raceGroups.Count;
