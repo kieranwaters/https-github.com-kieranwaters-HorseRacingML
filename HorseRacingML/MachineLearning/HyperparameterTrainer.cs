@@ -98,7 +98,9 @@ namespace HorseRacingML.ML
                 for (int i = 0; i < PastRaceCount; i++)
                 {
                     var key = $"Last{i + 1}NormPos";
-                    row[key] = i < history.Count ? history[^1 - i].normFinish : 0f;
+                    row[key] = i < history.Count
+                        ? history[history.Count - 1 - i].normFinish
+                        : 0f;
                 }
 
                 if (row.TryGetValue("TrainerId", out var tObj) && tObj != null)
