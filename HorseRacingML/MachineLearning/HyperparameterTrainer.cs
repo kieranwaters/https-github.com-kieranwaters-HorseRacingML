@@ -193,6 +193,16 @@ namespace HorseRacingML.ML
             keys.Remove("CourseId");
             keys.Remove("TrainerId");
             keys.Remove("JockeyId");
+            keys.Remove("OutcomeCode");
+            keys.Remove("DistanceBeatenText");
+            keys.Remove("DistanceBeatenLengths");
+            keys.Remove("WinningTimeMs");
+            keys.Remove("ActualOff");
+            keys.Remove("SP_Fraction");
+            keys.Remove("SP_Decimal");
+            keys.Remove("OpeningFraction");
+            keys.Remove("TouchedHighFraction");
+            keys.Remove("TouchedLowFraction");
 
             var featureDims = keys.ToDictionary(k => k, k =>
             {
@@ -221,34 +231,6 @@ namespace HorseRacingML.ML
                 labelList.Add(row.TryGetValue("FinishPos", out var f) && f != null && Convert.ToInt32(f) == 1 ? 1f : 0f);
                 raceIdList.Add(Convert.ToInt32(row["RaceId"]));
             }
-            var means = new float[featureCount];
-            var stdDevs = new float[featureCount];
-            if (featureList.Count > 0)
-            {
-                for (int j = 0; j < featureCount; j++)
-                {
-                    double sum = 0;
-                    foreach (var f in featureList)
-                    {
-                        sum += f[j];
-                    }
-                    means[j] = (float)(sum / featureList.Count);
-
-                    double var = 0;
-                    foreach (var f in featureList)
-                    {
-                        double diff = f[j] - means[j];
-                        var += diff * diff;
-                    }
-                    stdDevs[j] = (float)Math.Sqrt(var / featureList.Count);
-                    if (stdDevs[j] == 0f) stdDevs[j] = 1f;
-                }
-
-                var normParams = new NormalizationParameters { Mean = means, StdDev = stdDevs };
-                var normPath = Path.Combine(AppContext.BaseDirectory, "normalization.json");
-                File.WriteAllText(normPath, JsonSerializer.Serialize(normParams));
-            }
-
             int totalCount = featureList.Count;
             int foldSize = totalCount / foldCount;
             int valStart = foldIndex * foldSize;
@@ -261,6 +243,35 @@ namespace HorseRacingML.ML
             var trainFeatures = featureList.Take(valStart).Concat(featureList.Skip(valEnd)).ToList();
             var trainLabels = labelList.Take(valStart).Concat(labelList.Skip(valEnd)).ToList();
             var trainRaceIds = raceIdList.Take(valStart).Concat(raceIdList.Skip(valEnd)).ToList();
+
+            // Compute normalization parameters using training data only
+            var means = new float[featureCount];
+            var stdDevs = new float[featureCount];
+            if (trainFeatures.Count > 0)
+            {
+                for (int j = 0; j < featureCount; j++)
+                {
+                    double sum = 0;
+                    foreach (var f in trainFeatures)
+                    {
+                        sum += f[j];
+                    }
+                    means[j] = (float)(sum / trainFeatures.Count);
+
+                    double var = 0;
+                    foreach (var f in trainFeatures)
+                    {
+                        double diff = f[j] - means[j];
+                        var += diff * diff;
+                    }
+                    stdDevs[j] = (float)Math.Sqrt(var / trainFeatures.Count);
+                    if (stdDevs[j] == 0f) stdDevs[j] = 1f;
+                }
+
+                var normParams = new NormalizationParameters { Mean = means, StdDev = stdDevs };
+                var normPath = Path.Combine(AppContext.BaseDirectory, "normalization.json");
+                File.WriteAllText(normPath, JsonSerializer.Serialize(normParams));
+            }
             void Normalize(List<float[]> data)
             {
                 foreach (var arr in data)
@@ -298,10 +309,10 @@ namespace HorseRacingML.ML
             var logits = tf.matmul(layer, wOut) + bOut;
             logits = tf.reshape(logits, new Shape(-1));
 
-            var loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels: y, logits: logits));
+            var loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels: y, logits: logits));
             var optimizer = tf.train.AdamOptimizer((float)param.LearningRate).minimize(loss);
 
-            var prediction = tf.nn.softmax(logits);
+            var prediction = tf.sigmoid(logits);
 
             using var sess = tf.Session(graph);
             sess.run(tf.global_variables_initializer());
