@@ -184,7 +184,9 @@ namespace HorseRacingML.ML
                 .GroupBy(r => Convert.ToInt32(r["RaceId"]))
                 .SelectMany(g => g.OrderBy(_ => rnd.Next()))
                                  .ToList();
-
+            var raceGroups = rows
+               .GroupBy(r => Convert.ToInt32(r["RaceId"]))
+               .ToList();
             int totalRaces = raceGroups.Count;
             int foldSize = totalRaces / foldCount;
             int valStart = foldIndex * foldSize;
@@ -347,7 +349,6 @@ namespace HorseRacingML.ML
 
             using var sess = tf.Session(graph);
             sess.run(tf.global_variables_initializer());
-            var rnd = new Random();
             for (int epoch = 0; epoch < param.Epochs; epoch++)
             {
                 var raceToIndices = trainRaceIds
