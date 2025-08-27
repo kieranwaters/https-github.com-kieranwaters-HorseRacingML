@@ -31,6 +31,10 @@
 		<PackageReference Include="SciSharp.TensorFlow.Redist-Windows-GPU" Version="2.10.1" Condition="'$(OS)'=='Windows_NT'" />
 		<PackageReference Include="SciSharp.TensorFlow.Redist-Linux-GPU" Version="2.10.1" Condition="'$(OS)'!='Windows_NT'" />
 	</ItemGroup>
+	<ItemGroup>
+		<PackageReference Include="Microsoft.ML" Version="2.0.0" />
+		<PackageReference Include="Microsoft.ML.LightGbm" Version="2.0.0" />
+	</ItemGroup>
 
 
 	<ItemGroup>
