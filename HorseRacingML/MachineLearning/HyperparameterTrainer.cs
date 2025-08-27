@@ -247,6 +247,11 @@ namespace HorseRacingML.ML
             var trainFeatures = featureList.Take(valStart).Concat(featureList.Skip(valEnd)).ToList();
             var trainLabels = labelList.Take(valStart).Concat(labelList.Skip(valEnd)).ToList();
             var trainRaceIds = raceIdList.Take(valStart).Concat(raceIdList.Skip(valEnd)).ToList();
+            int posCount = trainLabels.Count(l => l == 1f);
+            int negCount = trainLabels.Count - posCount;
+            double ratio = negCount == 0 ? 0 : (double)posCount / negCount;
+            Console.WriteLine($"Training labels - positive: {posCount}, negative: {negCount}, ratio: {ratio:F4}");
+            float posWeight = posCount == 0 ? 1f : (float)negCount / posCount;
             void Normalize(List<float[]> data)
             {
                 foreach (var arr in data)
@@ -281,7 +286,7 @@ namespace HorseRacingML.ML
 
             var x = tf.placeholder(tf.float32, shape: new TensorShape(-1, featureCount), name: "x");
             var y = tf.placeholder(tf.float32, shape: new TensorShape(-1, 1), name: "y");
-
+            var posWeightTensor = tf.constant(posWeight);
             Tensor layer = x;
             int inputDim = featureCount;
             for (int i = 0; i < param.Layers; i++)
@@ -300,7 +305,7 @@ namespace HorseRacingML.ML
             var bOut = tf.Variable(tf.zeros(1), name: "bOut");
             var logits = tf.matmul(layer, wOut) + bOut;
 
-            var loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels: y, logits: logits));
+            var loss = tf.reduce_mean(tf.nn.weighted_cross_entropy_with_logits(labels: y, logits: logits, pos_weight: posWeightTensor));
             var optimizer = tf.train.AdamOptimizer((float)param.LearningRate).minimize(loss);
 
             var prediction = tf.sigmoid(logits);
