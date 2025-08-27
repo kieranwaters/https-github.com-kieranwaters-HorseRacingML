@@ -8,6 +8,8 @@ using Microsoft.Extensions.Configuration;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 using TensorShape = Tensorflow.Shape;
 
 namespace HorseRacingML.ML
@@ -44,17 +46,32 @@ namespace HorseRacingML.ML
 
             return total == 0 ? 0 : (double)correct / total;
         }
-        private static float ConvertToFloat(object? value)
+        private const int StringVectorSize = 4;
+
+        private static float[] EncodeFeature(object? value, int dim)
         {
-            if (value == null) return 0f;
+            if (value == null)
+                return new float[dim];
+
             return value switch
             {
-                DateTime dt => dt.Ticks,
-                TimeSpan ts => (float)ts.TotalSeconds,
-                string s => Math.Abs(s.GetHashCode()),
-                bool b => b ? 1f : 0f,
-                _ => Convert.ToSingle(value)
+                DateTime dt => new[] { (float)dt.Ticks },
+                TimeSpan ts => new[] { (float)ts.TotalSeconds },
+                string s => EncodeString(s, dim),
+                bool b => new[] { b ? 1f : 0f },
+                _ => new[] { Convert.ToSingle(value) }
             };
+        }
+
+        private static float[] EncodeString(string s, int dim)
+        {
+            var hash = MD5.HashData(Encoding.UTF8.GetBytes(s));
+            var vec = new float[dim];
+            for (int i = 0; i < dim; i++)
+            {
+                vec[i] = hash[i] / 255f;
+            }
+            return vec;
         }
         private static void AddDerivedFeatures(List<Dictionary<string, object>> rows)
         {
@@ -155,6 +172,19 @@ namespace HorseRacingML.ML
 
             var keys = rows[0].Keys.ToList();
             keys.Remove("FinishPos"); // we'll use this as the label
+            keys.Remove("RaceId");
+            keys.Remove("HorseId");
+            keys.Remove("CourseId");
+            keys.Remove("TrainerId");
+            keys.Remove("JockeyId");
+
+            var featureDims = keys.ToDictionary(k => k, k =>
+            {
+                var sample = rows.Select(r => r[k]).FirstOrDefault(v => v != null);
+                return sample is string ? StringVectorSize : 1;
+            });
+
+            int featureCount = featureDims.Values.Sum();
 
             var featureList = new List<float[]>();
             var labelList = new List<float>();
@@ -162,11 +192,14 @@ namespace HorseRacingML.ML
 
             foreach (var row in rows)
             {
-                var dict = (IDictionary<string, object>)row;
-                var features = new float[keys.Count];
-                for (int i = 0; i < keys.Count; i++)
+                var features = new float[featureCount];
+                int offset = 0;
+                foreach (var key in keys)
                 {
-                    features[i] = ConvertToFloat(row[keys[i]]);
+                    int dim = featureDims[key];
+                    var vec = EncodeFeature(row[key], dim);
+                    Array.Copy(vec, 0, features, offset, dim);
+                    offset += dim;
                 }
                 featureList.Add(features);
                 labelList.Add(row.TryGetValue("FinishPos", out var f) && f != null && Convert.ToInt32(f) == 1 ? 1f : 0f);
@@ -174,8 +207,6 @@ namespace HorseRacingML.ML
             }
 
             int totalCount = featureList.Count;
-
-            int featureCount = keys.Count;
             int foldSize = totalCount / foldCount;
             int valStart = foldIndex * foldSize;
             int valEnd = foldIndex == foldCount - 1 ? totalCount : valStart + foldSize;
