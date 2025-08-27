@@ -474,7 +474,7 @@ namespace HorseRacingML.ML
             var graph = tf.Graph().as_default();
 
             var x = tf.placeholder(tf.float32, shape: new TensorShape(-1, featureCount), name: "x");
-            var y = tf.placeholder(tf.float32, shape: new TensorShape(-1), name: "y");
+            var y = tf.placeholder(tf.int32, shape: new TensorShape(1), name: "y");
             Tensor layer = x;
             int inputDim = featureCount;
             for (int i = 0; i < param.Layers; i++)
@@ -494,10 +494,11 @@ namespace HorseRacingML.ML
             var logits = tf.matmul(layer, wOut) + bOut;
             logits = tf.reshape(logits, new Shape(-1));
 
-            var loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels: y, logits: logits));
+            var logits2D = tf.reshape(logits, new Shape(1, -1));
+            var loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(labels: y, logits: logits2D));
             var optimizer = tf.train.AdamOptimizer((float)param.LearningRate).minimize(loss);
 
-            var prediction = tf.sigmoid(logits);
+            var prediction = tf.reshape(tf.nn.softmax(logits2D), new Shape(-1));
 
             using var sess = tf.Session(graph);
             sess.run(tf.global_variables_initializer());
@@ -527,7 +528,12 @@ namespace HorseRacingML.ML
                         var indices = race.Select(g => g.idx).ToList();
                         var batchX = np.array(indices.SelectMany(i => trainFeatures[i]).ToArray())
                             .reshape(new Shape(indices.Count, featureCount));
-                        var batchY = np.array(indices.Select(i => trainLabels[i]).ToArray());
+                        var raceLabels = indices.Select(i => trainLabels[i]).ToList();
+                        int winnerIdx = raceLabels.FindIndex(l => l > 0.5f);
+                        if (winnerIdx < 0)
+                            continue;
+
+                        var batchY = np.array(new[] { winnerIdx });
 
                         sess.run(optimizer, new FeedItem(x, batchX), new FeedItem(y, batchY));
 
@@ -535,8 +541,6 @@ namespace HorseRacingML.ML
                         var racePreds = sess.run(prediction, new FeedItem(x, batchX)).ToArray<float>();
 
                         var raceIds = indices.Select(i => trainRaceIds[i]).ToList();
-                        var raceLabels = indices.Select(i => trainLabels[i]).ToList();
-
                         totalLoss += raceLoss;
                         totalAcc += ComputeWinnerAccuracy(raceIds, racePreds, raceLabels);
                         batchCount++;
@@ -581,7 +585,11 @@ namespace HorseRacingML.ML
                     var indices = grp.Select(g => g.idx).ToList();
                     var batchX = np.array(indices.SelectMany(i => feats[i]).ToArray())
                         .reshape(new Shape(indices.Count, featureCount));
-                    var batchY = np.array(indices.Select(i => labs[i]).ToArray());
+                    var raceLabels = indices.Select(i => labs[i]).ToList();
+                    int winnerIdx = raceLabels.FindIndex(l => l > 0.5f);
+                    if (winnerIdx < 0)
+                        continue;
+                    var batchY = np.array(new[] { winnerIdx });
                     totLoss += sess.run(loss, new FeedItem(x, batchX), new FeedItem(y, batchY)).ToArray<float>()[0];
                     var p = sess.run(prediction, new FeedItem(x, batchX)).ToArray<float>();
                     for (int j = 0; j < indices.Count; j++) preds[indices[j]] = p[j];
