@@ -102,7 +102,7 @@ namespace HorseRacingML.ML
                         ? history[history.Count - 1 - i].normFinish
                         : 0f;
                 }
-
+                //
                 if (row.TryGetValue("TrainerId", out var tObj) && tObj != null)
                 {
                     int tId = Convert.ToInt32(tObj);
