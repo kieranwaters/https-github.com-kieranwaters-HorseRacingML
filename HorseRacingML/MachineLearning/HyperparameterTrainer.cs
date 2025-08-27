@@ -305,7 +305,9 @@ namespace HorseRacingML.ML
             var bOut = tf.Variable(tf.zeros(1), name: "bOut");
             var logits = tf.matmul(layer, wOut) + bOut;
 
-            var loss = tf.reduce_mean(tf.nn.weighted_cross_entropy_with_logits(labels: y, logits: logits, pos_weight: posWeightTensor));
+            var sigmoidLoss = tf.nn.sigmoid_cross_entropy_with_logits(labels: y, logits: logits);
+            var weightMultiplier = y * (posWeightTensor - 1) + 1;
+            var loss = tf.reduce_mean(sigmoidLoss * weightMultiplier);
             var optimizer = tf.train.AdamOptimizer((float)param.LearningRate).minimize(loss);
 
             var prediction = tf.sigmoid(logits);
