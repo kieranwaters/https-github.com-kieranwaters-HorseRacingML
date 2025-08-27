@@ -42,8 +42,9 @@ namespace HorseRacingML.ML
             foreach (var group in grouped)
             {
                 total++;
-                var best = group.OrderByDescending(g => preds[g.idx]).First().idx;
-                if (labels[best] == 1f) correct++;
+                var bestPred = group.OrderByDescending(g => preds[g.idx]).First().idx;
+                var trueIdx = group.OrderByDescending(g => labels[g.idx]).First().idx;
+                if (bestPred == trueIdx) correct++;
             }
 
             return total == 0 ? 0 : (double)correct / total;
@@ -247,11 +248,6 @@ namespace HorseRacingML.ML
             var trainFeatures = featureList.Take(valStart).Concat(featureList.Skip(valEnd)).ToList();
             var trainLabels = labelList.Take(valStart).Concat(labelList.Skip(valEnd)).ToList();
             var trainRaceIds = raceIdList.Take(valStart).Concat(raceIdList.Skip(valEnd)).ToList();
-            int posCount = trainLabels.Count(l => l == 1f);
-            int negCount = trainLabels.Count - posCount;
-            double ratio = negCount == 0 ? 0 : (double)posCount / negCount;
-            Console.WriteLine($"Training labels - positive: {posCount}, negative: {negCount}, ratio: {ratio:F4}");
-            float posWeight = posCount == 0 ? 1f : (float)negCount / posCount;
             void Normalize(List<float[]> data)
             {
                 foreach (var arr in data)
@@ -266,27 +262,10 @@ namespace HorseRacingML.ML
             Normalize(trainFeatures);
             Normalize(valFeatures);
 
-            int trainCount = trainFeatures.Count;
-            int valCount = valFeatures.Count;
-            var xTrain = np.array(trainFeatures
-                .SelectMany(f => f)
-                .ToArray())
-                .reshape(new Shape(trainCount, featureCount));
-            var yTrain = np.array(trainLabels.ToArray())
-                .reshape(new Shape(trainCount, 1));
-
-            var xVal = np.array(valFeatures
-                .SelectMany(f => f)
-                .ToArray())
-                .reshape(new Shape(valCount, featureCount));
-            var yVal = np.array(valLabels.ToArray())
-                .reshape(new Shape(valCount, 1));
-
             var graph = tf.Graph().as_default();
 
             var x = tf.placeholder(tf.float32, shape: new TensorShape(-1, featureCount), name: "x");
-            var y = tf.placeholder(tf.float32, shape: new TensorShape(-1, 1), name: "y");
-            var posWeightTensor = tf.constant(posWeight);
+            var y = tf.placeholder(tf.float32, shape: new TensorShape(-1), name: "y");
             Tensor layer = x;
             int inputDim = featureCount;
             for (int i = 0; i < param.Layers; i++)
@@ -304,13 +283,12 @@ namespace HorseRacingML.ML
             var wOut = tf.Variable(tf.random.normal((inputDim, 1)), name: "wOut");
             var bOut = tf.Variable(tf.zeros(1), name: "bOut");
             var logits = tf.matmul(layer, wOut) + bOut;
+            logits = tf.reshape(logits, new Shape(-1));
 
-            var sigmoidLoss = tf.nn.sigmoid_cross_entropy_with_logits(labels: y, logits: logits);
-            var weightMultiplier = y * (posWeightTensor - 1) + 1;
-            var loss = tf.reduce_mean(sigmoidLoss * weightMultiplier);
+            var loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels: y, logits: logits));
             var optimizer = tf.train.AdamOptimizer((float)param.LearningRate).minimize(loss);
 
-            var prediction = tf.sigmoid(logits);
+            var prediction = tf.nn.softmax(logits);
 
             using var sess = tf.Session(graph);
             sess.run(tf.global_variables_initializer());
@@ -333,22 +311,28 @@ namespace HorseRacingML.ML
 
                 void ProcessBatch(List<int> batchIdx)
                 {
-                    var batchX = np.array(batchIdx.SelectMany(i => trainFeatures[i]).ToArray())
-                        .reshape(new Shape(batchIdx.Count, featureCount));
-                    var batchY = np.array(batchIdx.Select(i => trainLabels[i]).ToArray())
-                        .reshape(new Shape(batchIdx.Count, 1));
+                    var races = batchIdx.Select(i => new { idx = i, raceId = trainRaceIds[i] })
+                                      .GroupBy(g => g.raceId);
 
-                    sess.run(optimizer, new FeedItem(x, batchX), new FeedItem(y, batchY));
+                    foreach (var race in races)
+                    {
+                        var indices = race.Select(g => g.idx).ToList();
+                        var batchX = np.array(indices.SelectMany(i => trainFeatures[i]).ToArray())
+                            .reshape(new Shape(indices.Count, featureCount));
+                        var batchY = np.array(indices.Select(i => trainLabels[i]).ToArray());
 
-                    double batchLoss = sess.run(loss, new FeedItem(x, batchX), new FeedItem(y, batchY)).ToArray<float>()[0];
-                    var batchPreds = sess.run(prediction, new FeedItem(x, batchX)).ToArray<float>();
+                        sess.run(optimizer, new FeedItem(x, batchX), new FeedItem(y, batchY));
 
-                    var batchRaceIds = batchIdx.Select(i => trainRaceIds[i]).ToList();
-                    var batchLabels = batchIdx.Select(i => trainLabels[i]).ToList();
+                        double raceLoss = sess.run(loss, new FeedItem(x, batchX), new FeedItem(y, batchY)).ToArray<float>()[0];
+                        var racePreds = sess.run(prediction, new FeedItem(x, batchX)).ToArray<float>();
 
-                    totalLoss += batchLoss;
-                    totalAcc += ComputeWinnerAccuracy(batchRaceIds, batchPreds, batchLabels);
-                    batchCount++;
+                        var raceIds = indices.Select(i => trainRaceIds[i]).ToList();
+                        var raceLabels = indices.Select(i => trainLabels[i]).ToList();
+
+                        totalLoss += raceLoss;
+                        totalAcc += ComputeWinnerAccuracy(raceIds, racePreds, raceLabels);
+                        batchCount++;
+                    }
                 }
                 foreach (var raceId in shuffledRaces)
                 {
@@ -377,10 +361,30 @@ namespace HorseRacingML.ML
                 Console.WriteLine($"Epoch {epoch + 1}/{param.Epochs} - loss: {epochLoss:F4} - winner acc: {epochAcc:F4}");
             }
 
-            double trainLoss = sess.run(loss, new FeedItem(x, xTrain), new FeedItem(y, yTrain)).ToArray<float>()[0];
-            double valLoss = sess.run(loss, new FeedItem(x, xVal), new FeedItem(y, yVal)).ToArray<float>()[0];
-            var trainPreds = sess.run(prediction, new FeedItem(x, xTrain)).ToArray<float>();
-            var valPreds = sess.run(prediction, new FeedItem(x, xVal)).ToArray<float>();
+            double ComputeDatasetMetrics(List<float[]> feats, List<float> labs, List<int> races, out float[] preds)
+            {
+                preds = new float[feats.Count];
+                var grouped = races.Select((raceId, idx) => new { raceId, idx })
+                                   .GroupBy(x => x.raceId);
+                double totLoss = 0;
+                int cnt = 0;
+                foreach (var grp in grouped)
+                {
+                    var indices = grp.Select(g => g.idx).ToList();
+                    var batchX = np.array(indices.SelectMany(i => feats[i]).ToArray())
+                        .reshape(new Shape(indices.Count, featureCount));
+                    var batchY = np.array(indices.Select(i => labs[i]).ToArray());
+                    totLoss += sess.run(loss, new FeedItem(x, batchX), new FeedItem(y, batchY)).ToArray<float>()[0];
+                    var p = sess.run(prediction, new FeedItem(x, batchX)).ToArray<float>();
+                    for (int j = 0; j < indices.Count; j++) preds[indices[j]] = p[j];
+                    cnt++;
+                }
+                return cnt > 0 ? totLoss / cnt : 0;
+            }
+
+            var trainLoss = ComputeDatasetMetrics(trainFeatures, trainLabels, trainRaceIds, out var trainPreds);
+            var valLoss = ComputeDatasetMetrics(valFeatures, valLabels, valRaceIds, out var valPreds);
+
 
             double trainAcc = ComputeWinnerAccuracy(trainRaceIds, trainPreds, trainLabels);
             double valAcc = ComputeWinnerAccuracy(valRaceIds, valPreds, valLabels);
