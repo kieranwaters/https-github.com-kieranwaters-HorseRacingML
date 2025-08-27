@@ -203,6 +203,10 @@ namespace HorseRacingML.ML
             keys.Remove("OpeningFraction");
             keys.Remove("TouchedHighFraction");
             keys.Remove("TouchedLowFraction");
+            keys.Remove("HorseName");
+            keys.Remove("JockeyName");
+            keys.Remove("TrainerName");
+            keys.Remove("Title");
 
             var featureDims = keys.ToDictionary(k => k, k =>
             {
@@ -231,20 +235,43 @@ namespace HorseRacingML.ML
                 labelList.Add(row.TryGetValue("FinishPos", out var f) && f != null && Convert.ToInt32(f) == 1 ? 1f : 0f);
                 raceIdList.Add(Convert.ToInt32(row["RaceId"]));
             }
-            int totalCount = featureList.Count;
-            int foldSize = totalCount / foldCount;
+            var raceGroups = raceIdList
+                .Select((raceId, idx) => new { raceId, idx })
+                .GroupBy(x => x.raceId)
+                .ToList();
+
+            int totalRaces = raceGroups.Count;
+            int foldSize = totalRaces / foldCount;
             int valStart = foldIndex * foldSize;
-            int valEnd = foldIndex == foldCount - 1 ? totalCount : valStart + foldSize;
+            int valEnd = foldIndex == foldCount - 1 ? totalRaces : valStart + foldSize;
+            var valRaceSet = raceGroups
+                .Skip(valStart)
+                .Take(valEnd - valStart)
+                .Select(g => g.Key)
+                .ToHashSet();
 
-            var valFeatures = featureList.Skip(valStart).Take(valEnd - valStart).ToList();
-            var valLabels = labelList.Skip(valStart).Take(valEnd - valStart).ToList();
-            var valRaceIds = raceIdList.Skip(valStart).Take(valEnd - valStart).ToList();
+            var valFeatures = new List<float[]>();
+            var valLabels = new List<float>();
+            var valRaceIds = new List<int>();
+            var trainFeatures = new List<float[]>();
+            var trainLabels = new List<float>();
+            var trainRaceIds = new List<int>();
 
-            var trainFeatures = featureList.Take(valStart).Concat(featureList.Skip(valEnd)).ToList();
-            var trainLabels = labelList.Take(valStart).Concat(labelList.Skip(valEnd)).ToList();
-            var trainRaceIds = raceIdList.Take(valStart).Concat(raceIdList.Skip(valEnd)).ToList();
-
-            // Compute normalization parameters using training data only
+            for (int i = 0; i < featureList.Count; i++)
+            {
+                if (valRaceSet.Contains(raceIdList[i]))
+                {
+                    valFeatures.Add(featureList[i]);
+                    valLabels.Add(labelList[i]);
+                    valRaceIds.Add(raceIdList[i]);
+                }
+                else
+                {
+                    trainFeatures.Add(featureList[i]);
+                    trainLabels.Add(labelList[i]);
+                    trainRaceIds.Add(raceIdList[i]);
+                }
+            }
             var means = new float[featureCount];
             var stdDevs = new float[featureCount];
             if (trainFeatures.Count > 0)
