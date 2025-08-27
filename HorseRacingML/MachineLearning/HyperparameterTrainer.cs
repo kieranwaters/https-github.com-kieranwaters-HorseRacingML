@@ -80,6 +80,17 @@ namespace HorseRacingML.ML
             var trainerStats = new Dictionary<int, (int starts, int wins)>();
             var jockeyStats = new Dictionary<int, (int starts, int wins)>();
 
+            // New dictionaries for going, age restriction, and distance preferences
+            var goingStats = new Dictionary<int, Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>>();
+            var goingCourseStats = new Dictionary<int, Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>>();
+            var ageStats = new Dictionary<int, Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>>();
+            var distanceBucketStats = new Dictionary<int, Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>>();
+            var horseDistanceAll = new Dictionary<int, (double sum, int count)>();
+            var horseDistanceWins = new Dictionary<int, (double sum, int count)>();
+
+            static string DistanceBucket(int yards)
+                => yards < 1760 ? "Sprint" : yards < 2640 ? "Middle" : "Long";
+
             foreach (var row in ordered)
             {
                 int horseId = Convert.ToInt32(row["HorseId"]);
@@ -93,6 +104,7 @@ namespace HorseRacingML.ML
                     horseHistory[horseId] = history;
                 }
 
+                // Basic history features
                 row["DaysSinceLastRace"] = history.Count > 0 ? (float)(date - history[^1].date).TotalDays : 0f;
                 row["LastFinishPos"] = history.Count > 0 ? history[^1].finish ?? 0 : 0;
                 for (int i = 0; i < PastRaceCount; i++)
@@ -102,7 +114,65 @@ namespace HorseRacingML.ML
                         ? history[history.Count - 1 - i].normFinish
                         : 0f;
                 }
-                //
+
+                // Going performance
+                string going = row["Going"] as string ?? "Unknown";
+                if (!goingStats.TryGetValue(horseId, out var gDict))
+                {
+                    gDict = new();
+                    goingStats[horseId] = gDict;
+                }
+                if (!gDict.TryGetValue(going, out var gStats))
+                    gStats = (0, 0, 0f, 0f);
+                row["GoingWinRate"] = gStats.starts > 0 ? (float)gStats.wins / gStats.starts : 0f;
+                row["GoingAvgNorm"] = gStats.starts > 0 ? gStats.sumNorm / gStats.starts : 0f;
+                row["LastGoingNormPos"] = gStats.lastNorm;
+
+                // Going + Course preference
+                int courseId = row["CourseId"] != null ? Convert.ToInt32(row["CourseId"]) : 0;
+                string gcKey = going + "_" + courseId;
+                if (!goingCourseStats.TryGetValue(horseId, out var gcDict))
+                {
+                    gcDict = new();
+                    goingCourseStats[horseId] = gcDict;
+                }
+                if (!gcDict.TryGetValue(gcKey, out var gcStats))
+                    gcStats = (0, 0, 0f, 0f);
+                row["GoingCourseWinRate"] = gcStats.starts > 0 ? (float)gcStats.wins / gcStats.starts : 0f;
+
+                // Age restriction context
+                string ageRes = row["AgeRestriction"] as string ?? "Unknown";
+                if (!ageStats.TryGetValue(horseId, out var aDict))
+                {
+                    aDict = new();
+                    ageStats[horseId] = aDict;
+                }
+                if (!aDict.TryGetValue(ageRes, out var aStats))
+                    aStats = (0, 0, 0f, 0f);
+                row["AgeRestrictionWinRate"] = aStats.starts > 0 ? (float)aStats.wins / aStats.starts : 0f;
+                row["LastAgeRestrictionNormPos"] = aStats.lastNorm;
+
+                // Distance specialization
+                int distanceYards = row["DistanceYards"] != null ? Convert.ToInt32(row["DistanceYards"]) : 0;
+                string bucket = DistanceBucket(distanceYards);
+                row["DistanceBucket"] = bucket;
+                if (!distanceBucketStats.TryGetValue(horseId, out var dDict))
+                {
+                    dDict = new();
+                    distanceBucketStats[horseId] = dDict;
+                }
+                if (!dDict.TryGetValue(bucket, out var dStats))
+                    dStats = (0, 0, 0f, 0f);
+                row["DistanceBucketWinRate"] = dStats.starts > 0 ? (float)dStats.wins / dStats.starts : 0f;
+                row["LastDistanceBucketNormPos"] = dStats.lastNorm;
+
+                // Preferred distance deviation
+                horseDistanceAll.TryGetValue(horseId, out var allDist);
+                horseDistanceWins.TryGetValue(horseId, out var winDist);
+                double pref = winDist.count > 0 ? winDist.sum / winDist.count : (allDist.count > 0 ? allDist.sum / allDist.count : distanceYards);
+                row["DistanceFromPreferred"] = (float)Math.Abs(distanceYards - pref);
+
+                // Trainer statistics
                 if (row.TryGetValue("TrainerId", out var tObj) && tObj != null)
                 {
                     int tId = Convert.ToInt32(tObj);
@@ -118,6 +188,7 @@ namespace HorseRacingML.ML
                     row["TrainerWinRate"] = 0f;
                 }
 
+                // Jockey statistics
                 if (row.TryGetValue("JockeyId", out var jObj) && jObj != null)
                 {
                     int jId = Convert.ToInt32(jObj);
@@ -133,12 +204,48 @@ namespace HorseRacingML.ML
                     row["JockeyWinRate"] = 0f;
                 }
 
+                // Compute normalized finish
                 float normFinish = (finish.HasValue && runnerCount > 1)
                     ? (runnerCount - finish.Value) / (float)(runnerCount - 1)
                     : 0f;
                 history.Add((date, normFinish, finish));
                 if (history.Count > PastRaceCount)
                     history.RemoveAt(0);
+
+                // Update going stats after race
+                gStats.starts++;
+                gStats.sumNorm += normFinish;
+                if (finish.HasValue && finish.Value == 1) gStats.wins++;
+                gStats.lastNorm = normFinish;
+                gDict[going] = gStats;
+
+                gcStats.starts++;
+                gcStats.sumNorm += normFinish;
+                if (finish.HasValue && finish.Value == 1) gcStats.wins++;
+                gcStats.lastNorm = normFinish;
+                gcDict[gcKey] = gcStats;
+
+                aStats.starts++;
+                aStats.sumNorm += normFinish;
+                if (finish.HasValue && finish.Value == 1) aStats.wins++;
+                aStats.lastNorm = normFinish;
+                aDict[ageRes] = aStats;
+
+                dStats.starts++;
+                dStats.sumNorm += normFinish;
+                if (finish.HasValue && finish.Value == 1) dStats.wins++;
+                dStats.lastNorm = normFinish;
+                dDict[bucket] = dStats;
+
+                allDist.sum += distanceYards;
+                allDist.count++;
+                horseDistanceAll[horseId] = allDist;
+                if (finish.HasValue && finish.Value == 1)
+                {
+                    winDist.sum += distanceYards;
+                    winDist.count++;
+                }
+                horseDistanceWins[horseId] = winDist;
             }
         }
         private static float[] EncodeNumeric(object value, int dim)
@@ -253,7 +360,10 @@ namespace HorseRacingML.ML
             AddDerivedFeatures(trainRows);
             AddDerivedFeatures(valRows);
 
-            var keys = rows[0].Keys.ToList();
+            var keys = trainRows.Concat(valRows)
+                .SelectMany(r => r.Keys)
+                .Distinct()
+                .ToList();
             keys.Remove("FinishPos"); // we'll use this as the label
             keys.Remove("RaceId");
             keys.Remove("HorseId");
