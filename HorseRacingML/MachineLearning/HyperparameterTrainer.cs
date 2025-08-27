@@ -184,7 +184,33 @@ namespace HorseRacingML.ML
                 throw new InvalidOperationException("No training data found.");
             }
 
-            AddDerivedFeatures(rows);
+            var raceGroups = rows.Select((r, idx) => new { raceId = Convert.ToInt32(r["RaceId"]), idx })
+                                 .GroupBy(x => x.raceId)
+                                 .ToList();
+
+            int totalRaces = raceGroups.Count;
+            int foldSize = totalRaces / foldCount;
+            int valStart = foldIndex * foldSize;
+            int valEnd = foldIndex == foldCount - 1 ? totalRaces : valStart + foldSize;
+            var valRaceSet = raceGroups
+                .Skip(valStart)
+                .Take(valEnd - valStart)
+                .Select(g => g.Key)
+                .ToHashSet();
+
+            var trainRows = new List<Dictionary<string, object>>();
+            var valRows = new List<Dictionary<string, object>>();
+            foreach (var row in rows)
+            {
+                int raceId = Convert.ToInt32(row["RaceId"]);
+                if (valRaceSet.Contains(raceId))
+                    valRows.Add(row);
+                else
+                    trainRows.Add(row);
+            }
+
+            AddDerivedFeatures(trainRows);
+            AddDerivedFeatures(valRows);
 
             var keys = rows[0].Keys.ToList();
             keys.Remove("FinishPos"); // we'll use this as the label
@@ -210,17 +236,16 @@ namespace HorseRacingML.ML
 
             var featureDims = keys.ToDictionary(k => k, k =>
             {
-                var sample = rows.Select(r => r[k]).FirstOrDefault(v => v != null);
+                var sample = trainRows.Concat(valRows).Select(r => r[k]).FirstOrDefault(v => v != null);
                 return sample is string ? StringVectorSize : 1;
             });
 
             int featureCount = featureDims.Values.Sum();
 
-            var featureList = new List<float[]>();
-            var labelList = new List<float>();
-            var raceIdList = new List<int>();
-
-            foreach (var row in rows)
+            var trainFeatures = new List<float[]>();
+            var trainLabels = new List<float>();
+            var trainRaceIds = new List<int>();
+            foreach (var row in trainRows)
             {
                 var features = new float[featureCount];
                 int offset = 0;
@@ -231,46 +256,28 @@ namespace HorseRacingML.ML
                     Array.Copy(vec, 0, features, offset, dim);
                     offset += dim;
                 }
-                featureList.Add(features);
-                labelList.Add(row.TryGetValue("FinishPos", out var f) && f != null && Convert.ToInt32(f) == 1 ? 1f : 0f);
-                raceIdList.Add(Convert.ToInt32(row["RaceId"]));
+                trainFeatures.Add(features);
+                trainLabels.Add(row.TryGetValue("FinishPos", out var f) && f != null && Convert.ToInt32(f) == 1 ? 1f : 0f);
+                trainRaceIds.Add(Convert.ToInt32(row["RaceId"]));
             }
-            var raceGroups = raceIdList
-                .Select((raceId, idx) => new { raceId, idx })
-                .GroupBy(x => x.raceId)
-                .ToList();
-
-            int totalRaces = raceGroups.Count;
-            int foldSize = totalRaces / foldCount;
-            int valStart = foldIndex * foldSize;
-            int valEnd = foldIndex == foldCount - 1 ? totalRaces : valStart + foldSize;
-            var valRaceSet = raceGroups
-                .Skip(valStart)
-                .Take(valEnd - valStart)
-                .Select(g => g.Key)
-                .ToHashSet();
 
             var valFeatures = new List<float[]>();
             var valLabels = new List<float>();
             var valRaceIds = new List<int>();
-            var trainFeatures = new List<float[]>();
-            var trainLabels = new List<float>();
-            var trainRaceIds = new List<int>();
-
-            for (int i = 0; i < featureList.Count; i++)
+            foreach (var row in valRows)
             {
-                if (valRaceSet.Contains(raceIdList[i]))
+                var features = new float[featureCount];
+                int offset = 0;
+                foreach (var key in keys)
                 {
-                    valFeatures.Add(featureList[i]);
-                    valLabels.Add(labelList[i]);
-                    valRaceIds.Add(raceIdList[i]);
-                }
-                else
-                {
-                    trainFeatures.Add(featureList[i]);
-                    trainLabels.Add(labelList[i]);
-                    trainRaceIds.Add(raceIdList[i]);
-                }
+                            int dim = featureDims[key];
+                            var vec = EncodeFeature(row[key], dim);
+                            Array.Copy(vec, 0, features, offset, dim);
+                            offset += dim;
+                        }
+                valFeatures.Add(features);
+                valLabels.Add(row.TryGetValue("FinishPos", out var f) && f != null && Convert.ToInt32(f) == 1 ? 1f : 0f);
+                valRaceIds.Add(Convert.ToInt32(row["RaceId"]));
             }
             var means = new float[featureCount];
             var stdDevs = new float[featureCount];
