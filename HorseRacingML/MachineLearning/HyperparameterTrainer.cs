@@ -8,8 +8,6 @@ using Microsoft.Extensions.Configuration;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Security.Cryptography;
-using System.Text;
 using System.IO;
 using System.Text.Json;
 using TensorShape = Tensorflow.Shape;
@@ -55,7 +53,11 @@ namespace HorseRacingML.ML
         private const int HistoryLength = 30;
         // Windows (in races) for which performance metrics will be generated
         private static readonly int[] PerformanceWindows = { 1, 3, 5, 10, 15, 20, 25, 30 };
-        private static float[] EncodeFeature(object? value, int dim)
+        private static float[] EncodeFeature(
+            string key,
+            object? value,
+            int dim,
+            Dictionary<string, Dictionary<string, int>> stringMaps)
         {
             if (value == null)
                 return new float[dim];
@@ -66,7 +68,7 @@ namespace HorseRacingML.ML
                 DateTime dt => new[] { (float)(dt - BaseDate).TotalDays },
                 // Seconds are a reasonable scale for durations
                 TimeSpan ts => new[] { (float)ts.TotalSeconds },
-                string s => EncodeString(s, dim),
+                string s => EncodeString(key, s, dim, stringMaps),
                 bool b => new[] { b ? 1f : 0f },
                 // Scale down very large numeric values to keep them in a manageable range
                 _ => EncodeNumeric(value, dim)
@@ -362,13 +364,16 @@ namespace HorseRacingML.ML
             return arr;
         }
 
-        private static float[] EncodeString(string s, int dim)
+        private static float[] EncodeString(
+            string key,
+            string s,
+            int dim,
+            Dictionary<string, Dictionary<string, int>> stringMaps)
         {
-            var hash = MD5.HashData(Encoding.UTF8.GetBytes(s));
             var vec = new float[dim];
-            for (int i = 0; i < dim; i++)
+            if (stringMaps.TryGetValue(key, out var map) && map.TryGetValue(s, out var idx))
             {
-                vec[i] = hash[i] / 255f;
+                vec[idx] = 1f;
             }
             return vec;
         }
@@ -491,15 +496,31 @@ namespace HorseRacingML.ML
 
             var allRows = trainRows.Concat(valRows).ToList();
             var featureDims = new Dictionary<string, int>();
+            var stringMaps = new Dictionary<string, Dictionary<string, int>>();
             foreach (var k in keys)
             {
-                var sample = allRows.Select(r => r.ContainsKey(k) ? r[k] : null)
-                                    .FirstOrDefault(v => v != null);
-                if (sample == null)
+                var values = allRows
+                    .Select(r => r.ContainsKey(k) ? r[k] : null)
+                    .Where(v => v != null)
+                    .ToList();
+                if (values.Count == 0)
                 {
                     continue;
                 }
-                featureDims[k] = sample is string ? StringVectorSize : 1;
+                var sample = values[0];
+                if (sample is string)
+                {
+                    var distinct = values.Cast<string>().Distinct().ToList();
+                    var map = distinct
+                        .Select((v, idx) => new { v, idx })
+                        .ToDictionary(x => x.v, x => x.idx);
+                    stringMaps[k] = map;
+                    featureDims[k] = map.Count;
+                }
+                else
+                {
+                    featureDims[k] = 1;
+                }
             }
             var featureKeys = featureDims.Keys.ToList();
 
@@ -516,7 +537,7 @@ namespace HorseRacingML.ML
                 {
                     int dim = featureDims[key];
                     row.TryGetValue(key, out var value);
-                    var vec = EncodeFeature(value, dim);
+                    var vec = EncodeFeature(key, value, dim, stringMaps);
                     Array.Copy(vec, 0, features, offset, dim);
                     offset += dim;
                 }
@@ -536,7 +557,7 @@ namespace HorseRacingML.ML
                 {
                     int dim = featureDims[key];
                     row.TryGetValue(key, out var value);
-                    var vec = EncodeFeature(value, dim);
+                    var vec = EncodeFeature(key, value, dim, stringMaps);
                     Array.Copy(vec, 0, features, offset, dim);
                     offset += dim;
                 }
