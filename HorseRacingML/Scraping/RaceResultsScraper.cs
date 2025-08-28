@@ -29,7 +29,7 @@ namespace HorseRacingML.Scraping
             var dates = Enumerable.Range(0, (end - start).Days + 1).Select(i => start.AddDays(i));
             var queue = new ConcurrentQueue<DateTime>(dates);
             var tasks = new List<Task>();
-            int workers = Math.Min(5, queue.Count);
+            int workers = Math.Min(6, queue.Count);
 
             for (int i = 0; i < workers; i++)
             {
