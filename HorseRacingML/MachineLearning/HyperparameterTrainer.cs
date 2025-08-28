@@ -157,7 +157,7 @@ namespace HorseRacingML.ML
                     int count = Math.Min(window, history.Count);
 
                     // Ensure `recent` is available regardless of branch to avoid scope issues.
-                    List<(DateTime date, float normFinish, short? finish, string going, int courseId, string bucket)> recent;
+                    List<(DateTime date, float normFinish, short? finish, string going, int courseId, string bucket, int raceClass)> recent;
                     if (count > 0)
                     {
                         recent = history.GetRange(history.Count - count, count);
