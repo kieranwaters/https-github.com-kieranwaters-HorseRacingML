@@ -120,13 +120,13 @@ namespace HorseRacingML.ML
                 DateTime date = (DateTime)row["RaceDate"];
                 short? finish = row["FinishPos"] != null ? (short?)Convert.ToInt16(row["FinishPos"]) : null;
                 int raceId = Convert.ToInt32(row["RaceId"]);
-                var stats = raceStats[raceId];
-                int runnerCount = row["RunnerCount"] != null ? Convert.ToInt32(row["RunnerCount"]) : stats.RunnerCount;
+                var raceStat = raceStats[raceId];
+                int runnerCount = row["RunnerCount"] != null ? Convert.ToInt32(row["RunnerCount"]) : raceStat.RunnerCount;
 
                 int draw = row["Draw"] != null ? Convert.ToInt32(row["Draw"]) : 0;
                 float weight = row["WeightLbs"] != null ? Convert.ToSingle(row["WeightLbs"]) : 0f;
                 row["RelativeDraw"] = runnerCount > 0 ? (float)draw / runnerCount : 0f;
-                row["WeightDiffFromMean"] = weight - stats.AvgWeight;
+                row["WeightDiffFromMean"] = weight - raceStat.AvgWeight;
 
                 if (!horseHistory.TryGetValue(horseId, out var history))
                 {
@@ -260,12 +260,12 @@ namespace HorseRacingML.ML
                 if (row.TryGetValue("TrainerId", out var tObj) && tObj != null)
                 {
                     int tId = Convert.ToInt32(tObj);
-                    if (!trainerStats.TryGetValue(tId, out var stats))
-                        stats = (0, 0);
-                    row["TrainerWinRate"] = stats.starts > 0 ? (float)stats.wins / stats.starts : 0f;
-                    stats.starts++;
-                    if (finish.HasValue && finish.Value == 1) stats.wins++;
-                    trainerStats[tId] = stats;
+                    if (!trainerStats.TryGetValue(tId, out var trainerStat))
+                        trainerStat = (0, 0);
+                    row["TrainerWinRate"] = trainerStat.starts > 0 ? (float)trainerStat.wins / trainerStat.starts : 0f;
+                    trainerStat.starts++;
+                    if (finish.HasValue && finish.Value == 1) trainerStat.wins++;
+                    trainerStats[tId] = trainerStat;
                 }
                 else
                 {
@@ -276,12 +276,12 @@ namespace HorseRacingML.ML
                 if (row.TryGetValue("JockeyId", out var jObj) && jObj != null)
                 {
                     int jId = Convert.ToInt32(jObj);
-                    if (!jockeyStats.TryGetValue(jId, out var stats))
-                        stats = (0, 0);
-                    row["JockeyWinRate"] = stats.starts > 0 ? (float)stats.wins / stats.starts : 0f;
-                    stats.starts++;
-                    if (finish.HasValue && finish.Value == 1) stats.wins++;
-                    jockeyStats[jId] = stats;
+                    if (!jockeyStats.TryGetValue(jId, out var jockeyStat))
+                        jockeyStat = (0, 0);
+                    row["JockeyWinRate"] = jockeyStat.starts > 0 ? (float)jockeyStat.wins / jockeyStat.starts : 0f;
+                    jockeyStat.starts++;
+                    if (finish.HasValue && finish.Value == 1) jockeyStat.wins++;
+                    jockeyStats[jId] = jockeyStat;
                 }
                 else
                 {
