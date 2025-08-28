@@ -428,13 +428,14 @@ namespace HorseRacingML.ML
             {
                 var features = new float[featureCount];
                 int offset = 0;
-                foreach (var key in keys)
+                foreach (var key in featureKeys)
                 {
-                            int dim = featureDims[key];
-                            var vec = EncodeFeature(row[key], dim);
-                            Array.Copy(vec, 0, features, offset, dim);
-                            offset += dim;
-                        }
+                    int dim = featureDims[key];
+                    row.TryGetValue(key, out var value);
+                    var vec = EncodeFeature(value, dim);
+                    Array.Copy(vec, 0, features, offset, dim);
+                    offset += dim;
+                }
                 valFeatures.Add(features);
                 valLabels.Add(row.TryGetValue("FinishPos", out var f) && f != null && Convert.ToInt32(f) == 1 ? 1f : 0f);
                 valRaceIds.Add(Convert.ToInt32(row["RaceId"]));
