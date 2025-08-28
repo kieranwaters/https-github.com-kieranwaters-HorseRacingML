@@ -74,6 +74,26 @@ namespace HorseRacingML.ML
         }
         private static void AddDerivedFeatures(List<Dictionary<string, object>> rows)
         {
+            // Precompute average draw and weight for each race to allow
+            // relative features on a per-runner basis.
+            var raceStats = rows
+                .GroupBy(r => Convert.ToInt32(r["RaceId"]))
+                .ToDictionary(
+                    g => g.Key,
+                    g =>
+                    {
+                        int cnt = g.Count();
+                        float avgDraw = g.Where(r => r["Draw"] != null)
+                                         .Select(r => Convert.ToSingle(r["Draw"]))
+                                         .DefaultIfEmpty(0f)
+                                         .Average();
+                        float avgWeight = g.Where(r => r["WeightLbs"] != null)
+                                           .Select(r => Convert.ToSingle(r["WeightLbs"]))
+                                           .DefaultIfEmpty(0f)
+                                           .Average();
+                        return (RunnerCount: cnt, AvgDraw: avgDraw, AvgWeight: avgWeight);
+                    });
+
             var ordered = rows
                 .OrderBy(r => (DateTime)r["RaceDate"])
                 .ThenBy(r => Convert.ToInt32(r["RaceId"]))
@@ -99,7 +119,14 @@ namespace HorseRacingML.ML
                 int horseId = Convert.ToInt32(row["HorseId"]);
                 DateTime date = (DateTime)row["RaceDate"];
                 short? finish = row["FinishPos"] != null ? (short?)Convert.ToInt16(row["FinishPos"]) : null;
-                int runnerCount = row["RunnerCount"] != null ? Convert.ToInt32(row["RunnerCount"]) : 0;
+                int raceId = Convert.ToInt32(row["RaceId"]);
+                var stats = raceStats[raceId];
+                int runnerCount = row["RunnerCount"] != null ? Convert.ToInt32(row["RunnerCount"]) : stats.RunnerCount;
+
+                int draw = row["Draw"] != null ? Convert.ToInt32(row["Draw"]) : 0;
+                float weight = row["WeightLbs"] != null ? Convert.ToSingle(row["WeightLbs"]) : 0f;
+                row["RelativeDraw"] = runnerCount > 0 ? (float)draw / runnerCount : 0f;
+                row["WeightDiffFromMean"] = weight - stats.AvgWeight;
 
                 if (!horseHistory.TryGetValue(horseId, out var history))
                 {
