@@ -483,7 +483,7 @@ namespace HorseRacingML.ML
 
             var trainFeatNd = np.array(trainFeatures.ToArray(), dtype: np.float32);
             var trainLabelNd = np.array(trainLabels.ToArray(), dtype: np.float32)
-                                  .reshape(trainLabels.Count, 1);
+                                  .reshape(new Shape(trainLabels.Count, 1));
 
             var graph = tf.Graph().as_default();
 
@@ -512,7 +512,7 @@ namespace HorseRacingML.ML
             var prediction = tf.sigmoid(logits);
 
             using var sess = tf.Session(graph);
-            var baseDs = tf.data.Dataset.from_tensor_slices((trainFeatNd, trainLabelNd));
+            var baseDs = tf.data.Dataset.from_tensor_slices((tf.constant(trainFeatNd), tf.constant(trainLabelNd)));
             sess.run(tf.global_variables_initializer());
             double ComputeDatasetMetrics(List<float[]> feats, List<float> labs, List<int> races, out float[] preds)
             {
@@ -541,7 +541,7 @@ namespace HorseRacingML.ML
                                     .batch(param.BatchSize)
                                     .prefetch(1);
                 var iterator = trainDs.make_one_shot_iterator();
-                var next = iterator.get_next();
+                var next = iterator.GetNext();
 
                 while (true)
                 {
@@ -550,9 +550,9 @@ namespace HorseRacingML.ML
                     {
                         batch = sess.run(next);
                     }
-                    catch (TensorflowException e) when (e.Status.StatusCode == TFCode.OutOfRange)
+                    catch (TensorflowException)
                     {
-                        break;
+                        break; // iterator exhausted
                     }
                     sess.run(optimizer, new FeedItem(x, batch[0]), new FeedItem(y, batch[1]));
                 }
