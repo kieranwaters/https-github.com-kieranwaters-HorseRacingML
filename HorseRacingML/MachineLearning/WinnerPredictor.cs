@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 
 namespace HorseRacingML.ML
 {
@@ -19,6 +20,7 @@ namespace HorseRacingML.ML
         private static readonly MLContext Ml = new MLContext(seed: 1);
         private static PredictionEngine<RunnerFeatures, RunnerPrediction>? _engine;
         private static readonly string ModelPath = Path.Combine(AppContext.BaseDirectory, "winnerModel.zip");
+        private static readonly string MetricsPath = Path.Combine(AppContext.BaseDirectory, "winnerModel.metrics.json");
 
         /// <summary>
         /// Trains a model from historical runner results and saves it to disk.
@@ -53,11 +55,35 @@ namespace HorseRacingML.ML
                                                      nameof(RunnerFeatures.Age))
                                  .Append(Ml.BinaryClassification.Trainers.LightGbm());
 
-            var model = pipeline.Fit(data);
-            var path = modelPath ?? ModelPath;
-            Ml.Model.Save(model, data.Schema, path);
+            var split = Ml.Data.TrainTestSplit(data, testFraction: 0.2);
+            var model = pipeline.Fit(split.TrainSet);
+            var predictions = model.Transform(split.TestSet);
+            var metrics = Ml.BinaryClassification.Evaluate(predictions);
 
-            _engine = Ml.Model.CreatePredictionEngine<RunnerFeatures, RunnerPrediction>(model);
+            Console.WriteLine($"Accuracy: {metrics.Accuracy:P2}  AUC: {metrics.AreaUnderRocCurve:P2}  Brier: {metrics.BrierScore:F4}");
+
+            var path = modelPath ?? ModelPath;
+            var existing = LoadMetrics(MetricsPath);
+
+
+            if (IsBetter(metrics, existing))
+            {
+                Ml.Model.Save(model, data.Schema, path);
+                SaveMetrics(metrics, MetricsPath);
+                _engine = Ml.Model.CreatePredictionEngine<RunnerFeatures, RunnerPrediction>(model);
+            }
+            else if (File.Exists(path))
+            {
+                using var stream = File.OpenRead(path);
+                var oldModel = Ml.Model.Load(stream, out _);
+                _engine = Ml.Model.CreatePredictionEngine<RunnerFeatures, RunnerPrediction>(oldModel);
+            }
+            else
+            {
+                Ml.Model.Save(model, data.Schema, path);
+                SaveMetrics(metrics, MetricsPath);
+                _engine = Ml.Model.CreatePredictionEngine<RunnerFeatures, RunnerPrediction>(model);
+            }
         }
 
         /// <summary>
@@ -166,7 +192,43 @@ namespace HorseRacingML.ML
             public float Age { get; set; }
             public bool Label { get; set; }
         }
+        private class ModelMetrics
+        {
+            public double Accuracy { get; set; }
+            public double AreaUnderRocCurve { get; set; }
+            public double BrierScore { get; set; }
+        }
 
+        private static ModelMetrics? LoadMetrics(string path)
+        {
+            if (!File.Exists(path))
+                return null;
+
+            var json = File.ReadAllText(path);
+            return JsonSerializer.Deserialize<ModelMetrics>(json);
+        }
+
+        private static void SaveMetrics(BinaryClassificationMetrics metrics, string path)
+        {
+            var info = new ModelMetrics
+            {
+                Accuracy = metrics.Accuracy,
+                AreaUnderRocCurve = metrics.AreaUnderRocCurve,
+                BrierScore = metrics.BrierScore
+            };
+            var json = JsonSerializer.Serialize(info);
+            File.WriteAllText(path, json);
+        }
+
+        private static bool IsBetter(BinaryClassificationMetrics metrics, ModelMetrics? old)
+        {
+            if (old == null)
+                return true;
+
+            return metrics.Accuracy >= old.Accuracy &&
+                   metrics.AreaUnderRocCurve >= old.AreaUnderRocCurve &&
+                   metrics.BrierScore <= old.BrierScore;
+        }
         private class RunnerPrediction
         {
             public bool PredictedLabel { get; set; }
