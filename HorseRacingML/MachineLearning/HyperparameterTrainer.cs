@@ -512,7 +512,6 @@ namespace HorseRacingML.ML
             var prediction = tf.sigmoid(logits);
 
             using var sess = tf.Session(graph);
-            var baseDs = tf.data.Dataset.from_tensor_slices((tf.constant(trainFeatNd), tf.constant(trainLabelNd)));
             sess.run(tf.global_variables_initializer());
             double ComputeDatasetMetrics(List<float[]> feats, List<float> labs, List<int> races, out float[] preds)
             {
@@ -537,26 +536,21 @@ namespace HorseRacingML.ML
             }
             for (int epoch = 0; epoch < param.Epochs; epoch++)
             {
-                var trainDs = baseDs.shuffle(trainFeatures.Count)
-                                    .batch(param.BatchSize)
-                                    .prefetch(1);
-                var iterator = trainDs.make_one_shot_iterator();
-                var next = iterator.GetNext();
-
-                while (true)
+                var indices = Enumerable.Range(0, trainFeatures.Count)
+                                        .OrderBy(_ => rnd.Next())
+                                        .ToList();
+                for (int start = 0; start < indices.Count; start += param.BatchSize)
                 {
-                    NDArray[] batch;
-                    try
-                    {
-                        batch = sess.run(next);
-                    }
-                    catch (TensorflowException)
-                    {
-                        break; // iterator exhausted
-                    }
-                    sess.run(optimizer, new FeedItem(x, batch[0]), new FeedItem(y, batch[1]));
+                    var batchIdx = indices.Skip(start)
+                                          .Take(Math.Min(param.BatchSize, indices.Count - start))
+                                          .ToList();
+                    var batchX = np.array(batchIdx.SelectMany(i => trainFeatures[i]).ToArray())
+                                         .reshape(new Shape(batchIdx.Count, featureCount));
+                    var batchY = np.array(batchIdx.Select(i => trainLabels[i]).ToArray())
+                                         .reshape(new Shape(batchIdx.Count, 1));
+                    sess.run(optimizer, new FeedItem(x, batchX), new FeedItem(y, batchY));
                 }
-                    var epochLoss = ComputeDatasetMetrics(trainFeatures, trainLabels, trainRaceIds, out var epochPreds);
+                var epochLoss = ComputeDatasetMetrics(trainFeatures, trainLabels, trainRaceIds, out var epochPreds);
                 var epochAcc = ComputeWinnerAccuracy(trainRaceIds, epochPreds, trainLabels);
                 Console.WriteLine($"Epoch {epoch + 1}/{param.Epochs} - loss: {epochLoss:F4} - winner acc: {epochAcc:F4}");
             }
