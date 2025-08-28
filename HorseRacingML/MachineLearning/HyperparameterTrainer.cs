@@ -79,7 +79,7 @@ namespace HorseRacingML.ML
                 .ThenBy(r => Convert.ToInt32(r["RaceId"]))
                 .ToList();
 
-            var horseHistory = new Dictionary<int, List<(DateTime date, float normFinish, short? finish)>>();
+            var horseHistory = new Dictionary<int, List<(DateTime date, float normFinish, short? finish, string going, int courseId, string bucket)>>();
             var trainerStats = new Dictionary<int, (int starts, int wins)>();
             var jockeyStats = new Dictionary<int, (int starts, int wins)>();
 
@@ -103,7 +103,7 @@ namespace HorseRacingML.ML
 
                 if (!horseHistory.TryGetValue(horseId, out var history))
                 {
-                    history = new List<(DateTime, float, short?)>();
+                    history = new List<(DateTime, float, short?, string, int, string)>();
                     horseHistory[horseId] = history;
                 }
 
@@ -182,7 +182,47 @@ namespace HorseRacingML.ML
                     dStats = (0, 0, 0f, 0f);
                 row["DistanceBucketWinRate"] = dStats.starts > 0 ? (float)dStats.wins / dStats.starts : 0f;
                 row["LastDistanceBucketNormPos"] = dStats.lastNorm;
+                foreach (var window in PerformanceWindows)
+                {
+                    int count = Math.Min(window, history.Count);
+                    if (count > 0)
+                    {
+                        var recent = history.GetRange(history.Count - count, count);
 
+                        var goingRecent = recent.Where(h => h.going == going).ToList();
+                        row[$"GoingWinRateLast{window}"] = goingRecent.Count > 0
+                            ? goingRecent.Count(h => h.finish == 1) / (float)goingRecent.Count
+                            : 0f;
+                        row[$"GoingAvgNormLast{window}"] = goingRecent.Count > 0
+                            ? goingRecent.Sum(h => h.normFinish) / goingRecent.Count
+                            : 0f;
+
+                        var courseRecent = recent.Where(h => h.courseId == courseId).ToList();
+                        row[$"CourseWinRateLast{window}"] = courseRecent.Count > 0
+                            ? courseRecent.Count(h => h.finish == 1) / (float)courseRecent.Count
+                            : 0f;
+                        row[$"CourseAvgNormLast{window}"] = courseRecent.Count > 0
+                            ? courseRecent.Sum(h => h.normFinish) / courseRecent.Count
+                            : 0f;
+
+                        var bucketRecent = recent.Where(h => h.bucket == bucket).ToList();
+                        row[$"DistanceBucketWinRateLast{window}"] = bucketRecent.Count > 0
+                            ? bucketRecent.Count(h => h.finish == 1) / (float)bucketRecent.Count
+                            : 0f;
+                        row[$"DistanceBucketAvgNormLast{window}"] = bucketRecent.Count > 0
+                            ? bucketRecent.Sum(h => h.normFinish) / bucketRecent.Count
+                            : 0f;
+                    }
+                    else
+                    {
+                        row[$"GoingWinRateLast{window}"] = 0f;
+                        row[$"GoingAvgNormLast{window}"] = 0f;
+                        row[$"CourseWinRateLast{window}"] = 0f;
+                        row[$"CourseAvgNormLast{window}"] = 0f;
+                        row[$"DistanceBucketWinRateLast{window}"] = 0f;
+                        row[$"DistanceBucketAvgNormLast{window}"] = 0f;
+                    }
+                }
                 // Preferred distance deviation
                 horseDistanceAll.TryGetValue(horseId, out var allDist);
                 horseDistanceWins.TryGetValue(horseId, out var winDist);
@@ -225,7 +265,7 @@ namespace HorseRacingML.ML
                 float normFinish = (finish.HasValue && runnerCount > 1)
                     ? (runnerCount - finish.Value) / (float)(runnerCount - 1)
                     : 0f;
-                history.Add((date, normFinish, finish));
+                history.Add((date, normFinish, finish, going, courseId, bucket));
                 if (history.Count > HistoryLength)
                     history.RemoveAt(0);
 
