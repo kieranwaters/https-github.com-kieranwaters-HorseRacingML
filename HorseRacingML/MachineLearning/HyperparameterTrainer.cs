@@ -102,7 +102,7 @@ namespace HorseRacingML.ML
             var horseHistory = new Dictionary<int, List<(DateTime date, float normFinish, short? finish, string going, int courseId, string bucket)>>();
             var trainerStats = new Dictionary<int, (int starts, int wins)>();
             var jockeyStats = new Dictionary<int, (int starts, int wins)>();
-
+            var trainerJockeyStats = new Dictionary<(int trainerId, int jockeyId), (int starts, int wins)>();
             // New dictionaries for going, age restriction, and distance preferences
             var goingStats = new Dictionary<int, Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>>();
             var goingCourseStats = new Dictionary<int, Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>>();
@@ -122,6 +122,12 @@ namespace HorseRacingML.ML
                 int raceId = Convert.ToInt32(row["RaceId"]);
                 var raceStat = raceStats[raceId];
                 int runnerCount = row["RunnerCount"] != null ? Convert.ToInt32(row["RunnerCount"]) : raceStat.RunnerCount;
+                int? trainerId = row.TryGetValue("TrainerId", out var tObj) && tObj != null
+                    ? Convert.ToInt32(tObj)
+                    : (int?)null;
+                int? jockeyId = row.TryGetValue("JockeyId", out var jObj) && jObj != null
+                    ? Convert.ToInt32(jObj)
+                    : (int?)null;
 
                 int draw = row["Draw"] != null ? Convert.ToInt32(row["Draw"]) : 0;
                 float weight = row["WeightLbs"] != null ? Convert.ToSingle(row["WeightLbs"]) : 0f;
@@ -257,37 +263,43 @@ namespace HorseRacingML.ML
                 row["DistanceFromPreferred"] = (float)Math.Abs(distanceYards - pref);
 
                 // Trainer statistics
-                if (row.TryGetValue("TrainerId", out var tObj) && tObj != null)
+                if (trainerId.HasValue)
                 {
-                    int tId = Convert.ToInt32(tObj);
-                    if (!trainerStats.TryGetValue(tId, out var trainerStat))
+                    if (!trainerStats.TryGetValue(trainerId.Value, out var trainerStat))
                         trainerStat = (0, 0);
                     row["TrainerWinRate"] = trainerStat.starts > 0 ? (float)trainerStat.wins / trainerStat.starts : 0f;
                     trainerStat.starts++;
                     if (finish.HasValue && finish.Value == 1) trainerStat.wins++;
-                    trainerStats[tId] = trainerStat;
+                    trainerStats[trainerId.Value] = trainerStat;
                 }
                 else
                 {
                     row["TrainerWinRate"] = 0f;
                 }
-
-                // Jockey statistics
-                if (row.TryGetValue("JockeyId", out var jObj) && jObj != null)
+                if (jockeyId.HasValue)
                 {
-                    int jId = Convert.ToInt32(jObj);
-                    if (!jockeyStats.TryGetValue(jId, out var jockeyStat))
+                    if (!jockeyStats.TryGetValue(jockeyId.Value, out var jockeyStat))
                         jockeyStat = (0, 0);
                     row["JockeyWinRate"] = jockeyStat.starts > 0 ? (float)jockeyStat.wins / jockeyStat.starts : 0f;
                     jockeyStat.starts++;
                     if (finish.HasValue && finish.Value == 1) jockeyStat.wins++;
-                    jockeyStats[jId] = jockeyStat;
+                    jockeyStats[jockeyId.Value] = jockeyStat;
                 }
                 else
                 {
                     row["JockeyWinRate"] = 0f;
                 }
-
+                if (trainerId.HasValue && jockeyId.HasValue)
+                {
+                    var pairKey = (trainerId.Value, jockeyId.Value);
+                    if (!trainerJockeyStats.TryGetValue(pairKey, out var pairStat))
+                        pairStat = (0, 0);
+                    row["TrainerJockeyWinRate"] = pairStat.starts > 0 ? (float)pairStat.wins / pairStat.starts : 0f;
+                }
+                else
+                {
+                    row["TrainerJockeyWinRate"] = 0f;
+                }
                 // Compute normalized finish
                 float normFinish = (finish.HasValue && runnerCount > 1)
                     ? (runnerCount - finish.Value) / (float)(runnerCount - 1)
@@ -330,6 +342,14 @@ namespace HorseRacingML.ML
                     winDist.count++;
                 }
                 horseDistanceWins[horseId] = winDist;
+                if (trainerId.HasValue && jockeyId.HasValue)
+                {
+                    var pairKey = (trainerId.Value, jockeyId.Value);
+                    trainerJockeyStats.TryGetValue(pairKey, out var pairStat);
+                    pairStat.starts++;
+                    if (finish.HasValue && finish.Value == 1) pairStat.wins++;
+                    trainerJockeyStats[pairKey] = pairStat;
+                }
             }
         }
         private static float[] EncodeNumeric(object value, int dim)
