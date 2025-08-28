@@ -161,6 +161,33 @@ namespace HorseRacingML.ML
                         ? history[history.Count - 1 - i].normFinish
                         : 0f;
                 }
+                int normCount = Math.Min(PastRaceCount, history.Count);
+                if (normCount > 1)
+                {
+                    // Oldest first for regression
+                    var recentNorms = history
+                        .GetRange(history.Count - normCount, normCount)
+                        .Select(h => h.normFinish)
+                        .ToList();
+
+                    float xMean = (normCount - 1) / 2f;
+                    float yMean = recentNorms.Average();
+                    float num = 0f, den = 0f;
+                    for (int j = 0; j < recentNorms.Count; j++)
+                    {
+                        float x = j;
+                        float y = recentNorms[j];
+                        num += (x - xMean) * (y - yMean);
+                        den += (x - xMean) * (x - xMean);
+                    }
+                    row["NormPosSlope"] = den != 0f ? num / den : 0f;
+                }
+                else
+                {
+                    row["NormPosSlope"] = 0f;
+                }
+                row["RecentImprovement"] =
+                    (float)row["Last1NormPos"] - (float)row[$"Last{PastRaceCount}NormPos"];
                 foreach (var window in PerformanceWindows)
                 {
                     int count = Math.Min(window, history.Count);
