@@ -60,7 +60,7 @@ namespace HorseRacingML.ML
             var predictions = model.Transform(split.TestSet);
             var metrics = Ml.BinaryClassification.Evaluate(predictions);
 
-            Console.WriteLine($"Accuracy: {metrics.Accuracy:P2}  AUC: {metrics.AreaUnderRocCurve:P2}  Brier: {metrics.BrierScore:F4}");
+            Console.WriteLine($"Accuracy: {metrics.Accuracy:P2}  AUC: {metrics.AreaUnderRocCurve:P2}  LogLoss: {metrics.LogLoss:F4}");
 
             var path = modelPath ?? ModelPath;
             var existing = LoadMetrics(MetricsPath);
@@ -196,7 +196,7 @@ namespace HorseRacingML.ML
         {
             public double Accuracy { get; set; }
             public double AreaUnderRocCurve { get; set; }
-            public double BrierScore { get; set; }
+            public double LogLoss { get; set; }
         }
 
         private static ModelMetrics? LoadMetrics(string path)
@@ -208,26 +208,26 @@ namespace HorseRacingML.ML
             return JsonSerializer.Deserialize<ModelMetrics>(json);
         }
 
-        private static void SaveMetrics(BinaryClassificationMetrics metrics, string path)
+        private static void SaveMetrics(CalibratedBinaryClassificationMetrics metrics, string path)
         {
             var info = new ModelMetrics
             {
                 Accuracy = metrics.Accuracy,
                 AreaUnderRocCurve = metrics.AreaUnderRocCurve,
-                BrierScore = metrics.BrierScore
+                LogLoss = metrics.LogLoss
             };
             var json = JsonSerializer.Serialize(info);
             File.WriteAllText(path, json);
         }
 
-        private static bool IsBetter(BinaryClassificationMetrics metrics, ModelMetrics? old)
+        private static bool IsBetter(CalibratedBinaryClassificationMetrics metrics, ModelMetrics? old)
         {
             if (old == null)
                 return true;
 
             return metrics.Accuracy >= old.Accuracy &&
                    metrics.AreaUnderRocCurve >= old.AreaUnderRocCurve &&
-                   metrics.BrierScore <= old.BrierScore;
+                    metrics.LogLoss <= old.LogLoss;
         }
         private class RunnerPrediction
         {
