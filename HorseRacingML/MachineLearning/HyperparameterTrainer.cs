@@ -53,6 +53,15 @@ namespace HorseRacingML.ML
         private const int HistoryLength = 30;
         // Windows (in races) for which performance metrics will be generated
         private static readonly int[] PerformanceWindows = { 1, 3, 5, 10, 15, 20, 25, 30 };
+        private const int TrainerJockeyRecentStarts = 50;
+        private const int TrainerJockeyRecentDays = 180;
+
+        private class RollingStat
+        {
+            public int Starts;
+            public int Wins;
+            public Queue<(DateTime date, bool win)> Recent = new();
+        }
         private static float[] EncodeFeature(
             string key,
             object? value,
@@ -102,8 +111,8 @@ namespace HorseRacingML.ML
                 .ToList();
 
             var horseHistory = new Dictionary<int, List<(DateTime date, float normFinish, short? finish, string going, int courseId, string bucket, int raceClass)>>();
-            var trainerStats = new Dictionary<int, (int starts, int wins)>();
-            var jockeyStats = new Dictionary<int, (int starts, int wins)>();
+            var trainerStats = new Dictionary<int, RollingStat>();
+            var jockeyStats = new Dictionary<int, RollingStat>();
             var trainerJockeyStats = new Dictionary<(int trainerId, int jockeyId), (int starts, int wins)>();
             // New dictionaries for going, age restriction, and distance preferences
             var goingStats = new Dictionary<int, Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>>();
@@ -272,28 +281,62 @@ namespace HorseRacingML.ML
                 if (trainerId.HasValue)
                 {
                     if (!trainerStats.TryGetValue(trainerId.Value, out var trainerStat))
-                        trainerStat = (0, 0);
-                    row["TrainerWinRate"] = trainerStat.starts > 0 ? (float)trainerStat.wins / trainerStat.starts : 0f;
-                    trainerStat.starts++;
-                    if (finish.HasValue && finish.Value == 1) trainerStat.wins++;
+                        trainerStat = new RollingStat();
+
+                    while (trainerStat.Recent.Count > 0 &&
+                           (date - trainerStat.Recent.Peek().date).TotalDays > TrainerJockeyRecentDays)
+                        trainerStat.Recent.Dequeue();
+
+                    var tRecent = trainerStat.Recent.ToList();
+                    int tCount = Math.Min(tRecent.Count, TrainerJockeyRecentStarts);
+                    row[$"TrainerWinRateLast{TrainerJockeyRecentStarts}"] = tCount > 0
+                        ? tRecent.Skip(tRecent.Count - tCount).Count(r => r.win) / (float)tCount
+                        : 0f;
+
+                    row["TrainerWinRate"] = trainerStat.Starts > 0 ? (float)trainerStat.Wins / trainerStat.Starts : 0f;
+
+                    trainerStat.Starts++;
+                    bool tWin = finish.HasValue && finish.Value == 1;
+                    if (tWin) trainerStat.Wins++;
+                    trainerStat.Recent.Enqueue((date, tWin));
+                    while (trainerStat.Recent.Count > TrainerJockeyRecentStarts)
+                        trainerStat.Recent.Dequeue();
                     trainerStats[trainerId.Value] = trainerStat;
                 }
                 else
                 {
                     row["TrainerWinRate"] = 0f;
+                    row[$"TrainerWinRateLast{TrainerJockeyRecentStarts}"] = 0f;
                 }
                 if (jockeyId.HasValue)
                 {
                     if (!jockeyStats.TryGetValue(jockeyId.Value, out var jockeyStat))
-                        jockeyStat = (0, 0);
-                    row["JockeyWinRate"] = jockeyStat.starts > 0 ? (float)jockeyStat.wins / jockeyStat.starts : 0f;
-                    jockeyStat.starts++;
-                    if (finish.HasValue && finish.Value == 1) jockeyStat.wins++;
+                        jockeyStat = new RollingStat();
+
+                    while (jockeyStat.Recent.Count > 0 &&
+                           (date - jockeyStat.Recent.Peek().date).TotalDays > TrainerJockeyRecentDays)
+                        jockeyStat.Recent.Dequeue();
+
+                    var jRecent = jockeyStat.Recent.ToList();
+                    int jCount = Math.Min(jRecent.Count, TrainerJockeyRecentStarts);
+                    row[$"JockeyWinRateLast{TrainerJockeyRecentStarts}"] = jCount > 0
+                        ? jRecent.Skip(jRecent.Count - jCount).Count(r => r.win) / (float)jCount
+                        : 0f;
+
+                    row["JockeyWinRate"] = jockeyStat.Starts > 0 ? (float)jockeyStat.Wins / jockeyStat.Starts : 0f;
+
+                    jockeyStat.Starts++;
+                    bool jWin = finish.HasValue && finish.Value == 1;
+                    if (jWin) jockeyStat.Wins++;
+                    jockeyStat.Recent.Enqueue((date, jWin));
+                    while (jockeyStat.Recent.Count > TrainerJockeyRecentStarts)
+                        jockeyStat.Recent.Dequeue();
                     jockeyStats[jockeyId.Value] = jockeyStat;
                 }
                 else
                 {
                     row["JockeyWinRate"] = 0f;
+                    row[$"JockeyWinRateLast{TrainerJockeyRecentStarts}"] = 0f;
                 }
                 if (trainerId.HasValue && jockeyId.HasValue)
                 {
