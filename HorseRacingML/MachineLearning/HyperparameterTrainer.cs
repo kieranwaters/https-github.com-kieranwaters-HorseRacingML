@@ -481,10 +481,14 @@ namespace HorseRacingML.ML
             Normalize(trainFeatures);
             Normalize(valFeatures);
 
+            var trainFeatNd = np.array(trainFeatures.ToArray(), dtype: np.float32);
+            var trainLabelNd = np.array(trainLabels.ToArray(), dtype: np.float32)
+                                  .reshape(trainLabels.Count, 1);
+
             var graph = tf.Graph().as_default();
 
             var x = tf.placeholder(tf.float32, shape: new TensorShape(-1, featureCount), name: "x");
-            var y = tf.placeholder(tf.int32, shape: new TensorShape(1), name: "y");
+            var y = tf.placeholder(tf.float32, shape: new TensorShape(-1, 1), name: "y");
             Tensor layer = x;
             int inputDim = featureCount;
             for (int i = 0; i < param.Layers; i++)
@@ -502,15 +506,13 @@ namespace HorseRacingML.ML
             var wOut = tf.Variable(tf.random.normal((inputDim, 1)), name: "wOut");
             var bOut = tf.Variable(tf.zeros(1), name: "bOut");
             var logits = tf.matmul(layer, wOut) + bOut;
-            logits = tf.reshape(logits, new Shape(-1));
-
-            var logits2D = tf.reshape(logits, new Shape(1, -1));
-            var loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(labels: y, logits: logits2D));
+            var loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels: y, logits: logits));
             var optimizer = tf.train.AdamOptimizer((float)param.LearningRate).minimize(loss);
 
-            var prediction = tf.reshape(tf.nn.softmax(logits2D), new Shape(-1));
+            var prediction = tf.sigmoid(logits);
 
             using var sess = tf.Session(graph);
+            var baseDs = tf.data.Dataset.from_tensor_slices((trainFeatNd, trainLabelNd));
             sess.run(tf.global_variables_initializer());
             double ComputeDatasetMetrics(List<float[]> feats, List<float> labs, List<int> races, out float[] preds)
             {
@@ -524,11 +526,8 @@ namespace HorseRacingML.ML
                     var indices = grp.Select(g => g.idx).ToList();
                     var batchX = np.array(indices.SelectMany(i => feats[i]).ToArray())
                         .reshape(new Shape(indices.Count, featureCount));
-                    var raceLabels = indices.Select(i => labs[i]).ToList();
-                    int winnerIdx = raceLabels.FindIndex(l => l > 0.5f);
-                    if (winnerIdx < 0)
-                        continue;
-                    var batchY = np.array(new[] { winnerIdx });
+                    var batchY = np.array(indices.Select(i => labs[i]).ToArray())
+                        .reshape(new Shape(indices.Count, 1));
                     totLoss += sess.run(loss, new FeedItem(x, batchX), new FeedItem(y, batchY)).ToArray<float>()[0];
                     var p = sess.run(prediction, new FeedItem(x, batchX)).ToArray<float>();
                     for (int j = 0; j < indices.Count; j++) preds[indices[j]] = p[j];
@@ -538,60 +537,26 @@ namespace HorseRacingML.ML
             }
             for (int epoch = 0; epoch < param.Epochs; epoch++)
             {
-                var raceToIndices = trainRaceIds
-                    .Select((raceId, idx) => new { raceId, idx })
-                    .GroupBy(x => x.raceId)
-                    .ToDictionary(g => g.Key, g => g.Select(x => x.idx).ToList());
+                var trainDs = baseDs.shuffle(trainFeatures.Count)
+                                    .batch(param.BatchSize)
+                                    .prefetch(1);
+                var iterator = trainDs.make_one_shot_iterator();
+                var next = iterator.get_next();
 
-                var shuffledRaces = raceToIndices.Keys
-                    .OrderBy(_ => rnd.Next())
-                    .ToList();
-
-                var currentBatch = new List<int>();
-
-                void ProcessBatch(List<int> batchIdx)
+                while (true)
                 {
-                    var races = batchIdx.Select(i => new { idx = i, raceId = trainRaceIds[i] })
-                                      .GroupBy(g => g.raceId);
-
-                    foreach (var race in races)
+                    NDArray[] batch;
+                    try
                     {
-                        var indices = race.Select(g => g.idx).ToList();
-                        var batchX = np.array(indices.SelectMany(i => trainFeatures[i]).ToArray())
-                            .reshape(new Shape(indices.Count, featureCount));
-                        var raceLabels = indices.Select(i => trainLabels[i]).ToList();
-                        int winnerIdx = raceLabels.FindIndex(l => l > 0.5f);
-                        if (winnerIdx < 0)
-                            continue;
-
-                        var batchY = np.array(new[] { winnerIdx });
-
-                        sess.run(optimizer, new FeedItem(x, batchX), new FeedItem(y, batchY));
+                        batch = sess.run(next);
                     }
-                }
-                foreach (var raceId in shuffledRaces)
-                {
-                    var indices = raceToIndices[raceId];
-                    if (currentBatch.Count + indices.Count > param.BatchSize && currentBatch.Count > 0)
+                    catch (TensorflowException e) when (e.Status.StatusCode == TFCode.OutOfRange)
                     {
-                        ProcessBatch(currentBatch);
-                        currentBatch.Clear();
+                        break;
                     }
-
-                    currentBatch.AddRange(indices);
-
-                    if (currentBatch.Count >= param.BatchSize)
-                    {
-                        ProcessBatch(currentBatch);
-                        currentBatch.Clear();
-                    }
+                    sess.run(optimizer, new FeedItem(x, batch[0]), new FeedItem(y, batch[1]));
                 }
-
-                if (currentBatch.Count > 0)
-                {
-                    ProcessBatch(currentBatch);
-                }
-                var epochLoss = ComputeDatasetMetrics(trainFeatures, trainLabels, trainRaceIds, out var epochPreds);
+                    var epochLoss = ComputeDatasetMetrics(trainFeatures, trainLabels, trainRaceIds, out var epochPreds);
                 var epochAcc = ComputeWinnerAccuracy(trainRaceIds, epochPreds, trainLabels);
                 Console.WriteLine($"Epoch {epoch + 1}/{param.Epochs} - loss: {epochLoss:F4} - winner acc: {epochAcc:F4}");
             }
