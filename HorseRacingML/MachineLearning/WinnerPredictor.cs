@@ -40,6 +40,10 @@ namespace HorseRacingML.ML
                     Weight = r.WeightLbs ?? 0,
                     Draw = r.Draw ?? 0,
                     Age = r.Age ?? 0,
+                    Going = EncodeGoing(r.Going),
+                    Surface = EncodeSurface(r.Surface),
+                    Course = r.CourseId ?? 0,
+                    Distance = r.DistanceYards,
                     Label = r.FinishPos == 1
                 })
                 .ToList();
@@ -52,7 +56,11 @@ namespace HorseRacingML.ML
                                                      nameof(RunnerFeatures.Odds),
                                                      nameof(RunnerFeatures.Weight),
                                                      nameof(RunnerFeatures.Draw),
-                                                     nameof(RunnerFeatures.Age))
+                                                     nameof(RunnerFeatures.Age),
+                                                     nameof(RunnerFeatures.Going),
+                                                     nameof(RunnerFeatures.Surface),
+                                                     nameof(RunnerFeatures.Course),
+                                                     nameof(RunnerFeatures.Distance))
                                  .Append(Ml.BinaryClassification.Trainers.LightGbm());
 
             var split = Ml.Data.TrainTestSplit(data, testFraction: 0.2);
@@ -137,7 +145,11 @@ namespace HorseRacingML.ML
                         Odds = GetOdds(r),
                         Weight = r.WeightLbs ?? 0,
                         Draw = r.Draw ?? 0,
-                        Age = r.Age ?? 0
+                        Age = r.Age ?? 0,
+                        Going = EncodeGoing(r.Going),
+                        Surface = EncodeSurface(r.Surface),
+                        Course = r.CourseId ?? 0,
+                        Distance = r.DistanceYards
                     };
 
                     var pred = _engine.Predict(input);
@@ -177,11 +189,38 @@ namespace HorseRacingML.ML
 
             return fallback!;
         }
-
-        private static float GetOdds(RunnerResult r)
+        private static float EncodeGoing(string? going)
         {
-            float odds = (float)(r.SP_Decimal ?? 0m);
-            return odds > 0 ? odds : 1000f;
+            if (string.IsNullOrWhiteSpace(going))
+                return 0f;
+            return going.ToLower() switch
+            {
+                "heavy" => 1f,
+                "soft" => 2f,
+                "good to soft" => 3f,
+                "good" => 4f,
+                "good to firm" => 5f,
+                "firm" => 6f,
+                "standard" => 7f,
+                "standard to slow" => 8f,
+                "standard to fast" => 9f,
+                "yielding" => 10f,
+                _ => 0f
+            };
+        }
+
+        private static float EncodeSurface(string? surface)
+        {
+            if (string.IsNullOrWhiteSpace(surface))
+                return 0f;
+            return surface.ToLower() switch
+            {
+                "turf" => 1f,
+                "dirt" => 2f,
+                "all weather" => 3f,
+                "synthetic" => 4f,
+                _ => 0f
+            };
         }
 
         private class RunnerFeatures
@@ -190,7 +229,16 @@ namespace HorseRacingML.ML
             public float Weight { get; set; }
             public float Draw { get; set; }
             public float Age { get; set; }
+            public float Going { get; set; }
+            public float Surface { get; set; }
+            public float Course { get; set; }
+            public float Distance { get; set; }
             public bool Label { get; set; }
+        }
+        private static float GetOdds(RunnerResult r)
+        {
+            float odds = (float)(r.SP_Decimal ?? 0m);
+            return odds > 0 ? odds : 1000f;
         }
         private class ModelMetrics
         {

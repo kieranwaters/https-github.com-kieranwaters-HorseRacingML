@@ -72,5 +72,9 @@ namespace HorseRacingML.Models
         public string? TouchedHighFraction { get; set; }
         public string? TouchedLowFraction { get; set; }
         public string? Comment { get; set; }
+        public string? Going { get; set; }
+        public string? Surface { get; set; }
+        public int? CourseId { get; set; }
+        public int DistanceYards { get; set; }
     }
 }
