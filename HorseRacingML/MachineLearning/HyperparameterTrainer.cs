@@ -52,6 +52,9 @@ namespace HorseRacingML.ML
         private const int StringVectorSize = 4;
         private static readonly DateTime BaseDate = new DateTime(2005, 1, 1);
         private const int PastRaceCount = 3;
+        private const int HistoryLength = 30;
+        // Windows (in races) for which performance metrics will be generated
+        private static readonly int[] PerformanceWindows = { 1, 3, 5, 10, 15, 20, 25, 30 };
         private static float[] EncodeFeature(object? value, int dim)
         {
             if (value == null)
@@ -114,7 +117,21 @@ namespace HorseRacingML.ML
                         ? history[history.Count - 1 - i].normFinish
                         : 0f;
                 }
-
+                foreach (var window in PerformanceWindows)
+                {
+                    int count = Math.Min(window, history.Count);
+                    if (count > 0)
+                    {
+                        var recent = history.GetRange(history.Count - count, count);
+                        row[$"WinRateLast{window}"] = recent.Count(h => h.finish == 1) / (float)count;
+                        row[$"AvgNormPosLast{window}"] = recent.Sum(h => h.normFinish) / count;
+                    }
+                    else
+                    {
+                        row[$"WinRateLast{window}"] = 0f;
+                        row[$"AvgNormPosLast{window}"] = 0f;
+                    }
+                }
                 // Going performance
                 string going = row["Going"] as string ?? "Unknown";
                 if (!goingStats.TryGetValue(horseId, out var gDict))
@@ -209,7 +226,7 @@ namespace HorseRacingML.ML
                     ? (runnerCount - finish.Value) / (float)(runnerCount - 1)
                     : 0f;
                 history.Add((date, normFinish, finish));
-                if (history.Count > PastRaceCount)
+                if (history.Count > HistoryLength)
                     history.RemoveAt(0);
 
                 // Update going stats after race
