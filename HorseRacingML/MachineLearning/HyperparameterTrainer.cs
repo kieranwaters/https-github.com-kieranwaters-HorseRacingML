@@ -385,11 +385,21 @@ namespace HorseRacingML.ML
             keys.Remove("TrainerName");
             keys.Remove("Title");
 
-            var featureDims = keys.ToDictionary(k => k, k =>
+            var allRows = trainRows.Concat(valRows).ToList();
+            var featureDims = new Dictionary<string, int>();
+            var filteredKeys = new List<string>();
+            foreach (var k in keys)
             {
-                var sample = trainRows.Concat(valRows).Select(r => r[k]).FirstOrDefault(v => v != null);
-                return sample is string ? StringVectorSize : 1;
-            });
+                var sample = allRows.Select(r => r.ContainsKey(k) ? r[k] : null)
+                                    .FirstOrDefault(v => v != null);
+                if (sample == null)
+                {
+                    continue;
+                }
+                featureDims[k] = sample is string ? StringVectorSize : 1;
+                filteredKeys.Add(k);
+            }
+            keys = filteredKeys;
 
             int featureCount = featureDims.Values.Sum();
 
