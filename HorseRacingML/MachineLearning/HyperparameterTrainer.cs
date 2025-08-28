@@ -129,6 +129,10 @@ namespace HorseRacingML.ML
             {
                 int horseId = Convert.ToInt32(row["HorseId"]);
                 DateTime date = (DateTime)row["RaceDate"];
+                row["RaceMonth"] = date.Month;
+                row["RaceDayOfWeek"] = (int)date.DayOfWeek;
+                row["IsWeekend"] = date.DayOfWeek == DayOfWeek.Saturday || date.DayOfWeek == DayOfWeek.Sunday;
+                row["Season"] = (date.Month % 12) / 3;
                 short? finish = row["FinishPos"] != null ? (short?)Convert.ToInt16(row["FinishPos"]) : null;
                 int raceId = Convert.ToInt32(row["RaceId"]);
                 var raceStat = raceStats[raceId];
