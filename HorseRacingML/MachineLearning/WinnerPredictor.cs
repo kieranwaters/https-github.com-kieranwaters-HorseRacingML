@@ -3,36 +3,35 @@ using Microsoft.ML;
 using Microsoft.ML.Data;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
-using Tensorflow.Contexts;
 
 namespace HorseRacingML.ML
 {
     /// <summary>
-    /// Predicts a race winner from a set of runners.
-    /// Historical runner results are used to train a LightGBM model so that
-    /// non-linear interactions between odds, weight, draw and age can be
-    /// captured.  When no suitable training data is supplied the method falls
-    /// back to a simple heuristic.
+    /// Predicts a race winner from a set of runners. A LightGBM model is trained
+    /// once and persisted to disk so that it can be reused for multiple
+    /// predictions. When no suitable training data is available the predictor
+    /// falls back to a simple heuristic.
     /// </summary>
     public static class WinnerPredictor
     {
-        /// <param name="runners">Collection of runners which may include multiple races.</param>
-        /// <param name="raceId">The specific race to evaluate.</param>
-        /// <returns>The <see cref="RunnerResult"/> predicted to win the race.</returns>
-        /// <exception cref="ArgumentException">Thrown when no runners are supplied or none match the race.</exception>
-        public static RunnerResult PredictWinner(IEnumerable<RunnerResult> runners, int raceId)
+        private static readonly MLContext Ml = new MLContext(seed: 1);
+        private static PredictionEngine<RunnerFeatures, RunnerPrediction>? _engine;
+        private static readonly string ModelPath = Path.Combine(AppContext.BaseDirectory, "winnerModel.zip");
+
+        /// <summary>
+        /// Trains a model from historical runner results and saves it to disk.
+        /// </summary>
+        /// <param name="runners">Historical runner results.</param>
+        /// <param name="modelPath">Optional path to save the trained model.</param>
+        public static void TrainModel(IEnumerable<RunnerResult> runners, string? modelPath = null)
         {
             if (runners == null)
-                throw new ArgumentException("At least one runner must be supplied", nameof(runners));
+                throw new ArgumentException("Training data required", nameof(runners));
 
-            var raceRunners = runners.Where(r => r.RaceId == raceId).ToList();
-            if (raceRunners.Count == 0)
-                throw new ArgumentException($"No runners found for race {raceId}", nameof(raceId));
-
-            // Build training data from historical races.
             var training = runners
-                .Where(r => r.RaceId != raceId && r.FinishPos.HasValue)
+                .Where(r => r.FinishPos.HasValue)
                 .Select(r => new RunnerFeatures
                 {
                     Odds = GetOdds(r),
@@ -43,20 +42,65 @@ namespace HorseRacingML.ML
                 })
                 .ToList();
 
-            if (training.Count > 0)
+            if (training.Count == 0)
+                return;
+
+            var data = Ml.Data.LoadFromEnumerable(training);
+            var pipeline = Ml.Transforms.Concatenate("Features",
+                                                     nameof(RunnerFeatures.Odds),
+                                                     nameof(RunnerFeatures.Weight),
+                                                     nameof(RunnerFeatures.Draw),
+                                                     nameof(RunnerFeatures.Age))
+                                 .Append(Ml.BinaryClassification.Trainers.LightGbm());
+
+            var model = pipeline.Fit(data);
+            var path = modelPath ?? ModelPath;
+            Ml.Model.Save(model, data.Schema, path);
+
+            _engine = Ml.Model.CreatePredictionEngine<RunnerFeatures, RunnerPrediction>(model);
+        }
+
+        /// <summary>
+        /// Ensures a model is available and refreshes it when the saved model is
+        /// older than <paramref name="maxAge"/>.
+        /// </summary>
+        /// <param name="runners">Runner results used to retrain when required.</param>
+        /// <param name="maxAge">Maximum allowed age of the model before retraining.</param>
+        public static void RefreshModel(IEnumerable<RunnerResult> runners, TimeSpan? maxAge = null)
+        {
+            var age = maxAge ?? TimeSpan.FromDays(7);
+            var info = new FileInfo(ModelPath);
+
+            bool needTrain = _engine == null || !info.Exists || DateTime.UtcNow - info.LastWriteTimeUtc > age;
+
+            if (needTrain)
             {
-                var ml = new MLContext(seed: 1);
-                var data = ml.Data.LoadFromEnumerable(training);
-                var pipeline = ml.Transforms.Concatenate("Features",
-                                                         nameof(RunnerFeatures.Odds),
-                                                         nameof(RunnerFeatures.Weight),
-                                                         nameof(RunnerFeatures.Draw),
-                                                         nameof(RunnerFeatures.Age))
-                                 .Append(ml.BinaryClassification.Trainers.LightGbm());
+                TrainModel(runners, ModelPath);
+            }
+            else if (_engine == null)
+            {
+                using var stream = File.OpenRead(ModelPath);
+                var model = Ml.Model.Load(stream, out _);
+                _engine = Ml.Model.CreatePredictionEngine<RunnerFeatures, RunnerPrediction>(model);
+            }
+        }
 
-                var model = pipeline.Fit(data);
-                var engine = ml.Model.CreatePredictionEngine<RunnerFeatures, RunnerPrediction>(model);
+        /// <summary>
+        /// Predicts the winner of the specified race using a pre-trained model.
+        /// </summary>
+        public static RunnerResult PredictWinner(IEnumerable<RunnerResult> runners, int raceId)
+        {
+            if (runners == null)
+                throw new ArgumentException("At least one runner must be supplied", nameof(runners));
 
+            var raceRunners = runners.Where(r => r.RaceId == raceId).ToList();
+            if (raceRunners.Count == 0)
+                throw new ArgumentException($"No runners found for race {raceId}", nameof(raceId));
+
+            RefreshModel(runners);
+
+            if (_engine != null)
+            {
                 RunnerResult? best = null;
                 float bestProb = float.NegativeInfinity;
 
@@ -70,7 +114,7 @@ namespace HorseRacingML.ML
                         Age = r.Age ?? 0
                     };
 
-                    var pred = engine.Predict(input);
+                    var pred = _engine.Predict(input);
                     if (best == null || pred.Probability > bestProb)
                     {
                         best = r;
@@ -82,7 +126,7 @@ namespace HorseRacingML.ML
                     return best;
             }
 
-            // Fallback heuristic if there was no training data.
+            // Fallback heuristic if there was no training data or prediction failed.
             RunnerResult? fallback = null;
             double fallbackScore = double.NegativeInfinity;
 

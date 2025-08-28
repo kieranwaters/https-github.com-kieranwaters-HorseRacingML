@@ -387,7 +387,6 @@ namespace HorseRacingML.ML
 
             var allRows = trainRows.Concat(valRows).ToList();
             var featureDims = new Dictionary<string, int>();
-            var filteredKeys = new List<string>();
             foreach (var k in keys)
             {
                 var sample = allRows.Select(r => r.ContainsKey(k) ? r[k] : null)
@@ -397,9 +396,8 @@ namespace HorseRacingML.ML
                     continue;
                 }
                 featureDims[k] = sample is string ? StringVectorSize : 1;
-                filteredKeys.Add(k);
             }
-            keys = filteredKeys;
+            var featureKeys = featureDims.Keys.ToList();
 
             int featureCount = featureDims.Values.Sum();
 
@@ -410,10 +408,11 @@ namespace HorseRacingML.ML
             {
                 var features = new float[featureCount];
                 int offset = 0;
-                foreach (var key in keys)
+                foreach (var key in featureKeys)
                 {
                     int dim = featureDims[key];
-                    var vec = EncodeFeature(row[key], dim);
+                    row.TryGetValue(key, out var value);
+                    var vec = EncodeFeature(value, dim);
                     Array.Copy(vec, 0, features, offset, dim);
                     offset += dim;
                 }
