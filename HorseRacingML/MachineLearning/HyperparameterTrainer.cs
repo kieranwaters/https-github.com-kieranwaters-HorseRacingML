@@ -117,6 +117,7 @@ namespace HorseRacingML.ML
             // New dictionaries for going, age restriction, and distance preferences
             var goingStats = new Dictionary<int, Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>>();
             var goingCourseStats = new Dictionary<int, Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>>();
+            var courseStats = new Dictionary<int, Dictionary<int, (int starts, int wins, float sumNorm, float lastNorm)>>();
             var ageStats = new Dictionary<int, Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>>();
             var distanceBucketStats = new Dictionary<int, Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>>();
             var horseDistanceAll = new Dictionary<int, (double sum, int count)>();
@@ -226,6 +227,15 @@ namespace HorseRacingML.ML
 
                 // Going + Course preference
                 int courseId = row["CourseId"] != null ? Convert.ToInt32(row["CourseId"]) : 0;
+                if (!courseStats.TryGetValue(horseId, out var cDict))
+                {
+                    cDict = new();
+                    courseStats[horseId] = cDict;
+                }
+                if (!cDict.TryGetValue(courseId, out var cStats))
+                    cStats = (0, 0, 0f, 0f);
+                row["CourseWinRate"] = cStats.starts > 0 ? (float)cStats.wins / cStats.starts : 0f;
+                row["LastCourseNormPos"] = cStats.lastNorm;
                 string gcKey = going + "_" + courseId;
                 if (!goingCourseStats.TryGetValue(horseId, out var gcDict))
                 {
@@ -401,7 +411,11 @@ namespace HorseRacingML.ML
                 if (finish.HasValue && finish.Value == 1) gcStats.wins++;
                 gcStats.lastNorm = normFinish;
                 gcDict[gcKey] = gcStats;
-
+                cStats.starts++;
+                cStats.sumNorm += normFinish;
+                if (finish.HasValue && finish.Value == 1) cStats.wins++;
+                cStats.lastNorm = normFinish;
+                cDict[courseId] = cStats;
                 aStats.starts++;
                 aStats.sumNorm += normFinish;
                 if (finish.HasValue && finish.Value == 1) aStats.wins++;
