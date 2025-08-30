@@ -206,6 +206,7 @@ namespace HorseRacingML.ML
             var courseStats = new Dictionary<int, Dictionary<int, (int starts, int wins, float sumNorm, float lastNorm)>>();
             var ageStats = new Dictionary<int, Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>>();
             var distanceBucketStats = new Dictionary<int, Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>>();
+            var goingDistanceStats = new Dictionary<(int horseId, string going, string bucket), (int starts, int wins, float sumNorm, float lastNorm)>();
             var horseDistanceAll = new Dictionary<int, (double sum, int count)>();
             var horseDistanceWins = new Dictionary<int, (double sum, int count)>();
 
@@ -448,6 +449,12 @@ namespace HorseRacingML.ML
                     dStats = (0, 0, 0f, 0f);
                 row["DistanceBucketWinRate"] = SmoothedWinRate(dStats.wins, dStats.starts);
                 row["LastDistanceBucketNormPos"] = dStats.lastNorm;
+                var gdKey = (horseId, going, bucket);
+                if (!goingDistanceStats.TryGetValue(gdKey, out var gdStats))
+                    gdStats = (0, 0, 0f, 0f);
+                row["GoingDistanceWinRate"] = SmoothedWinRate(gdStats.wins, gdStats.starts);
+                row["GoingDistanceAvgNorm"] = gdStats.starts > 0 ? gdStats.sumNorm / gdStats.starts : 0f;
+                row["LastGoingDistanceNormPos"] = gdStats.lastNorm;
                 foreach (var window in PerformanceWindows)
                 {
                     int count = Math.Min(window, history.Count);
@@ -628,7 +635,13 @@ namespace HorseRacingML.ML
                 if (finish.HasValue && finish.Value == 1) dStats.wins++;
                 dStats.lastNorm = normFinish;
                 dDict[bucket] = dStats;
-
+                var updateKey = (horseId, going, bucket);
+                goingDistanceStats.TryGetValue(updateKey, out var updateStats);
+                updateStats.starts++;
+                updateStats.sumNorm += normFinish;
+                if (finish.HasValue && finish.Value == 1) updateStats.wins++;
+                updateStats.lastNorm = normFinish;
+                goingDistanceStats[updateKey] = updateStats;
                 allDist.sum += distanceYards;
                 allDist.count++;
                 horseDistanceAll[horseId] = allDist;
