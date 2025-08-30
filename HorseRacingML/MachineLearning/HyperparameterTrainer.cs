@@ -218,6 +218,8 @@ namespace HorseRacingML.ML
             var ageStats = new Dictionary<int, Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>>();
             var distanceBucketStats = new Dictionary<int, Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>>();
             var goingDistanceStats = new Dictionary<(int horseId, string going, string bucket), (int starts, int wins, float sumNorm, float lastNorm)>();
+            var drawStats = new Dictionary<(int courseId, string bucket, int draw), (int starts, int wins)>();
+            var drawBaselineStats = new Dictionary<(int courseId, string bucket), (int starts, int wins)>();
             var horseDistanceAll = new Dictionary<int, (double sum, int count)>();
             var horseDistanceWins = new Dictionary<int, (double sum, int count)>();
             var trainerSurfaceStats = new Dictionary<int, Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>>();
@@ -502,6 +504,12 @@ namespace HorseRacingML.ML
                 row["SpeedRatio"] = raceSpeed != 0f ? runnerSpeed / raceSpeed : 0f;
                 string bucket = DistanceBucket(distanceYards);
                 row["DistanceBucket"] = bucket;
+                var drawKey = (courseId, bucket, draw);
+                drawStats.TryGetValue(drawKey, out var drawStat);
+                var baseKey = (courseId, bucket);
+                drawBaselineStats.TryGetValue(baseKey, out var baseStat);
+                row["DrawBias"] = SmoothedWinRate(drawStat.wins, drawStat.starts) -
+                                 SmoothedWinRate(baseStat.wins, baseStat.starts);
                 if (!distanceBucketStats.TryGetValue(horseId, out var dDict))
                 {
                     dDict = new();
@@ -791,6 +799,12 @@ namespace HorseRacingML.ML
                 if (finish.HasValue && finish.Value == 1) updateStats.wins++;
                 updateStats.lastNorm = normFinish;
                 goingDistanceStats[updateKey] = updateStats;
+                drawStat.starts++;
+                if (finish.HasValue && finish.Value == 1) drawStat.wins++;
+                drawStats[drawKey] = drawStat;
+                baseStat.starts++;
+                if (finish.HasValue && finish.Value == 1) baseStat.wins++;
+                drawBaselineStats[baseKey] = baseStat;
                 allDist.sum += distanceYards;
                 allDist.count++;
                 horseDistanceAll[horseId] = allDist;
@@ -1079,6 +1093,7 @@ rr.OfficialRating,
             featureDims["DistanceRatioFromAverage"] = 1;
             featureDims["CareerStarts"] = 1;
             featureDims["LifetimeWinRate"] = 1;
+            featureDims["DrawBias"] = 1;
             var featureKeys = featureDims.Keys.ToList();
 
             int featureCount = featureDims.Values.Sum();
