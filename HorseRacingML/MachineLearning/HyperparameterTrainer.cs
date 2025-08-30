@@ -170,7 +170,22 @@ namespace HorseRacingML.ML
                                          .Select(r => Convert.ToSingle(r["Age"]))
                                          .DefaultIfEmpty(0f)
                                          .Average();
-                        return (RunnerCount: cnt, AvgDraw: avgDraw, AvgWeight: avgWeight, AvgAge: avgAge);
+                        float avgRating = g.Where(r => r.TryGetValue("OfficialRating", out var orObj) && orObj != null)
+                                           .Select(r => Convert.ToSingle(r["OfficialRating"]))
+                                           .DefaultIfEmpty(0f)
+                                           .Average();
+                        // Purse/total prize money is stored once per race. If available
+                        // extract it from any runner row.
+                        float purse = g.Select(r => r.TryGetValue("Purse", out var pObj) && pObj != null
+                                                ? Convert.ToSingle(pObj)
+                                                : 0f)
+                                       .FirstOrDefault();
+                        return (RunnerCount: cnt,
+                                AvgDraw: avgDraw,
+                                AvgWeight: avgWeight,
+                                AvgAge: avgAge,
+                                AvgRating: avgRating,
+                                TotalPurse: purse);
                     });
 
             var ordered = rows
@@ -217,8 +232,13 @@ namespace HorseRacingML.ML
                 int draw = row["Draw"] != null ? Convert.ToInt32(row["Draw"]) : 0;
                 float runnerSpeed = 0f;
                 float weight = row["WeightLbs"] != null ? Convert.ToSingle(row["WeightLbs"]) : 0f;
+                float rating = row.TryGetValue("OfficialRating", out var ratingObj) && ratingObj != null
+                    ? Convert.ToSingle(ratingObj)
+                    : raceStat.AvgRating;
                 row["RelativeDraw"] = runnerCount > 0 ? (float)draw / runnerCount : 0f;
                 row["WeightDiffFromMean"] = weight - raceStat.AvgWeight;
+                row["RatingDiffFromField"] = rating - raceStat.AvgRating;
+                row["PurseLevel"] = raceStat.TotalPurse;
                 int age = row["Age"] != null ? Convert.ToInt32(row["Age"]) : 0;
                 row["AgeRelative"] = age - raceStat.AvgAge;
                 int classVal = row["Class"] != null ? Convert.ToInt32(row["Class"]) : 0;
@@ -686,6 +706,7 @@ namespace HorseRacingML.ML
                                r.RunnerCount,
                                r.Status,
                                r.WinningTimeMs,
+                                r.Purse,
                                rr.HorseId,
                                rr.TrainerId,
                                rr.JockeyId,
@@ -694,6 +715,7 @@ namespace HorseRacingML.ML
                                rr.Age,
                                rr.WeightLbs,
                                rr.WeightText,
+rr.OfficialRating,
                                rr.FinishPos,
                                rr.OutcomeCode,
                                rr.DistanceBeatenText,
