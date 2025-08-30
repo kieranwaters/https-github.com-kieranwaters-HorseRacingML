@@ -1033,7 +1033,6 @@ rr.OfficialRating,
             keys.Remove("RaceDate");
             keys.Remove("CourseName");
             keys.Remove("DistanceText");
-            keys.Remove("RaceType");
             keys.Remove("Status");
             keys.Remove("WeightText");
             keys.Remove("FavTag");
