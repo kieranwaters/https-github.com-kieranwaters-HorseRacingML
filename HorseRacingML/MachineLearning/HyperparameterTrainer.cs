@@ -167,11 +167,12 @@ namespace HorseRacingML.ML
                 .ThenBy(r => Convert.ToInt32(r["RaceId"]))
                 .ToList();
 
-            var horseHistory = new Dictionary<int, List<(DateTime date, float normFinish, short? finish, string going, int courseId, string bucket, int raceClass, float speed)>>();
+            var horseHistory = new Dictionary<int, List<(DateTime date, float normFinish, short? finish, string going, string surface, int courseId, string bucket, int raceClass, float speed)>>();
             var trainerStats = new Dictionary<int, RollingStat>();
             var jockeyStats = new Dictionary<int, RollingStat>();
             var trainerJockeyStats = new Dictionary<(int trainerId, int jockeyId), (int starts, int wins)>();
             // New dictionaries for going, age restriction, and distance preferences
+            var surfaceStats = new Dictionary<int, Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>>();
             var goingStats = new Dictionary<int, Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>>();
             var goingCourseStats = new Dictionary<int, Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>>();
             var courseStats = new Dictionary<int, Dictionary<int, (int starts, int wins, float sumNorm, float lastNorm)>>();
@@ -210,7 +211,7 @@ namespace HorseRacingML.ML
                 int classVal = row["Class"] != null ? Convert.ToInt32(row["Class"]) : 0;
                 if (!horseHistory.TryGetValue(horseId, out var history))
                 {
-                    history = new List<(DateTime date, float normFinish, short? finish, string going, int courseId, string bucket, int raceClass, float speed)>();
+                    history = new List<(DateTime date, float normFinish, short? finish, string going, string surface, int courseId, string bucket, int raceClass, float speed)>();
                     horseHistory[horseId] = history;
                 }
 
@@ -261,7 +262,7 @@ namespace HorseRacingML.ML
                     int count = Math.Min(window, history.Count);
 
                     // Ensure `recent` is available regardless of branch to avoid scope issues.
-                    List<(DateTime date, float normFinish, short? finish, string going, int courseId, string bucket, int raceClass, float speed)> recent;
+                    List<(DateTime date, float normFinish, short? finish, string going, string surface, int courseId, string bucket, int raceClass, float speed)> recent;
                     if (count > 0)
                     {
                         recent = history.GetRange(history.Count - count, count);
@@ -289,7 +290,17 @@ namespace HorseRacingML.ML
                 row["GoingWinRate"] = gStats.starts > 0 ? (float)gStats.wins / gStats.starts : 0f;
                 row["GoingAvgNorm"] = gStats.starts > 0 ? gStats.sumNorm / gStats.starts : 0f;
                 row["LastGoingNormPos"] = gStats.lastNorm;
-
+                string surface = row["Surface"] as string ?? "Unknown";
+                if (!surfaceStats.TryGetValue(horseId, out var sDict))
+                {
+                    sDict = new();
+                    surfaceStats[horseId] = sDict;
+                }
+                if (!sDict.TryGetValue(surface, out var sStats))
+                    sStats = (0, 0, 0f, 0f);
+                row["SurfaceWinRate"] = sStats.starts > 0 ? (float)sStats.wins / sStats.starts : 0f;
+                row["SurfaceAvgNorm"] = sStats.starts > 0 ? sStats.sumNorm / sStats.starts : 0f;
+                row["LastSurfaceNormPos"] = sStats.lastNorm;
                 // Going + Course preference
                 int courseId = row["CourseId"] != null ? Convert.ToInt32(row["CourseId"]) : 0;
                 if (!courseStats.TryGetValue(horseId, out var cDict))
@@ -366,7 +377,13 @@ namespace HorseRacingML.ML
                         row[$"GoingAvgNormLast{window}"] = goingRecent.Count > 0
                             ? goingRecent.Sum(h => h.normFinish) / goingRecent.Count
                             : 0f;
-
+                        var surfaceRecent = recent.Where(h => h.surface == surface).ToList();
+                        row[$"SurfaceWinRateLast{window}"] = surfaceRecent.Count > 0
+                            ? surfaceRecent.Count(h => h.finish == 1) / (float)surfaceRecent.Count
+                            : 0f;
+                        row[$"SurfaceAvgNormLast{window}"] = surfaceRecent.Count > 0
+                            ? surfaceRecent.Sum(h => h.normFinish) / surfaceRecent.Count
+                            : 0f;
                         var courseRecent = recent.Where(h => h.courseId == courseId).ToList();
                         row[$"CourseWinRateLast{window}"] = courseRecent.Count > 0
                             ? courseRecent.Count(h => h.finish == 1) / (float)courseRecent.Count
@@ -387,6 +404,8 @@ namespace HorseRacingML.ML
                     {
                         row[$"GoingWinRateLast{window}"] = 0f;
                         row[$"GoingAvgNormLast{window}"] = 0f;
+                        row[$"SurfaceWinRateLast{window}"] = 0f;
+                        row[$"SurfaceAvgNormLast{window}"] = 0f;
                         row[$"CourseWinRateLast{window}"] = 0f;
                         row[$"CourseAvgNormLast{window}"] = 0f;
                         row[$"DistanceBucketWinRateLast{window}"] = 0f;
@@ -482,10 +501,14 @@ namespace HorseRacingML.ML
                 float normFinish = (finish.HasValue && runnerCount > 1)
                     ? (runnerCount - finish.Value) / (float)(runnerCount - 1)
                     : 0f;
-                history.Add((date, normFinish, finish, going, courseId, bucket, classVal, runnerSpeed));
+                history.Add((date, normFinish, finish, going, surface, courseId, bucket, classVal, runnerSpeed));
                 if (history.Count > HistoryLength)
                     history.RemoveAt(0);
-
+                sStats.starts++;
+                sStats.sumNorm += normFinish;
+                if (finish.HasValue && finish.Value == 1) sStats.wins++;
+                sStats.lastNorm = normFinish;
+                sDict[surface] = sStats;
                 // Update going stats after race
                 gStats.starts++;
                 gStats.sumNorm += normFinish;
