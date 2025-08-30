@@ -57,6 +57,7 @@ namespace HorseRacingML.ML
         private const int TrainerJockeyRecentStarts = 50;
         private const int TrainerJockeyRecentDays = 180;
         private const float TypicalRestDays = 30f;
+        private const float MsPerLength = 200f;
         private class RollingStat
         {
             public int Starts;
@@ -166,7 +167,7 @@ namespace HorseRacingML.ML
                 .ThenBy(r => Convert.ToInt32(r["RaceId"]))
                 .ToList();
 
-            var horseHistory = new Dictionary<int, List<(DateTime date, float normFinish, short? finish, string going, int courseId, string bucket, int raceClass)>>();
+            var horseHistory = new Dictionary<int, List<(DateTime date, float normFinish, short? finish, string going, int courseId, string bucket, int raceClass, float speed)>>();
             var trainerStats = new Dictionary<int, RollingStat>();
             var jockeyStats = new Dictionary<int, RollingStat>();
             var trainerJockeyStats = new Dictionary<(int trainerId, int jockeyId), (int starts, int wins)>();
@@ -202,13 +203,14 @@ namespace HorseRacingML.ML
                     : (int?)null;
 
                 int draw = row["Draw"] != null ? Convert.ToInt32(row["Draw"]) : 0;
+                float runnerSpeed = 0f;
                 float weight = row["WeightLbs"] != null ? Convert.ToSingle(row["WeightLbs"]) : 0f;
                 row["RelativeDraw"] = runnerCount > 0 ? (float)draw / runnerCount : 0f;
                 row["WeightDiffFromMean"] = weight - raceStat.AvgWeight;
                 int classVal = row["Class"] != null ? Convert.ToInt32(row["Class"]) : 0;
                 if (!horseHistory.TryGetValue(horseId, out var history))
                 {
-                    history = new List<(DateTime date, float normFinish, short? finish, string going, int courseId, string bucket, int raceClass)>();
+                    history = new List<(DateTime date, float normFinish, short? finish, string going, int courseId, string bucket, int raceClass, float speed)>();
                     horseHistory[horseId] = history;
                 }
 
@@ -259,18 +261,20 @@ namespace HorseRacingML.ML
                     int count = Math.Min(window, history.Count);
 
                     // Ensure `recent` is available regardless of branch to avoid scope issues.
-                    List<(DateTime date, float normFinish, short? finish, string going, int courseId, string bucket, int raceClass)> recent;
+                    List<(DateTime date, float normFinish, short? finish, string going, int courseId, string bucket, int raceClass, float speed)> recent;
                     if (count > 0)
                     {
                         recent = history.GetRange(history.Count - count, count);
                         row[$"WinRateLast{window}"] = recent.Count(h => h.finish == 1) / (float)count;
                         row[$"AvgNormPosLast{window}"] = recent.Sum(h => h.normFinish) / count;
+                        row[$"AvgSpeedLast{window}"] = recent.Sum(h => h.speed) / count;
                     }
                     else
                     {
                         recent = new();
                         row[$"WinRateLast{window}"] = 0f;
                         row[$"AvgNormPosLast{window}"] = 0f;
+                        row[$"AvgSpeedLast{window}"] = 0f;
                     }
                 }
                 // Going performance
@@ -326,6 +330,17 @@ namespace HorseRacingML.ML
                 row["RaceSpeed"] = winningMs.HasValue && winningMs.Value > 0
                     ? distanceYards / (float)winningMs.Value
                     : 0f;
+                if (winningMs.HasValue && winningMs.Value > 0)
+                {
+                    float beaten = row["DistanceBeatenLengths"] != null ? Convert.ToSingle(row["DistanceBeatenLengths"]) : 0f;
+                    float runnerTime = winningMs.Value + beaten * MsPerLength;
+                    runnerSpeed = runnerTime > 0f ? distanceYards / runnerTime : 0f;
+                    row["RunnerSpeed"] = runnerSpeed;
+                }
+                else
+                {
+                    row["RunnerSpeed"] = 0f;
+                }
                 string bucket = DistanceBucket(distanceYards);
                 row["DistanceBucket"] = bucket;
                 if (!distanceBucketStats.TryGetValue(horseId, out var dDict))
@@ -467,7 +482,7 @@ namespace HorseRacingML.ML
                 float normFinish = (finish.HasValue && runnerCount > 1)
                     ? (runnerCount - finish.Value) / (float)(runnerCount - 1)
                     : 0f;
-                history.Add((date, normFinish, finish, going, courseId, bucket, classVal));
+                history.Add((date, normFinish, finish, going, courseId, bucket, classVal, runnerSpeed));
                 if (history.Count > HistoryLength)
                     history.RemoveAt(0);
 
