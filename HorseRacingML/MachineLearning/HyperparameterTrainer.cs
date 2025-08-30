@@ -235,7 +235,8 @@ namespace HorseRacingML.ML
                 if (!gcDict.TryGetValue(gcKey, out var gcStats))
                     gcStats = (0, 0, 0f, 0f);
                 row["GoingCourseWinRate"] = gcStats.starts > 0 ? (float)gcStats.wins / gcStats.starts : 0f;
-
+                row["GoingCourseAvgNorm"] = gcStats.starts > 0 ? gcStats.sumNorm / gcStats.starts : 0f;
+                row["LastGoingCourseNormPos"] = gcStats.lastNorm;
                 // Age restriction context
                 string ageRes = row["AgeRestriction"] as string ?? "Unknown";
                 if (!ageStats.TryGetValue(horseId, out var aDict))
