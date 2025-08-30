@@ -254,6 +254,9 @@ namespace HorseRacingML.ML
                 row.Remove("RaceMonth");
                 row.Remove("RaceDayOfWeek");
                 row.Remove("Season");
+                row.Remove("ActualOff");
+                row.Remove("ScheduledOff");
+                row.Remove("RaceDate");
                 short? finish = row["FinishPos"] != null ? (short?)Convert.ToInt16(row["FinishPos"]) : null;
                 int raceId = Convert.ToInt32(row["RaceId"]);
                 var raceStat = raceStats[raceId];
@@ -1009,6 +1012,7 @@ rr.OfficialRating,
             keys.Remove("Season");
             keys.Remove("ActualOff");
             keys.Remove("ScheduledOff");
+            keys.Remove("RaceDate");
             keys.Remove("CourseName");
             keys.Remove("DistanceText");
             keys.Remove("RaceType");
