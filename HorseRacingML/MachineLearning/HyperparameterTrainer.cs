@@ -1007,6 +1007,16 @@ rr.OfficialRating,
             keys.Remove("RaceMonth");
             keys.Remove("RaceDayOfWeek");
             keys.Remove("Season");
+            keys.Remove("ActualOff");
+            keys.Remove("ScheduledOff");
+            keys.Remove("CourseName");
+            keys.Remove("DistanceText");
+            keys.Remove("RaceType");
+            keys.Remove("Status");
+            keys.Remove("WeightText");
+            keys.Remove("FavTag");
+            keys.Remove("SaddleclothNumber");
+            keys.Remove("Purse");
 
             var allRows = trainRows.Concat(valRows).ToList();
             var featureDims = new Dictionary<string, int>();
