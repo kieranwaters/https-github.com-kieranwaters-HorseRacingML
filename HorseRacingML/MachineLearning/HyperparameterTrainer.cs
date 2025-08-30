@@ -217,10 +217,24 @@ namespace HorseRacingML.ML
             {
                 int horseId = Convert.ToInt32(row["HorseId"]);
                 DateTime date = (DateTime)row["RaceDate"];
-                row["RaceMonth"] = date.Month;
-                row["RaceDayOfWeek"] = (int)date.DayOfWeek;
+                int month = date.Month;
+                float monthAngle = 2f * MathF.PI * month / 12f;
+                row["RaceMonthSin"] = MathF.Sin(monthAngle);
+                row["RaceMonthCos"] = MathF.Cos(monthAngle);
+
+                int dayOfWeek = (int)date.DayOfWeek;
+                float dowAngle = 2f * MathF.PI * dayOfWeek / 7f;
+                row["RaceDayOfWeekSin"] = MathF.Sin(dowAngle);
+                row["RaceDayOfWeekCos"] = MathF.Cos(dowAngle);
                 row["IsWeekend"] = date.DayOfWeek == DayOfWeek.Saturday || date.DayOfWeek == DayOfWeek.Sunday;
-                row["Season"] = (date.Month % 12) / 3;
+                int season = (month % 12) / 3;
+                float seasonAngle = 2f * MathF.PI * season / 4f;
+                row["SeasonSin"] = MathF.Sin(seasonAngle);
+                row["SeasonCos"] = MathF.Cos(seasonAngle);
+
+                row.Remove("RaceMonth");
+                row.Remove("RaceDayOfWeek");
+                row.Remove("Season");
                 short? finish = row["FinishPos"] != null ? (short?)Convert.ToInt16(row["FinishPos"]) : null;
                 int raceId = Convert.ToInt32(row["RaceId"]);
                 var raceStat = raceStats[raceId];
@@ -842,6 +856,9 @@ rr.OfficialRating,
             keys.Remove("JockeyName");
             keys.Remove("TrainerName");
             keys.Remove("Title");
+            keys.Remove("RaceMonth");
+            keys.Remove("RaceDayOfWeek");
+            keys.Remove("Season");
 
             var allRows = trainRows.Concat(valRows).ToList();
             var featureDims = new Dictionary<string, int>();
