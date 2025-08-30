@@ -170,10 +170,18 @@ namespace HorseRacingML.ML
                                          .Select(r => Convert.ToSingle(r["Age"]))
                                          .DefaultIfEmpty(0f)
                                          .Average();
-                        float avgRating = g.Where(r => r.TryGetValue("OfficialRating", out var orObj) && orObj != null)
+                        var ratingValues = g.Where(r => r.TryGetValue("OfficialRating", out var orObj) && orObj != null)
                                            .Select(r => Convert.ToSingle(r["OfficialRating"]))
-                                           .DefaultIfEmpty(0f)
-                                           .Average();
+                                           .ToList();
+                        float avgRating = ratingValues.DefaultIfEmpty(0f).Average();
+                        float stdRating = 0f;
+                        if (ratingValues.Count > 0)
+                        {
+                            float variance = ratingValues
+                                .Select(r => (r - avgRating) * (r - avgRating))
+                                .Average();
+                            stdRating = (float)Math.Sqrt(variance);
+                        }
                         // Purse/total prize money is stored once per race. If available
                         // extract it from any runner row.
                         float purse = g.Select(r => r.TryGetValue("Purse", out var pObj) && pObj != null
@@ -185,6 +193,7 @@ namespace HorseRacingML.ML
                                 AvgWeight: avgWeight,
                                 AvgAge: avgAge,
                                 AvgRating: avgRating,
+                                StdRating: stdRating,
                                 TotalPurse: purse);
                     });
 
@@ -277,6 +286,7 @@ namespace HorseRacingML.ML
                 row["RelativeDraw"] = runnerCount > 0 ? (float)draw / runnerCount : 0f;
                 row["WeightDiffFromMean"] = weight - raceStat.AvgWeight;
                 row["RatingDiffFromField"] = rating - raceStat.AvgRating;
+                row["FieldRatingStdDev"] = raceStat.StdRating;
                 row["PurseLevel"] = raceStat.TotalPurse;
                 int age = row["Age"] != null ? Convert.ToInt32(row["Age"]) : 0;
                 row["AgeRelative"] = age - raceStat.AvgAge;
