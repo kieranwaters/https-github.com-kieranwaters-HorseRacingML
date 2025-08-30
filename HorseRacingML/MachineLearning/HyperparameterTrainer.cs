@@ -55,7 +55,7 @@ namespace HorseRacingML.ML
         private static readonly int[] PerformanceWindows = { 1, 3, 5, 10, 15, 20, 25, 30 };
         private const int TrainerJockeyRecentStarts = 50;
         private const int TrainerJockeyRecentDays = 180;
-
+        private const float TypicalRestDays = 30f;
         private class RollingStat
         {
             public int Starts;
@@ -159,6 +159,11 @@ namespace HorseRacingML.ML
                 row["ClassChangeFromLast"] = history.Count > 0 ? classVal - history[^1].raceClass : 0;
                 row["DaysSinceLastRace"] = history.Count > 0 ? (float)(date - history[^1].date).TotalDays : 0f;
                 row["LastFinishPos"] = history.Count > 0 ? history[^1].finish ?? 0 : 0;
+                var daysSinceLast = (float)row["DaysSinceLastRace"];
+                row["LayoffShort"] = daysSinceLast < 30f;
+                row["LayoffMedium"] = daysSinceLast >= 30f && daysSinceLast <= 90f;
+                row["LayoffLong"] = daysSinceLast > 90f;
+                row["LayoffNormalized"] = daysSinceLast / TypicalRestDays;
                 for (int i = 0; i < PastRaceCount; i++)
                 {
                     var key = $"Last{i + 1}NormPos";
