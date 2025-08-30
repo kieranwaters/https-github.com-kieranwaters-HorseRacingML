@@ -261,6 +261,10 @@ namespace HorseRacingML.ML
 
                 // Distance specialization
                 int distanceYards = row["DistanceYards"] != null ? Convert.ToInt32(row["DistanceYards"]) : 0;
+                int? winningMs = row["WinningTimeMs"] != null ? Convert.ToInt32(row["WinningTimeMs"]) : (int?)null;
+                row["RaceSpeed"] = winningMs.HasValue && winningMs.Value > 0
+                    ? distanceYards / (float)winningMs.Value
+                    : 0f;
                 string bucket = DistanceBucket(distanceYards);
                 row["DistanceBucket"] = bucket;
                 if (!distanceBucketStats.TryGetValue(horseId, out var dDict))
@@ -582,7 +586,6 @@ namespace HorseRacingML.ML
             keys.Remove("OutcomeCode");
             keys.Remove("DistanceBeatenText");
             keys.Remove("DistanceBeatenLengths");
-            keys.Remove("WinningTimeMs");
             keys.Remove("ActualOff");
             keys.Remove("SP_Fraction");
             keys.Remove("SP_Decimal");
