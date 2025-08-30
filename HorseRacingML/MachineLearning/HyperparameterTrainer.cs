@@ -217,6 +217,20 @@ namespace HorseRacingML.ML
             {
                 int horseId = Convert.ToInt32(row["HorseId"]);
                 DateTime date = (DateTime)row["RaceDate"];
+                TimeSpan? off = null;
+                if (row.TryGetValue("ActualOff", out var offObj) && offObj != null)
+                    off = (TimeSpan)offObj;
+                else if (row.TryGetValue("ScheduledOff", out offObj) && offObj != null)
+                    off = (TimeSpan)offObj;
+                float timeAngle = 0f;
+                if (off.HasValue)
+                {
+                    float minutes = (float)off.Value.TotalMinutes;
+                    timeAngle = 2f * MathF.PI * minutes / (24f * 60f);
+                }
+                row["TimeOfDaySin"] = MathF.Sin(timeAngle);
+                row["TimeOfDayCos"] = MathF.Cos(timeAngle);
+
                 int month = date.Month;
                 float monthAngle = 2f * MathF.PI * month / 12f;
                 row["RaceMonthSin"] = MathF.Sin(monthAngle);
@@ -853,7 +867,6 @@ rr.OfficialRating,
             keys.Remove("OutcomeCode");
             keys.Remove("DistanceBeatenText");
             keys.Remove("DistanceBeatenLengths");
-            keys.Remove("ActualOff");
             keys.Remove("SP_Fraction");
             keys.Remove("SP_Decimal");
             keys.Remove("OpeningFraction");
@@ -895,6 +908,8 @@ rr.OfficialRating,
                     featureDims[k] = 1;
                 }
             }
+            featureDims["TimeOfDaySin"] = 1;
+            featureDims["TimeOfDayCos"] = 1;
             var featureKeys = featureDims.Keys.ToList();
 
             int featureCount = featureDims.Values.Sum();
