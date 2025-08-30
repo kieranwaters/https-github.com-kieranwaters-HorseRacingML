@@ -334,7 +334,9 @@ namespace HorseRacingML.ML
                     row[$"TrainerWinRateLast{TrainerJockeyRecentStarts}"] = tCount > 0
                         ? tRecent.Skip(tRecent.Count - tCount).Count(r => r.win) / (float)tCount
                         : 0f;
-
+                    row["TrainerWinRateRecentDays"] = tRecent.Count > 0
+                       ? tRecent.Count(r => r.win) / (float)tRecent.Count
+                       : 0f;
                     row["TrainerWinRate"] = trainerStat.Starts > 0 ? (float)trainerStat.Wins / trainerStat.Starts : 0f;
 
                     trainerStat.Starts++;
@@ -349,6 +351,7 @@ namespace HorseRacingML.ML
                 {
                     row["TrainerWinRate"] = 0f;
                     row[$"TrainerWinRateLast{TrainerJockeyRecentStarts}"] = 0f;
+                    row["TrainerWinRateRecentDays"] = 0f;
                 }
                 if (jockeyId.HasValue)
                 {
@@ -363,6 +366,9 @@ namespace HorseRacingML.ML
                     int jCount = Math.Min(jRecent.Count, TrainerJockeyRecentStarts);
                     row[$"JockeyWinRateLast{TrainerJockeyRecentStarts}"] = jCount > 0
                         ? jRecent.Skip(jRecent.Count - jCount).Count(r => r.win) / (float)jCount
+                        : 0f;
+                    row["JockeyWinRateRecentDays"] = jRecent.Count > 0
+                        ? jRecent.Count(r => r.win) / (float)jRecent.Count
                         : 0f;
 
                     row["JockeyWinRate"] = jockeyStat.Starts > 0 ? (float)jockeyStat.Wins / jockeyStat.Starts : 0f;
@@ -379,6 +385,7 @@ namespace HorseRacingML.ML
                 {
                     row["JockeyWinRate"] = 0f;
                     row[$"JockeyWinRateLast{TrainerJockeyRecentStarts}"] = 0f;
+                    row["JockeyWinRateRecentDays"] = 0f;
                 }
                 if (trainerId.HasValue && jockeyId.HasValue)
                 {
