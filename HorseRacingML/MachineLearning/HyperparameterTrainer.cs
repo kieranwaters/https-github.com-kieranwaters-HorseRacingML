@@ -178,8 +178,8 @@ namespace HorseRacingML.ML
                 .ThenBy(r => Convert.ToInt32(r["RaceId"]))
                 .ToList();
 
-            var horseHistory = new Dictionary<int, List<(DateTime date, float normFinish, short? finish, string going, string surface, int courseId, string bucket, int raceClass, float speed, int age)>>();
-            var trainerStats = new Dictionary<int, RollingStat>();
+            var horseHistory = new Dictionary<int, List<(DateTime date, float normFinish, short? finish, string going, string surface, int courseId, string bucket, int raceClass, float speed, int age, bool win)>>();
+            Dictionary<int, RollingStat> trainerStats = new();
             var jockeyStats = new Dictionary<int, RollingStat>();
             var trainerJockeyStats = new Dictionary<(int trainerId, int jockeyId), (int starts, int wins)>();
             // New dictionaries for going, age restriction, and distance preferences
@@ -224,13 +224,24 @@ namespace HorseRacingML.ML
                 int classVal = row["Class"] != null ? Convert.ToInt32(row["Class"]) : 0;
                 if (!horseHistory.TryGetValue(horseId, out var history))
                 {
-                    history = new List<(DateTime date, float normFinish, short? finish, string going, string surface, int courseId, string bucket, int raceClass, float speed, int age)>();
+                    history = new List<(DateTime date, float normFinish, short? finish, string going, string surface, int courseId, string bucket, int raceClass, float speed, int age, bool win)>();
                     horseHistory[horseId] = history;
                 }
                 row["AgeProgression"] = history.Count > 0 ? age - history[^1].age : 0f;
                 row["ClassChangeFromLast"] = history.Count > 0 ? classVal - history[^1].raceClass : 0;
                 row["DaysSinceLastRace"] = history.Count > 0 ? (float)(date - history[^1].date).TotalDays : 0f;
                 row["LastFinishPos"] = history.Count > 0 ? history[^1].finish ?? 0 : 0;
+                int lastWinIdx = history.FindLastIndex(h => h.win);
+                if (lastWinIdx >= 0)
+                {
+                    row["DaysSinceLastWin"] = (float)(date - history[lastWinIdx].date).TotalDays;
+                    row["RacesSinceLastWin"] = history.Count - 1 - lastWinIdx;
+                }
+                else
+                {
+                    row["DaysSinceLastWin"] = 999f;
+                    row["RacesSinceLastWin"] = 999;
+                }
                 var daysSinceLast = (float)row["DaysSinceLastRace"];
                 row["LayoffShort"] = daysSinceLast < 30f;
                 row["LayoffMedium"] = daysSinceLast >= 30f && daysSinceLast <= 90f;
@@ -313,7 +324,7 @@ namespace HorseRacingML.ML
                     int count = Math.Min(window, history.Count);
 
                     // Ensure `recent` is available regardless of branch to avoid scope issues.
-                    List<(DateTime date, float normFinish, short? finish, string going, string surface, int courseId, string bucket, int raceClass, float speed, int age)> recent;
+                    List<(DateTime date, float normFinish, short? finish, string going, string surface, int courseId, string bucket, int raceClass, float speed, int age, bool win)> recent;
                     if (count > 0)
                     {
                         recent = history.GetRange(history.Count - count, count);
@@ -539,7 +550,7 @@ namespace HorseRacingML.ML
                 float normFinish = (finish.HasValue && runnerCount > 1)
                     ? (runnerCount - finish.Value) / (float)(runnerCount - 1)
                     : 0f;
-                history.Add((date, normFinish, finish, going, surface, courseId, bucket, classVal, runnerSpeed, age));
+                history.Add((date, normFinish, finish, going, surface, courseId, bucket, classVal, runnerSpeed, age, finish.HasValue && finish.Value == 1));
                 if (history.Count > HistoryLength)
                     history.RemoveAt(0);
                 sStats.starts++;
