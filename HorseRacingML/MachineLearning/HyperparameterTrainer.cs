@@ -138,19 +138,24 @@ namespace HorseRacingML.ML
         {
             foreach (var row in rows)
             {
+                bool distanceKnown = false;
+                float beatenLengths = 0f;
                 if (row.TryGetValue("DistanceBeatenLengths", out var lenObj) && lenObj != null)
                 {
-                    row["DistanceBeatenLengths"] = Convert.ToSingle(lenObj);
+                    beatenLengths = Convert.ToSingle(lenObj);
+                    distanceKnown = true;
                 }
                 else if (row.TryGetValue("DistanceBeatenText", out var txtObj) && txtObj is string txt)
                 {
-                    row["DistanceBeatenLengths"] = ParseDistanceBeaten(txt) ?? 0f;
+                    var parsed = ParseDistanceBeaten(txt);
+                    if (parsed.HasValue)
+                    {
+                        beatenLengths = parsed.Value;
+                        distanceKnown = true;
+                    }
+                    row["DistanceBeatenKnown"] = distanceKnown;
+                    row["DistanceBeatenLengths"] = beatenLengths;
                 }
-                else
-                {
-                    row["DistanceBeatenLengths"] = 0f;
-                }
-            }
             // Precompute average draw and weight for each race to allow
             // relative features on a per-runner basis.
             var raceStats = rows
@@ -1036,6 +1041,7 @@ rr.OfficialRating,
             keys.Remove("OutcomeCode");
             keys.Remove("DistanceBeatenText");
             keys.Remove("DistanceBeatenLengths");
+            keys.Remove("DistanceBeatenKnown");
             keys.Remove("SP_Fraction");
             keys.Remove("SP_Decimal");
             keys.Remove("OpeningFraction");
@@ -1094,6 +1100,8 @@ rr.OfficialRating,
             featureDims["CareerStarts"] = 1;
             featureDims["LifetimeWinRate"] = 1;
             featureDims["DrawBias"] = 1;
+            featureDims["DistanceBeatenLengths"] = 1;
+            featureDims["DistanceBeatenKnown"] = 1;
             var featureKeys = featureDims.Keys.ToList();
 
             int featureCount = featureDims.Values.Sum();
