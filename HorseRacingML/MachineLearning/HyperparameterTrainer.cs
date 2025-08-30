@@ -562,6 +562,32 @@ namespace HorseRacingML.ML
                     trainerJockeyStats[pairKey] = pairStat;
                 }
             }
+            var racePerfStats = rows
+               .GroupBy(r => Convert.ToInt32(r["RaceId"]))
+               .ToDictionary(
+                   g => g.Key,
+                   g =>
+                   {
+                       float avgSpeed = g
+                           .Select(r => r.ContainsKey("AvgSpeedLast5")
+                               ? Convert.ToSingle(r["AvgSpeedLast5"]) : 0f)
+                           .DefaultIfEmpty(0f)
+                           .Average();
+                       float avgWinRate = g
+                           .Select(r => r.ContainsKey("WinRateLast5")
+                               ? Convert.ToSingle(r["WinRateLast5"]) : 0f)
+                           .DefaultIfEmpty(0f)
+                           .Average();
+                       return (AvgSpeed: avgSpeed, AvgWinRate: avgWinRate);
+                   });
+
+            foreach (var row in rows)
+            {
+                int raceId = Convert.ToInt32(row["RaceId"]);
+                var stats = racePerfStats[raceId];
+                row["RaceAvgSpeedLast5"] = stats.AvgSpeed;
+                row["RaceAvgWinRateLast5"] = stats.AvgWinRate;
+            }
         }
         private static float[] EncodeNumeric(object value, int dim)
         {
