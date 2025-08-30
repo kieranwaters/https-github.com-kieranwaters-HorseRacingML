@@ -219,6 +219,7 @@ namespace HorseRacingML.ML
             var horseDistanceAll = new Dictionary<int, (double sum, int count)>();
             var horseDistanceWins = new Dictionary<int, (double sum, int count)>();
             var trainerSurfaceStats = new Dictionary<int, Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>>();
+            var horseLastDistance = new Dictionary<int, int>();
             var trainerGoingStats = new Dictionary<int, Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>>();
             var trainerDistanceStats = new Dictionary<int, Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>>();
             var jockeySurfaceStats = new Dictionary<int, Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>>();
@@ -554,6 +555,12 @@ namespace HorseRacingML.ML
                 // Preferred distance deviation
                 horseDistanceAll.TryGetValue(horseId, out var allDist);
                 horseDistanceWins.TryGetValue(horseId, out var winDist);
+                double avgDist = allDist.count > 0 ? allDist.sum / allDist.count : distanceYards;
+                row["DistanceRatioFromAverage"] = avgDist > 0 ? distanceYards / (float)avgDist : 1f;
+                if (horseLastDistance.TryGetValue(horseId, out var lastDist))
+                    row["DistanceChangeFromLast"] = distanceYards - lastDist;
+                else
+                    row["DistanceChangeFromLast"] = 0f;
                 double pref = winDist.count > 0 ? winDist.sum / winDist.count : (allDist.count > 0 ? allDist.sum / allDist.count : distanceYards);
                 row["DistanceFromPreferred"] = (float)Math.Abs(distanceYards - pref);
 
@@ -781,6 +788,7 @@ namespace HorseRacingML.ML
                 allDist.sum += distanceYards;
                 allDist.count++;
                 horseDistanceAll[horseId] = allDist;
+                horseLastDistance[horseId] = distanceYards;
                 if (finish.HasValue && finish.Value == 1)
                 {
                     winDist.sum += distanceYards;
@@ -1062,6 +1070,8 @@ rr.OfficialRating,
             }
             featureDims["TimeOfDaySin"] = 1;
             featureDims["TimeOfDayCos"] = 1;
+            featureDims["DistanceChangeFromLast"] = 1;
+            featureDims["DistanceRatioFromAverage"] = 1;
             var featureKeys = featureDims.Keys.ToList();
 
             int featureCount = featureDims.Values.Sum();
