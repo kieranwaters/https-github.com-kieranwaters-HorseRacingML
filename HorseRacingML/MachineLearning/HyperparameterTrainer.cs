@@ -54,10 +54,12 @@ namespace HorseRacingML.ML
         }
         private const int StringVectorSize = 4;
         private static readonly DateTime BaseDate = new DateTime(2005, 1, 1);
-        private const int PastRaceCount = 3;
-        private const int HistoryLength = 30;
+        private const int PastRaceCount = 5;
+        // Maximum history to keep per horse; must cover largest window
+        private const int HistoryLength = 120;
         // Windows (in races) for which performance metrics will be generated
-        private static readonly int[] PerformanceWindows = { 1, 3, 5, 10, 15, 20, 25, 30 };
+        private static readonly int[] PerformanceWindows =
+            { 1, 3, 5, 10, 15, 20, 25, 30, 50, 100 };
         private const int TrainerJockeyRecentStarts = 50;
         private const int TrainerJockeyRecentDays = 180;
         private const float TypicalRestDays = 30f;
@@ -391,6 +393,10 @@ namespace HorseRacingML.ML
                 }
                 row["RecentImprovement"] =
                     (float)row["Last1NormPos"] - (float)row[$"Last{PastRaceCount}NormPos"];
+                int careerStarts = history.Count;
+                int careerWins = history.Count(h => h.win);
+                row["CareerStarts"] = careerStarts;
+                row["LifetimeWinRate"] = SmoothedWinRate(careerWins, careerStarts);
                 foreach (var window in PerformanceWindows)
                 {
                     int count = Math.Min(window, history.Count);
@@ -1071,6 +1077,8 @@ rr.OfficialRating,
             featureDims["TimeOfDayCos"] = 1;
             featureDims["DistanceChangeFromLast"] = 1;
             featureDims["DistanceRatioFromAverage"] = 1;
+            featureDims["CareerStarts"] = 1;
+            featureDims["LifetimeWinRate"] = 1;
             var featureKeys = featureDims.Keys.ToList();
 
             int featureCount = featureDims.Values.Sum();
