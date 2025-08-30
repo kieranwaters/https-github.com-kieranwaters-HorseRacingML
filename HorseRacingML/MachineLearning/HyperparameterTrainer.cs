@@ -159,7 +159,11 @@ namespace HorseRacingML.ML
                                            .Select(r => Convert.ToSingle(r["WeightLbs"]))
                                            .DefaultIfEmpty(0f)
                                            .Average();
-                        return (RunnerCount: cnt, AvgDraw: avgDraw, AvgWeight: avgWeight);
+                        float avgAge = g.Where(r => r["Age"] != null)
+                                         .Select(r => Convert.ToSingle(r["Age"]))
+                                         .DefaultIfEmpty(0f)
+                                         .Average();
+                        return (RunnerCount: cnt, AvgDraw: avgDraw, AvgWeight: avgWeight, AvgAge: avgAge);
                     });
 
             var ordered = rows
@@ -167,7 +171,7 @@ namespace HorseRacingML.ML
                 .ThenBy(r => Convert.ToInt32(r["RaceId"]))
                 .ToList();
 
-            var horseHistory = new Dictionary<int, List<(DateTime date, float normFinish, short? finish, string going, string surface, int courseId, string bucket, int raceClass, float speed)>>();
+            var horseHistory = new Dictionary<int, List<(DateTime date, float normFinish, short? finish, string going, string surface, int courseId, string bucket, int raceClass, float speed, int age)>>();
             var trainerStats = new Dictionary<int, RollingStat>();
             var jockeyStats = new Dictionary<int, RollingStat>();
             var trainerJockeyStats = new Dictionary<(int trainerId, int jockeyId), (int starts, int wins)>();
@@ -208,13 +212,15 @@ namespace HorseRacingML.ML
                 float weight = row["WeightLbs"] != null ? Convert.ToSingle(row["WeightLbs"]) : 0f;
                 row["RelativeDraw"] = runnerCount > 0 ? (float)draw / runnerCount : 0f;
                 row["WeightDiffFromMean"] = weight - raceStat.AvgWeight;
+                int age = row["Age"] != null ? Convert.ToInt32(row["Age"]) : 0;
+                row["AgeRelative"] = age - raceStat.AvgAge;
                 int classVal = row["Class"] != null ? Convert.ToInt32(row["Class"]) : 0;
                 if (!horseHistory.TryGetValue(horseId, out var history))
                 {
-                    history = new List<(DateTime date, float normFinish, short? finish, string going, string surface, int courseId, string bucket, int raceClass, float speed)>();
+                    history = new List<(DateTime date, float normFinish, short? finish, string going, string surface, int courseId, string bucket, int raceClass, float speed, int age)>();
                     horseHistory[horseId] = history;
                 }
-
+                row["AgeProgression"] = history.Count > 0 ? age - history[^1].age : 0f;
                 row["ClassChangeFromLast"] = history.Count > 0 ? classVal - history[^1].raceClass : 0;
                 row["DaysSinceLastRace"] = history.Count > 0 ? (float)(date - history[^1].date).TotalDays : 0f;
                 row["LastFinishPos"] = history.Count > 0 ? history[^1].finish ?? 0 : 0;
@@ -262,7 +268,7 @@ namespace HorseRacingML.ML
                     int count = Math.Min(window, history.Count);
 
                     // Ensure `recent` is available regardless of branch to avoid scope issues.
-                    List<(DateTime date, float normFinish, short? finish, string going, string surface, int courseId, string bucket, int raceClass, float speed)> recent;
+                    List<(DateTime date, float normFinish, short? finish, string going, string surface, int courseId, string bucket, int raceClass, float speed, int age)> recent;
                     if (count > 0)
                     {
                         recent = history.GetRange(history.Count - count, count);
@@ -501,7 +507,7 @@ namespace HorseRacingML.ML
                 float normFinish = (finish.HasValue && runnerCount > 1)
                     ? (runnerCount - finish.Value) / (float)(runnerCount - 1)
                     : 0f;
-                history.Add((date, normFinish, finish, going, surface, courseId, bucket, classVal, runnerSpeed));
+                history.Add((date, normFinish, finish, going, surface, courseId, bucket, classVal, runnerSpeed, age));
                 if (history.Count > HistoryLength)
                     history.RemoveAt(0);
                 sStats.starts++;
