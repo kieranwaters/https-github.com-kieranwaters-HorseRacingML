@@ -23,11 +23,15 @@ namespace HorseRacingML.ML
     public class HyperparameterTrainer
     {
         private readonly string _connectionString;
+        private readonly float _winRateAlpha;
+        private readonly float _winRateBeta;
 
         public HyperparameterTrainer(IConfiguration configuration)
         {
             _connectionString = configuration.GetConnectionString("HorseRacingDb")
                 ?? throw new InvalidOperationException("Connection string 'HorseRacingDb' not found.");
+            _winRateAlpha = configuration.GetValue<float>("WinRateAlpha", 1f);
+            _winRateBeta = configuration.GetValue<float>("WinRateBeta", 2f);
         }
         private static double ComputeWinnerAccuracy(IReadOnlyList<int> raceIds,
             IReadOnlyList<float> preds, IReadOnlyList<float> labels)
@@ -125,7 +129,10 @@ namespace HorseRacingML.ML
             }
             return total > 0 ? (float)total : (float?)null;
         }
-        private static void AddDerivedFeatures(List<Dictionary<string, object>> rows)
+        private float SmoothedWinRate(int wins, int starts)
+            => (wins + _winRateAlpha) / (starts + _winRateBeta);
+
+        private void AddDerivedFeatures(List<Dictionary<string, object>> rows)
         {
             foreach (var row in rows)
             {
@@ -272,14 +279,15 @@ namespace HorseRacingML.ML
                     if (count > 0)
                     {
                         recent = history.GetRange(history.Count - count, count);
-                        row[$"WinRateLast{window}"] = recent.Count(h => h.finish == 1) / (float)count;
+                        int wins = recent.Count(h => h.finish == 1);
+                        row[$"WinRateLast{window}"] = SmoothedWinRate(wins, count);
                         row[$"AvgNormPosLast{window}"] = recent.Sum(h => h.normFinish) / count;
                         row[$"AvgSpeedLast{window}"] = recent.Sum(h => h.speed) / count;
                     }
                     else
                     {
                         recent = new();
-                        row[$"WinRateLast{window}"] = 0f;
+                        row[$"WinRateLast{window}"] = SmoothedWinRate(0, 0);
                         row[$"AvgNormPosLast{window}"] = 0f;
                         row[$"AvgSpeedLast{window}"] = 0f;
                     }
@@ -293,7 +301,7 @@ namespace HorseRacingML.ML
                 }
                 if (!gDict.TryGetValue(going, out var gStats))
                     gStats = (0, 0, 0f, 0f);
-                row["GoingWinRate"] = gStats.starts > 0 ? (float)gStats.wins / gStats.starts : 0f;
+                row["GoingWinRate"] = SmoothedWinRate(gStats.wins, gStats.starts);
                 row["GoingAvgNorm"] = gStats.starts > 0 ? gStats.sumNorm / gStats.starts : 0f;
                 row["LastGoingNormPos"] = gStats.lastNorm;
                 string surface = row["Surface"] as string ?? "Unknown";
@@ -304,7 +312,7 @@ namespace HorseRacingML.ML
                 }
                 if (!sDict.TryGetValue(surface, out var sStats))
                     sStats = (0, 0, 0f, 0f);
-                row["SurfaceWinRate"] = sStats.starts > 0 ? (float)sStats.wins / sStats.starts : 0f;
+                row["SurfaceWinRate"] = SmoothedWinRate(sStats.wins, sStats.starts);
                 row["SurfaceAvgNorm"] = sStats.starts > 0 ? sStats.sumNorm / sStats.starts : 0f;
                 row["LastSurfaceNormPos"] = sStats.lastNorm;
                 // Going + Course preference
@@ -316,7 +324,7 @@ namespace HorseRacingML.ML
                 }
                 if (!cDict.TryGetValue(courseId, out var cStats))
                     cStats = (0, 0, 0f, 0f);
-                row["CourseWinRate"] = cStats.starts > 0 ? (float)cStats.wins / cStats.starts : 0f;
+                row["CourseWinRate"] = SmoothedWinRate(cStats.wins, cStats.starts);
                 row["LastCourseNormPos"] = cStats.lastNorm;
                 string gcKey = going + "_" + courseId;
                 if (!goingCourseStats.TryGetValue(horseId, out var gcDict))
@@ -326,7 +334,7 @@ namespace HorseRacingML.ML
                 }
                 if (!gcDict.TryGetValue(gcKey, out var gcStats))
                     gcStats = (0, 0, 0f, 0f);
-                row["GoingCourseWinRate"] = gcStats.starts > 0 ? (float)gcStats.wins / gcStats.starts : 0f;
+                row["GoingCourseWinRate"] = SmoothedWinRate(gcStats.wins, gcStats.starts);
                 row["GoingCourseAvgNorm"] = gcStats.starts > 0 ? gcStats.sumNorm / gcStats.starts : 0f;
                 row["LastGoingCourseNormPos"] = gcStats.lastNorm;
                 // Age restriction context
@@ -338,7 +346,7 @@ namespace HorseRacingML.ML
                 }
                 if (!aDict.TryGetValue(ageRes, out var aStats))
                     aStats = (0, 0, 0f, 0f);
-                row["AgeRestrictionWinRate"] = aStats.starts > 0 ? (float)aStats.wins / aStats.starts : 0f;
+                row["AgeRestrictionWinRate"] = SmoothedWinRate(aStats.wins, aStats.starts);
                 row["LastAgeRestrictionNormPos"] = aStats.lastNorm;
 
                 // Distance specialization
@@ -367,7 +375,7 @@ namespace HorseRacingML.ML
                 }
                 if (!dDict.TryGetValue(bucket, out var dStats))
                     dStats = (0, 0, 0f, 0f);
-                row["DistanceBucketWinRate"] = dStats.starts > 0 ? (float)dStats.wins / dStats.starts : 0f;
+                row["DistanceBucketWinRate"] = SmoothedWinRate(dStats.wins, dStats.starts);
                 row["LastDistanceBucketNormPos"] = dStats.lastNorm;
                 foreach (var window in PerformanceWindows)
                 {
@@ -377,44 +385,36 @@ namespace HorseRacingML.ML
                         var recent = history.GetRange(history.Count - count, count);
 
                         var goingRecent = recent.Where(h => h.going == going).ToList();
-                        row[$"GoingWinRateLast{window}"] = goingRecent.Count > 0
-                            ? goingRecent.Count(h => h.finish == 1) / (float)goingRecent.Count
-                            : 0f;
+                        row[$"GoingWinRateLast{window}"] = SmoothedWinRate(goingRecent.Count(h => h.finish == 1), goingRecent.Count);
                         row[$"GoingAvgNormLast{window}"] = goingRecent.Count > 0
                             ? goingRecent.Sum(h => h.normFinish) / goingRecent.Count
                             : 0f;
                         var surfaceRecent = recent.Where(h => h.surface == surface).ToList();
-                        row[$"SurfaceWinRateLast{window}"] = surfaceRecent.Count > 0
-                            ? surfaceRecent.Count(h => h.finish == 1) / (float)surfaceRecent.Count
-                            : 0f;
+                        row[$"SurfaceWinRateLast{window}"] = SmoothedWinRate(surfaceRecent.Count(h => h.finish == 1), surfaceRecent.Count);
                         row[$"SurfaceAvgNormLast{window}"] = surfaceRecent.Count > 0
                             ? surfaceRecent.Sum(h => h.normFinish) / surfaceRecent.Count
                             : 0f;
                         var courseRecent = recent.Where(h => h.courseId == courseId).ToList();
-                        row[$"CourseWinRateLast{window}"] = courseRecent.Count > 0
-                            ? courseRecent.Count(h => h.finish == 1) / (float)courseRecent.Count
-                            : 0f;
+                        row[$"CourseWinRateLast{window}"] = SmoothedWinRate(courseRecent.Count(h => h.finish == 1), courseRecent.Count);
                         row[$"CourseAvgNormLast{window}"] = courseRecent.Count > 0
                             ? courseRecent.Sum(h => h.normFinish) / courseRecent.Count
                             : 0f;
 
                         var bucketRecent = recent.Where(h => h.bucket == bucket).ToList();
-                        row[$"DistanceBucketWinRateLast{window}"] = bucketRecent.Count > 0
-                            ? bucketRecent.Count(h => h.finish == 1) / (float)bucketRecent.Count
-                            : 0f;
+                        row[$"DistanceBucketWinRateLast{window}"] = SmoothedWinRate(bucketRecent.Count(h => h.finish == 1), bucketRecent.Count);
                         row[$"DistanceBucketAvgNormLast{window}"] = bucketRecent.Count > 0
                             ? bucketRecent.Sum(h => h.normFinish) / bucketRecent.Count
                             : 0f;
                     }
                     else
                     {
-                        row[$"GoingWinRateLast{window}"] = 0f;
+                        row[$"GoingWinRateLast{window}"] = SmoothedWinRate(0, 0);
                         row[$"GoingAvgNormLast{window}"] = 0f;
-                        row[$"SurfaceWinRateLast{window}"] = 0f;
+                        row[$"SurfaceWinRateLast{window}"] = SmoothedWinRate(0, 0);
                         row[$"SurfaceAvgNormLast{window}"] = 0f;
-                        row[$"CourseWinRateLast{window}"] = 0f;
+                        row[$"CourseWinRateLast{window}"] = SmoothedWinRate(0, 0);
                         row[$"CourseAvgNormLast{window}"] = 0f;
-                        row[$"DistanceBucketWinRateLast{window}"] = 0f;
+                        row[$"DistanceBucketWinRateLast{window}"] = SmoothedWinRate(0, 0);
                         row[$"DistanceBucketAvgNormLast{window}"] = 0f;
                     }
                 }
@@ -436,13 +436,10 @@ namespace HorseRacingML.ML
 
                     var tRecent = trainerStat.Recent.ToList();
                     int tCount = Math.Min(tRecent.Count, TrainerJockeyRecentStarts);
-                    row[$"TrainerWinRateLast{TrainerJockeyRecentStarts}"] = tCount > 0
-                        ? tRecent.Skip(tRecent.Count - tCount).Count(r => r.win) / (float)tCount
-                        : 0f;
-                    row["TrainerWinRateRecentDays"] = tRecent.Count > 0
-                       ? tRecent.Count(r => r.win) / (float)tRecent.Count
-                       : 0f;
-                    row["TrainerWinRate"] = trainerStat.Starts > 0 ? (float)trainerStat.Wins / trainerStat.Starts : 0f;
+                    int tWinsRecent = tRecent.Skip(tRecent.Count - tCount).Count(r => r.win);
+                    row[$"TrainerWinRateLast{TrainerJockeyRecentStarts}"] = SmoothedWinRate(tWinsRecent, tCount);
+                    row["TrainerWinRateRecentDays"] = SmoothedWinRate(tRecent.Count(r => r.win), tRecent.Count);
+                    row["TrainerWinRate"] = SmoothedWinRate(trainerStat.Wins, trainerStat.Starts);
 
                     trainerStat.Starts++;
                     bool tWin = finish.HasValue && finish.Value == 1;
@@ -469,14 +466,11 @@ namespace HorseRacingML.ML
 
                     var jRecent = jockeyStat.Recent.ToList();
                     int jCount = Math.Min(jRecent.Count, TrainerJockeyRecentStarts);
-                    row[$"JockeyWinRateLast{TrainerJockeyRecentStarts}"] = jCount > 0
-                        ? jRecent.Skip(jRecent.Count - jCount).Count(r => r.win) / (float)jCount
-                        : 0f;
-                    row["JockeyWinRateRecentDays"] = jRecent.Count > 0
-                        ? jRecent.Count(r => r.win) / (float)jRecent.Count
-                        : 0f;
+                    int jWinsRecent = jRecent.Skip(jRecent.Count - jCount).Count(r => r.win);
+                    row[$"JockeyWinRateLast{TrainerJockeyRecentStarts}"] = SmoothedWinRate(jWinsRecent, jCount);
+                    row["JockeyWinRateRecentDays"] = SmoothedWinRate(jRecent.Count(r => r.win), jRecent.Count);
 
-                    row["JockeyWinRate"] = jockeyStat.Starts > 0 ? (float)jockeyStat.Wins / jockeyStat.Starts : 0f;
+                    row["JockeyWinRate"] = SmoothedWinRate(jockeyStat.Wins, jockeyStat.Starts);
 
                     jockeyStat.Starts++;
                     bool jWin = finish.HasValue && finish.Value == 1;
@@ -497,7 +491,7 @@ namespace HorseRacingML.ML
                     var pairKey = (trainerId.Value, jockeyId.Value);
                     if (!trainerJockeyStats.TryGetValue(pairKey, out var pairStat))
                         pairStat = (0, 0);
-                    row["TrainerJockeyWinRate"] = pairStat.starts > 0 ? (float)pairStat.wins / pairStat.starts : 0f;
+                    row["TrainerJockeyWinRate"] = SmoothedWinRate(pairStat.wins, pairStat.starts);
                 }
                 else
                 {
