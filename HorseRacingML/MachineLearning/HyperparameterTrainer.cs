@@ -268,6 +268,44 @@ namespace HorseRacingML.ML
                 {
                     row["NormPosSlope"] = 0f;
                 }
+                int speedCount = Math.Min(PastRaceCount, history.Count);
+                if (speedCount > 0)
+                {
+                    var recentSpeeds = history
+                        .GetRange(history.Count - speedCount, speedCount)
+                        .Select(h => h.speed)
+                        .ToList();
+                    float speedMean = recentSpeeds.Average();
+                    float variance = 0f;
+                    foreach (var s in recentSpeeds)
+                    {
+                        float diff = s - speedMean;
+                        variance += diff * diff;
+                    }
+                    row["SpeedStdDev"] = (float)Math.Sqrt(variance / recentSpeeds.Count);
+                    if (speedCount > 1)
+                    {
+                        float xMean = (speedCount - 1) / 2f;
+                        float num = 0f, den = 0f;
+                        for (int j = 0; j < recentSpeeds.Count; j++)
+                        {
+                            float x = j;
+                            float y = recentSpeeds[j];
+                            num += (x - xMean) * (y - speedMean);
+                            den += (x - xMean) * (x - xMean);
+                        }
+                        row["SpeedSlope"] = den != 0f ? num / den : 0f;
+                    }
+                    else
+                    {
+                        row["SpeedSlope"] = 0f;
+                    }
+                }
+                else
+                {
+                    row["SpeedSlope"] = 0f;
+                    row["SpeedStdDev"] = 0f;
+                }
                 row["RecentImprovement"] =
                     (float)row["Last1NormPos"] - (float)row[$"Last{PastRaceCount}NormPos"];
                 foreach (var window in PerformanceWindows)
