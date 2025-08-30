@@ -197,6 +197,8 @@ namespace HorseRacingML.ML
             Dictionary<int, RollingStat> trainerStats = new();
             var jockeyStats = new Dictionary<int, RollingStat>();
             var trainerJockeyStats = new Dictionary<(int trainerId, int jockeyId), (int starts, int wins)>();
+            var trainerCourseStats = new Dictionary<(int trainerId, int courseId), (int starts, int wins)>();
+            var jockeyCourseStats = new Dictionary<(int jockeyId, int courseId), (int starts, int wins)>();
             // New dictionaries for going, age restriction, and distance preferences
             var surfaceStats = new Dictionary<int, Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>>();
             var goingStats = new Dictionary<int, Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>>();
@@ -555,6 +557,26 @@ namespace HorseRacingML.ML
                     row[$"JockeyWinRateLast{TrainerJockeyRecentStarts}"] = 0f;
                     row["JockeyWinRateRecentDays"] = 0f;
                 }
+                if (trainerId.HasValue)
+                {
+                    var tcKey = (trainerId.Value, courseId);
+                    trainerCourseStats.TryGetValue(tcKey, out var tcStat);
+                    row["TrainerCourseWinRate"] = SmoothedWinRate(tcStat.wins, tcStat.starts);
+                }
+                else
+                {
+                    row["TrainerCourseWinRate"] = 0f;
+                }
+                if (jockeyId.HasValue)
+                {
+                    var jcKey = (jockeyId.Value, courseId);
+                    jockeyCourseStats.TryGetValue(jcKey, out var jcStat);
+                    row["JockeyCourseWinRate"] = SmoothedWinRate(jcStat.wins, jcStat.starts);
+                }
+                else
+                {
+                    row["JockeyCourseWinRate"] = 0f;
+                }
                 if (trainerId.HasValue && jockeyId.HasValue)
                 {
                     var pairKey = (trainerId.Value, jockeyId.Value);
@@ -616,6 +638,22 @@ namespace HorseRacingML.ML
                     winDist.count++;
                 }
                 horseDistanceWins[horseId] = winDist;
+                if (trainerId.HasValue)
+                {
+                    var tcKey = (trainerId.Value, courseId);
+                    trainerCourseStats.TryGetValue(tcKey, out var tcStat);
+                    tcStat.starts++;
+                    if (finish.HasValue && finish.Value == 1) tcStat.wins++;
+                    trainerCourseStats[tcKey] = tcStat;
+                }
+                if (jockeyId.HasValue)
+                {
+                    var jcKey = (jockeyId.Value, courseId);
+                    jockeyCourseStats.TryGetValue(jcKey, out var jcStat);
+                    jcStat.starts++;
+                    if (finish.HasValue && finish.Value == 1) jcStat.wins++;
+                    jockeyCourseStats[jcKey] = jcStat;
+                }
                 if (trainerId.HasValue && jockeyId.HasValue)
                 {
                     var pairKey = (trainerId.Value, jockeyId.Value);
