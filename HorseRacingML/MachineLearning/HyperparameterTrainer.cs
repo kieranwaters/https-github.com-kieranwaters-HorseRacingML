@@ -9,6 +9,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.IO;
+using System.Globalization;
 using System.Text.Json;
 using TensorShape = Tensorflow.Shape;
 
@@ -83,8 +84,63 @@ namespace HorseRacingML.ML
                 _ => EncodeNumeric(value, dim)
             };
         }
+        private static float? ParseDistanceBeaten(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+                return null;
+            text = text.Trim().ToLowerInvariant();
+            var map = new Dictionary<string, float>
+            {
+                {"nse", 0.05f},
+                {"nose", 0.05f},
+                {"shd", 0.1f},
+                {"sht-hd", 0.1f},
+                {"hd", 0.2f},
+                {"snk", 0.25f},
+                {"nk", 0.3f},
+                {"dist", 30f}
+            };
+            if (map.TryGetValue(text, out var val))
+                return val;
+            text = text.Replace("¼", ".25").Replace("½", ".5").Replace("¾", ".75");
+            double total = 0;
+            foreach (var part in text.Split(new[] { ' ', '+' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (double.TryParse(part, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var num))
+                {
+                    total += num;
+                }
+                else if (part.Contains('/'))
+                {
+                    var frac = part.Split('/');
+                    if (frac.Length == 2 &&
+                        double.TryParse(frac[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) &&
+                        double.TryParse(frac[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var d) &&
+                        d != 0)
+                    {
+                        total += n / d;
+                    }
+                }
+            }
+            return total > 0 ? (float)total : (float?)null;
+        }
         private static void AddDerivedFeatures(List<Dictionary<string, object>> rows)
         {
+            foreach (var row in rows)
+            {
+                if (row.TryGetValue("DistanceBeatenLengths", out var lenObj) && lenObj != null)
+                {
+                    row["DistanceBeatenLengths"] = Convert.ToSingle(lenObj);
+                }
+                else if (row.TryGetValue("DistanceBeatenText", out var txtObj) && txtObj is string txt)
+                {
+                    row["DistanceBeatenLengths"] = ParseDistanceBeaten(txt) ?? 0f;
+                }
+                else
+                {
+                    row["DistanceBeatenLengths"] = 0f;
+                }
+            }
             // Precompute average draw and weight for each race to allow
             // relative features on a per-runner basis.
             var raceStats = rows
@@ -528,7 +584,6 @@ namespace HorseRacingML.ML
                                rr.FinishPos,
                                rr.OutcomeCode,
                                rr.DistanceBeatenText,
-                               rr.DistanceBeatenLengths,
                                rr.SP_Fraction,
                                rr.SP_Decimal,
                                rr.FavTag,
