@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Globalization;
 
 namespace HorseRacingML.ML
 {
@@ -32,9 +33,40 @@ namespace HorseRacingML.ML
             if (runners == null)
                 throw new ArgumentException("Training data required", nameof(runners));
 
-            var training = runners
-                .Where(r => r.FinishPos.HasValue)
-                .Select(r => new RunnerFeatures
+            var ordered = runners.Where(r => r.FinishPos.HasValue)
+                                  .OrderBy(r => r.RaceId)
+                                  .ToList();
+
+            var raceStats = ordered
+                .GroupBy(r => r.RaceId)
+                .ToDictionary(g => g.Key,
+                              g => g.Where(r => r.Draw.HasValue)
+                                    .Select(r => (float)r.Draw!)
+                                    .DefaultIfEmpty(0f)
+                                    .Average());
+
+            var history = new Dictionary<int, List<RunnerResult>>();
+            var training = new List<RunnerFeatures>();
+            foreach (var r in ordered)
+            {
+                if (!history.TryGetValue(r.HorseId, out var hist))
+                {
+                    hist = new List<RunnerResult>();
+                    history[r.HorseId] = hist;
+                }
+
+                int starts = hist.Count;
+                int wins = hist.Count(h => h.FinishPos == 1);
+                float lastDistance = starts > 0 ? hist.Last().DistanceYards : r.DistanceYards;
+                float avgDistance = starts > 0 ? hist.Average(h => h.DistanceYards) : r.DistanceYards;
+                float distChange = r.DistanceYards - lastDistance;
+                float distRatio = starts > 0 ? r.DistanceYards / avgDistance : 1f;
+                var (beaten, beatenKnown) = GetDistanceBeaten(r);
+                float drawBias = r.Draw.HasValue && raceStats.TryGetValue(r.RaceId, out var avgDraw)
+                    ? r.Draw.Value - avgDraw
+                    : 0f;
+
+                training.Add(new RunnerFeatures
                 {
                     Odds = GetOdds(r),
                     Weight = r.WeightLbs ?? 0,
@@ -44,9 +76,20 @@ namespace HorseRacingML.ML
                     Surface = EncodeSurface(r.Surface),
                     Course = r.CourseId ?? 0,
                     Distance = r.DistanceYards,
+                    TimeOfDaySin = 0f,
+                    TimeOfDayCos = 0f,
+                    DistanceChangeFromLast = distChange,
+                    DistanceRatioFromAverage = distRatio,
+                    CareerStarts = starts,
+                    LifetimeWinRate = starts > 0 ? (float)wins / starts : 0f,
+                    DrawBias = drawBias,
+                    DistanceBeatenLengths = beaten,
+                    DistanceBeatenKnown = beatenKnown ? 1f : 0f,
                     Label = r.FinishPos == 1
-                })
-                .ToList();
+                });
+
+                hist.Add(r);
+            }
 
             if (training.Count == 0)
                 return;
@@ -60,7 +103,16 @@ namespace HorseRacingML.ML
                                                      nameof(RunnerFeatures.Going),
                                                      nameof(RunnerFeatures.Surface),
                                                      nameof(RunnerFeatures.Course),
-                                                     nameof(RunnerFeatures.Distance))
+                                                     nameof(RunnerFeatures.Distance),
+                                                     nameof(RunnerFeatures.TimeOfDaySin),
+                                                     nameof(RunnerFeatures.TimeOfDayCos),
+                                                     nameof(RunnerFeatures.DistanceChangeFromLast),
+                                                     nameof(RunnerFeatures.DistanceRatioFromAverage),
+                                                     nameof(RunnerFeatures.CareerStarts),
+                                                     nameof(RunnerFeatures.LifetimeWinRate),
+                                                     nameof(RunnerFeatures.DrawBias),
+                                                     nameof(RunnerFeatures.DistanceBeatenLengths),
+                                                     nameof(RunnerFeatures.DistanceBeatenKnown))
                                  .Append(Ml.BinaryClassification.Trainers.LightGbm());
 
             var split = Ml.Data.TrainTestSplit(data, testFraction: 0.2);
@@ -97,10 +149,10 @@ namespace HorseRacingML.ML
         /// <summary>
         /// Ensures a model is available and refreshes it when the saved model is
         /// older than <paramref name="maxAge"/>.
+        /// Optional <paramref name="history"/> can be supplied to compute
+        /// features that depend on past performances.
         /// </summary>
-        /// <param name="runners">Runner results used to retrain when required.</param>
-        /// <param name="maxAge">Maximum allowed age of the model before retraining.</param>
-        public static void RefreshModel(IEnumerable<RunnerResult> runners, TimeSpan? maxAge = null)
+        public static RunnerResult PredictWinner(IEnumerable<RunnerResult> runners, int raceId, IEnumerable<RunnerResult>? history = null)
         {
             var age = maxAge ?? TimeSpan.FromDays(7);
             var info = new FileInfo(ModelPath);
@@ -131,7 +183,16 @@ namespace HorseRacingML.ML
             if (raceRunners.Count == 0)
                 throw new ArgumentException($"No runners found for race {raceId}", nameof(raceId));
 
-            RefreshModel(runners);
+            RefreshModel(history ?? runners);
+
+            var avgDraw = raceRunners.Where(r => r.Draw.HasValue)
+                                     .Select(r => (float)r.Draw!)
+                                     .DefaultIfEmpty(0f)
+                                     .Average();
+
+            var horseHistory = (history ?? Enumerable.Empty<RunnerResult>())
+                .GroupBy(r => r.HorseId)
+                .ToDictionary(g => g.Key, g => g.OrderBy(x => x.RaceId).ToList());
 
             if (_engine != null)
             {
@@ -140,6 +201,16 @@ namespace HorseRacingML.ML
 
                 foreach (var r in raceRunners)
                 {
+                    horseHistory.TryGetValue(r.HorseId, out var hist);
+                    hist ??= new List<RunnerResult>();
+                    int starts = hist.Count;
+                    int wins = hist.Count(h => h.FinishPos == 1);
+                    float lastDistance = starts > 0 ? hist.Last().DistanceYards : r.DistanceYards;
+                    float avgDistance = starts > 0 ? hist.Average(h => h.DistanceYards) : r.DistanceYards;
+                    float distChange = r.DistanceYards - lastDistance;
+                    float distRatio = starts > 0 ? r.DistanceYards / avgDistance : 1f;
+                    var (beaten, beatenKnown) = GetDistanceBeaten(r);
+                    float drawBias = r.Draw.HasValue ? r.Draw.Value - avgDraw : 0f;
                     var input = new RunnerFeatures
                     {
                         Odds = GetOdds(r),
@@ -233,7 +304,65 @@ namespace HorseRacingML.ML
             public float Surface { get; set; }
             public float Course { get; set; }
             public float Distance { get; set; }
+            public float TimeOfDaySin { get; set; }
+            public float TimeOfDayCos { get; set; }
+            public float DistanceChangeFromLast { get; set; }
+            public float DistanceRatioFromAverage { get; set; }
+            public float CareerStarts { get; set; }
+            public float LifetimeWinRate { get; set; }
+            public float DrawBias { get; set; }
+            public float DistanceBeatenLengths { get; set; }
+            public float DistanceBeatenKnown { get; set; }
             public bool Label { get; set; }
+        }
+        private static (float beaten, bool known) GetDistanceBeaten(RunnerResult r)
+        {
+            if (r.DistanceBeatenLengths.HasValue)
+                return ((float)r.DistanceBeatenLengths.Value, true);
+
+            if (!string.IsNullOrWhiteSpace(r.DistanceBeatenText))
+            {
+                var parsed = ParseDistanceBeaten(r.DistanceBeatenText);
+                if (parsed.HasValue)
+                    return (parsed.Value, true);
+            }
+            return (0f, false);
+        }
+
+        private static float? ParseDistanceBeaten(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+                return null;
+            text = text.Trim().ToLowerInvariant();
+            var map = new Dictionary<string, float>
+            {
+                {"nse", 0.05f},
+                {"nose", 0.05f},
+                {"shd", 0.1f},
+                {"sht-hd", 0.1f},
+                {"hd", 0.2f},
+                {"snk", 0.25f},
+                {"nk", 0.3f},
+                {"dist", 30f}
+            };
+            if (map.TryGetValue(text, out var val))
+                return val;
+            text = text.Replace("¼", ".25").Replace("½", ".5").Replace("¾", ".75");
+            double total = 0;
+            foreach (var part in text.Split(new[] { ' ', '+' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (double.TryParse(part, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var num))
+                    total += num;
+                else if (part.Contains('/'))
+                {
+                    var frac = part.Split('/');
+                    if (frac.Length == 2 &&
+                        double.TryParse(frac[0], out var n) &&
+                        double.TryParse(frac[1], out var d) && d != 0)
+                        total += n / d;
+                }
+            }
+            return (float)total;
         }
         private static float GetOdds(RunnerResult r)
         {
