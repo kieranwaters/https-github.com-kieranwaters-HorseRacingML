@@ -15,6 +15,7 @@ namespace HorseRacingML.Scraping
     public class RaceResultsScraper
     {
         private readonly RacingRepository _repo;
+        private readonly object _repoLock = new object();
 
         public RaceResultsScraper(RacingRepository repo)
         {
@@ -96,7 +97,7 @@ namespace HorseRacingML.Scraping
             return options;
         }
 
-        
+
 
         private void ScrapeMeetingTabs(IWebDriver driver, WebDriverWait wait, DateTime raceDate, string dayHandle)
         {
@@ -108,44 +109,37 @@ namespace HorseRacingML.Scraping
                 try { ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].scrollIntoView({block:'center'});", tab); ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].click();", tab); } catch { tabIndex++; continue; } // click meeting tab
                 try { wait.Until(d => d.FindElements(By.CssSelector("[data-test-id='race-container'] a[href]")).Count > 0 || d.FindElements(By.CssSelector("[data-test-id='race-container']")).Count > 0); } catch { tabIndex++; continue; } // wait races
                 var raceLinks = driver.FindElements(By.CssSelector("[data-test-id='race-container'] a[href]"));
-                var meetingHandle = driver.CurrentWindowHandle; // remember meeting page handle
-                var raceHandles = new List<string>();
+                var raceUrls = new List<string>();
                 foreach (var a in raceLinks)
                 {
                     var href = a.GetAttribute("href");
-                    if (string.IsNullOrWhiteSpace(href)) continue; // skip bad links
-                    var beforeOpen = driver.WindowHandles.ToList();
-                    ((IJavaScriptExecutor)driver).ExecuteScript("window.open(arguments[0], '_blank');", href); // open race in new tab
-                    var handle = driver.WindowHandles.Except(beforeOpen).FirstOrDefault();
-                    if (!string.IsNullOrEmpty(handle)) raceHandles.Add(handle); else Console.WriteLine("Failed to detect new tab handle, skipping.");
+                    if (!string.IsNullOrWhiteSpace(href)) raceUrls.Add(href);
                 }
-                foreach (var newHandle in raceHandles)
+
+                var parallelOptions = new ParallelOptions { MaxDegreeOfParallelism = Math.Min(4, raceUrls.Count) };
+                Parallel.ForEach(raceUrls, parallelOptions, url =>
                 {
-                    try { driver.SwitchTo().Window(newHandle); }
-                    catch (WebDriverException ex) { Console.WriteLine($"Switch to race tab error: {ex.Message}"); continue; } // switch to race
-                    try { ParseRacePage(driver, wait, raceDate); }
-                    catch (Exception ex) { Console.WriteLine($"Parse error: {ex.Message}"); } // parse race
                     try
                     {
-                        var handlesNow = driver.WindowHandles;
-                        if (handlesNow.Count > 1) { driver.Close(); } else { Console.WriteLine("Skip Close(): only one window left."); } // avoid closing last window
+                        using var svc = ChromeDriverService.CreateDefaultService();
+                        svc.HideCommandPromptWindow = true;
+                        using var raceDriver = new ChromeDriver(svc, BuildChromeOptions(), TimeSpan.FromSeconds(60));
+                        raceDriver.Manage().Timeouts().PageLoad = TimeSpan.FromSeconds(45);
+                        raceDriver.Manage().Timeouts().AsynchronousJavaScript = TimeSpan.FromSeconds(15);
+                        raceDriver.Manage().Timeouts().ImplicitWait = TimeSpan.FromSeconds(0);
+
+                        raceDriver.Navigate().GoToUrl(url);
+                        AcceptTermsIfPresent(raceDriver);
+                        var raceWait = new WebDriverWait(raceDriver, TimeSpan.FromSeconds(12));
+                        ParseRacePage(raceDriver, raceWait, raceDate);
                     }
-                    catch (WebDriverException ex) { Console.WriteLine($"Close tab error: {ex.Message}"); } // safe close
-                    try
+                    catch (Exception ex)
                     {
-                        var handlesAfterClose = driver.WindowHandles; // remaining windows
-                        string target = null;
-                        if (handlesAfterClose.Contains(meetingHandle)) target = meetingHandle;
-                        else if (handlesAfterClose.Contains(dayHandle)) target = dayHandle;
-                        else if (handlesAfterClose.Count > 0) target = handlesAfterClose.First(); // choose best remaining
-                        if (target == null) { Console.WriteLine("No remaining window to switch to, breaking out of races."); break; } // nothing to switch
-                        driver.SwitchTo().Window(target); // back to meeting or day
-                        if (target == dayHandle) { meetingHandle = dayHandle; } // reset meeting handle if we lost it
+                        Console.WriteLine($"Parse error: {ex.Message}");
                     }
-                    catch (WebDriverException ex) { Console.WriteLine($"Switch back error: {ex.Message}"); break; } // bail out cleanly for this meeting
-                }
+                });
+
                 tabIndex++; // next meeting
-                try { if (!driver.WindowHandles.Contains(dayHandle)) { dayHandle = driver.WindowHandles.FirstOrDefault() ?? dayHandle; } } catch { } // keep dayHandle valid
             }
         }
         private void ParseRacePage(IWebDriver driver, WebDriverWait wait, DateTime defaultDate)
@@ -170,8 +164,11 @@ namespace HorseRacingML.Scraping
                 if (string.IsNullOrWhiteSpace(surface)) { surface = InferSurface(allText); } // surface fallback from page text
             }
             int? runnerCount = TryParseOrdinalInt(runners?.Split(' ').FirstOrDefault()); int distanceYards = ParseDistanceToYards(distanceText); TimeSpan? scheduledOff = ExtractScheduledOffFromHeader(headerText) ?? ParseClockTime(offTime); TimeSpan? actualOff = ParseClockTime(offTime); int? winningMs = ParseWinningMs(winTime); // converts
-            var courseId = _repo.InsertCourse(new Course { Name = courseName }); // course upsert
-            var raceEntity = new Race { CourseId = courseId, RaceDate = raceDate, ScheduledOff = scheduledOff ?? TimeSpan.Zero, ActualOff = actualOff, Title = raceTitle, RaceType = string.Empty, Class = classVal, AgeRestriction = ageRestriction, Surface = surface, Going = going, DistanceYards = distanceYards, DistanceText = distanceText ?? string.Empty, RunnerCount = runnerCount.HasValue ? (byte?)runnerCount : null, Status = status, WinningTimeMs = winningMs, WinningTimeText = winTime }; var raceId = _repo.InsertRace(raceEntity); // race insert
+            int courseId;
+            lock (_repoLock) { courseId = _repo.InsertCourse(new Course { Name = courseName }); }
+            var raceEntity = new Race { CourseId = courseId, RaceDate = raceDate, ScheduledOff = scheduledOff ?? TimeSpan.Zero, ActualOff = actualOff, Title = raceTitle, RaceType = string.Empty, Class = classVal, AgeRestriction = ageRestriction, Surface = surface, Going = going, DistanceYards = distanceYards, DistanceText = distanceText ?? string.Empty, RunnerCount = runnerCount.HasValue ? (byte?)runnerCount : null, Status = status, WinningTimeMs = winningMs, WinningTimeText = winTime };
+            int raceId;
+            lock (_repoLock) { raceId = _repo.InsertRace(raceEntity); }
             wait.Until(d => d.FindElements(By.CssSelector("[class*='ResultRunner__StyledResultRunnerWrapper']")).Count > 0 || d.FindElements(By.CssSelector("[data-test-id='horse-sub-info']")).Count > 0); // rows ready
             var rows = driver.FindElements(By.CssSelector("[class*='ResultRunner__StyledResultRunnerWrapper']")); // rows
             var results = new List<RunnerResult>();
@@ -188,15 +185,20 @@ namespace HorseRacingML.Scraping
                 string beatenTxt = SafeText(row, By.CssSelector("[class*='StyledFinishDistance'], [data-test-id='finish-distance']")); decimal? beatenLen = ParseBeatenLengths(beatenTxt); // distance beaten
                 string opTxt = SafeText(row, By.XPath(".//*[contains(.,'op ') and contains(@class,'small')]")); string tchTxt = SafeText(row, By.XPath(".//*[contains(.,'tchd ') or contains(.,'tch ') and contains(@class,'small')]")); string opFrac = ExtractOddsToken(opTxt, "op"); (string? tchLow, string? tchHigh) = ExtractTouchedTokens(tchTxt); // market moves
                 string comment = SafeText(row, By.CssSelector("[data-test-id='ride-description'], [class*='StyledRideDescription']")); // comment
-                var trainerId = string.IsNullOrWhiteSpace(trainer) ? (int?)null : _repo.InsertTrainer(new Trainer { Name = trainer }); var jockeyId = string.IsNullOrWhiteSpace(jockey) ? (int?)null : _repo.InsertJockey(new Jockey { Name = jockey }); var horseId = _repo.InsertHorse(new Horse { Name = horseName }); // ids
+                int? trainerId = null;
+                if (!string.IsNullOrWhiteSpace(trainer)) { lock (_repoLock) { trainerId = _repo.InsertTrainer(new Trainer { Name = trainer }); } }
+                int? jockeyId = null;
+                if (!string.IsNullOrWhiteSpace(jockey)) { lock (_repoLock) { jockeyId = _repo.InsertJockey(new Jockey { Name = jockey }); } }
+                int horseId; lock (_repoLock) { horseId = _repo.InsertHorse(new Horse { Name = horseName }); } // ids
                 var result = new RunnerResult { RaceId = raceId, HorseId = horseId, TrainerId = trainerId, JockeyId = jockeyId, SaddleclothNumber = saddle, Draw = stall, Age = age, WeightLbs = weightLbs, WeightText = weightTxt, FinishPos = finishPos.HasValue ? (short?)finishPos.Value : null, OutcomeCode = outcome, DistanceBeatenText = beatenTxt, DistanceBeatenLengths = beatenLen, SP_Fraction = spFrac, SP_Decimal = spDec, FavTag = favTag, OpeningFraction = opFrac, TouchedHighFraction = tchHigh, TouchedLowFraction = tchLow, Comment = comment };
                 results.Add(result);
             }
             if (results.Count > 0)
             {
-                _repo.InsertRunnerResults(results);
+                lock (_repoLock) { _repo.InsertRunnerResults(results); }
             }
         }
+
 
         //private void ParseRacePage(IWebDriver driver, WebDriverWait wait, DateTime defaultDate)
         //{
