@@ -58,7 +58,7 @@ namespace HorseRacingML.ML
                 int starts = hist.Count;
                 int wins = hist.Count(h => h.FinishPos == 1);
                 float lastDistance = starts > 0 ? hist.Last().DistanceYards : r.DistanceYards;
-                float avgDistance = starts > 0 ? hist.Average(h => h.DistanceYards) : r.DistanceYards;
+                float avgDistance = starts > 0 ? (float)hist.Average(h => h.DistanceYards) : r.DistanceYards;
                 float distChange = r.DistanceYards - lastDistance;
                 float distRatio = starts > 0 ? r.DistanceYards / avgDistance : 1f;
                 var (beaten, beatenKnown) = GetDistanceBeaten(r);
@@ -149,10 +149,10 @@ namespace HorseRacingML.ML
         /// <summary>
         /// Ensures a model is available and refreshes it when the saved model is
         /// older than <paramref name="maxAge"/>.
-        /// Optional <paramref name="history"/> can be supplied to compute
-        /// features that depend on past performances.
         /// </summary>
-        public static RunnerResult PredictWinner(IEnumerable<RunnerResult> runners, int raceId, IEnumerable<RunnerResult>? history = null)
+        /// <param name="runners">Historical runner results used for training if needed.</param>
+        /// <param name="maxAge">Maximum age of the persisted model before retraining.</param>
+        private static void RefreshModel(IEnumerable<RunnerResult> runners, TimeSpan? maxAge = null)
         {
             var age = maxAge ?? TimeSpan.FromDays(7);
             var info = new FileInfo(ModelPath);
@@ -174,7 +174,7 @@ namespace HorseRacingML.ML
         /// <summary>
         /// Predicts the winner of the specified race using a pre-trained model.
         /// </summary>
-        public static RunnerResult PredictWinner(IEnumerable<RunnerResult> runners, int raceId)
+        public static RunnerResult PredictWinner(IEnumerable<RunnerResult> runners, int raceId, IEnumerable<RunnerResult>? history = null)
         {
             if (runners == null)
                 throw new ArgumentException("At least one runner must be supplied", nameof(runners));
@@ -206,7 +206,7 @@ namespace HorseRacingML.ML
                     int starts = hist.Count;
                     int wins = hist.Count(h => h.FinishPos == 1);
                     float lastDistance = starts > 0 ? hist.Last().DistanceYards : r.DistanceYards;
-                    float avgDistance = starts > 0 ? hist.Average(h => h.DistanceYards) : r.DistanceYards;
+                    float avgDistance = starts > 0 ? (float)hist.Average(h => h.DistanceYards) : r.DistanceYards;
                     float distChange = r.DistanceYards - lastDistance;
                     float distRatio = starts > 0 ? r.DistanceYards / avgDistance : 1f;
                     var (beaten, beatenKnown) = GetDistanceBeaten(r);
