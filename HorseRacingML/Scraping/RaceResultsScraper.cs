@@ -150,53 +150,194 @@ namespace HorseRacingML.Scraping
         }
         private void ParseRacePage(IWebDriver driver, WebDriverWait wait, DateTime defaultDate)
         {
-            var headerText = TextOrEmpty(driver, By.CssSelector("p[class*='CourseListingHeader__StyledMainTitle']")); if (string.IsNullOrWhiteSpace(headerText)) headerText = TextOrEmpty(driver, By.CssSelector("[data-test-id='course-title'], [class*='CourseListingHeader__StyledMainTitle']")); // header
-            string courseName = ExtractCourseNameFromHeader(headerText); if (string.IsNullOrEmpty(courseName)) courseName = GuessCourseFromBreadcrumb(driver); // course
-            var dateText = TextOrEmpty(driver, By.CssSelector("p[class*='CourseListingHeader__StyledMainSubTitle'], [data-test-id='course-subtitle']")); DateTime raceDate = ParseDateSafe(dateText) ?? defaultDate; // date
-            var raceTitle = TextOrEmpty(driver, By.CssSelector("h1[data-test-id='racecard-race-name'], h1[class*='RacingRacecardSummary__StyledTitle']")); // title
-            var metaLine = TextOrEmpty(driver, By.CssSelector("li[class*='RacingRacecardSummary__StyledAdditionalInfo'], [data-test-id='racecard-additional-info']")); metaLine = Normalize(metaLine); // meta row text
-            var status = TextOrEmpty(driver, By.CssSelector(".RacingRacecardSummary__StyledEndState, [data-test-id='racecard-end-state']")); if (string.IsNullOrWhiteSpace(status)) status = TextOrEmpty(driver, By.XPath("//li[contains(@class,'RacingRacecardSummary__StyledAdditionalInfo')]//span[contains(@class,'EndState') or contains(.,'Weighed In') or contains(.,'Abandoned') or contains(.,'Void')]")); status = Normalize(status); // status
-            var meta = SplitMeta(metaLine); string ageRestriction = meta.TryGetValue("age", out var a1) ? a1 : null; string distanceText = meta.TryGetValue("dist", out var d1) ? d1 : null; string going = meta.TryGetValue("going", out var g1) ? g1 : null; string runners = meta.TryGetValue("runners", out var r1) ? r1 : null; string offTime = meta.TryGetValue("off", out var o1) ? o1 : null; string winTime = meta.TryGetValue("win", out var w1) ? w1 : null; // unpack
-            byte? classVal = ExtractClass(metaLine); string surface = InferSurface(metaLine); // NEW: class and surface from same meta row
-            if (string.IsNullOrWhiteSpace(distanceText) || string.IsNullOrWhiteSpace(going) || string.IsNullOrWhiteSpace(offTime) || string.IsNullOrWhiteSpace(winTime) || string.IsNullOrWhiteSpace(runners))
+            string headerText = TextOrEmpty(driver, By.CssSelector("p[class*='CourseListingHeader__StyledMainTitle']")); // header text
+            if (string.IsNullOrWhiteSpace(headerText)) headerText = TextOrEmpty(driver, By.CssSelector("[data-test-id='course-title'], [class*='CourseListingHeader__StyledMainTitle']")); // alt header
+            string courseName = ExtractCourseNameFromHeader(headerText); // course from header
+            if (string.IsNullOrEmpty(courseName)) courseName = GuessCourseFromBreadcrumb(driver); // fallback course
+            var dateText = TextOrEmpty(driver, By.CssSelector("p[class*='CourseListingHeader__StyledMainSubTitle'], [data-test-id='course-subtitle']")); // date text
+            DateTime raceDate = ParseDateSafe(dateText) ?? defaultDate; // parsed date
+            var raceTitle = TextOrEmpty(driver, By.CssSelector("h1[data-test-id='racecard-race-name'], h1[class*='RacingRacecardSummary__StyledTitle']")); // race title
+
+            string metaLine = TextOrEmpty(driver, By.CssSelector("li[class*='RacingRacecardSummary__StyledAdditionalInfo'], [data-test-id='racecard-additional-info']")); // primary meta
+            if (string.IsNullOrWhiteSpace(metaLine))
             {
-                string allText = (string)((IJavaScriptExecutor)driver).ExecuteScript("return (document.body.innerText||'')"); // fallback to page text
+                try
+                {
+                    metaLine = (string)((IJavaScriptExecutor)driver).ExecuteScript("var cand=[\"li[class*='RacingRacecardSummary__StyledAdditionalInfo']\",\"[data-test-id='racecard-additional-info']\",\"[class*='RacingRacecardSummary__StyledAdditionalInfoWrapper']\",\"[data-test-id='race-summary']\",\"[data-test-id='result-additional-info']\"];for(var i=0;i<cand.length;i++){var el=document.querySelector(cand[i]);if(el){return (el.innerText||el.textContent||'');}}return ''"); // scan likely containers
+                }
+                catch { metaLine = ""; } // ignore
+            }
+            if (string.IsNullOrWhiteSpace(metaLine))
+            {
+                try
+                {
+                    metaLine = (string)((IJavaScriptExecutor)driver).ExecuteScript("var w=document.querySelector(\"[data-test-id='race-container']\");return w?(w.innerText||''):''"); // broad section grab
+                }
+                catch { }
+            }
+            metaLine = Normalize(metaLine.Replace("•", "|").Replace("·", "|")); // normalize bullets
+
+            var status = TextOrEmpty(driver, By.CssSelector(".RacingRacecardSummary__StyledEndState, [data-test-id='racecard-end-state']")); // end state
+            if (string.IsNullOrWhiteSpace(status)) status = TextOrEmpty(driver, By.XPath("//li[contains(@class,'RacingRacecardSummary__StyledAdditionalInfo')]//span[contains(@class,'EndState') or contains(.,'Weighed In') or contains(.,'Abandoned') or contains(.,'Void')]")); // alt end state
+            status = Normalize(status); // tidy
+
+            var meta = SplitMeta(metaLine); // split meta tokens
+            string ageRestriction = meta.TryGetValue("age", out var a1) ? a1 : null; // age
+            string distanceText = meta.TryGetValue("dist", out var d1) ? d1 : null; // distance
+            string going = meta.TryGetValue("going", out var g1) ? g1 : null; // going
+            string runners = meta.TryGetValue("runners", out var r1) ? r1 : null; // runners
+            string offTime = meta.TryGetValue("off", out var o1) ? o1 : null; // off time
+            string winTime = meta.TryGetValue("win", out var w1) ? w1 : null; // winning time
+            byte? classVal = ExtractClass(metaLine); // class
+            string surface = InferSurface(metaLine); // surface guess
+
+            if (string.IsNullOrWhiteSpace(going)) { going = TextOrEmpty(driver, By.CssSelector("[data-test-id='going'], [class*='Going']")); going = Normalize(going); } // going fallback
+            if (string.IsNullOrWhiteSpace(distanceText)) { distanceText = TextOrEmpty(driver, By.CssSelector("[data-test-id='distance'], [class*='Distance']")); distanceText = Normalize(distanceText); } // distance fallback
+            if (string.IsNullOrWhiteSpace(winTime))
+            {
+                var wt = TextOrEmpty(driver, By.CssSelector("[data-test-id='winning-time'], [class*='WinningTime']")); // winning time container
+                if (!string.IsNullOrWhiteSpace(wt))
+                {
+                    var mWT = System.Text.RegularExpressions.Regex.Match(wt, @"([0-9]+m\s*[0-9.]+s|[0-9.]+s)"); // extract "Xm Y.s" or "Y.s"
+                    if (mWT.Success) winTime = mWT.Groups[1].Value; // set win time
+                }
+            }
+            if (!classVal.HasValue)
+            {
+                var clsTxt = TextOrEmpty(driver, By.CssSelector("[data-test-id='race-class'], [class*='RaceClass']")); // class label
+                var mC = System.Text.RegularExpressions.Regex.Match(clsTxt ?? "", @"Class\s*(\d)"); // parse digit
+                if (mC.Success) classVal = byte.Parse(mC.Groups[1].Value); // set class
+            }
+
+            if (string.IsNullOrWhiteSpace(distanceText) || string.IsNullOrWhiteSpace(winTime) || !classVal.HasValue || string.IsNullOrWhiteSpace(going))
+            {
+                try
+                {
+                    string json = (string)((IJavaScriptExecutor)driver).ExecuteScript("var s=[].slice.call(document.querySelectorAll('script[type=\"application/ld+json\"]'));for(var i=0;i<s.length;i++){try{var o=JSON.parse(s[i].textContent||s[i].innerText||'{}');if(o&&((o['@type']&&String(o['@type']).toLowerCase().includes('horserace'))||(o['sport']&&String(o['sport']).toLowerCase().includes('horse'))))return JSON.stringify(o);if(o&&o['@graph']){for(var j=0;j<o['@graph'].length;j++){var g=o['@graph'][j];if(g&&g['@type']&&String(g['@type']).toLowerCase().includes('horserace'))return JSON.stringify(g);}}}catch(e){}}return ''"); // pull JSON-LD
+                    if (!string.IsNullOrWhiteSpace(json))
+                    {
+                        var mDist = System.Text.RegularExpressions.Regex.Match(json, @"""(?:distance|raceDistance|distanceName)""\s*:\s*""(.*?)""", System.Text.RegularExpressions.RegexOptions.IgnoreCase); // distance in JSON
+                        if (mDist.Success && string.IsNullOrWhiteSpace(distanceText)) distanceText = mDist.Groups[1].Value; // set distance
+                        var mGoing = System.Text.RegularExpressions.Regex.Match(json, @"""(?:going|ground)""\s*:\s*""(.*?)""", System.Text.RegularExpressions.RegexOptions.IgnoreCase); // going in JSON
+                        if (mGoing.Success && string.IsNullOrWhiteSpace(going)) going = mGoing.Groups[1].Value; // set going
+                        var mClass = System.Text.RegularExpressions.Regex.Match(json, @"""(?:raceClass|class)""\s*:\s*""?(\d)""?", System.Text.RegularExpressions.RegexOptions.IgnoreCase); // class in JSON
+                        if (mClass.Success && !classVal.HasValue) classVal = byte.Parse(mClass.Groups[1].Value); // set class
+                        var mWTjson = System.Text.RegularExpressions.Regex.Match(json, @"""(?:winningTime|time)""\s*:\s*""(.*?)""", System.Text.RegularExpressions.RegexOptions.IgnoreCase); // time in JSON
+                        if (mWTjson.Success && string.IsNullOrWhiteSpace(winTime)) winTime = mWTjson.Groups[1].Value; // set win time
+                    }
+                }
+                catch { }
+            }
+
+            if (string.IsNullOrWhiteSpace(distanceText) || string.IsNullOrWhiteSpace(going) || string.IsNullOrWhiteSpace(offTime) || string.IsNullOrWhiteSpace(winTime) || string.IsNullOrWhiteSpace(runners) || !classVal.HasValue || string.IsNullOrWhiteSpace(surface))
+            {
+                string allText = (string)((IJavaScriptExecutor)driver).ExecuteScript("return (document.body.innerText||'')"); // page text
                 if (string.IsNullOrWhiteSpace(distanceText)) { var mDist = System.Text.RegularExpressions.Regex.Match(allText, @"\b(\d+\s*m(?:\s*\d+\s*f)?(?:\s*\d+\s*y)?)\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase); if (mDist.Success) distanceText = mDist.Groups[1].Value; } // distance
                 if (string.IsNullOrWhiteSpace(going)) { var mGoing = System.Text.RegularExpressions.Regex.Match(allText, @"\b(Heavy|Soft|Good to Soft|Good|Good to Firm|Firm|Standard(?: to (?:Slow|Fast))?|Yielding)\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase); if (mGoing.Success) going = mGoing.Groups[1].Value; } // going
                 if (string.IsNullOrWhiteSpace(offTime)) { var mOff = System.Text.RegularExpressions.Regex.Match(allText, @"Off time\s*[:\-]?\s*([0-2]?\d:[0-5]\d)", System.Text.RegularExpressions.RegexOptions.IgnoreCase); if (mOff.Success) offTime = mOff.Groups[1].Value; } // off time
-                if (string.IsNullOrWhiteSpace(winTime)) { var mWin = System.Text.RegularExpressions.Regex.Match(allText, @"Winning time\s*[:\-]?\s*([0-9]+\s*m\s*[0-9.]+s|[0-9.]+s)", System.Text.RegularExpressions.RegexOptions.IgnoreCase); if (mWin.Success) winTime = mWin.Groups[1].Value; } // winning time text
+                if (string.IsNullOrWhiteSpace(winTime)) { var mWin = System.Text.RegularExpressions.Regex.Match(allText, @"Winning time\s*[:\-]?\s*([0-9]+\s*m\s*[0-9.]+s|[0-9.]+s)", System.Text.RegularExpressions.RegexOptions.IgnoreCase); if (mWin.Success) winTime = mWin.Groups[1].Value; } // winning time
                 if (string.IsNullOrWhiteSpace(runners)) { var mRun = System.Text.RegularExpressions.Regex.Match(allText, @"\b(\d+)\s+Runners\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase); if (mRun.Success) runners = mRun.Groups[1].Value + " Runners"; } // runners
-                if (!classVal.HasValue) { var mClass = System.Text.RegularExpressions.Regex.Match(allText, @"\bClass\s*(\d)\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase); if (mClass.Success) classVal = byte.Parse(mClass.Groups[1].Value); } // class fallback
-                if (string.IsNullOrWhiteSpace(surface)) { surface = InferSurface(allText); } // surface fallback from page text
+                if (!classVal.HasValue) { var mClass = System.Text.RegularExpressions.Regex.Match(allText, @"\bClass\s*(\d)\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase); if (mClass.Success) classVal = byte.Parse(mClass.Groups[1].Value); } // class
+                if (string.IsNullOrWhiteSpace(surface)) surface = InferSurface(allText); // surface from text
             }
-            int? runnerCount = TryParseOrdinalInt(runners?.Split(' ').FirstOrDefault()); int distanceYards = ParseDistanceToYards(distanceText); TimeSpan? scheduledOff = ExtractScheduledOffFromHeader(headerText) ?? ParseClockTime(offTime); TimeSpan? actualOff = ParseClockTime(offTime); int? winningMs = ParseWinningMs(winTime); // converts
-            var courseId = _repo.InsertCourse(new Course { Name = courseName }); // course upsert
-            var raceEntity = new Race { CourseId = courseId, RaceDate = raceDate, ScheduledOff = scheduledOff ?? TimeSpan.Zero, ActualOff = actualOff, Title = raceTitle, RaceType = string.Empty, Class = classVal, AgeRestriction = ageRestriction, Surface = surface, Going = going, DistanceYards = distanceYards, DistanceText = distanceText ?? string.Empty, RunnerCount = runnerCount.HasValue ? (byte?)runnerCount : null, Status = status, WinningTimeMs = winningMs, WinningTimeText = winTime }; var raceId = _repo.InsertRace(raceEntity); // race insert
-            wait.Until(d => d.FindElements(By.CssSelector("[class*='ResultRunner__StyledResultRunnerWrapper']")).Count > 0 || d.FindElements(By.CssSelector("[data-test-id='horse-sub-info']")).Count > 0); // rows ready
+
+            int? runnerCount = TryParseOrdinalInt(runners?.Split(' ').FirstOrDefault()); // runner count
+            int distanceYards = ParseDistanceToYards(distanceText); // yards
+            TimeSpan? scheduledOff = ExtractScheduledOffFromHeader(headerText) ?? ParseClockTime(offTime); // scheduled off
+            TimeSpan? actualOff = ParseClockTime(offTime); // actual off
+            int? winningMs = ParseWinningMs(winTime); // winning ms
+
+            var courseId = _repo.InsertCourse(new Course { Name = courseName }); // upsert course
+            var raceEntity = new Race
+            {
+                CourseId = courseId, // course
+                RaceDate = raceDate, // date
+                ScheduledOff = scheduledOff ?? TimeSpan.Zero, // sched off
+                ActualOff = actualOff, // actual off
+                Title = raceTitle, // title
+                RaceType = string.Empty, // type
+                Class = classVal, // class
+                AgeRestriction = ageRestriction, // age
+                Surface = surface, // surface
+                Going = going, // going
+                DistanceYards = distanceYards, // yards
+                DistanceText = distanceText ?? string.Empty, // text
+                RunnerCount = runnerCount.HasValue ? (byte?)runnerCount : null, // runners
+                Status = status, // status
+                WinningTimeMs = winningMs, // ms
+                WinningTimeText = winTime // text
+            };
+            var raceId = _repo.InsertRace(raceEntity); // insert race
+
+            wait.Until(d => d.FindElements(By.CssSelector("[class*='ResultRunner__StyledResultRunnerWrapper']")).Count > 0 || d.FindElements(By.CssSelector("[data-test-id='horse-sub-info']")).Count > 0); // wait rows
             var rows = driver.FindElements(By.CssSelector("[class*='ResultRunner__StyledResultRunnerWrapper']")); // rows
-            var results = new List<RunnerResult>();
+            var results = new List<RunnerResult>(); // collect
+
             foreach (var row in rows)
             {
-                string posRaw = SafeText(row, By.CssSelector("[data-test-id='position-no'], .position-no .ordinal")); int? finishPos = TryParseOrdinalInt(posRaw); string outcome = finishPos.HasValue ? "" : ParseOutcomeCode(posRaw); // position/outcome
-                string cloth = SafeText(row, By.CssSelector("[data-test-id='saddle-cloth-no']")); byte? saddle = TryParseByte(cloth); // saddle cloth
-                string drawRaw = (string)((IJavaScriptExecutor)driver).ExecuteScript("var el=arguments[0].querySelector('[data-test-id=\"stall-no\"]'); return el?(el.textContent||'').trim():'';", row); byte? stall = TryParseByteLoose(drawRaw); // draw via textContent
-                string horseName = SafeText(row, By.CssSelector("a[href*='/racing/profiles/horse/'], [data-test-id='horse-name']")); // name
-                string ageTxt = (string)((IJavaScriptExecutor)driver).ExecuteScript("var el=arguments[0].querySelector('[data-test-id=\"horse-sub-info\"] span:first-child'); return el?(el.textContent||'').trim():'';", row); byte? age = TryParseByte(ageTxt); // age via textContent
-                string weightTxt = (string)((IJavaScriptExecutor)driver).ExecuteScript("var el=arguments[0].querySelector('[data-test-id=\"horse-sub-info\"] span:last-child'); return el?(el.textContent||'').trim():'';", row); byte? weightLbs = null; var m = System.Text.RegularExpressions.Regex.Match(weightTxt ?? "", @"^\s*(\d{1,2})\s*-\s*(\d{1,2})\s*$"); if (m.Success) { int stones = int.Parse(m.Groups[1].Value); int pounds = int.Parse(m.Groups[2].Value); int total = stones * 14 + pounds; if (total >= byte.MinValue && total <= byte.MaxValue) weightLbs = (byte)total; } // weight
-                var (trainer, jockey) = ExtractTrainerJockey(row); // trainer/jockey
-                string spFrac = SafeText(row, By.CssSelector("span[class*='BetLinkStyle'], [data-test-id='sp-odds']")); decimal? spDec = FractionToDecimal(spFrac); string favTag = ExtractFavouriteTag(spFrac); // odds/fav
-                string beatenTxt = SafeText(row, By.CssSelector("[class*='StyledFinishDistance'], [data-test-id='finish-distance']")); decimal? beatenLen = ParseBeatenLengths(beatenTxt); // distance beaten
-                string opTxt = SafeText(row, By.XPath(".//*[contains(.,'op ') and contains(@class,'small')]")); string tchTxt = SafeText(row, By.XPath(".//*[contains(.,'tchd ') or contains(.,'tch ') and contains(@class,'small')]")); string opFrac = ExtractOddsToken(opTxt, "op"); (string? tchLow, string? tchHigh) = ExtractTouchedTokens(tchTxt); // market moves
+                string posRaw = SafeText(row, By.CssSelector("[data-test-id='position-no'], .position-no .ordinal")); // position text
+                int? finishPos = TryParseOrdinalInt(posRaw); // numeric pos
+                string outcome = finishPos.HasValue ? "" : ParseOutcomeCode(posRaw); // outcome code
+                string cloth = SafeText(row, By.CssSelector("[data-test-id='saddle-cloth-no']")); // saddle cloth
+                byte? saddle = TryParseByte(cloth); // saddle no
+                string drawRaw = (string)((IJavaScriptExecutor)driver).ExecuteScript("var el=arguments[0].querySelector('[data-test-id=\"stall-no\"]'); return el?(el.textContent||'').trim():'';", row); // stall text
+                byte? stall = TryParseByteLoose(drawRaw); // stall no
+                string horseName = SafeText(row, By.CssSelector("a[href*='/racing/profiles/horse/'], [data-test-id='horse-name']")); // horse
+                string ageTxt = (string)((IJavaScriptExecutor)driver).ExecuteScript("var el=arguments[0].querySelector('[data-test-id=\"horse-sub-info\"] span:first-child'); return el?(el.textContent||'').trim():'';", row); // age text
+                byte? age = TryParseByte(ageTxt); // age
+                string weightTxt = (string)((IJavaScriptExecutor)driver).ExecuteScript("var el=arguments[0].querySelector('[data-test-id=\"horse-sub-info\"] span:last-child'); return el?(el.textContent||'').trim():'';", row); // weight text
+                byte? weightLbs = null; // weight lbs
+                var m = System.Text.RegularExpressions.Regex.Match(weightTxt ?? "", @"^\s*(\d{1,2})\s*-\s*(\d{1,2})\s*$"); // "s-st"
+                if (m.Success)
+                {
+                    int stones = int.Parse(m.Groups[1].Value); // stones
+                    int pounds = int.Parse(m.Groups[2].Value); // pounds
+                    int total = stones * 14 + pounds; // total lbs
+                    if (total >= byte.MinValue && total <= byte.MaxValue) weightLbs = (byte)total; // clamp
+                }
+                var (trainer, jockey) = ExtractTrainerJockey(row); // names
+                string spFrac = SafeText(row, By.CssSelector("span[class*='BetLinkStyle'], [data-test-id='sp-odds']")); // sp frac
+                decimal? spDec = FractionToDecimal(spFrac); // sp dec
+                string favTag = ExtractFavouriteTag(spFrac); // fav tag
+                string beatenTxt = SafeText(row, By.CssSelector("[class*='StyledFinishDistance'], [data-test-id='finish-distance']")); // beaten text
+                decimal? beatenLen = ParseBeatenLengths(beatenTxt); // beaten len
+                string opTxt = SafeText(row, By.XPath(".//*[contains(.,'op ') and contains(@class,'small')]")); // opening odds
+                string tchTxt = SafeText(row, By.XPath(".//*[contains(.,'tchd ') or contains(.,'tch ') and contains(@class,'small')]")); // touched odds
+                string opFrac = ExtractOddsToken(opTxt, "op"); // op frac
+                (string? tchLow, string? tchHigh) = ExtractTouchedTokens(tchTxt); // low/high
                 string comment = SafeText(row, By.CssSelector("[data-test-id='ride-description'], [class*='StyledRideDescription']")); // comment
-                var trainerId = string.IsNullOrWhiteSpace(trainer) ? (int?)null : _repo.InsertTrainer(new Trainer { Name = trainer }); var jockeyId = string.IsNullOrWhiteSpace(jockey) ? (int?)null : _repo.InsertJockey(new Jockey { Name = jockey }); var horseId = _repo.InsertHorse(new Horse { Name = horseName }); // ids
-                var result = new RunnerResult { RaceId = raceId, HorseId = horseId, TrainerId = trainerId, JockeyId = jockeyId, SaddleclothNumber = saddle, Draw = stall, Age = age, WeightLbs = weightLbs, WeightText = weightTxt, FinishPos = finishPos.HasValue ? (short?)finishPos.Value : null, OutcomeCode = outcome, DistanceBeatenText = beatenTxt, DistanceBeatenLengths = beatenLen, SP_Fraction = spFrac, SP_Decimal = spDec, FavTag = favTag, OpeningFraction = opFrac, TouchedHighFraction = tchHigh, TouchedLowFraction = tchLow, Comment = comment };
-                results.Add(result);
+                var trainerId = string.IsNullOrWhiteSpace(trainer) ? (int?)null : _repo.InsertTrainer(new Trainer { Name = trainer }); // trainer id
+                var jockeyId = string.IsNullOrWhiteSpace(jockey) ? (int?)null : _repo.InsertJockey(new Jockey { Name = jockey }); // jockey id
+                var horseId = _repo.InsertHorse(new Horse { Name = horseName }); // horse id
+                var result = new RunnerResult
+                {
+                    RaceId = raceId, // race
+                    HorseId = horseId, // horse
+                    TrainerId = trainerId, // trainer
+                    JockeyId = jockeyId, // jockey
+                    SaddleclothNumber = saddle, // saddle
+                    Draw = stall, // draw
+                    Age = age, // age
+                    WeightLbs = weightLbs, // weight
+                    WeightText = weightTxt, // text
+                    FinishPos = finishPos.HasValue ? (short?)finishPos.Value : null, // pos
+                    OutcomeCode = outcome, // outcome
+                    DistanceBeatenText = beatenTxt, // beaten
+                    DistanceBeatenLengths = beatenLen, // beaten len
+                    SP_Fraction = spFrac, // sp
+                    SP_Decimal = spDec, // sp dec
+                    FavTag = favTag, // fav
+                    OpeningFraction = opFrac, // op
+                    TouchedHighFraction = tchHigh, // high
+                    TouchedLowFraction = tchLow, // low
+                    Comment = comment // comment
+                };
+                results.Add(result); // add row
             }
-            if (results.Count > 0)
-            {
-                _repo.InsertRunnerResults(results);
-            }
+
+            if (results.Count > 0) _repo.InsertRunnerResults(results); // batch insert
         }
+
         private static byte? TryParseByteLoose(string? s) { if (string.IsNullOrWhiteSpace(s)) return null; var m = System.Text.RegularExpressions.Regex.Match(s, @"\d+"); return m.Success && byte.TryParse(m.Value, out var v) ? v : (byte?)null; } // handles "(2)", " 2 ", etc.
         private static (string trainer, string jockey) ExtractTrainerJockey(IWebElement row)
         {
