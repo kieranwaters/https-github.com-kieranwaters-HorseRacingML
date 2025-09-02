@@ -190,14 +190,15 @@ namespace HorseRacingML.Scraping
                     var dict = JsonSerializer.Deserialize<Dictionary<string, string>>(detailsJson);
                     if (dict != null)
                     {
-                        if (dict.TryGetValue("age restriction", out var v)) ageRestriction = Normalize(v);
-                        if (dict.TryGetValue("distance", out var v)) distanceText = Normalize(v);
-                        if (dict.TryGetValue("going", out var v)) going = Normalize(v);
-                        if (dict.TryGetValue("runners", out var v)) runners = Normalize(v);
-                        if (dict.TryGetValue("off time", out var v)) offTime = Normalize(v);
-                        if (dict.TryGetValue("winning time", out var v)) winTime = Normalize(v);
-                        if (dict.TryGetValue("surface", out var v)) surface = Normalize(v);
-                        if (dict.TryGetValue("class", out var v)) { var m = System.Text.RegularExpressions.Regex.Match(v, @"\d+"); if (m.Success) classVal = byte.Parse(m.Value); }
+                        string v;
+                        if (dict.TryGetValue("age restriction", out v)) ageRestriction = Normalize(v);
+                        if (dict.TryGetValue("distance", out v)) distanceText = Normalize(v);
+                        if (dict.TryGetValue("going", out v)) going = Normalize(v);
+                        if (dict.TryGetValue("runners", out v)) runners = Normalize(v);
+                        if (dict.TryGetValue("off time", out v)) offTime = Normalize(v);
+                        if (dict.TryGetValue("winning time", out v)) winTime = Normalize(v);
+                        if (dict.TryGetValue("surface", out v)) surface = Normalize(v);
+                        if (dict.TryGetValue("class", out v)) { var m = System.Text.RegularExpressions.Regex.Match(v, @"\d+"); if (m.Success) classVal = byte.Parse(m.Value); }
                     }
                 }
             }
