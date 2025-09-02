@@ -21,7 +21,130 @@ namespace HorseRacingML.Scraping
         {
             _repo = repo;
         }
-        public void Scrape(DateTime startDate, DateTime endDate)
+        private void ScrapeMeetingTabs(IWebDriver driver, WebDriverWait wait, DateTime raceDate, string dayHandle)
+        {
+            try { wait.Until(d => d.FindElements(By.CssSelector("[data-test-id='generic-tab']")).Count > 0 || d.FindElements(By.CssSelector("[data-test-id*='no-meetings']")).Count > 0); } catch { Console.WriteLine("Meeting tab elements not found."); return; } // ensure tabs or no-meetings
+            int tabIndex = 0; while (true)
+            {
+                var tabs = driver.FindElements(By.CssSelector("[data-test-id='generic-tab']")); if (tabIndex >= tabs.Count) break; // done
+                var tab = tabs[tabIndex];
+                try { ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].scrollIntoView({block:'center'});", tab); ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].click();", tab); } catch { tabIndex++; continue; } // click meeting tab
+                try { wait.Until(d => d.FindElements(By.CssSelector("[data-test-id='race-container'] a[href]")).Count > 0 || d.FindElements(By.CssSelector("[data-test-id='race-container']")).Count > 0); } catch { tabIndex++; continue; } // wait races
+                var raceLinks = driver.FindElements(By.CssSelector("[data-test-id='race-container'] a[href]"));
+                var meetingHandle = driver.CurrentWindowHandle; // remember meeting page handle
+                var raceHandles = new List<string>();
+                foreach (var a in raceLinks)
+                {
+                    var href = a.GetAttribute("href");
+                    if (string.IsNullOrWhiteSpace(href)) continue; // skip bad links
+                    var beforeOpen = driver.WindowHandles.ToList();
+                    ((IJavaScriptExecutor)driver).ExecuteScript("window.open(arguments[0], '_blank');", href); // open race in new tab
+                    var handle = driver.WindowHandles.Except(beforeOpen).FirstOrDefault();
+                    if (!string.IsNullOrEmpty(handle)) raceHandles.Add(handle); else Console.WriteLine("Failed to detect new tab handle, skipping.");
+                }
+                foreach (var newHandle in raceHandles)
+                {
+                    try { driver.SwitchTo().Window(newHandle); }
+                    catch (WebDriverException ex) { Console.WriteLine($"Switch to race tab error: {ex.Message}"); continue; } // switch to race
+                    int attempts = 0;
+                    while (true)
+                    {
+                        try
+                        {
+                            ParseRacePage(driver, wait, raceDate);
+                            break;
+                        }
+                        catch (StaleElementReferenceException ex)
+                        {
+                            attempts++;
+                            if (attempts >= 3)
+                            {
+                                Console.WriteLine($"Parse error: {ex.Message}");
+                                break;
+                            }
+                            Thread.Sleep(200);
+                            try { driver.Navigate().Refresh(); } catch { }
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"Parse error: {ex.Message}");
+                            break;
+                        }
+                    }
+                    try
+                    {
+                        var handlesNow = driver.WindowHandles;
+                        if (handlesNow.Count > 1) { driver.Close(); } else { Console.WriteLine("Skip Close(): only one window left."); } // avoid closing last window
+                    }
+                    catch (WebDriverException ex) { Console.WriteLine($"Close tab error: {ex.Message}"); } // safe close
+                    try
+                    {
+                        var handlesAfterClose = driver.WindowHandles; // remaining windows
+                        string target = null;
+                        if (handlesAfterClose.Contains(meetingHandle)) target = meetingHandle;
+                        else if (handlesAfterClose.Contains(dayHandle)) target = dayHandle;
+                        else if (handlesAfterClose.Count > 0) target = handlesAfterClose.First(); // choose best remaining
+                        if (target == null) { Console.WriteLine("No remaining window to switch to, breaking out of races."); break; } // nothing to switch
+                        driver.SwitchTo().Window(target); // back to meeting or day
+                        if (target == dayHandle) { meetingHandle = dayHandle; } // reset meeting handle if we lost it
+                    }
+                    catch (WebDriverException ex) { Console.WriteLine($"Switch back error: {ex.Message}"); break; } // bail out cleanly for this meeting
+                }
+                tabIndex++; // next meeting
+                try { if (!driver.WindowHandles.Contains(dayHandle)) { dayHandle = driver.WindowHandles.FirstOrDefault() ?? dayHandle; } } catch { } // keep dayHandle valid
+            }
+        }
+
+        private static decimal? FractionToDecimal(string frac)
+    {
+        if (string.IsNullOrWhiteSpace(frac)) return null; frac = frac.Trim().ToLowerInvariant(); frac = frac.Replace("jf", "").Replace("cf", "").Replace("f", "").Trim(); var m = System.Text.RegularExpressions.Regex.Match(frac, @"(\d+)\s*/\s*(\d+)"); if (!m.Success) return null; var a = decimal.Parse(m.Groups[1].Value); var b = decimal.Parse(m.Groups[2].Value); return Math.Round(1 + (a / b), 3); // decimal incl stake
+    }
+
+    private static string ExtractFavouriteTag(string frac) { if (string.IsNullOrWhiteSpace(frac)) return null; frac = frac.ToUpperInvariant(); if (frac.Contains("JF")) return "JF"; if (frac.Contains("CF")) return "CF"; if (frac.EndsWith("F")) return "F"; return null; } // F/JF/CF
+
+    private static decimal? ParseBeatenLengths(string s) { if (string.IsNullOrWhiteSpace(s)) return null; s = s.Trim().ToLowerInvariant(); if (s == "nk" || s == "neck") return 0.3m; if (s == "hd" || s == "head") return 0.2m; if (s == "shd" || s == "short head" || s == "shorthead" || s == "s.h" || s == "sh") return 0.1m; if (s == "nse" || s == "nose") return 0.05m; s = s.Replace("¾", ".75").Replace("½", ".5").Replace("¼", ".25"); if (decimal.TryParse(s, NumberStyles.Any, CultureInfo.InvariantCulture, out var v)) return v; return null; } // adds s.h/sh/nse/nose/neck/head
+
+
+    private static string ExtractOddsToken(string s, string key) { if (string.IsNullOrWhiteSpace(s)) return null; var m = System.Text.RegularExpressions.Regex.Match(s, $@"\b{System.Text.RegularExpressions.Regex.Escape(key)}\s+(\d+/\d+\w*)", System.Text.RegularExpressions.RegexOptions.IgnoreCase); return m.Success ? m.Groups[1].Value : null; } // "op 33/1"
+
+    private static (string? low, string? high) ExtractTouchedTokens(string s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return (null, null);
+        var lowMatch = System.Text.RegularExpressions.Regex.Match(s, @"(tchd|low)\s+(\d+/\d+\w*)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        var highMatch = System.Text.RegularExpressions.Regex.Match(s, @"high\s+(\d+/\d+\w*)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        string? low = lowMatch.Success ? lowMatch.Groups[2].Value : null; string? high = highMatch.Success ? highMatch.Groups[1].Value : null; return (low, high); // low/high
+    }
+
+    private static int? TryParseInt(string? s) { return int.TryParse(s?.Trim(), out var v) ? v : null; } // int?
+    private static byte? TryParseByte(string? s) { return byte.TryParse(s?.Trim(), out var v) ? v : null; } // byte?
+    private static DateTime? ParseDateSafe(string? s) { if (string.IsNullOrWhiteSpace(s)) return null; if (DateTime.TryParse(s, out var d)) return d.Date; return null; } // date?
+    private static string TextOrEmpty(IWebDriver d, By by)
+    {
+        for (int i = 0; i < 3; i++)
+        {
+            try { return d.FindElement(by).Text.Trim(); }
+            catch (StaleElementReferenceException)
+            {
+                Thread.Sleep(100);
+            }
+            catch { return ""; }
+        }
+        return "";
+    } // driver text
+    private static string SafeText(IWebElement e, By by)
+    {
+        for (int i = 0; i < 3; i++)
+        {
+            try { return e.FindElement(by).Text.Trim(); }
+            catch (StaleElementReferenceException)
+            {
+                Thread.Sleep(100);
+            }
+            catch { return ""; }
+        }
+        return "";
+    } // element text
+    public void Scrape(DateTime startDate, DateTime endDate)
         {
             var start = startDate.Date; var end = endDate.Date; if (end < start) { var tmp = start; start = end; end = tmp; } // normalize range
             if (start == end) { end = DateTime.Today; } // expand single-day default to multi-day
@@ -95,59 +218,6 @@ namespace HorseRacingML.Scraping
             options.AddUserProfilePreference("profile.managed_default_content_settings.stylesheets", 2);
             options.AddUserProfilePreference("profile.managed_default_content_settings.plugins", 2);
             return options;
-        }
-
-
-
-        private void ScrapeMeetingTabs(IWebDriver driver, WebDriverWait wait, DateTime raceDate, string dayHandle)
-        {
-            try { wait.Until(d => d.FindElements(By.CssSelector("[data-test-id='generic-tab']")).Count > 0 || d.FindElements(By.CssSelector("[data-test-id*='no-meetings']")).Count > 0); } catch { Console.WriteLine("Meeting tab elements not found."); return; } // ensure tabs or no-meetings
-            int tabIndex = 0; while (true)
-            {
-                var tabs = driver.FindElements(By.CssSelector("[data-test-id='generic-tab']")); if (tabIndex >= tabs.Count) break; // done
-                var tab = tabs[tabIndex];
-                try { ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].scrollIntoView({block:'center'});", tab); ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].click();", tab); } catch { tabIndex++; continue; } // click meeting tab
-                try { wait.Until(d => d.FindElements(By.CssSelector("[data-test-id='race-container'] a[href]")).Count > 0 || d.FindElements(By.CssSelector("[data-test-id='race-container']")).Count > 0); } catch { tabIndex++; continue; } // wait races
-                var raceLinks = driver.FindElements(By.CssSelector("[data-test-id='race-container'] a[href]"));
-                var meetingHandle = driver.CurrentWindowHandle; // remember meeting page handle
-                var raceHandles = new List<string>();
-                foreach (var a in raceLinks)
-                {
-                    var href = a.GetAttribute("href");
-                    if (string.IsNullOrWhiteSpace(href)) continue; // skip bad links
-                    var beforeOpen = driver.WindowHandles.ToList();
-                    ((IJavaScriptExecutor)driver).ExecuteScript("window.open(arguments[0], '_blank');", href); // open race in new tab
-                    var handle = driver.WindowHandles.Except(beforeOpen).FirstOrDefault();
-                    if (!string.IsNullOrEmpty(handle)) raceHandles.Add(handle); else Console.WriteLine("Failed to detect new tab handle, skipping.");
-                }
-                foreach (var newHandle in raceHandles)
-                {
-                    try { driver.SwitchTo().Window(newHandle); }
-                    catch (WebDriverException ex) { Console.WriteLine($"Switch to race tab error: {ex.Message}"); continue; } // switch to race
-                    try { ParseRacePage(driver, wait, raceDate); }
-                    catch (Exception ex) { Console.WriteLine($"Parse error: {ex.Message}"); } // parse race
-                    try
-                    {
-                        var handlesNow = driver.WindowHandles;
-                        if (handlesNow.Count > 1) { driver.Close(); } else { Console.WriteLine("Skip Close(): only one window left."); } // avoid closing last window
-                    }
-                    catch (WebDriverException ex) { Console.WriteLine($"Close tab error: {ex.Message}"); } // safe close
-                    try
-                    {
-                        var handlesAfterClose = driver.WindowHandles; // remaining windows
-                        string target = null;
-                        if (handlesAfterClose.Contains(meetingHandle)) target = meetingHandle;
-                        else if (handlesAfterClose.Contains(dayHandle)) target = dayHandle;
-                        else if (handlesAfterClose.Count > 0) target = handlesAfterClose.First(); // choose best remaining
-                        if (target == null) { Console.WriteLine("No remaining window to switch to, breaking out of races."); break; } // nothing to switch
-                        driver.SwitchTo().Window(target); // back to meeting or day
-                        if (target == dayHandle) { meetingHandle = dayHandle; } // reset meeting handle if we lost it
-                    }
-                    catch (WebDriverException ex) { Console.WriteLine($"Switch back error: {ex.Message}"); break; } // bail out cleanly for this meeting
-                }
-                tabIndex++; // next meeting
-                try { if (!driver.WindowHandles.Contains(dayHandle)) { dayHandle = driver.WindowHandles.FirstOrDefault() ?? dayHandle; } } catch { } // keep dayHandle valid
-            }
         }
         private void ParseRacePage(IWebDriver driver, WebDriverWait wait, DateTime defaultDate)
         {
@@ -471,33 +541,6 @@ namespace HorseRacingML.Scraping
             if (string.IsNullOrWhiteSpace(s)) return (null, null, ""); byte? age = null; var ageMatch = System.Text.RegularExpressions.Regex.Match(s, @"\((\d{1,2})\)"); if (ageMatch.Success) age = byte.Parse(ageMatch.Groups[1].Value); string wt = System.Text.RegularExpressions.Regex.Match(s, @"\d{1,2}-\d{1,2}").Value; byte? lbs = null; if (!string.IsNullOrEmpty(wt)) { var parts = wt.Split('-'); lbs = (byte)(int.Parse(parts[0]) * 14 + int.Parse(parts[1])); }
             return (age, lbs, wt); // age & lbs
         }
-
-        private static decimal? FractionToDecimal(string frac)
-        {
-            if (string.IsNullOrWhiteSpace(frac)) return null; frac = frac.Trim().ToLowerInvariant(); frac = frac.Replace("jf", "").Replace("cf", "").Replace("f", "").Trim(); var m = System.Text.RegularExpressions.Regex.Match(frac, @"(\d+)\s*/\s*(\d+)"); if (!m.Success) return null; var a = decimal.Parse(m.Groups[1].Value); var b = decimal.Parse(m.Groups[2].Value); return Math.Round(1 + (a / b), 3); // decimal incl stake
-        }
-
-        private static string ExtractFavouriteTag(string frac) { if (string.IsNullOrWhiteSpace(frac)) return null; frac = frac.ToUpperInvariant(); if (frac.Contains("JF")) return "JF"; if (frac.Contains("CF")) return "CF"; if (frac.EndsWith("F")) return "F"; return null; } // F/JF/CF
-
-        private static decimal? ParseBeatenLengths(string s) { if (string.IsNullOrWhiteSpace(s)) return null; s = s.Trim().ToLowerInvariant(); if (s == "nk" || s == "neck") return 0.3m; if (s == "hd" || s == "head") return 0.2m; if (s == "shd" || s == "short head" || s == "shorthead" || s == "s.h" || s == "sh") return 0.1m; if (s == "nse" || s == "nose") return 0.05m; s = s.Replace("¾", ".75").Replace("½", ".5").Replace("¼", ".25"); if (decimal.TryParse(s, NumberStyles.Any, CultureInfo.InvariantCulture, out var v)) return v; return null; } // adds s.h/sh/nse/nose/neck/head
-
-
-        private static string ExtractOddsToken(string s, string key) { if (string.IsNullOrWhiteSpace(s)) return null; var m = System.Text.RegularExpressions.Regex.Match(s, $@"\b{System.Text.RegularExpressions.Regex.Escape(key)}\s+(\d+/\d+\w*)", System.Text.RegularExpressions.RegexOptions.IgnoreCase); return m.Success ? m.Groups[1].Value : null; } // "op 33/1"
-
-        private static (string? low, string? high) ExtractTouchedTokens(string s)
-        {
-            if (string.IsNullOrWhiteSpace(s)) return (null, null);
-            var lowMatch = System.Text.RegularExpressions.Regex.Match(s, @"(tchd|low)\s+(\d+/\d+\w*)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-            var highMatch = System.Text.RegularExpressions.Regex.Match(s, @"high\s+(\d+/\d+\w*)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-            string? low = lowMatch.Success ? lowMatch.Groups[2].Value : null; string? high = highMatch.Success ? highMatch.Groups[1].Value : null; return (low, high); // low/high
-        }
-
-        private static int? TryParseInt(string? s) { return int.TryParse(s?.Trim(), out var v) ? v : null; } // int?
-        private static byte? TryParseByte(string? s) { return byte.TryParse(s?.Trim(), out var v) ? v : null; } // byte?
-        private static DateTime? ParseDateSafe(string? s) { if (string.IsNullOrWhiteSpace(s)) return null; if (DateTime.TryParse(s, out var d)) return d.Date; return null; } // date?
-        private static string TextOrEmpty(IWebDriver d, By by) { try { return d.FindElement(by).Text.Trim(); } catch { return ""; } } // driver text
-        private static string SafeText(IWebElement e, By by) { try { return e.FindElement(by).Text.Trim(); } catch { return ""; } } // element text
-
         private static string InferRaceType(string title) { if (string.IsNullOrWhiteSpace(title)) return ""; var keys = new[] { "Handicap", "Maiden", "Novice", "Apprentice", "Claiming", "Selling", "Stakes" }; return keys.FirstOrDefault(k => title.IndexOf(k, StringComparison.OrdinalIgnoreCase) >= 0) ?? ""; } // type
         private static byte? ExtractClass(string meta) { if (string.IsNullOrWhiteSpace(meta)) return null; var m = System.Text.RegularExpressions.Regex.Match(meta, @"Class\s+(\d)"); return m.Success ? (byte?)byte.Parse(m.Groups[1].Value) : null; } // Class 1..7
         private static string InferSurface(string meta) { if (string.IsNullOrWhiteSpace(meta)) return null; if (meta.Contains("All Weather", StringComparison.OrdinalIgnoreCase) || meta.Contains("Allweather", StringComparison.OrdinalIgnoreCase)) return "Allweather"; return "Turf"; } // surface
