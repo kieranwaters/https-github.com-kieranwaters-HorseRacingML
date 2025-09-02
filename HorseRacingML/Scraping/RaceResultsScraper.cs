@@ -153,7 +153,7 @@ namespace HorseRacingML.Scraping
             var dates = Enumerable.Range(0, (end - start).Days + 1).Select(i => start.AddDays(i));
             var queue = new ConcurrentQueue<DateTime>(dates);
             var tasks = new List<Task>();
-            int workers = Math.Min(30, queue.Count);
+            int workers = Math.Min(15, queue.Count);
 
             for (int i = 0; i < workers; i++)
             {
@@ -193,9 +193,56 @@ namespace HorseRacingML.Scraping
                     {
                         try
                         {
-                            var regionBtn = driver.FindElements(By.XPath($"//*[self::button or self::span][contains(normalize-space(.), '{region}') and ancestor::*[@data-test-id='new-switch-button']]")).FirstOrDefault(e => e.Displayed && e.Enabled); if (regionBtn == null) { Console.Error.WriteLine($"[{date:yyyy-MM-dd}] Region '{region}' not present"); continue; } // skip missing region
-                            ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].click();", regionBtn); // click region
-                            var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(5)); wait.Until(d => d.FindElements(By.CssSelector("[data-test-id='generic-tab']")).Count > 0 || d.FindElements(By.CssSelector("[data-test-id*='no-meetings']")).Count > 0); // wait meetings
+                            IWebElement? regionBtn = null;
+                            for (int attempt = 0; attempt < 3 && regionBtn == null; attempt++)
+                            {
+                                try
+                                {
+                                    regionBtn = driver
+                                        .FindElements(By.XPath($"//*[self::button or self::span][contains(normalize-space(.), '{region}') and ancestor::*[@data-test-id='new-switch-button']]"))
+                                        .FirstOrDefault(e =>
+                                        {
+                                            try { return e.Displayed && e.Enabled; } catch { return false; }
+                                        });
+                                }
+                                catch (StaleElementReferenceException)
+                                {
+                                    Thread.Sleep(100);
+                                }
+                            }
+                            if (regionBtn == null) { Console.Error.WriteLine($"[{date:yyyy-MM-dd}] Region '{region}' not present"); continue; } // skip missing region
+
+                            bool clicked = false;
+                            for (int attempt = 0; attempt < 3 && !clicked; attempt++)
+                            {
+                                try
+                                {
+                                    ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].click();", regionBtn); // click region
+                                    clicked = true;
+                                }
+                                catch (StaleElementReferenceException)
+                                {
+                                    regionBtn = null; // re-find button if it went stale
+                                    try
+                                    {
+                                        regionBtn = driver
+                                            .FindElements(By.XPath($"//*[self::button or self::span][contains(normalize-space(.), '{region}') and ancestor::*[@data-test-id='new-switch-button']]"))
+                                            .FirstOrDefault(e =>
+                                            {
+                                                try { return e.Displayed && e.Enabled; } catch { return false; }
+                                            });
+                                    }
+                                    catch (Exception) { }
+                                }
+                                catch (WebDriverException)
+                                {
+                                    Thread.Sleep(100);
+                                }
+                            }
+                            if (!clicked) { Console.Error.WriteLine($"[{date:yyyy-MM-dd}] Region '{region}' click failed"); continue; }
+
+                            var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(5));
+                            wait.Until(d => d.FindElements(By.CssSelector("[data-test-id='generic-tab']")).Count > 0 || d.FindElements(By.CssSelector("[data-test-id*='no-meetings']")).Count > 0); // wait meetings
                             ScrapeMeetingTabs(driver, new WebDriverWait(driver, TimeSpan.FromSeconds(6)), date, dayHandle); anyMeetingsProcessed = true; // scrape meetings for this region
                         }
                         catch (WebDriverException ex) { Console.Error.WriteLine($"[{date:yyyy-MM-dd}] Region '{region}' error: {ex.Message}"); }
@@ -209,6 +256,7 @@ namespace HorseRacingML.Scraping
             catch (OperationCanceledException ex) { Console.Error.WriteLine($"[Skip Day] {date:yyyy-MM-dd} OperationCanceled: {ex.Message}"); }
             catch (Exception ex) { Console.Error.WriteLine($"[Skip Day] {date:yyyy-MM-dd} Unexpected: {ex.Message}"); }
         }
+
 
         private ChromeOptions BuildChromeOptions()
         {
