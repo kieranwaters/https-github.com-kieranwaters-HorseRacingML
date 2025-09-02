@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using System.Threading;
 using System.IO;
 using System.Collections.Generic;
+using System.Text.Json;
 
 namespace HorseRacingML.Scraping
 {
@@ -180,16 +181,36 @@ namespace HorseRacingML.Scraping
             var status = TextOrEmpty(driver, By.CssSelector(".RacingRacecardSummary__StyledEndState, [data-test-id='racecard-end-state']")); // end state
             if (string.IsNullOrWhiteSpace(status)) status = TextOrEmpty(driver, By.XPath("//li[contains(@class,'RacingRacecardSummary__StyledAdditionalInfo')]//span[contains(@class,'EndState') or contains(.,'Weighed In') or contains(.,'Abandoned') or contains(.,'Void')]")); // alt end state
             status = Normalize(status); // tidy
-
+            string ageRestriction = null, distanceText = null, going = null, runners = null, offTime = null, winTime = null, surface = null; byte? classVal = null;
+            try
+            {
+                string detailsJson = (string)((IJavaScriptExecutor)driver).ExecuteScript("var cont=document.querySelector(\"[data-test-id='race-summary'],[data-test-id='racecard-additional-info'],[data-test-id='result-additional-info'],ul[class*='MainDetailsList']\"); if(!cont) return ''; var res={}; var items=cont.querySelectorAll('li'); for(var i=0;i<items.length;i++){var spans=items[i].querySelectorAll('span'); if(spans.length>=2){var key=spans[0].innerText.trim().toLowerCase(); var val=spans[1].innerText.trim(); if(key&&val) res[key]=val;}} return JSON.stringify(res);");
+                if (!string.IsNullOrWhiteSpace(detailsJson))
+                {
+                    var dict = JsonSerializer.Deserialize<Dictionary<string, string>>(detailsJson);
+                    if (dict != null)
+                    {
+                        if (dict.TryGetValue("age restriction", out var v)) ageRestriction = Normalize(v);
+                        if (dict.TryGetValue("distance", out var v)) distanceText = Normalize(v);
+                        if (dict.TryGetValue("going", out var v)) going = Normalize(v);
+                        if (dict.TryGetValue("runners", out var v)) runners = Normalize(v);
+                        if (dict.TryGetValue("off time", out var v)) offTime = Normalize(v);
+                        if (dict.TryGetValue("winning time", out var v)) winTime = Normalize(v);
+                        if (dict.TryGetValue("surface", out var v)) surface = Normalize(v);
+                        if (dict.TryGetValue("class", out var v)) { var m = System.Text.RegularExpressions.Regex.Match(v, @"\d+"); if (m.Success) classVal = byte.Parse(m.Value); }
+                    }
+                }
+            }
+            catch { }
             var meta = SplitMeta(metaLine); // split meta tokens
-            string ageRestriction = meta.TryGetValue("age", out var a1) ? a1 : null; // age
-            string distanceText = meta.TryGetValue("dist", out var d1) ? d1 : null; // distance
-            string going = meta.TryGetValue("going", out var g1) ? g1 : null; // going
-            string runners = meta.TryGetValue("runners", out var r1) ? r1 : null; // runners
-            string offTime = meta.TryGetValue("off", out var o1) ? o1 : null; // off time
-            string winTime = meta.TryGetValue("win", out var w1) ? w1 : null; // winning time
-            byte? classVal = ExtractClass(metaLine); // class
-            string surface = InferSurface(metaLine); // surface guess
+            if (string.IsNullOrWhiteSpace(ageRestriction) && meta.TryGetValue("age", out var a1)) ageRestriction = a1; // age
+            if (string.IsNullOrWhiteSpace(distanceText) && meta.TryGetValue("dist", out var d1)) distanceText = d1; // distance
+            if (string.IsNullOrWhiteSpace(going) && meta.TryGetValue("going", out var g1)) going = g1; // going
+            if (string.IsNullOrWhiteSpace(runners) && meta.TryGetValue("runners", out var r1)) runners = r1; // runners
+            if (string.IsNullOrWhiteSpace(offTime) && meta.TryGetValue("off", out var o1)) offTime = o1; // off time
+            if (string.IsNullOrWhiteSpace(winTime) && meta.TryGetValue("win", out var w1)) winTime = w1; // winning time
+            if (!classVal.HasValue) classVal = ExtractClass(metaLine); // class
+            if (string.IsNullOrWhiteSpace(surface)) surface = InferSurface(metaLine); // surface guess
 
             if (string.IsNullOrWhiteSpace(going)) { going = TextOrEmpty(driver, By.CssSelector("[data-test-id='going'], [class*='Going']")); going = Normalize(going); } // going fallback
             if (string.IsNullOrWhiteSpace(distanceText)) { distanceText = TextOrEmpty(driver, By.CssSelector("[data-test-id='distance'], [class*='Distance']")); distanceText = Normalize(distanceText); } // distance fallback
@@ -405,8 +426,12 @@ namespace HorseRacingML.Scraping
 
         private static bool IsGoingToken(string s) { if (string.IsNullOrWhiteSpace(s)) return false; var keys = new[] { "Good", "Firm", "Soft", "Heavy", "Standard", "Yielding" }; return keys.Any(k => s.Contains(k, StringComparison.OrdinalIgnoreCase)); } // going marker
 
-        private static bool HasDistanceToken(string s) { if (string.IsNullOrWhiteSpace(s)) return false; return s.Any(ch => "mfyl".Contains(char.ToLowerInvariant(ch))); } // m/f/y/l hints
-
+        private static bool HasDistanceToken(string s)
+        {
+            if (string.IsNullOrWhiteSpace(s)) return false;
+            s = s.ToLowerInvariant();
+            return System.Text.RegularExpressions.Regex.IsMatch(s, @"\b\d+\s*(miles?|m|furlongs?|f|yards?|y)\b");
+        } // match typical distance patterns like "2m 5f"
         private static int ParseDistanceToYards(string? text)
         {
             if (string.IsNullOrWhiteSpace(text)) return 0; int yards = 0; // accumulate
