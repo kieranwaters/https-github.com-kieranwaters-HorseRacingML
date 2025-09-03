@@ -13,7 +13,7 @@ builder.Services.AddScoped<RacingRepository>(sp =>
 
 // TensorFlow trainer for running models on the GPU
 builder.Services.AddSingleton<HyperparameterTrainer>();
-builder.Services.AddTransient<BetfairNavigationService>();
+builder.Services.AddSingleton<BetfairNavigationService>();
 
 var app = builder.Build();
 
