@@ -53,17 +53,30 @@ public class BetfairNavigationService : IDisposable
             // already on login page
         }
 
-        // Fill in credentials
+        try
+        {
+            var loginFrame = wait.Until(d => d.FindElement(By.CssSelector("iframe[src*='identitysso']")));
+            _driver.SwitchTo().Frame(loginFrame);
+        }
+        catch (WebDriverTimeoutException)
+        {
+            // Login form isn't hosted in an iframe.
+        }
+
+        // Fill in credentials once the fields are visible and interactable
         var userBox = wait.Until(d => d.FindElement(By.Id("username")));
+        userBox.Clear();
         userBox.SendKeys(_username);
-        var passBox = _driver.FindElement(By.Id("password"));
+        var passBox = wait.Until(d => d.FindElement(By.Id("password")));
+        passBox.Clear();
         passBox.SendKeys(_password);
 
-        var submit = _driver.FindElement(By.CssSelector("button[data-testid='login-submit']"));
+        var submit = wait.Until(d => d.FindElement(By.CssSelector("button[data-testid='login-submit']")));
         submit.Click();
 
-        // wait for navigation after login
+        // wait for navigation after login and return to default content
         await Task.Delay(TimeSpan.FromSeconds(1));
+        _driver.SwitchTo().DefaultContent();
         wait.Until(d => !d.Url.Contains("login", StringComparison.OrdinalIgnoreCase));
     }
 
