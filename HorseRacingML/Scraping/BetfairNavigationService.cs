@@ -9,17 +9,18 @@ namespace HorseRacingML.Scraping;
 
 public class BetfairNavigationService : IDisposable
 {
+    private const string HardCodedUsername = "kierandpwaters@gmail.com";
+    private const string HardCodedPassword = "AZQ2v.b=$e$!e!u";
     private readonly string _username;
     private readonly string _password;
     private readonly IWebDriver _driver;
 
     public BetfairNavigationService(IConfiguration config)
     {
-        _username = config["Betfair:Username"] ?? string.Empty;
-        _password = config["Betfair:Password"] ?? string.Empty;
+        _username = config["Betfair:Username"] ?? HardCodedUsername;
+        _password = config["Betfair:Password"] ?? HardCodedPassword;
 
         var options = new ChromeOptions();
-        options.AddArgument("--headless=new");
         _driver = new ChromeDriver(options);
     }
 

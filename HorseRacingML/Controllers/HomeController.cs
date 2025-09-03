@@ -3,6 +3,7 @@ using HorseRacingML.Scraping;
 using HorseRacingML.Data;
 using Microsoft.AspNetCore.Mvc;
 using System.Diagnostics;
+using System.Threading.Tasks;
 
 namespace HorseRacingML.Controllers
 {
@@ -26,10 +27,15 @@ namespace HorseRacingML.Controllers
         {
             return View();
         }
-
+        public async Task<IActionResult> AutomateBets([FromServices] BetfairNavigationService betfair)
+        {
+            await betfair.LoginAsync();
+            // TODO: add bet placement automation here
+            return RedirectToAction("Index");
+        }
         public IActionResult Scrape(DateTime? startDate, DateTime? endDate)
         {
-            var start = startDate ?? new DateTime(2017, 9, 29);
+            var start = startDate ?? new DateTime(2017, 12, 18);
             var end = endDate ?? start;
 
             var scraper = new RaceResultsScraper(_repository);
