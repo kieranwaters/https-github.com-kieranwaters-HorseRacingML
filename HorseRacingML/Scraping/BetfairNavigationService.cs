@@ -98,7 +98,8 @@ public class BetfairNavigationService : IDisposable
         }
         passBox.Clear();
         passBox.SendKeys(_password);
-
+        wait.Until(_ => !string.IsNullOrEmpty(userBox.GetAttribute("value")) &&
+                       !string.IsNullOrEmpty(passBox.GetAttribute("value")));
         var submit = wait.Until(d => d.FindElement(By.CssSelector("button[data-testid='login-submit']")));
         submit.Click();
 
