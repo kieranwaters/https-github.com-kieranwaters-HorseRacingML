@@ -71,36 +71,35 @@ public class BetfairNavigationService : IDisposable
             // Login form isn't hosted in an iframe.
         }
 
-        // Fill in credentials once the fields are visible and interactable
-        IWebElement userBox;
-        try
+        // Fill in credentials once the fields are visible and interactable.
+        // Multiple selectors are used so we don't wait the full timeout for a
+        // single missing element before trying an alternative selector.
+        IWebElement userBox = wait.Until(d =>
         {
-            // Preferred selector for username field
-            userBox = wait.Until(d => d.FindElement(By.CssSelector("#ssc-liu")));
-        }
-        catch (WebDriverTimeoutException)
-        {
-            // Fallback for when the preferred selector fails
-            userBox = wait.Until(d => d.FindElement(By.Id("username")));
-        }
+            var boxes = d.FindElements(By.CssSelector("#ssc-liu, #username"));
+            return boxes.Count > 0 ? boxes[0] : null;
+        });
         userBox.Clear();
         userBox.SendKeys(_username);
 
-        IWebElement passBox;
-        try
+        IWebElement passBox = wait.Until(d =>
         {
-            // Preferred selector for password field
-            passBox = wait.Until(d => d.FindElement(By.CssSelector("#ssc-lipw")));
-        }
-        catch (WebDriverTimeoutException)
-        {
-            passBox = wait.Until(d => d.FindElement(By.Id("password")));
-        }
+            var boxes = d.FindElements(By.CssSelector("#ssc-lipw, #password"));
+            return boxes.Count > 0 ? boxes[0] : null;
+        });
         passBox.Clear();
         passBox.SendKeys(_password);
+
+        // Ensure fields have been populated before submitting the form
         wait.Until(_ => !string.IsNullOrEmpty(userBox.GetAttribute("value")) &&
                        !string.IsNullOrEmpty(passBox.GetAttribute("value")));
-        var submit = wait.Until(d => d.FindElement(By.CssSelector("button[data-testid='login-submit']")));
+
+        var submit = wait.Until(d =>
+        {
+            var buttons = d.FindElements(By.CssSelector(
+                "button[data-testid='login-submit'], button[type='submit'], button[data-testid='login-form-submit-button']"));
+            return buttons.Count > 0 ? buttons[0] : null;
+        });
         submit.Click();
 
         // wait for navigation after login and return to default content
