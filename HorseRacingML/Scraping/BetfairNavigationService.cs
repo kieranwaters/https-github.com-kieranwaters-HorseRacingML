@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using OpenQA.Selenium;
 using OpenQA.Selenium.Chrome;
 using OpenQA.Selenium.Support.UI;
+using SeleniumExtras.WaitHelpers;
 
 namespace HorseRacingML.Scraping;
 
@@ -67,17 +68,27 @@ public class BetfairNavigationService : IDisposable
         IWebElement userBox;
         try
         {
-            // Attempt to locate the input using the placeholder text shown on the site
-            userBox = wait.Until(d => d.FindElement(By.XPath("/html/body/ui-view/div/div/div[1]/div[1]/div/bf-ssc-header/div/div/div/div/div/div/table/tbody/tr/td[4]/div/div/div/form/div[1]/input[1]")));
+            // Preferred selector for username field
+            userBox = wait.Until(d => d.FindElement(By.CssSelector("#ssc-liu")));
         }
         catch (WebDriverTimeoutException)
         {
-            // Fallback for when the placeholder search fails
+            // Fallback for when the preferred selector fails
             userBox = wait.Until(d => d.FindElement(By.Id("username")));
         }
-
+        userBox.Clear();
         userBox.SendKeys(_username);
-        var passBox = wait.Until(d => d.FindElement(By.Id("password")));
+
+        IWebElement passBox;
+        try
+        {
+            // Preferred selector for password field
+            passBox = wait.Until(d => d.FindElement(By.CssSelector("#ssc-lipw")));
+        }
+        catch (WebDriverTimeoutException)
+        {
+            passBox = wait.Until(d => d.FindElement(By.Id("password")));
+        }
         passBox.Clear();
         passBox.SendKeys(_password);
 
