@@ -64,8 +64,18 @@ public class BetfairNavigationService : IDisposable
         }
 
         // Fill in credentials once the fields are visible and interactable
-        var userBox = wait.Until(d => d.FindElement(By.Id("username")));
-        userBox.Clear();
+        IWebElement userBox;
+        try
+        {
+            // Attempt to locate the input using the placeholder text shown on the site
+            userBox = wait.Until(d => d.FindElement(By.XPath("/html/body/ui-view/div/div/div[1]/div[1]/div/bf-ssc-header/div/div/div/div/div/div/table/tbody/tr/td[4]/div/div/div/form/div[1]/input[1]")));
+        }
+        catch (WebDriverTimeoutException)
+        {
+            // Fallback for when the placeholder search fails
+            userBox = wait.Until(d => d.FindElement(By.Id("username")));
+        }
+
         userBox.SendKeys(_username);
         var passBox = wait.Until(d => d.FindElement(By.Id("password")));
         passBox.Clear();
