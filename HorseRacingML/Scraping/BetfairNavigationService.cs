@@ -35,8 +35,15 @@ public class BetfairNavigationService : IDisposable
         // Accept cookies / terms if prompted
         try
         {
-            var cookieButton = wait.Until(d => d.FindElement(By.Id("onetrust-accept-btn-handler")));
-            cookieButton.Click();
+            var cookieButton = wait.Until(ExpectedConditions.ElementToBeClickable(By.Id("onetrust-accept-btn-handler")));
+            try
+            {
+                cookieButton.Click();
+            }
+            catch (ElementClickInterceptedException)
+            {
+                ((IJavaScriptExecutor)_driver).ExecuteScript("arguments[0].click();", cookieButton);
+            }
         }
         catch (WebDriverTimeoutException)
         {
