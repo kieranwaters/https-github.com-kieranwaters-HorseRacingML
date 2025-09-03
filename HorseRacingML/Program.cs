@@ -1,5 +1,6 @@
 using HorseRacingML.Data;
 using HorseRacingML.ML;
+using HorseRacingML.Scraping;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -12,6 +13,7 @@ builder.Services.AddScoped<RacingRepository>(sp =>
 
 // TensorFlow trainer for running models on the GPU
 builder.Services.AddSingleton<HyperparameterTrainer>();
+builder.Services.AddSingleton<BetfairNavigationService>();
 
 var app = builder.Build();
 

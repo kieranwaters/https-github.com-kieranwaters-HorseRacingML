@@ -9,6 +9,7 @@ using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Collections.Generic;
+using System.Threading;
 
 namespace HorseRacingML.Data
 {
@@ -21,6 +22,29 @@ namespace HorseRacingML.Data
         private static readonly Regex BracketTextRegex =
             new Regex("\\s*\\([^\\)]*\\)|\\s*\\[[^\\]]*\\]", RegexOptions.Compiled);
         private const int GoingMaxLength = 30;
+        private IDbConnection OpenConnection()
+        {
+            const int maxAttempts = 3;
+            for (int attempt = 0; attempt < maxAttempts; attempt++)
+            {
+                var conn = new SqlConnection(_connectionString);
+                try
+                {
+                    conn.Open();
+                    return conn;
+                }
+                catch (SqlException ex) when (ex.Message.Contains("Timeout expired") && attempt < maxAttempts - 1)
+                {
+                    conn.Dispose();
+                    Thread.Sleep(500);
+                }
+            }
+
+            // Last attempt - let any exception bubble up to the caller
+            var finalConn = new SqlConnection(_connectionString);
+            finalConn.Open();
+            return finalConn;
+        }
 
         private static string? NormalizeGoing(string? going)
         {
@@ -71,7 +95,6 @@ IF NOT EXISTS (SELECT 1 FROM RunnerResult WHERE RaceId=@RaceId AND HorseId=@Hors
         {
             _connectionString = connectionString;
         }
-        private IDbConnection OpenConnection() => new SqlConnection(_connectionString);
 
         public int InsertCourse(Course course)
         {
