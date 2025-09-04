@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using OpenQA.Selenium;
@@ -57,7 +58,23 @@ public class BetfairNavigationService : IDisposable
     }
 
 
+    public async Task OpenHorseRaceMeetingsInNewTabsAsync()
+    {
+        var wait = new WebDriverWait(_driver, TimeSpan.FromSeconds(10));
+        wait.Until(d => d.FindElements(By.CssSelector("a[href*='/horse-racing/']")).Count > 0);
 
+        var links = _driver.FindElements(By.CssSelector("a[href*='/horse-racing/']"));
+        var seen = new HashSet<string>();
+        foreach (var link in links)
+        {
+            var href = link.GetAttribute("href");
+            if (!string.IsNullOrEmpty(href) && seen.Add(href))
+            {
+                ((IJavaScriptExecutor)_driver).ExecuteScript("window.open(arguments[0], '_blank');", href);
+                await Task.Delay(100);
+            }
+        }
+    }
     public void Dispose()
     {
         _driver.Quit();

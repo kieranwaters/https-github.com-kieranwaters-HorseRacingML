@@ -31,6 +31,7 @@ namespace HorseRacingML.Controllers
         {
             await betfair.LoginAsync();
             // TODO: add bet placement automation here
+            await betfair.OpenHorseRaceMeetingsInNewTabsAsync();
             return RedirectToAction("Index");
         }
         public IActionResult Scrape(DateTime? startDate, DateTime? endDate)
