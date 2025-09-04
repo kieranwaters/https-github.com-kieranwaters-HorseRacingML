@@ -6,6 +6,7 @@ using OpenQA.Selenium;
 using OpenQA.Selenium.Chrome;
 using OpenQA.Selenium.Support.UI;
 using SeleniumExtras.WaitHelpers;
+using HorseRacingML.Data;
 
 namespace HorseRacingML.Scraping;
 
@@ -27,7 +28,11 @@ public class BetfairNavigationService : IDisposable
     }
 
     public IWebDriver Driver => _driver;
-
+    public void ScrapeOpenRaceTabs(RacingRepository repo)
+    {
+        var scraper = new BetfairMarketScraper(repo);
+        scraper.ScrapeOpenRaceTabs(_driver);
+    }
     public async Task LoginAsync()
     {
         _driver.Navigate().GoToUrl("https://www.betfair.com/exchange/plus/"); var wait = new WebDriverWait(_driver, TimeSpan.FromSeconds(45)); // go + longer timeout

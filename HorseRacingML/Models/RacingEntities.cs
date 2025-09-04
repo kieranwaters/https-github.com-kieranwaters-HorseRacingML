@@ -77,4 +77,29 @@ namespace HorseRacingML.Models
         public int? CourseId { get; set; }
         public int DistanceYards { get; set; }
     }
+    public class RaceScreen
+    {
+        public long RaceScreenId { get; set; }
+        public string? MarketId { get; set; }
+        public DateTime? RaceDate { get; set; }
+        public TimeSpan? OffTime { get; set; }
+        public string? Title { get; set; }
+    }
+
+    public class RunnerFlow
+    {
+        public long RunnerFlowId { get; set; }
+        public string? MarketId { get; set; }
+        public string? SelectionId { get; set; }
+        public byte? ClothNumber { get; set; }
+        public byte? Draw { get; set; }
+        public string? HorseName { get; set; }
+        public string? JockeyName { get; set; }
+        public decimal? BackPrice1 { get; set; }
+        public decimal? BackPrice2 { get; set; }
+        public decimal? BackPrice3 { get; set; }
+        public decimal? LayPrice1 { get; set; }
+        public decimal? LayPrice2 { get; set; }
+        public decimal? LayPrice3 { get; set; }
+    }
 }

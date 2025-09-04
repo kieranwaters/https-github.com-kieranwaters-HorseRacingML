@@ -45,7 +45,23 @@ namespace HorseRacingML.Data
             finalConn.Open();
             return finalConn;
         }
+        public void InsertRaceScreen(RaceScreen screen)
+        {
+            const string sql = @"
+INSERT INTO RaceScreen(MarketId, RaceDate, OffTime, Title)
+VALUES(@MarketId, @RaceDate, @OffTime, @Title);";
+            using var conn = OpenConnection();
+            conn.Execute(sql, screen);
+        }
 
+        public void InsertRunnerFlow(RunnerFlow flow)
+        {
+            const string sql = @"
+INSERT INTO RunnerFlow(MarketId, SelectionId, ClothNumber, Draw, HorseName, JockeyName, BackPrice1, BackPrice2, BackPrice3, LayPrice1, LayPrice2, LayPrice3)
+VALUES(@MarketId, @SelectionId, @ClothNumber, @Draw, @HorseName, @JockeyName, @BackPrice1, @BackPrice2, @BackPrice3, @LayPrice1, @LayPrice2, @LayPrice3);";
+            using var conn = OpenConnection();
+            conn.Execute(sql, flow);
+        }
         private static string? NormalizeGoing(string? going)
         {
             if (string.IsNullOrWhiteSpace(going)) return going;
