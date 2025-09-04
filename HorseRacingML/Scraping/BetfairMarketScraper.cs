@@ -97,7 +97,7 @@ namespace HorseRacingML.Scraping
 
         private static string? ExtractMarketId(string url)
         {
-            var m = Regex.Match(url, @"/market/(\d+)");
+            var m = Regex.Match(url, @"(?:/market/|marketId=)([0-9.]+)");
             return m.Success ? m.Groups[1].Value : null;
         }
     }
