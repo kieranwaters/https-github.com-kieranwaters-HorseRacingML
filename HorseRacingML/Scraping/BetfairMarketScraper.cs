@@ -33,7 +33,13 @@ namespace HorseRacingML.Scraping
 
                 try
                 {
-                    wait.Until(d => d.FindElements(By.CssSelector("[data-test-id='runner']")).Count > 0);
+                    // Betfair recently changed the markup for runner rows.  The old
+                    // selector looked for elements with a "data-test-id" attribute of
+                    // "runner" which no longer exists.  Runner rows are now rendered as
+                    // table rows with the class "runner-line" and a data-selection-id
+                    // attribute.  Wait until at least one of these rows is present.
+                    wait.Until(d => d.FindElements(By.CssSelector("tr.runner-line[data-selection-id]"))
+                        .Count > 0);
                 }
                 catch (WebDriverTimeoutException)
                 {
@@ -70,7 +76,8 @@ namespace HorseRacingML.Scraping
                     continue;
                 }
 
-                var rows = driver.FindElements(By.CssSelector("[data-test-id='runner']"));
+                // Retrieve the runner rows using the updated selector described above
+                var rows = driver.FindElements(By.CssSelector("tr.runner-line[data-selection-id]"));
                 if (rows.Count == 0)
                 {
                     Console.Error.WriteLine($"\tNo runner rows found for market {marketId}");
@@ -79,10 +86,27 @@ namespace HorseRacingML.Scraping
                 Console.WriteLine($"\tFound {rows.Count} runners for market {marketId}");
                 foreach (var row in rows)
                 {
+                    // Some runner rows nest the data-selection-id on a child element, so
+                    // fall back to searching within the row if it's missing on the row
+                    // itself.
+                    var selectionId = row.GetAttribute("data-selection-id");
+                    if (string.IsNullOrEmpty(selectionId))
+                    {
+                        try
+                        {
+                            var childWithId = row.FindElement(By.CssSelector("[data-selection-id]"));
+                            selectionId = childWithId.GetAttribute("data-selection-id");
+                        }
+                        catch (NoSuchElementException)
+                        {
+                            selectionId = null;
+                        }
+                    }
+
                     var flow = new RunnerFlow
                     {
                         MarketId = marketId,
-                        SelectionId = row.GetAttribute("data-selection-id"),
+                        SelectionId = selectionId,
                         ClothNumber = TryParseByte(SafeText(row, By.CssSelector(".runner-number"))),
                         Draw = TryParseByte(SafeText(row, By.CssSelector(".draw"))),
                         HorseName = SafeText(row, By.CssSelector(".runner-name .runner-name")),
@@ -108,6 +132,7 @@ namespace HorseRacingML.Scraping
                 }
             }
         }
+        
         private static string TextOrEmpty(IWebDriver d, By by)
         {
             try { return d.FindElement(by).Text.Trim(); }
