@@ -35,11 +35,12 @@ namespace HorseRacingML.Scraping
                 {
                     // Betfair recently changed the markup for runner rows.  The old
                     // selector looked for elements with a "data-test-id" attribute of
-                    // "runner" which no longer exists.  Runner rows are now rendered as
-                    // table rows with the class "runner-line" and a data-selection-id
-                    // attribute.  Wait until at least one of these rows is present.
-                    wait.Until(d => d.FindElements(By.CssSelector("tr.runner-line[data-selection-id]"))
-                        .Count > 0);
+                    // "runner" which no longer exists.  Runner rows are now rendered
+                    // with the class "runner-line", but the data-selection-id may be on
+                    // a nested element rather than the row itself.  Wait until at least
+                    // one element with this class is present.
+
+                    wait.Until(d => d.FindElements(By.CssSelector(".runner-line")).Count > 0);
                 }
                 catch (WebDriverTimeoutException)
                 {
@@ -77,7 +78,8 @@ namespace HorseRacingML.Scraping
                 }
 
                 // Retrieve the runner rows using the updated selector described above
-                var rows = driver.FindElements(By.CssSelector("tr.runner-line[data-selection-id]"));
+                // (any element with the runner-line class)
+                var rows = driver.FindElements(By.CssSelector(".runner-line"));
                 if (rows.Count == 0)
                 {
                     Console.Error.WriteLine($"\tNo runner rows found for market {marketId}");
@@ -132,7 +134,7 @@ namespace HorseRacingML.Scraping
                 }
             }
         }
-        
+
         private static string TextOrEmpty(IWebDriver d, By by)
         {
             try { return d.FindElement(by).Text.Trim(); }
