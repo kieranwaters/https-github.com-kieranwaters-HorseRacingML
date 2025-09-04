@@ -17,7 +17,6 @@ namespace HorseRacingML.Scraping
         {
             _repo = repo;
         }
-
         public void ScrapeOpenRaceTabs(IWebDriver driver)
         {
             var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10));
@@ -25,32 +24,59 @@ namespace HorseRacingML.Scraping
             foreach (var handle in handles)
             {
                 driver.SwitchTo().Window(handle);
+                Console.WriteLine($"Processing tab: {driver.Url}");
                 if (!driver.Url.Contains("/horse-racing/", StringComparison.OrdinalIgnoreCase))
+                {
+                    Console.WriteLine("\tSkipping non-racing tab");
                     continue;
+                }
 
                 try
                 {
                     wait.Until(d => d.FindElements(By.CssSelector("[data-test-id='runner']")).Count > 0);
                 }
-                catch
+                catch (WebDriverTimeoutException)
                 {
+                    Console.Error.WriteLine("\tTimed out waiting for runner rows");
                     continue;
                 }
 
                 var marketId = ExtractMarketId(driver.Url);
+                if (string.IsNullOrEmpty(marketId))
+                {
+                    Console.Error.WriteLine($"\tFailed to extract market ID from URL: {driver.Url}");
+                    continue;
+                }
+
                 var title = TextOrEmpty(driver, By.CssSelector("[data-testid='marketTitle']"));
                 var offTimeText = TextOrEmpty(driver, By.CssSelector("[data-testid='startTime']"));
                 TimeSpan? offTime = TimeSpan.TryParse(offTimeText, out var t) ? t : (TimeSpan?)null;
+                Console.WriteLine($"\tScraping market {marketId} - {title}");
 
-                _repo.InsertRaceScreen(new RaceScreen
+                try
                 {
-                    MarketId = marketId,
-                    OffTime = offTime,
-                    Title = title,
-                    RaceDate = DateTime.Today
-                });
+                    _repo.InsertRaceScreen(new RaceScreen
+                    {
+                        MarketId = marketId,
+                        OffTime = offTime,
+                        Title = title,
+                        RaceDate = DateTime.Today
+                    });
+                    Console.WriteLine($"\tInserted race screen for {marketId}");
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"\tInsertRaceScreen failed for market {marketId}: {ex.Message}");
+                    continue;
+                }
 
                 var rows = driver.FindElements(By.CssSelector("[data-test-id='runner']"));
+                if (rows.Count == 0)
+                {
+                    Console.Error.WriteLine($"\tNo runner rows found for market {marketId}");
+                    continue;
+                }
+                Console.WriteLine($"\tFound {rows.Count} runners for market {marketId}");
                 foreach (var row in rows)
                 {
                     var flow = new RunnerFlow
@@ -68,11 +94,20 @@ namespace HorseRacingML.Scraping
                         LayPrice2 = ParseDecimal(SafeText(row, By.CssSelector(".bet-button.lay-selection-button.lay-2 .bet-button-price"))),
                         LayPrice3 = ParseDecimal(SafeText(row, By.CssSelector(".bet-button.lay-selection-button.lay-3 .bet-button-price")))
                     };
-                    _repo.InsertRunnerFlow(flow);
+
+                    try
+                    {
+                        _repo.InsertRunnerFlow(flow);
+                        Console.WriteLine($"\tInserted runner {flow.SelectionId} for market {marketId}");
+                    }
+                    catch (Exception ex)
+                    {
+                        var selId = flow.SelectionId ?? "unknown";
+                        Console.Error.WriteLine($"\tInsertRunnerFlow failed for market {marketId}, selection {selId}: {ex.Message}");
+                    }
                 }
             }
         }
-
         private static string TextOrEmpty(IWebDriver d, By by)
         {
             try { return d.FindElement(by).Text.Trim(); }
