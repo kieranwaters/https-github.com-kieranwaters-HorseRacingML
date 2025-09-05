@@ -17,6 +17,19 @@ namespace HorseRacingML.Controllers
             _logger = logger;
             _repository = repository;
         }
+        public async Task<IActionResult> Scrape(DateTime? startDate, DateTime? endDate)
+        {
+            var start = startDate ?? new DateTime(2018, 6, 23);
+            var end = endDate ?? start;
+
+            await Task.Run(() =>
+            {
+                var scraper = new RaceResultsScraper(_repository);
+                scraper.Scrape(start, end);
+            });
+
+            return RedirectToAction("Index");
+        }
 
         public IActionResult Index()
         {
@@ -45,17 +58,6 @@ namespace HorseRacingML.Controllers
             };
             return View(model);
         }
-        public IActionResult Scrape(DateTime? startDate, DateTime? endDate)
-        {
-            var start = startDate ?? new DateTime(2018, 6, 23);
-            var end = endDate ?? start;
-
-            var scraper = new RaceResultsScraper(_repository);
-            scraper.Scrape(start, end);
-
-            return RedirectToAction("Index");
-        }
-
         [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
         public IActionResult Error()
         {
