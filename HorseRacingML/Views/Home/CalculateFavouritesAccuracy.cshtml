@@ -1,4 +1,5 @@
-﻿@model HorseRacingML.Models.FavouriteAccuracyViewModel
+﻿﻿
+@model HorseRacingML.Models.FavouriteAccuracyViewModel
 @{
     ViewData["Title"] = "Favourite Accuracy";
 }
@@ -6,3 +7,4 @@
 <h2>Favourite Accuracy</h2>
 <p>Including joint favourites: @Model.IncludingJoint.ToString("P2")</p>
 <p>Excluding joint favourites: @Model.ExcludingJoint.ToString("P2")</p>
+<p>Average log loss of favourite odds: @Model.LogLoss.ToString("F4")</p>

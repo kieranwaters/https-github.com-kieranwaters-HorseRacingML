@@ -45,6 +45,56 @@ namespace HorseRacingML.Data
             finalConn.Open();
             return finalConn;
         }
+        public (double includingJoint, double excludingJoint, double logLoss) GetFavouriteAccuracy()
+        {
+            using var conn = OpenConnection();
+
+            const string totalIncludingSql = @"SELECT COUNT(DISTINCT RaceId) FROM RunnerResult WHERE FavTag IN ('F','JF','CF')";
+            const string winsIncludingSql = @"SELECT COUNT(DISTINCT RaceId) FROM RunnerResult WHERE FinishPos = 1 AND FavTag IN ('F','JF','CF')";
+
+            int totalIncluding = conn.QuerySingle<int>(totalIncludingSql);
+            int winsIncluding = conn.QuerySingle<int>(winsIncludingSql);
+
+            const string totalExcludingSql = @"SELECT COUNT(*) FROM (
+    SELECT RaceId
+    FROM RunnerResult
+    GROUP BY RaceId
+    HAVING SUM(CASE WHEN FavTag='F' THEN 1 ELSE 0 END)=1 AND SUM(CASE WHEN FavTag IN ('JF','CF') THEN 1 ELSE 0 END)=0
+) t";
+
+            const string winsExcludingSql = @"SELECT COUNT(*) FROM (
+    SELECT RaceId
+    FROM RunnerResult
+    GROUP BY RaceId
+    HAVING SUM(CASE WHEN FavTag='F' THEN 1 ELSE 0 END)=1 AND SUM(CASE WHEN FavTag IN ('JF','CF') THEN 1 ELSE 0 END)=0
+       AND MAX(CASE WHEN FinishPos=1 AND FavTag='F' THEN 1 ELSE 0 END)=1
+) t";
+
+            int totalExcluding = conn.QuerySingle<int>(totalExcludingSql);
+            int winsExcluding = conn.QuerySingle<int>(winsExcludingSql);
+
+            double includingJoint = totalIncluding == 0 ? 0 : (double)winsIncluding / totalIncluding;
+            double excludingJoint = totalExcluding == 0 ? 0 : (double)winsExcluding / totalExcluding;
+
+            const string logLossSql = @"SELECT SP_Decimal AS SP, CASE WHEN FinishPos = 1 THEN 1 ELSE 0 END AS Won FROM RunnerResult WHERE FavTag IN ('F','JF','CF') AND SP_Decimal IS NOT NULL AND SP_Decimal > 0";
+            var rows = conn.Query<(double SP, int Won)>(logLossSql);
+
+            double logLossSum = 0;
+            int count = 0;
+            const double epsilon = 1e-15;
+            foreach (var row in rows)
+            {
+                double p = 1.0 / row.SP;
+                p = Math.Max(Math.Min(p, 1 - epsilon), epsilon);
+                double y = row.Won;
+                double loss = -(y * Math.Log(p) + (1 - y) * Math.Log(1 - p));
+                logLossSum += loss;
+                count++;
+            }
+            double logLoss = count == 0 ? 0 : logLossSum / count;
+
+            return (includingJoint, excludingJoint, logLoss);
+        }
         public void InsertRaceScreen(RaceScreen screen)
         {
             const string sql = @"
@@ -93,39 +143,7 @@ VALUES(@MarketId, @SelectionId, @ClothNumber, @Draw, @HorseName, @JockeyName, @B
                     prop.SetValue(obj, RemoveBracketedText(value));
             }
         }
-        public (double includingJoint, double excludingJoint) GetFavouriteAccuracy()
-        {
-            using var conn = OpenConnection();
-
-            const string totalIncludingSql = @"SELECT COUNT(DISTINCT RaceId) FROM RunnerResult WHERE FavTag IN ('F','JF','CF')";
-            const string winsIncludingSql = @"SELECT COUNT(DISTINCT RaceId) FROM RunnerResult WHERE FinishPos = 1 AND FavTag IN ('F','JF','CF')";
-
-            int totalIncluding = conn.QuerySingle<int>(totalIncludingSql);
-            int winsIncluding = conn.QuerySingle<int>(winsIncludingSql);
-
-            const string totalExcludingSql = @"SELECT COUNT(*) FROM (
-    SELECT RaceId
-    FROM RunnerResult
-    GROUP BY RaceId
-    HAVING SUM(CASE WHEN FavTag='F' THEN 1 ELSE 0 END)=1 AND SUM(CASE WHEN FavTag IN ('JF','CF') THEN 1 ELSE 0 END)=0
-) t";
-
-            const string winsExcludingSql = @"SELECT COUNT(*) FROM (
-    SELECT RaceId
-    FROM RunnerResult
-    GROUP BY RaceId
-    HAVING SUM(CASE WHEN FavTag='F' THEN 1 ELSE 0 END)=1 AND SUM(CASE WHEN FavTag IN ('JF','CF') THEN 1 ELSE 0 END)=0
-       AND MAX(CASE WHEN FinishPos=1 AND FavTag='F' THEN 1 ELSE 0 END)=1
-) t";
-
-            int totalExcluding = conn.QuerySingle<int>(totalExcludingSql);
-            int winsExcluding = conn.QuerySingle<int>(winsExcludingSql);
-
-            double includingJoint = totalIncluding == 0 ? 0 : (double)winsIncluding / totalIncluding;
-            double excludingJoint = totalExcluding == 0 ? 0 : (double)winsExcluding / totalExcluding;
-
-            return (includingJoint, excludingJoint);
-        }
+        
         public void InsertRunnerResults(IEnumerable<RunnerResult> results)
         {
             var list = results.ToList();

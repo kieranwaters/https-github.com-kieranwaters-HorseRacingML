@@ -6,5 +6,6 @@ namespace HorseRacingML.Models
     {
         public double IncludingJoint { get; set; }
         public double ExcludingJoint { get; set; }
+        public double LogLoss { get; set; }
     }
 }

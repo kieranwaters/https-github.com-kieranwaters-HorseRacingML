@@ -17,7 +17,19 @@ namespace HorseRacingML.Controllers
             _logger = logger;
             _repository = repository;
         }
-        public async Task<IActionResult> Scrape(DateTime? startDate, DateTime? endDate)
+        public IActionResult CalculateFavouritesAccuracy()
+        {
+            var (includingJoint, excludingJoint, logLoss) = _repository.GetFavouriteAccuracy();
+            var model = new FavouriteAccuracyViewModel
+            {
+                IncludingJoint = includingJoint,
+                ExcludingJoint = excludingJoint,
+                LogLoss = logLoss
+            };
+            return View(model);
+        }
+        [HttpGet]
+        public async Task<IActionResult> ScrapeRaceResults(DateTime? startDate, DateTime? endDate)
         {
             var start = startDate ?? new DateTime(2018, 6, 23);
             var end = endDate ?? start;
@@ -47,16 +59,6 @@ namespace HorseRacingML.Controllers
             await betfair.OpenHorseRaceMeetingsInNewTabsAsync();
             betfair.ScrapeOpenRaceTabs(_repository);
             return RedirectToAction("Index");
-        }
-        public IActionResult CalculateFavouritesAccuracy()
-        {
-            var (includingJoint, excludingJoint) = _repository.GetFavouriteAccuracy();
-            var model = new FavouriteAccuracyViewModel
-            {
-                IncludingJoint = includingJoint,
-                ExcludingJoint = excludingJoint
-            };
-            return View(model);
         }
         [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
         public IActionResult Error()
