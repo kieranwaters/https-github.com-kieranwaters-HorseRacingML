@@ -159,8 +159,26 @@ namespace HorseRacingML.Scraping
 
         private static string? ExtractMarketId(string url)
         {
-            var m = Regex.Match(url, @"(?:/market/|marketId=)([0-9.]+)");
-            return m.Success ? m.Groups[1].Value : null;
+            // Betfair have changed their URL structure over time.  In some cases the
+            // market id appears in a traditional "market/1.234" or "marketId="
+            // format, but newer "plus" pages render it as "...-betting-123456".
+            // Support both patterns so scraping works regardless of the style of URL
+            // that is loaded.
+            var m = Regex.Match(url,
+                @"(?:/market/|marketId=)(?<id1>[0-9.]+)|(?:betting-)(?<id2>\d+)");
+
+            if (m.Groups["id1"].Success)
+            {
+                return m.Groups["id1"].Value;
+            }
+
+            if (m.Groups["id2"].Success)
+            {
+                return m.Groups["id2"].Value;
+            }
+
+            return null;
         }
-    }
+    
+}
 }
