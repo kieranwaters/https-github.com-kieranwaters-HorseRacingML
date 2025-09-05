@@ -1,4 +1,4 @@
-﻿@model HorseRacingML.Models.MLParameter
+﻿@model HorseRacingML.Models.MLParameterBatch
 @{
     ViewData["Title"] = "Custom Hyperparameters";
 }
@@ -6,47 +6,82 @@
 <h1>Custom Hyperparameters</h1>
 
 <form asp-action="Custom" method="post">
-    <div class="mb-3">
-        <label asp-for="Units" class="form-label"></label>
-        <input asp-for="Units" class="form-control" />
-        <span asp-validation-for="Units" class="text-danger"></span>
-    </div>
-    <div class="mb-3">
-        <label asp-for="Dropout" class="form-label"></label>
-        <input asp-for="Dropout" class="form-control" />
-        <span asp-validation-for="Dropout" class="text-danger"></span>
-    </div>
-    <div class="mb-3">
-        <label asp-for="Layers" class="form-label"></label>
-        <input asp-for="Layers" class="form-control" />
-        <span asp-validation-for="Layers" class="text-danger"></span>
-    </div>
-    <div class="mb-3">
-        <label asp-for="LearningRate" class="form-label"></label>
-        <input asp-for="LearningRate" class="form-control" />
-        <span asp-validation-for="LearningRate" class="text-danger"></span>
-    </div>
-    <div class="mb-3">
-        <label asp-for="Epochs" class="form-label"></label>
-        <input asp-for="Epochs" class="form-control" />
-        <span asp-validation-for="Epochs" class="text-danger"></span>
-    </div>
-    <div class="mb-3">
-        <label asp-for="BatchSize" class="form-label"></label>
-        <input asp-for="BatchSize" class="form-control" />
-        <span asp-validation-for="BatchSize" class="text-danger"></span>
-    </div>
-    <div class="mb-3">
-        <label asp-for="Folds" class="form-label"></label>
-        <input asp-for="Folds" class="form-control" />
-        <span asp-validation-for="Folds" class="text-danger"></span>
-    </div>
-    <input type="hidden" asp-for="RunDate" />
-    <button type="submit" class="btn btn-primary">Save</button>
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Units</th>
+                <th>Dropout</th>
+                <th>Layers</th>
+                <th>Learning Rate</th>
+                <th>Epochs</th>
+                <th>Batch Size</th>
+                <th>Folds</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody id="parameterRows">
+            @for (int i = 0; i < Model.Parameters.Count; i++)
+            {
+                <tr>
+                    <td><input asp-for="Parameters[i].Units" class="form-control" /></td>
+                    <td><input asp-for="Parameters[i].Dropout" class="form-control" /></td>
+                    <td><input asp-for="Parameters[i].Layers" class="form-control" /></td>
+                    <td><input asp-for="Parameters[i].LearningRate" class="form-control" /></td>
+                    <td><input asp-for="Parameters[i].Epochs" class="form-control" /></td>
+                    <td><input asp-for="Parameters[i].BatchSize" class="form-control" /></td>
+                    <td><input asp-for="Parameters[i].Folds" class="form-control" /></td>
+                    <td>
+                        <button type="button" class="btn btn-danger" onclick="removeRow(this)">Delete</button>
+                    </td>
+                    <input type="hidden" asp-for="Parameters[i].RunDate" />
+                </tr>
+            }
+        </tbody>
+    </table>
+    <button type="button" class="btn btn-secondary" onclick="addRow()">Add Row</button>
+    <button type="submit" class="btn btn-primary">Run</button>
 </form>
 
 @section Scripts {
     @{
         await Html.RenderPartialAsync("_ValidationScriptsPartial");
     }
+    <script>
+        function addRow() {
+            const rows = document.querySelectorAll('#parameterRows tr');
+            const index = rows.length;
+            const template = `
+                <tr>
+                    <td><input name="Parameters[${index}].Units" class="form-control" /></td>
+                    <td><input name="Parameters[${index}].Dropout" class="form-control" /></td>
+                    <td><input name="Parameters[${index}].Layers" class="form-control" /></td>
+                    <td><input name="Parameters[${index}].LearningRate" class="form-control" /></td>
+                    <td><input name="Parameters[${index}].Epochs" class="form-control" /></td>
+                    <td><input name="Parameters[${index}].BatchSize" class="form-control" /></td>
+                    <td><input name="Parameters[${index}].Folds" class="form-control" /></td>
+                    <td><button type="button" class="btn btn-danger" onclick="removeRow(this)">Delete</button></td>
+                    <input type="hidden" name="Parameters[${index}].RunDate" value="${new Date().toISOString()}" />
+                </tr>`;
+            document.getElementById('parameterRows').insertAdjacentHTML('beforeend', template);
+        }
+        function removeRow(btn) {
+            btn.closest('tr').remove();
+            updateIndexes();
+        }
+        function updateIndexes() {
+            const rows = document.querySelectorAll('#parameterRows tr');
+            rows.forEach((row, idx) => {
+                row.querySelectorAll('input').forEach(input => {
+                    const name = input.getAttribute('name');
+                    if (name) {
+                        input.setAttribute('name', name.replace(/Parameters\[\d+\]/, `Parameters[${idx}]`));
+                    }
+                    const id = input.getAttribute('id');
+                    if (id) {
+                        input.setAttribute('id', id.replace(/_\d+__/, `_${idx}__`));
+                    }
+                });
+            });
+        }
+    </script>
 }

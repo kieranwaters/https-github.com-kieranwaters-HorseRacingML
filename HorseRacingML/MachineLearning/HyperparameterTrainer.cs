@@ -1025,8 +1025,8 @@ namespace HorseRacingML.ML
                         LEFT JOIN Jockey j ON rr.JockeyId = j.JockeyId";
 
             var rnd = new Random();
-            var rows = conn.Query(sql)
-                .Select(r => ((IDictionary<string, object>)r)
+            var rows = conn.Query(sql, commandTimeout: 6000)
+               .Select(r => ((IDictionary<string, object>)r)
                     .ToDictionary(k => k.Key, k => k.Value))
                 // Randomize runner order within each race to avoid leaking
                 // finish position via default row ordering from the database.

@@ -18,40 +18,50 @@ namespace HorseRacingML.Controllers
         }
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public IActionResult Custom(MLParameter model)
+        public IActionResult Custom(MLParameterBatch batch)
         {
             if (ModelState.IsValid)
             {
-                for (int i = 0; i < model.Folds; i++)
+                foreach (var model in batch.Parameters)
                 {
-                    var result = _trainer.Train(model, i, model.Folds);
-                    var foldModel = new MLParameter
+                    model.RunDate = DateTime.UtcNow;
+                    for (int i = 0; i < model.Folds; i++)
                     {
-                        RunDate = model.RunDate,
-                        Units = model.Units,
-                        Dropout = model.Dropout,
-                        Layers = model.Layers,
-                        LearningRate = model.LearningRate,
-                        Epochs = model.Epochs,
-                        BatchSize = model.BatchSize,
-                        TrainAccuracy = result.TrainAccuracy,
-                        TrainLoss = result.TrainLoss,
-                        ValidationAccuracy = result.ValidationAccuracy,
-                        ValidationLoss = result.ValidationLoss,
-                        Fold = i + 1
-                    };
-                    _repository.InsertMLParameter(foldModel);
+                        var result = _trainer.Train(model, i, model.Folds);
+                        var foldModel = new MLParameter
+                        {
+                            RunDate = model.RunDate,
+                            Units = model.Units,
+                            Dropout = model.Dropout,
+                            Layers = model.Layers,
+                            LearningRate = model.LearningRate,
+                            Epochs = model.Epochs,
+                            BatchSize = model.BatchSize,
+                            TrainAccuracy = result.TrainAccuracy,
+                            TrainLoss = result.TrainLoss,
+                            ValidationAccuracy = result.ValidationAccuracy,
+                            ValidationLoss = result.ValidationLoss,
+                            Fold = i + 1
+                        };
+                        _repository.InsertMLParameter(foldModel);
+                    }
                 }
                 return RedirectToAction("Index", "Home");
             }
 
-            return View(model);
+            return View(batch);
         }
 
         [HttpGet]
         public IActionResult Custom()
         {
-            return View(new MLParameter { RunDate = DateTime.UtcNow });
+            return View(new MLParameterBatch
+            {
+                Parameters = new System.Collections.Generic.List<MLParameter>
+                {
+                    new MLParameter { RunDate = DateTime.UtcNow }
+                }
+            });
         }
     }
 }
