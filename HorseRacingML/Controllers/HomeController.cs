@@ -35,9 +35,19 @@ namespace HorseRacingML.Controllers
             betfair.ScrapeOpenRaceTabs(_repository);
             return RedirectToAction("Index");
         }
+        public IActionResult CalculateFavouritesAccuracy()
+        {
+            var (includingJoint, excludingJoint) = _repository.GetFavouriteAccuracy();
+            var model = new FavouriteAccuracyViewModel
+            {
+                IncludingJoint = includingJoint,
+                ExcludingJoint = excludingJoint
+            };
+            return View(model);
+        }
         public IActionResult Scrape(DateTime? startDate, DateTime? endDate)
         {
-            var start = startDate ?? new DateTime(2018, 5, 5);
+            var start = startDate ?? new DateTime(2018, 6, 23);
             var end = endDate ?? start;
 
             var scraper = new RaceResultsScraper(_repository);

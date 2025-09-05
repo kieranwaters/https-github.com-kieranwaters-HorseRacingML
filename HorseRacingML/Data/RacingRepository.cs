@@ -93,6 +93,39 @@ VALUES(@MarketId, @SelectionId, @ClothNumber, @Draw, @HorseName, @JockeyName, @B
                     prop.SetValue(obj, RemoveBracketedText(value));
             }
         }
+        public (double includingJoint, double excludingJoint) GetFavouriteAccuracy()
+        {
+            using var conn = OpenConnection();
+
+            const string totalIncludingSql = @"SELECT COUNT(DISTINCT RaceId) FROM RunnerResult WHERE FavTag IN ('F','JF','CF')";
+            const string winsIncludingSql = @"SELECT COUNT(DISTINCT RaceId) FROM RunnerResult WHERE FinishPos = 1 AND FavTag IN ('F','JF','CF')";
+
+            int totalIncluding = conn.QuerySingle<int>(totalIncludingSql);
+            int winsIncluding = conn.QuerySingle<int>(winsIncludingSql);
+
+            const string totalExcludingSql = @"SELECT COUNT(*) FROM (
+    SELECT RaceId
+    FROM RunnerResult
+    GROUP BY RaceId
+    HAVING SUM(CASE WHEN FavTag='F' THEN 1 ELSE 0 END)=1 AND SUM(CASE WHEN FavTag IN ('JF','CF') THEN 1 ELSE 0 END)=0
+) t";
+
+            const string winsExcludingSql = @"SELECT COUNT(*) FROM (
+    SELECT RaceId
+    FROM RunnerResult
+    GROUP BY RaceId
+    HAVING SUM(CASE WHEN FavTag='F' THEN 1 ELSE 0 END)=1 AND SUM(CASE WHEN FavTag IN ('JF','CF') THEN 1 ELSE 0 END)=0
+       AND MAX(CASE WHEN FinishPos=1 AND FavTag='F' THEN 1 ELSE 0 END)=1
+) t";
+
+            int totalExcluding = conn.QuerySingle<int>(totalExcludingSql);
+            int winsExcluding = conn.QuerySingle<int>(winsExcludingSql);
+
+            double includingJoint = totalIncluding == 0 ? 0 : (double)winsIncluding / totalIncluding;
+            double excludingJoint = totalExcluding == 0 ? 0 : (double)winsExcluding / totalExcluding;
+
+            return (includingJoint, excludingJoint);
+        }
         public void InsertRunnerResults(IEnumerable<RunnerResult> results)
         {
             var list = results.ToList();
