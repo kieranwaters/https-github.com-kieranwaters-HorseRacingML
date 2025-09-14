@@ -63,7 +63,7 @@ public class BetfairNavigationService : IDisposable
     }
 
 
-    public Task OpenHorseRaceMeetingsInNewTabsAsync()
+    public async Task OpenHorseRaceMeetingsInNewTabsAsync(int delayBetweenTabsMs = 0)
     {
         var wait = new WebDriverWait(_driver, TimeSpan.FromSeconds(10));
         wait.Until(d => d.FindElements(By.CssSelector("a[href*='/horse-racing/']")).Count > 0);
@@ -79,17 +79,15 @@ public class BetfairNavigationService : IDisposable
             }
         }
 
-        if (urls.Count > 0)
+        foreach (var url in urls)
         {
-            ((IJavaScriptExecutor)_driver).ExecuteScript(@"
-                var urls = arguments[0];
-                urls.forEach(function(u){
-                    window.open(u, '_blank');
-                });
-            ", urls.ToArray());
+            ((IJavaScriptExecutor)_driver).ExecuteScript("window.open(arguments[0], '_blank');", url);
+            if (delayBetweenTabsMs > 0)
+            {
+                await Task.Delay(delayBetweenTabsMs);
+            }
         }
-
-        return Task.CompletedTask;
+        await Task.CompletedTask;
     }
     public void Dispose()
     {
