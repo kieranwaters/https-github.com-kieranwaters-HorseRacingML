@@ -63,22 +63,33 @@ public class BetfairNavigationService : IDisposable
     }
 
 
-    public async Task OpenHorseRaceMeetingsInNewTabsAsync()
+    public Task OpenHorseRaceMeetingsInNewTabsAsync()
     {
         var wait = new WebDriverWait(_driver, TimeSpan.FromSeconds(10));
         wait.Until(d => d.FindElements(By.CssSelector("a[href*='/horse-racing/']")).Count > 0);
 
         var links = _driver.FindElements(By.CssSelector("a[href*='/horse-racing/']"));
-        var seen = new HashSet<string>();
+        var urls = new HashSet<string>();
         foreach (var link in links)
         {
             var href = link.GetAttribute("href");
-            if (!string.IsNullOrEmpty(href) && seen.Add(href))
+            if (!string.IsNullOrEmpty(href))
             {
-                ((IJavaScriptExecutor)_driver).ExecuteScript("window.open(arguments[0], '_blank');", href);
-                await Task.Delay(100);
+                urls.Add(href);
             }
         }
+
+        if (urls.Count > 0)
+        {
+            ((IJavaScriptExecutor)_driver).ExecuteScript(@"
+                var urls = arguments[0];
+                urls.forEach(function(u){
+                    window.open(u, '_blank');
+                });
+            ", urls.ToArray());
+        }
+
+        return Task.CompletedTask;
     }
     public void Dispose()
     {
