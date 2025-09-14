@@ -256,11 +256,13 @@ namespace HorseRacingML.Scraping
             catch (OperationCanceledException ex) { Console.Error.WriteLine($"[Skip Day] {date:yyyy-MM-dd} OperationCanceled: {ex.Message}"); }
             catch (Exception ex) { Console.Error.WriteLine($"[Skip Day] {date:yyyy-MM-dd} Unexpected: {ex.Message}"); }
         }
-
-
         private ChromeOptions BuildChromeOptions()
         {
-            var options = new ChromeOptions(); options.AddArgument("--start-maximized"); options.AddArgument("--disable-dev-shm-usage"); options.AddArgument("--disable-gpu"); options.AddArgument("--no-sandbox");
+            var options = new ChromeOptions();
+            options.AddArgument("--headless=new");
+            options.AddArgument("--disable-dev-shm-usage");
+            options.AddArgument("--disable-gpu");
+            options.AddArgument("--no-sandbox");
             options.AddUserProfilePreference("profile.managed_default_content_settings.images", 2);
             options.AddUserProfilePreference("profile.managed_default_content_settings.fonts", 2);
             options.AddUserProfilePreference("profile.managed_default_content_settings.stylesheets", 2);
