@@ -167,8 +167,8 @@ IF NOT EXISTS (SELECT 1 FROM RunnerResult WHERE RaceId=@RaceId AND HorseId=@Hors
         {
             StripBracketedText(course);
             const string sql = @"
-IF EXISTS (SELECT CourseId FROM Course WHERE Name = @Name AND ISNULL(Country,'') = ISNULL(@Country,''))
-    SELECT CourseId FROM Course WHERE Name = @Name AND ISNULL(Country,'') = ISNULL(@Country,'');
+IF EXISTS (SELECT 1 FROM Course WHERE Name = @Name AND ISNULL(Country,'') = ISNULL(@Country,''))
+    SELECT TOP 1 CourseId FROM Course WHERE Name = @Name AND ISNULL(Country,'') = ISNULL(@Country,'') ORDER BY CourseId;
 ELSE
 BEGIN
     INSERT INTO Course(Name, Country) VALUES(@Name, @Country);
@@ -192,8 +192,8 @@ SELECT CAST(SCOPE_IDENTITY() as int);";
             StripBracketedText(race);
             race.Going = NormalizeGoing(race.Going);
             const string sql = @"
-IF EXISTS (SELECT RaceId FROM Race WHERE CourseId=@CourseId AND RaceDate=@RaceDate AND ScheduledOff=@ScheduledOff AND Title=@Title)
-    SELECT RaceId FROM Race WHERE CourseId=@CourseId AND RaceDate=@RaceDate AND ScheduledOff=@ScheduledOff AND Title=@Title;
+IF EXISTS (SELECT 1 FROM Race WHERE CourseId=@CourseId AND RaceDate=@RaceDate AND ScheduledOff=@ScheduledOff AND Title=@Title)
+    SELECT TOP 1 RaceId FROM Race WHERE CourseId=@CourseId AND RaceDate=@RaceDate AND ScheduledOff=@ScheduledOff AND Title=@Title ORDER BY RaceId;
 ELSE
 BEGIN
     INSERT INTO Race(CourseId, RaceDate, ScheduledOff, ActualOff, Title, RaceType, Class, AgeRestriction, Surface, Going, DistanceYards, DistanceText, RunnerCount, Status, WinningTimeMs, WinningTimeText)
@@ -208,8 +208,8 @@ END";
         {
             StripBracketedText(trainer);
             const string sql = @"
-IF EXISTS (SELECT TrainerId FROM Trainer WHERE Name=@Name)
-    SELECT TrainerId FROM Trainer WHERE Name=@Name;
+IF EXISTS (SELECT 1 FROM Trainer WHERE Name=@Name)
+    SELECT TOP 1 TrainerId FROM Trainer WHERE Name=@Name ORDER BY TrainerId;
 ELSE
 BEGIN
     INSERT INTO Trainer(Name) VALUES(@Name);
@@ -223,8 +223,8 @@ END";
         {
             StripBracketedText(jockey);
             const string sql = @"
-IF EXISTS (SELECT JockeyId FROM Jockey WHERE Name=@Name)
-    SELECT JockeyId FROM Jockey WHERE Name=@Name;
+IF EXISTS (SELECT 1 FROM Jockey WHERE Name=@Name)
+    SELECT TOP 1 JockeyId FROM Jockey WHERE Name=@Name ORDER BY JockeyId;
 ELSE
 BEGIN
     INSERT INTO Jockey(Name) VALUES(@Name);
@@ -238,8 +238,8 @@ END";
         {
             StripBracketedText(horse);
             const string sql = @"
-IF EXISTS (SELECT HorseId FROM Horse WHERE Name=@Name)
-    SELECT HorseId FROM Horse WHERE Name=@Name;
+IF EXISTS (SELECT 1 FROM Horse WHERE Name=@Name)
+    SELECT TOP 1 HorseId FROM Horse WHERE Name=@Name ORDER BY HorseId;
 ELSE
 BEGIN
     INSERT INTO Horse(Name) VALUES(@Name);
@@ -253,8 +253,8 @@ END";
         {
             StripBracketedText(result);
             const string sql = @"
-IF EXISTS (SELECT RunnerResultId FROM RunnerResult WHERE RaceId=@RaceId AND HorseId=@HorseId)
-    SELECT RunnerResultId FROM RunnerResult WHERE RaceId=@RaceId AND HorseId=@HorseId;
+IF EXISTS (SELECT 1 FROM RunnerResult WHERE RaceId=@RaceId AND HorseId=@HorseId)
+    SELECT TOP 1 RunnerResultId FROM RunnerResult WHERE RaceId=@RaceId AND HorseId=@HorseId ORDER BY RunnerResultId;
 ELSE
 BEGIN
     INSERT INTO RunnerResult(RaceId, HorseId, TrainerId, JockeyId, SaddleclothNumber, Draw, Age, WeightLbs, WeightText, FinishPos, OutcomeCode, DistanceBeatenText, DistanceBeatenLengths, SP_Fraction, SP_Decimal, FavTag, OpeningFraction, TouchedHighFraction, TouchedLowFraction, Comment)

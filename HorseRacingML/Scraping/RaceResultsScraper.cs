@@ -10,6 +10,8 @@ using System.Threading;
 using System.IO;
 using System.Collections.Generic;
 using System.Text.Json;
+using System.Net;
+using System.Net.Sockets;
 
 namespace HorseRacingML.Scraping
 {
@@ -20,6 +22,14 @@ namespace HorseRacingML.Scraping
         public RaceResultsScraper(RacingRepository repo)
         {
             _repo = repo;
+        }
+        private static int GetFreeTcpPort()
+        {
+            using var listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+            listener.Stop();
+            return port;
         }
         private void ScrapeMeetingTabs(IWebDriver driver, WebDriverWait wait, DateTime raceDate, string dayHandle)
         {
@@ -162,7 +172,7 @@ namespace HorseRacingML.Scraping
                 {
                     using var svc = ChromeDriverService.CreateDefaultService();
                     svc.HideCommandPromptWindow = true;
-                    svc.Port = 0; // let OS choose a free port to avoid collisions
+                    svc.Port = GetFreeTcpPort(); // let OS choose a free port to avoid collisions
                     using var driver = new ChromeDriver(svc, BuildChromeOptions(), TimeSpan.FromSeconds(60));
                     driver.Manage().Timeouts().PageLoad = TimeSpan.FromSeconds(45);
                     driver.Manage().Timeouts().AsynchronousJavaScript = TimeSpan.FromSeconds(15);
