@@ -16,7 +16,7 @@ namespace HorseRacingML.Scraping
     public class RaceResultsScraper
     {
         private readonly RacingRepository _repo;
-
+        private static readonly DateTime HardcodedToday = new DateTime(2025, 9, 14);
         public RaceResultsScraper(RacingRepository repo)
         {
             _repo = repo;
@@ -144,13 +144,14 @@ namespace HorseRacingML.Scraping
         }
         return "";
     } // element text
-    public void Scrape(DateTime startDate, DateTime endDate)
+        public void Scrape(DateTime startDate, DateTime endDate)
         {
-            var start = startDate.Date; var end = endDate.Date; if (end < start) { var tmp = start; start = end; end = tmp; } // normalize range
-            if (start == end) { end = DateTime.Today; } // expand single-day default to multi-day
-            if (end > DateTime.Today) end = DateTime.Today; // cap to today
+            var start = startDate.Date;
+            var end = HardcodedToday.Date;
+            if (start > end) start = end;
 
-            var dates = Enumerable.Range(0, (end - start).Days + 1).Select(i => start.AddDays(i));
+            var dates = Enumerable.Range(0, (end - start).Days + 1)
+                                   .Select(i => end.AddDays(-i));
             var queue = new ConcurrentQueue<DateTime>(dates);
             var tasks = new List<Task>();
             int workers = Math.Min(25, queue.Count);
@@ -169,6 +170,7 @@ namespace HorseRacingML.Scraping
                     while (queue.TryDequeue(out var date))
                     {
                         ScrapeDay(driver, date);
+                        Console.WriteLine($"[{date:yyyy-MM-dd}] parsed and inserted");
                         try { _ = driver.WindowHandles.Count; }
                         catch (Exception ex) { Console.Error.WriteLine($"[Warning] Driver session not healthy before next day: {ex.Message}"); break; }
                     }
@@ -177,7 +179,6 @@ namespace HorseRacingML.Scraping
 
             Task.WaitAll(tasks.ToArray());
         }
-
         private void ScrapeDay(IWebDriver driver, DateTime date)
         {
             try
