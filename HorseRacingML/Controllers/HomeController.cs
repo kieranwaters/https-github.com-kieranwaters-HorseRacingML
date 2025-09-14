@@ -29,15 +29,12 @@ namespace HorseRacingML.Controllers
             return View(model);
         }
         [HttpGet]
-        public async Task<IActionResult> ScrapeRaceResults(DateTime? startDate, DateTime? endDate)
+        public async Task<IActionResult> ScrapeRaceResults()
         {
-            var start = startDate ?? new DateTime(2023, 2, 10);
-            var end = endDate ?? start;
-
             await Task.Run(() =>
             {
                 var scraper = new RaceResultsScraper(_repository);
-                scraper.Scrape(start, end);
+                scraper.ScrapeFromLatest();
             });
 
             return RedirectToAction("Index");

@@ -1,4 +1,5 @@
 ﻿using System.Data;
+using System;
 using Dapper;
 using Microsoft.Data.SqlClient;
 using HorseRacingML.Models;
@@ -44,6 +45,13 @@ namespace HorseRacingML.Data
             var finalConn = new SqlConnection(_connectionString);
             finalConn.Open();
             return finalConn;
+        }
+        public DateTime GetLatestRaceDate()
+        {
+            using var conn = OpenConnection();
+            const string sql = "SELECT MAX(RaceDate) FROM Race";
+            var latest = conn.QuerySingleOrDefault<DateTime?>(sql);
+            return latest ?? new DateTime(2025, 14, 9);
         }
         public (double includingJoint, double excludingJoint, double logLoss) GetFavouriteAccuracy()
         {

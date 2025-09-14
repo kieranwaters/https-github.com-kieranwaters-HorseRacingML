@@ -18,6 +18,7 @@ namespace HorseRacingML.Scraping
     public class RaceResultsScraper
     {
         private readonly RacingRepository _repo;
+        private const int MaxParallelDrivers = 8;
         private static readonly DateTime HardcodedToday = new DateTime(2025, 9, 14);
         public RaceResultsScraper(RacingRepository repo)
         {
