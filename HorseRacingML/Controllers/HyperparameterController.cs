@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using HorseRacingML.Models;
 using HorseRacingML.Data;
 using HorseRacingML.ML;
+using HorseRacingML.Scraping;
 
 namespace HorseRacingML.Controllers
 {
@@ -11,11 +12,16 @@ namespace HorseRacingML.Controllers
     {
         private readonly RacingRepository _repository;
         private readonly HyperparameterTrainer _trainer;
+        private readonly RaceResultsScraper _scraper;
 
-        public HyperparameterController(RacingRepository repository, HyperparameterTrainer trainer)
+        public HyperparameterController(
+            RacingRepository repository,
+            HyperparameterTrainer trainer,
+            RaceResultsScraper scraper)
         {
             _repository = repository;
             _trainer = trainer;
+            _scraper = scraper;
         }
         [HttpPost]
         [ValidateAntiForgeryToken]
@@ -25,6 +31,7 @@ namespace HorseRacingML.Controllers
             {
                 await Task.Run(() =>
                 {
+                    _scraper.Scrape(DateTime.Today, DateTime.Today);
                     foreach (var model in batch.Parameters)
                     {
                         model.RunDate = DateTime.UtcNow;

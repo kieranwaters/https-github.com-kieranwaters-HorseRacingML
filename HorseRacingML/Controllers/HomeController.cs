@@ -31,7 +31,7 @@ namespace HorseRacingML.Controllers
         [HttpGet]
         public async Task<IActionResult> ScrapeRaceResults(DateTime? startDate, DateTime? endDate)
         {
-            var start = startDate ?? new DateTime(2018, 6, 23);
+            var start = startDate ?? new DateTime(2023, 2, 10);
             var end = endDate ?? start;
 
             await Task.Run(() =>
