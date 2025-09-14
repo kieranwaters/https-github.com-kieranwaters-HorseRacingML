@@ -154,7 +154,7 @@ namespace HorseRacingML.Scraping
                                    .Select(i => end.AddDays(-i));
             var queue = new ConcurrentQueue<DateTime>(dates);
             var tasks = new List<Task>();
-            int workers = Math.Min(25, queue.Count);
+            int workers = Math.Min(6, queue.Count);
 
             for (int i = 0; i < workers; i++)
             {
@@ -162,6 +162,7 @@ namespace HorseRacingML.Scraping
                 {
                     using var svc = ChromeDriverService.CreateDefaultService();
                     svc.HideCommandPromptWindow = true;
+                    svc.Port = 0; // let OS choose a free port to avoid collisions
                     using var driver = new ChromeDriver(svc, BuildChromeOptions(), TimeSpan.FromSeconds(60));
                     driver.Manage().Timeouts().PageLoad = TimeSpan.FromSeconds(45);
                     driver.Manage().Timeouts().AsynchronousJavaScript = TimeSpan.FromSeconds(15);
