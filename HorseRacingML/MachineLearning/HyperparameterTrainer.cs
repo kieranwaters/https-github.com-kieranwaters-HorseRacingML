@@ -1011,6 +1011,11 @@ namespace HorseRacingML.ML
             {
                 vec[idx] = 1f;
             }
+            else
+            {
+                // Reserve the last index for unknown categories
+                vec[dim - 1] = 1f;
+            }
             return vec;
         }
         public (double TrainAccuracy, double TrainLoss, double ValidationAccuracy, double ValidationLoss, double TrainBrier, double ValidationBrier) Train(MLParameter param, int foldIndex, int foldCount)
@@ -1163,6 +1168,7 @@ namespace HorseRacingML.ML
                     var map = distinct
                         .Select((v, idx) => new { v, idx })
                         .ToDictionary(x => x.v, x => x.idx);
+                    map["__unknown__"] = distinct.Count;
                     stringMaps[k] = map;
                     baseDim = map.Count;
                 }
