@@ -52,7 +52,6 @@ namespace HorseRacingML.ML
 
             return total == 0 ? 0 : (double)correct / total;
         }
-        private const int StringVectorSize = 4;
         private static readonly DateTime BaseDate = new DateTime(2005, 1, 1);
         private const int PastRaceCount = 5;
         // Maximum history to keep per horse; must cover largest window
@@ -76,21 +75,41 @@ namespace HorseRacingML.ML
             int dim,
             Dictionary<string, Dictionary<string, int>> stringMaps)
         {
-            if (value == null)
-                return new float[dim];
+            // Determine the base dimension (excluding missing indicator) and whether an
+            // additional slot is reserved for missing values.
+            int baseDim = stringMaps.TryGetValue(key, out var map)
+                ? map.Count
+                : 1;
+            bool hasMissingIndicator = dim > baseDim;
 
-            return value switch
+            if (value == null)
+            {
+                var arr = new float[dim];
+                if (hasMissingIndicator)
+                    arr[baseDim] = 1f;
+                return arr;
+            }
+
+            float[] encoded = value switch
             {
                 // Convert to days relative to a recent base date to avoid huge tick values
                 DateTime dt => new[] { (float)(dt - BaseDate).TotalDays },
                 // Seconds are a reasonable scale for durations
                 TimeSpan ts => new[] { (float)ts.TotalSeconds },
-                string s => EncodeString(key, s, dim, stringMaps),
+                string s => EncodeString(key, s, baseDim, stringMaps),
                 bool b => new[] { b ? 1f : 0f },
                 // Scale down very large numeric values to keep them in a manageable range
-                _ => EncodeNumeric(value, dim)
+                _ => EncodeNumeric(value, baseDim)
             };
+
+            if (!hasMissingIndicator)
+                return encoded;
+
+            var result = new float[dim];
+            Array.Copy(encoded, result, baseDim);
+            return result;
         }
+        
         private static float? ParseDistanceBeaten(string text)
         {
             if (string.IsNullOrWhiteSpace(text))
@@ -1113,26 +1132,29 @@ namespace HorseRacingML.ML
             {
                 var values = allRows
                     .Select(r => r.ContainsKey(k) ? r[k] : null)
-                    .Where(v => v != null)
                     .ToList();
-                if (values.Count == 0)
+                bool hasMissing = values.Any(v => v == null);
+                var nonNullValues = values.Where(v => v != null).ToList();
+                if (nonNullValues.Count == 0)
                 {
                     continue;
                 }
-                var sample = values[0];
+                var sample = nonNullValues[0];
+                int baseDim;
                 if (sample is string)
                 {
-                    var distinct = values.Cast<string>().Distinct().ToList();
+                    var distinct = nonNullValues.Cast<string>().Distinct().ToList();
                     var map = distinct
                         .Select((v, idx) => new { v, idx })
                         .ToDictionary(x => x.v, x => x.idx);
                     stringMaps[k] = map;
-                    featureDims[k] = map.Count;
+                    baseDim = map.Count;
                 }
                 else
                 {
-                    featureDims[k] = 1;
+                    baseDim = 1;
                 }
+                featureDims[k] = baseDim + (hasMissing ? 1 : 0);
             }
             featureDims["TimeOfDaySin"] = 1;
             featureDims["TimeOfDayCos"] = 1;
