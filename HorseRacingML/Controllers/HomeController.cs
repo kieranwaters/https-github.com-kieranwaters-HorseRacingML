@@ -29,14 +29,11 @@ namespace HorseRacingML.Controllers
             return View(model);
         }
         [HttpGet]
-        public async Task<IActionResult> ScrapeRaceResults()
+        public IActionResult ScrapeRaceResults([FromServices] RaceResultsScraper scraper)
         {
-            await Task.Run(() =>
-            {
-                var scraper = new RaceResultsScraper(_repository);
-                scraper.ScrapeFromLatest();
-            });
-
+            // Run the scraper without blocking the HTTP request so the UI responds immediately
+            Task.Run(() => scraper.ScrapeFromLatest());
+            TempData["Message"] = "Scraping of recent race results has started.";
             return RedirectToAction("Index");
         }
 
