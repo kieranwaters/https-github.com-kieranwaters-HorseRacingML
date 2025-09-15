@@ -46,6 +46,74 @@ namespace HorseRacingML.Data
             finalConn.Open();
             return finalConn;
         }
+        public void BulkInsertRunnerResults(IEnumerable<RunnerResult> results)
+        {
+            var list = results?.ToList();
+            if (list == null || list.Count == 0) return;
+
+            var table = new DataTable();
+            table.Columns.Add("RaceId", typeof(int));
+            table.Columns.Add("HorseId", typeof(int));
+            table.Columns.Add("TrainerId", typeof(int));
+            table.Columns.Add("JockeyId", typeof(int));
+            table.Columns.Add("SaddleclothNumber", typeof(byte));
+            table.Columns.Add("Draw", typeof(byte));
+            table.Columns.Add("Age", typeof(byte));
+            table.Columns.Add("WeightLbs", typeof(byte));
+            table.Columns.Add("WeightText", typeof(string));
+            table.Columns.Add("FinishPos", typeof(short));
+            table.Columns.Add("OutcomeCode", typeof(string));
+            table.Columns.Add("DistanceBeatenText", typeof(string));
+            table.Columns.Add("DistanceBeatenLengths", typeof(decimal));
+            table.Columns.Add("SP_Fraction", typeof(string));
+            table.Columns.Add("SP_Decimal", typeof(decimal));
+            table.Columns.Add("FavTag", typeof(string));
+            table.Columns.Add("OpeningFraction", typeof(string));
+            table.Columns.Add("TouchedHighFraction", typeof(string));
+            table.Columns.Add("TouchedLowFraction", typeof(string));
+            table.Columns.Add("Comment", typeof(string));
+
+            foreach (var r in list)
+            {
+                StripBracketedText(r);
+                table.Rows.Add(
+                    r.RaceId,
+                    r.HorseId,
+                    r.TrainerId ?? (object)DBNull.Value,
+                    r.JockeyId ?? (object)DBNull.Value,
+                    r.SaddleclothNumber ?? (object)DBNull.Value,
+                    r.Draw ?? (object)DBNull.Value,
+                    r.Age ?? (object)DBNull.Value,
+                    r.WeightLbs ?? (object)DBNull.Value,
+                    r.WeightText ?? (object)DBNull.Value,
+                    r.FinishPos ?? (object)DBNull.Value,
+                    r.OutcomeCode ?? (object)DBNull.Value,
+                    r.DistanceBeatenText ?? (object)DBNull.Value,
+                    r.DistanceBeatenLengths ?? (object)DBNull.Value,
+                    r.SP_Fraction ?? (object)DBNull.Value,
+                    r.SP_Decimal ?? (object)DBNull.Value,
+                    r.FavTag ?? (object)DBNull.Value,
+                    r.OpeningFraction ?? (object)DBNull.Value,
+                    r.TouchedHighFraction ?? (object)DBNull.Value,
+                    r.TouchedLowFraction ?? (object)DBNull.Value,
+                    r.Comment ?? (object)DBNull.Value
+                );
+            }
+
+            using var conn = new SqlConnection(_connectionString);
+            conn.Open();
+            using var bulk = new SqlBulkCopy(conn)
+            {
+                DestinationTableName = "RunnerResult"
+            };
+
+            foreach (DataColumn col in table.Columns)
+            {
+                bulk.ColumnMappings.Add(col.ColumnName, col.ColumnName);
+            }
+
+            bulk.WriteToServer(table);
+        }
         public DateTime GetEarliestRaceDate()
         {
             using var conn = OpenConnection();

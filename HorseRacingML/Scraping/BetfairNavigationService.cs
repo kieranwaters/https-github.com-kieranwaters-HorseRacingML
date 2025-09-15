@@ -24,6 +24,13 @@ public class BetfairNavigationService : IDisposable
         _password = config["Betfair:Password"] ?? HardCodedPassword;
 
         var options = new ChromeOptions();
+        options.AddArguments(
+            "--headless=new",
+            "--disable-extensions",
+            "--blink-settings=imagesEnabled=false",
+            "--disable-gpu",
+            "--no-sandbox",
+            "--disable-dev-shm-usage");
         _driver = new ChromeDriver(options);
     }
 
