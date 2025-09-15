@@ -153,9 +153,9 @@ namespace HorseRacingML.ML
                         beatenLengths = parsed.Value;
                         distanceKnown = true;
                     }
-                    row["DistanceBeatenKnown"] = distanceKnown;
-                    row["DistanceBeatenLengths"] = beatenLengths;
                 }
+                row["DistanceBeatenKnown"] = distanceKnown;
+                row["DistanceBeatenLengths"] = beatenLengths;
             }
                 // Precompute average draw and weight for each race to allow
                 // relative features on a per-runner basis.
