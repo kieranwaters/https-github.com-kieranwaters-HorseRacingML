@@ -288,13 +288,20 @@ namespace HorseRacingML.ML
                         ? Convert.ToInt32(jObj)
                         : (int?)null;
 
-                    int draw = row["Draw"] != null ? Convert.ToInt32(row["Draw"]) : 0;
-                    float runnerSpeed = 0f;
-                    float weight = row["WeightLbs"] != null ? Convert.ToSingle(row["WeightLbs"]) : 0f;
-                    float rating = row.TryGetValue("OfficialRating", out var ratingObj) && ratingObj != null
-                        ? Convert.ToSingle(ratingObj)
-                        : raceStat.AvgRating;
-                    row["RelativeDraw"] = runnerCount > 0 ? (float)draw / runnerCount : 0f;
+                bool drawMissing = row["Draw"] == null;
+                int draw = !drawMissing ? Convert.ToInt32(row["Draw"]) : 0;
+                row["DrawMissing"] = drawMissing;
+
+                float runnerSpeed = 0f;
+
+                bool weightMissing = row["WeightLbs"] == null;
+                float weight = weightMissing ? 0f : Convert.ToSingle(row["WeightLbs"]);
+                row["WeightMissing"] = weightMissing;
+
+                bool ratingMissing = !(row.TryGetValue("OfficialRating", out var ratingObj) && ratingObj != null);
+                float rating = ratingMissing ? raceStat.AvgRating : Convert.ToSingle(ratingObj);
+                row["RatingMissing"] = ratingMissing;
+                row["RelativeDraw"] = runnerCount > 0 ? (float)draw / runnerCount : 0f;
                     row["WeightDiffFromMean"] = weight - raceStat.AvgWeight;
                     row["RatingDiffFromField"] = rating - raceStat.AvgRating;
                     row["FieldRatingStdDev"] = raceStat.StdRating;
@@ -521,13 +528,14 @@ namespace HorseRacingML.ML
                     // Distance specialization
                     int distanceYards = row["DistanceYards"] != null ? Convert.ToInt32(row["DistanceYards"]) : 0;
                     int? winningMs = row["WinningTimeMs"] != null ? Convert.ToInt32(row["WinningTimeMs"]) : (int?)null;
-                    float raceSpeed = winningMs.HasValue && winningMs.Value > 0
-                        ? distanceYards / (float)winningMs.Value
-                        : 0f;
-                    row["RaceSpeed"] = raceSpeed;
-                    if (winningMs.HasValue && winningMs.Value > 0)
-                    {
-                        float beaten = row["DistanceBeatenLengths"] != null ? Convert.ToSingle(row["DistanceBeatenLengths"]) : 0f;
+                bool speedMissing = !(winningMs.HasValue && winningMs.Value > 0);
+                float raceSpeed = speedMissing
+                    ? 0f
+                    : distanceYards / (float)winningMs.Value;
+                row["RaceSpeed"] = raceSpeed;
+                if (!speedMissing)
+                { 
+                    float beaten = row["DistanceBeatenLengths"] != null ? Convert.ToSingle(row["DistanceBeatenLengths"]) : 0f;
                         float runnerTime = winningMs.Value + beaten * MsPerLength;
                         runnerSpeed = runnerTime > 0f ? distanceYards / runnerTime : 0f;
                         row["RunnerSpeed"] = runnerSpeed;
@@ -538,7 +546,8 @@ namespace HorseRacingML.ML
                         row["RunnerSpeed"] = 0f;
                     }
                     float speedDiff = runnerSpeed - raceSpeed;
-                    row["SpeedDiff"] = speedDiff;
+                row["SpeedMissing"] = speedMissing;
+                row["SpeedDiff"] = speedDiff;
                     row["SpeedRatio"] = raceSpeed != 0f ? runnerSpeed / raceSpeed : 0f;
                     string bucket = DistanceBucket(distanceYards);
                     row["DistanceBucket"] = bucket;

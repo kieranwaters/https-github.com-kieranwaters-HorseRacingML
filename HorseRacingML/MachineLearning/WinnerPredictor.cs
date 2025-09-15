@@ -70,8 +70,11 @@ namespace HorseRacingML.ML
                 {
                     Odds = GetOdds(r),
                     Weight = r.WeightLbs ?? 0,
+                    WeightMissing = r.WeightLbs.HasValue ? 0f : 1f,
                     Draw = r.Draw ?? 0,
+                    DrawMissing = r.Draw.HasValue ? 0f : 1f,
                     Age = r.Age ?? 0,
+                    AgeMissing = r.Age.HasValue ? 0f : 1f,
                     Going = EncodeGoing(r.Going),
                     Surface = EncodeSurface(r.Surface),
                     Course = r.CourseId ?? 0,
@@ -98,8 +101,11 @@ namespace HorseRacingML.ML
             var pipeline = Ml.Transforms.Concatenate("Features",
                                                      nameof(RunnerFeatures.Odds),
                                                      nameof(RunnerFeatures.Weight),
+                                                     nameof(RunnerFeatures.WeightMissing),
                                                      nameof(RunnerFeatures.Draw),
+                                                     nameof(RunnerFeatures.DrawMissing),
                                                      nameof(RunnerFeatures.Age),
+                                                     nameof(RunnerFeatures.AgeMissing),
                                                      nameof(RunnerFeatures.Going),
                                                      nameof(RunnerFeatures.Surface),
                                                      nameof(RunnerFeatures.Course),
@@ -215,8 +221,11 @@ namespace HorseRacingML.ML
                     {
                         Odds = GetOdds(r),
                         Weight = r.WeightLbs ?? 0,
+                        WeightMissing = r.WeightLbs.HasValue ? 0f : 1f,
                         Draw = r.Draw ?? 0,
+                        DrawMissing = r.Draw.HasValue ? 0f : 1f,
                         Age = r.Age ?? 0,
+                        AgeMissing = r.Age.HasValue ? 0f : 1f,
                         Going = EncodeGoing(r.Going),
                         Surface = EncodeSurface(r.Surface),
                         Course = r.CourseId ?? 0,
@@ -298,8 +307,11 @@ namespace HorseRacingML.ML
         {
             public float Odds { get; set; }
             public float Weight { get; set; }
+            public float WeightMissing { get; set; }
             public float Draw { get; set; }
+            public float DrawMissing { get; set; }
             public float Age { get; set; }
+            public float AgeMissing { get; set; }
             public float Going { get; set; }
             public float Surface { get; set; }
             public float Course { get; set; }
