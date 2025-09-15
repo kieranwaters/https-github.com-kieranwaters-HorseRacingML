@@ -46,12 +46,12 @@ namespace HorseRacingML.Data
             finalConn.Open();
             return finalConn;
         }
-        public DateTime GetLatestRaceDate()
+         public DateTime GetLatestRaceDate()
         {
             using var conn = OpenConnection();
-            const string sql = "SELECT MAX(RaceDate) FROM Race";
+            const string sql = "SELECT MAX(RaceDate) FROM Race WHERE RaceDate IS NOT NULL AND RaceDate <= CAST(GETDATE() AS date)";
             var latest = conn.QuerySingleOrDefault<DateTime?>(sql);
-            return latest ?? new DateTime(2025, 9, 14);
+            return latest ?? new DateTime(2025, 4, 1);
         }
         public (double includingJoint, double excludingJoint, double logLoss) GetFavouriteAccuracy()
         {

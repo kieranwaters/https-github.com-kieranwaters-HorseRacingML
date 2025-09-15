@@ -19,7 +19,6 @@ namespace HorseRacingML.Scraping
     {
         private readonly RacingRepository _repo;
         private const int MaxParallelDrivers = 8;
-        private static readonly DateTime HardcodedToday = new DateTime(2025, 9, 14);
         public RaceResultsScraper(RacingRepository repo)
         {
             _repo = repo;
@@ -112,14 +111,57 @@ namespace HorseRacingML.Scraping
     }
         public void ScrapeFromLatest()
         {
-            var latest = _repo.GetLatestRaceDate();
-            var start = latest.AddDays(MaxParallelDrivers);
-
-            if (start > HardcodedToday)
-                start = HardcodedToday;
-
-            Scrape(start, HardcodedToday);
+            var today = DateTime.Today;
+            while (true)
+            {
+                var latest = _repo.GetLatestRaceDate();
+                if (latest > today) latest = today;
+                var start = latest.AddDays(1);
+                if (start > today) break;
+                var end = start.AddDays(MaxParallelDrivers - 1);
+                if (end > today) end = today;
+                Scrape(start, end);
+            }
         }
+        public void Scrape(DateTime startDate, DateTime endDate)
+        {
+            var start = startDate.Date;
+            var end = endDate.Date;
+            var today = DateTime.Today;
+            if (end > today) end = today;
+            if (start > end) return;
+
+            var dates = Enumerable.Range(0, (end - start).Days + 1)
+                                   .Select(i => end.AddDays(-i));
+            var queue = new ConcurrentQueue<DateTime>(dates);
+            var tasks = new List<Task>();
+            int workers = Math.Min(MaxParallelDrivers, queue.Count);
+
+            for (int i = 0; i < workers; i++)
+            {
+                tasks.Add(Task.Run(() =>
+                {
+                    using var svc = ChromeDriverService.CreateDefaultService();
+                    svc.HideCommandPromptWindow = true;
+                    svc.Port = GetFreeTcpPort(); // let OS choose a free port to avoid collisions
+                    using var driver = new ChromeDriver(svc, BuildChromeOptions(), TimeSpan.FromSeconds(60));
+                    driver.Manage().Timeouts().PageLoad = TimeSpan.FromSeconds(45);
+                    driver.Manage().Timeouts().AsynchronousJavaScript = TimeSpan.FromSeconds(15);
+                    driver.Manage().Timeouts().ImplicitWait = TimeSpan.FromSeconds(0); // timeouts
+
+                    while (queue.TryDequeue(out var date))
+                    {
+                        ScrapeDay(driver, date);
+                        Console.WriteLine($"[{date:yyyy-MM-dd}] parsed and inserted");
+                        try { _ = driver.WindowHandles.Count; }
+                        catch (Exception ex) { Console.Error.WriteLine($"[Warning] Driver session not healthy before next day: {ex.Message}"); break; }
+                    }
+                }));
+            }
+
+            Task.WaitAll(tasks.ToArray());
+        }
+
         private static string ExtractFavouriteTag(string frac) { if (string.IsNullOrWhiteSpace(frac)) return null; frac = frac.ToUpperInvariant(); if (frac.Contains("JF")) return "JF"; if (frac.Contains("CF")) return "CF"; if (frac.EndsWith("F")) return "F"; return null; } // F/JF/CF
 
     private static decimal? ParseBeatenLengths(string s) { if (string.IsNullOrWhiteSpace(s)) return null; s = s.Trim().ToLowerInvariant(); if (s == "nk" || s == "neck") return 0.3m; if (s == "hd" || s == "head") return 0.2m; if (s == "shd" || s == "short head" || s == "shorthead" || s == "s.h" || s == "sh") return 0.1m; if (s == "nse" || s == "nose") return 0.05m; s = s.Replace("¾", ".75").Replace("½", ".5").Replace("¼", ".25"); if (decimal.TryParse(s, NumberStyles.Any, CultureInfo.InvariantCulture, out var v)) return v; return null; } // adds s.h/sh/nse/nose/neck/head
@@ -164,42 +206,6 @@ namespace HorseRacingML.Scraping
         }
         return "";
     } // element text
-        public void Scrape(DateTime startDate, DateTime endDate)
-        {
-            var start = startDate.Date;
-            var end = endDate.Date;
-            if (start > end) start = end;
-
-            var dates = Enumerable.Range(0, (end - start).Days + 1)
-                                   .Select(i => end.AddDays(-i));
-            var queue = new ConcurrentQueue<DateTime>(dates);
-            var tasks = new List<Task>();
-            int workers = Math.Min(6, queue.Count);
-
-            for (int i = 0; i < workers; i++)
-            {
-                tasks.Add(Task.Run(() =>
-                {
-                    using var svc = ChromeDriverService.CreateDefaultService();
-                    svc.HideCommandPromptWindow = true;
-                    svc.Port = GetFreeTcpPort(); // let OS choose a free port to avoid collisions
-                    using var driver = new ChromeDriver(svc, BuildChromeOptions(), TimeSpan.FromSeconds(60));
-                    driver.Manage().Timeouts().PageLoad = TimeSpan.FromSeconds(45);
-                    driver.Manage().Timeouts().AsynchronousJavaScript = TimeSpan.FromSeconds(15);
-                    driver.Manage().Timeouts().ImplicitWait = TimeSpan.FromSeconds(0); // timeouts
-
-                    while (queue.TryDequeue(out var date))
-                    {
-                        ScrapeDay(driver, date);
-                        Console.WriteLine($"[{date:yyyy-MM-dd}] parsed and inserted");
-                        try { _ = driver.WindowHandles.Count; }
-                        catch (Exception ex) { Console.Error.WriteLine($"[Warning] Driver session not healthy before next day: {ex.Message}"); break; }
-                    }
-                }));
-            }
-
-            Task.WaitAll(tasks.ToArray());
-        }
         private void ScrapeDay(IWebDriver driver, DateTime date)
         {
             try
