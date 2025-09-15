@@ -12,16 +12,20 @@ using System.Collections.Generic;
 using System.Text.Json;
 using System.Net;
 using System.Net.Sockets;
+using HorseRacingML.Services;
+using System.Linq;
 
 namespace HorseRacingML.Scraping
 {
     public class RaceResultsScraper
     {
         private readonly RacingRepository _repo;
+        private readonly ScrapingStatusService _status;
         private const int MaxParallelDrivers = 8;
-        public RaceResultsScraper(RacingRepository repo)
+        public RaceResultsScraper(RacingRepository repo, ScrapingStatusService status)
         {
             _repo = repo;
+            _status = status;
         }
         private static int GetFreeTcpPort()
         {
@@ -120,8 +124,10 @@ namespace HorseRacingML.Scraping
                 if (start > today) break;
                 var end = start.AddDays(MaxParallelDrivers - 1);
                 if (end > today) end = today;
+                _status.Update($"Scraping {start:yyyy-MM-dd} to {end:yyyy-MM-dd}");
                 Scrape(start, end);
             }
+            _status.Update("Scraping finished.");
         }
         public void Scrape(DateTime startDate, DateTime endDate)
         {
@@ -152,7 +158,9 @@ namespace HorseRacingML.Scraping
                     while (queue.TryDequeue(out var date))
                     {
                         ScrapeDay(driver, date);
-                        Console.WriteLine($"[{date:yyyy-MM-dd}] parsed and inserted");
+                        var msg = $"[{date:yyyy-MM-dd}] parsed and inserted";
+                        Console.WriteLine(msg);
+                        _status.Update(msg);
                         try { _ = driver.WindowHandles.Count; }
                         catch (Exception ex) { Console.Error.WriteLine($"[Warning] Driver session not healthy before next day: {ex.Message}"); break; }
                     }

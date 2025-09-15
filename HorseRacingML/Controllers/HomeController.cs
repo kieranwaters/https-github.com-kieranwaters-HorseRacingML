@@ -1,6 +1,7 @@
 using HorseRacingML.Models;
 using HorseRacingML.Scraping;
 using HorseRacingML.Data;
+using HorseRacingML.Services;
 using Microsoft.AspNetCore.Mvc;
 using System.Diagnostics;
 using System.Threading.Tasks;
@@ -11,11 +12,13 @@ namespace HorseRacingML.Controllers
     {
         private readonly ILogger<HomeController> _logger;
         private readonly RacingRepository _repository;
+        private readonly ScrapingStatusService _status;
 
-        public HomeController(ILogger<HomeController> logger, RacingRepository repository)
+        public HomeController(ILogger<HomeController> logger, RacingRepository repository, ScrapingStatusService status)
         {
             _logger = logger;
             _repository = repository;
+            _status = status;
         }
         public IActionResult CalculateFavouritesAccuracy()
         {
@@ -31,14 +34,26 @@ namespace HorseRacingML.Controllers
         [HttpGet]
         public IActionResult ScrapeRaceResults([FromServices] RaceResultsScraper scraper)
         {
-            // Run the scraper without blocking the HTTP request so the UI responds immediately
-            Task.Run(() => scraper.ScrapeFromLatest());
+            _status.Update($"Scraping started at {DateTime.Now:G}");
+            Task.Run(() =>
+            {
+                try
+                {
+                    scraper.ScrapeFromLatest();
+                    _status.Update($"Scraping completed at {DateTime.Now:G}");
+                }
+                catch (Exception ex)
+                {
+                    _status.Update($"Scraping failed: {ex.Message}");
+                }
+            });
             TempData["Message"] = "Scraping of recent race results has started.";
             return RedirectToAction("Index");
         }
 
         public IActionResult Index()
         {
+            ViewData["StatusMessage"] = _status.Message;
             return View();
         }
 

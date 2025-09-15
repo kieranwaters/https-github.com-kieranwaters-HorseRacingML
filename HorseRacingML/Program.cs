@@ -1,6 +1,7 @@
 using HorseRacingML.Data;
 using HorseRacingML.ML;
 using HorseRacingML.Scraping;
+using HorseRacingML.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -15,6 +16,7 @@ builder.Services.AddScoped<RacingRepository>(sp =>
 builder.Services.AddSingleton<HyperparameterTrainer>();
 builder.Services.AddSingleton<BetfairNavigationService>();
 builder.Services.AddTransient<RaceResultsScraper>();
+builder.Services.AddSingleton<ScrapingStatusService>();
 
 var app = builder.Build();
 
