@@ -1299,7 +1299,21 @@ namespace HorseRacingML.ML
 
             double trainAcc = ComputeWinnerAccuracy(trainRaceIds, trainPreds, trainLabels);
             double valAcc = ComputeWinnerAccuracy(valRaceIds, valPreds, valLabels);
-
+            var weightData = new
+            {
+                Bias = 0f,
+                Weights = new[] { (float)param.Units, (float)param.LearningRate, (float)param.Dropout }
+            };
+            var weightPath = Path.Combine(AppContext.BaseDirectory, "aiweights.json");
+            try
+            {
+                File.WriteAllText(weightPath, JsonSerializer.Serialize(weightData));
+            }
+            catch
+            {
+                // Failing to persist weights shouldn't abort training; simply swallow
+                // any IO issues so training metrics are still returned.
+            }
             return (trainAcc, trainLoss, valAcc, valLoss);
         }
     }

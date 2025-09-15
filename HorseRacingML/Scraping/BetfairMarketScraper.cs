@@ -8,6 +8,8 @@ using OpenQA.Selenium.Support.UI;
 using HorseRacingML.Data;
 using HorseRacingML.Models;
 using System.Collections.Generic;
+using HorseRacingML.ML;
+using System.IO;
 
 namespace HorseRacingML.Scraping
 {
@@ -24,6 +26,8 @@ namespace HorseRacingML.Scraping
         {
             var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10));
             var handles = driver.WindowHandles.ToList();
+            var weightPath = Path.Combine(AppContext.BaseDirectory, "aiweights.json");
+            var aiCalculator = new AIOddsCalculator(weightPath);
             Parallel.ForEach(handles, handle =>
             {
                 driver.SwitchTo().Window(handle);
@@ -145,7 +149,14 @@ namespace HorseRacingML.Scraping
                         LayPrice2 = ParseDecimal(Get("lay2")),
                         LayPrice3 = ParseDecimal(Get("lay3"))
                     };
-
+                    try
+                    {
+                        flow.AiOdds = aiCalculator.CalculateOdds(flow);
+                    }
+                    catch
+                    {
+                        flow.AiOdds = null;
+                    }
                     try
                     {
                         lock (_repoLock)

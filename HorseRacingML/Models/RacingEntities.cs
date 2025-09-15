@@ -101,5 +101,6 @@ namespace HorseRacingML.Models
         public decimal? LayPrice1 { get; set; }
         public decimal? LayPrice2 { get; set; }
         public decimal? LayPrice3 { get; set; }
+        public double? AiOdds { get; set; }
     }
 }
