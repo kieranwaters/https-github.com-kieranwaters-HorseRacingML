@@ -46,6 +46,14 @@ namespace HorseRacingML.Data
             finalConn.Open();
             return finalConn;
         }
+        public DateTime GetEarliestRaceDate()
+        {
+            using var conn = OpenConnection();
+            const string sql = "SELECT MIN(RaceDate) FROM Race WHERE RaceDate IS NOT NULL AND RaceDate <= CAST(GETDATE() AS date)";
+            var earliest = conn.QuerySingleOrDefault<DateTime?>(sql);
+            // When no races exist yet, start from tomorrow so we scrape backwards from today
+            return earliest ?? DateTime.Today.AddDays(1);
+        }
         public DateTime GetLatestRaceDate()
         {
             using var conn = OpenConnection();

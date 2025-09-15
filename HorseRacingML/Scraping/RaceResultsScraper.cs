@@ -35,6 +35,22 @@ namespace HorseRacingML.Scraping
             listener.Stop();
             return port;
         }
+        public void ScrapeFromEarliest()
+        {
+            var minDate = new DateTime(2000, 1, 1);
+            while (true)
+            {
+                var earliest = _repo.GetEarliestRaceDate();
+                if (earliest <= minDate) break;
+                var end = earliest.AddDays(-1);
+                var start = end.AddDays(-(MaxParallelDrivers - 1));
+                if (start < minDate) start = minDate;
+                _status.Update($"Scraping {start:yyyy-MM-dd} to {end:yyyy-MM-dd}");
+                Scrape(start, end);
+                if (start == minDate) break;
+            }
+            _status.Update("Scraping finished.");
+        }
         private void ScrapeMeetingTabs(IWebDriver driver, WebDriverWait wait, DateTime raceDate, string dayHandle)
         {
             try { wait.Until(d => d.FindElements(By.CssSelector("[data-test-id='generic-tab']")).Count > 0 || d.FindElements(By.CssSelector("[data-test-id*='no-meetings']")).Count > 0); } catch { Console.WriteLine("Meeting tab elements not found."); return; } // ensure tabs or no-meetings
