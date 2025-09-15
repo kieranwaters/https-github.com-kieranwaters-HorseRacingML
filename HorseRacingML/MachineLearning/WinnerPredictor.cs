@@ -22,7 +22,8 @@ namespace HorseRacingML.ML
         private static PredictionEngine<RunnerFeatures, RunnerPrediction>? _engine;
         private static readonly string ModelPath = Path.Combine(AppContext.BaseDirectory, "winnerModel.zip");
         private static readonly string MetricsPath = Path.Combine(AppContext.BaseDirectory, "winnerModel.metrics.json");
-
+        private static readonly string StringMapPath = Path.Combine(AppContext.BaseDirectory, "string_maps.json");
+        private static readonly Dictionary<string, Dictionary<string, int>> StringMaps = LoadStringMaps();
         /// <summary>
         /// Trains a model from historical runner results and saves it to disk.
         /// </summary>
@@ -151,7 +152,60 @@ namespace HorseRacingML.ML
                 _engine = Ml.Model.CreatePredictionEngine<RunnerFeatures, RunnerPrediction>(model);
             }
         }
+        private static Dictionary<string, Dictionary<string, int>> LoadStringMaps()
+        {
+            try
+            {
+                if (File.Exists(StringMapPath))
+                {
+                    var json = File.ReadAllText(StringMapPath);
+                    return JsonSerializer.Deserialize<Dictionary<string, Dictionary<string, int>>>(json)
+                           ?? new Dictionary<string, Dictionary<string, int>>();
+                }
+            }
+            catch
+            {
+                // Ignore any errors and fall back to empty mappings
+            }
+            return new Dictionary<string, Dictionary<string, int>>();
+        }
+        private static float EncodeGoing(string? going)
+        {
+            if (string.IsNullOrWhiteSpace(going))
+                return 0f;
+            if (StringMaps.TryGetValue("Going", out var map) && map.TryGetValue(going, out var idx))
+                return idx;
+            return going.ToLower() switch
+            {
+                "heavy" => 1f,
+                "soft" => 2f,
+                "good to soft" => 3f,
+                "good" => 4f,
+                "good to firm" => 5f,
+                "firm" => 6f,
+                "standard" => 7f,
+                "standard to slow" => 8f,
+                "standard to fast" => 9f,
+                "yielding" => 10f,
+                _ => 0f
+            };
+        }
 
+        private static float EncodeSurface(string? surface)
+        {
+            if (string.IsNullOrWhiteSpace(surface))
+                return 0f;
+            if (StringMaps.TryGetValue("Surface", out var map) && map.TryGetValue(surface, out var idx))
+                return idx;
+            return surface.ToLower() switch
+            {
+                "turf" => 1f,
+                "dirt" => 2f,
+                "all weather" => 3f,
+                "synthetic" => 4f,
+                _ => 0f
+            };
+        }
         /// <summary>
         /// Ensures a model is available and refreshes it when the saved model is
         /// older than <paramref name="maxAge"/>.
@@ -269,39 +323,7 @@ namespace HorseRacingML.ML
 
             return fallback!;
         }
-        private static float EncodeGoing(string? going)
-        {
-            if (string.IsNullOrWhiteSpace(going))
-                return 0f;
-            return going.ToLower() switch
-            {
-                "heavy" => 1f,
-                "soft" => 2f,
-                "good to soft" => 3f,
-                "good" => 4f,
-                "good to firm" => 5f,
-                "firm" => 6f,
-                "standard" => 7f,
-                "standard to slow" => 8f,
-                "standard to fast" => 9f,
-                "yielding" => 10f,
-                _ => 0f
-            };
-        }
-
-        private static float EncodeSurface(string? surface)
-        {
-            if (string.IsNullOrWhiteSpace(surface))
-                return 0f;
-            return surface.ToLower() switch
-            {
-                "turf" => 1f,
-                "dirt" => 2f,
-                "all weather" => 3f,
-                "synthetic" => 4f,
-                _ => 0f
-            };
-        }
+        
 
         private class RunnerFeatures
         {

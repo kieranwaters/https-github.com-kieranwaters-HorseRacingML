@@ -1151,7 +1151,7 @@ namespace HorseRacingML.ML
             var stringMaps = new Dictionary<string, Dictionary<string, int>>();
             foreach (var k in keys)
             {
-                var values = allRows
+                var values = trainRows
                     .Select(r => r.ContainsKey(k) ? r[k] : null)
                     .ToList();
                 bool hasMissing = values.Any(v => v == null);
@@ -1185,6 +1185,8 @@ namespace HorseRacingML.ML
                     featureDims[k] = baseDim + (hasMissing ? 1 : 0);
                 }
             }
+            var mapPath = Path.Combine(AppContext.BaseDirectory, "string_maps.json");
+            File.WriteAllText(mapPath, JsonSerializer.Serialize(stringMaps));
             // Ensure availability flag is included as a feature
             featureDims["HasLastWin"] = 1;
         
