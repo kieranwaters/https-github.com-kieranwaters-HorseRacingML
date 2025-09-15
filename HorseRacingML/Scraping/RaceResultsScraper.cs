@@ -144,7 +144,7 @@ namespace HorseRacingML.Scraping
                 Scrape(start, end);
             }
             _status.Update("Scraping finished.");
-        }
+        }//
         public void Scrape(DateTime startDate, DateTime endDate)
         {
             var start = startDate.Date;
