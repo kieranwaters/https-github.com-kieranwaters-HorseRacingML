@@ -1013,7 +1013,7 @@ namespace HorseRacingML.ML
             }
             return vec;
         }
-        public (double TrainAccuracy, double TrainLoss, double ValidationAccuracy, double ValidationLoss) Train(MLParameter param, int foldIndex, int foldCount)
+        public (double TrainAccuracy, double TrainLoss, double ValidationAccuracy, double ValidationLoss, double TrainBrier, double ValidationBrier) Train(MLParameter param, int foldIndex, int foldCount)
         {
             // Enable GPU if available
             var gpus = tf.config.list_physical_devices("GPU");
@@ -1352,7 +1352,8 @@ namespace HorseRacingML.ML
 
             var trainLoss = ComputeDatasetMetrics(trainFeatures, trainLabels, trainRaceIds, out var trainPreds);
             var valLoss = ComputeDatasetMetrics(valFeatures, valLabels, valRaceIds, out var valPreds);
-
+            double trainBrier = trainPreds.Zip(trainLabels, (p, l) => Math.Pow(p - l, 2)).Average();
+            double valBrier = valPreds.Zip(valLabels, (p, l) => Math.Pow(p - l, 2)).Average();
 
             double trainAcc = ComputeWinnerAccuracy(trainRaceIds, trainPreds, trainLabels);
             double valAcc = ComputeWinnerAccuracy(valRaceIds, valPreds, valLabels);
@@ -1371,7 +1372,8 @@ namespace HorseRacingML.ML
                 // Failing to persist weights shouldn't abort training; simply swallow
                 // any IO issues so training metrics are still returned.
             }
-            return (trainAcc, trainLoss, valAcc, valLoss);
+            Console.WriteLine($"Training complete - train brier: {trainBrier:F4} - val brier: {valBrier:F4}");
+            return (trainAcc, trainLoss, valAcc, valLoss, trainBrier, valBrier);
         }
     }
 }

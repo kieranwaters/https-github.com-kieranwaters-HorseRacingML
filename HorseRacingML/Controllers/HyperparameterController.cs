@@ -49,8 +49,10 @@ namespace HorseRacingML.Controllers
                                 BatchSize = model.BatchSize,
                                 TrainAccuracy = result.TrainAccuracy,
                                 TrainLoss = result.TrainLoss,
+                                TrainBrier = result.TrainBrier,
                                 ValidationAccuracy = result.ValidationAccuracy,
                                 ValidationLoss = result.ValidationLoss,
+                                ValidationBrier = result.ValidationBrier,
                                 Fold = i + 1
                             };
                             _repository.InsertMLParameter(foldModel);
