@@ -341,17 +341,19 @@ namespace HorseRacingML.ML
                     row["DaysSinceLastRace"] = history.Count > 0 ? (float)(date - history[^1].date).TotalDays : 0f;
                     row["LastFinishPos"] = history.Count > 0 ? history[^1].finish ?? 0 : 0;
                     int lastWinIdx = history.FindLastIndex(h => h.win);
-                    if (lastWinIdx >= 0)
-                    {
-                        row["DaysSinceLastWin"] = (float)(date - history[lastWinIdx].date).TotalDays;
-                        row["RacesSinceLastWin"] = history.Count - 1 - lastWinIdx;
-                    }
-                    else
-                    {
-                        row["DaysSinceLastWin"] = 999f;
-                        row["RacesSinceLastWin"] = 999;
-                    }
-                    var daysSinceLast = (float)row["DaysSinceLastRace"];
+                bool hasLastWin = lastWinIdx >= 0;
+                row["HasLastWin"] = hasLastWin;
+                if (hasLastWin)
+                {
+                    row["DaysSinceLastWin"] = (float?)(date - history[lastWinIdx].date).TotalDays;
+                    row["RacesSinceLastWin"] = history.Count - 1 - lastWinIdx;
+                }
+                else
+                {
+                    row["DaysSinceLastWin"] = null;
+                    row["RacesSinceLastWin"] = null;
+                }
+                var daysSinceLast = (float)row["DaysSinceLastRace"];
                     row["LayoffShort"] = daysSinceLast < 30f;
                     row["LayoffMedium"] = daysSinceLast >= 30f && daysSinceLast <= 90f;
                     row["LayoffLong"] = daysSinceLast > 90f;
@@ -1168,8 +1170,18 @@ namespace HorseRacingML.ML
                 {
                     baseDim = 1;
                 }
-                featureDims[k] = baseDim + (hasMissing ? 1 : 0);
+                if (k == "DaysSinceLastWin" || k == "RacesSinceLastWin")
+                {
+                    featureDims[k] = baseDim; // presence handled by HasLastWin
+                }
+                else
+                {
+                    featureDims[k] = baseDim + (hasMissing ? 1 : 0);
+                }
             }
+            // Ensure availability flag is included as a feature
+            featureDims["HasLastWin"] = 1;
+        
             featureDims["TimeOfDaySin"] = 1;
             featureDims["TimeOfDayCos"] = 1;
             featureDims["DistanceChangeFromLast"] = 1;
