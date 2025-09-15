@@ -114,7 +114,11 @@ namespace HorseRacingML.Scraping
         {
             var latest = _repo.GetLatestRaceDate();
             var start = latest.AddDays(MaxParallelDrivers);
-            Scrape(start, start);
+
+            if (start > HardcodedToday)
+                start = HardcodedToday;
+
+            Scrape(start, HardcodedToday);
         }
         private static string ExtractFavouriteTag(string frac) { if (string.IsNullOrWhiteSpace(frac)) return null; frac = frac.ToUpperInvariant(); if (frac.Contains("JF")) return "JF"; if (frac.Contains("CF")) return "CF"; if (frac.EndsWith("F")) return "F"; return null; } // F/JF/CF
 
@@ -163,7 +167,7 @@ namespace HorseRacingML.Scraping
         public void Scrape(DateTime startDate, DateTime endDate)
         {
             var start = startDate.Date;
-            var end = HardcodedToday.Date;
+            var end = endDate.Date;
             if (start > end) start = end;
 
             var dates = Enumerable.Range(0, (end - start).Days + 1)

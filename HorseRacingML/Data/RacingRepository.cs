@@ -51,7 +51,7 @@ namespace HorseRacingML.Data
             using var conn = OpenConnection();
             const string sql = "SELECT MAX(RaceDate) FROM Race";
             var latest = conn.QuerySingleOrDefault<DateTime?>(sql);
-            return latest ?? new DateTime(2025, 14, 9);
+            return latest ?? new DateTime(2025, 9, 14);
         }
         public (double includingJoint, double excludingJoint, double logLoss) GetFavouriteAccuracy()
         {
