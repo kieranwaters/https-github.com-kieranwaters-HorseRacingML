@@ -233,7 +233,8 @@ namespace HorseRacingML.ML
                 Dictionary<int, RollingStat> trainerStats = new();
                 var jockeyStats = new Dictionary<int, RollingStat>();
                 var trainerJockeyStats = new Dictionary<(int trainerId, int jockeyId), (int starts, int wins)>();
-                var trainerCourseStats = new Dictionary<(int trainerId, int courseId), (int starts, int wins)>();
+            var trainerJockeySurfaceStats = new Dictionary<(int trainerId, int jockeyId, string surface), (int starts, int wins)>();
+            var trainerCourseStats = new Dictionary<(int trainerId, int courseId), (int starts, int wins)>();
                 var jockeyCourseStats = new Dictionary<(int jockeyId, int courseId), (int starts, int wins)>();
                 // New dictionaries for going, age restriction, and distance preferences
                 var surfaceStats = new Dictionary<int, Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>>();
@@ -499,7 +500,9 @@ namespace HorseRacingML.ML
                     row["GoingWinRate"] = SmoothedWinRate(gStats.wins, gStats.starts);
                     row["GoingAvgNorm"] = gStats.starts > 0 ? gStats.sumNorm / gStats.starts : 0f;
                     row["LastGoingNormPos"] = gStats.lastNorm;
-                    string surface = row["Surface"] as string ?? "Unknown";
+                var goingFeatureKey = going.Replace(" ", "");
+                row[$"LayoffNormalized_{goingFeatureKey}"] = (float)row["LayoffNormalized"];
+                string surface = row["Surface"] as string ?? "Unknown";
                     if (!surfaceStats.TryGetValue(horseId, out var sDict))
                     {
                         sDict = new();
@@ -570,7 +573,8 @@ namespace HorseRacingML.ML
                     row["SpeedRatio"] = raceSpeed != 0f ? runnerSpeed / raceSpeed : 0f;
                     string bucket = DistanceBucket(distanceYards);
                     row["DistanceBucket"] = bucket;
-                    var drawKey = (courseId, bucket, draw);
+                row[$"RelativeDraw_{bucket}"] = (float)row["RelativeDraw"];
+                var drawKey = (courseId, bucket, draw);
                     drawStats.TryGetValue(drawKey, out var drawStat);
                     var baseKey = (courseId, bucket);
                     drawBaselineStats.TryGetValue(baseKey, out var baseStat);
@@ -813,11 +817,16 @@ namespace HorseRacingML.ML
                         if (!trainerJockeyStats.TryGetValue(pairKey, out var pairStat))
                             pairStat = (0, 0);
                         row["TrainerJockeyWinRate"] = SmoothedWinRate(pairStat.wins, pairStat.starts);
-                    }
+                    var pairSurfaceKey = (trainerId.Value, jockeyId.Value, surface);
+                    if (!trainerJockeySurfaceStats.TryGetValue(pairSurfaceKey, out var pairSurfaceStat))
+                        pairSurfaceStat = (0, 0);
+                    row["TrainerJockeySurfaceWinRate"] = SmoothedWinRate(pairSurfaceStat.wins, pairSurfaceStat.starts);
+                }
                     else
                     {
                         row["TrainerJockeyWinRate"] = 0f;
-                    }
+                    row["TrainerJockeySurfaceWinRate"] = 0f;
+                }
                     // Compute normalized finish
                     float normFinish = (finish.HasValue && runnerCount > 1)
                         ? (runnerCount - finish.Value) / (float)(runnerCount - 1)
@@ -944,7 +953,12 @@ namespace HorseRacingML.ML
                         pairStat.starts++;
                         if (finish.HasValue && finish.Value == 1) pairStat.wins++;
                         trainerJockeyStats[pairKey] = pairStat;
-                    }
+                    var pairSurfaceKey = (trainerId.Value, jockeyId.Value, surface);
+                    trainerJockeySurfaceStats.TryGetValue(pairSurfaceKey, out var pairSurfaceStat);
+                    pairSurfaceStat.starts++;
+                    if (finish.HasValue && finish.Value == 1) pairSurfaceStat.wins++;
+                    trainerJockeySurfaceStats[pairSurfaceKey] = pairSurfaceStat;
+                }
                 }
                 var racePerfStats = rows
                    .GroupBy(r => Convert.ToInt32(r["RaceId"]))
