@@ -7,6 +7,7 @@ using OpenQA.Selenium;
 using OpenQA.Selenium.Support.UI;
 using HorseRacingML.Data;
 using HorseRacingML.Models;
+using System.Collections.Generic;
 
 namespace HorseRacingML.Scraping
 {
@@ -110,21 +111,39 @@ namespace HorseRacingML.Scraping
                             selectionId = null;
                         }
                     }
+                    var js = (IJavaScriptExecutor)driver;
+                    var elementData = (IDictionary<string, object>)js.ExecuteScript(@"
+                        const row = arguments[0];
+                        const q = s => row.querySelector(s)?.innerText.trim() ?? '';
+                        return {
+                            cloth: q('.runner-number'),
+                            draw: q('.draw'),
+                            horse: q('.runner-name .runner-name'),
+                            jockey: q('.jockey-name'),
+                            back1: q('.bet-button.back-selection-button.back-1 .bet-button-price'),
+                            back2: q('.bet-button.back-selection-button.back-2 .bet-button-price'),
+                            back3: q('.bet-button.back-selection-button.back-3 .bet-button-price'),
+                            lay1: q('.bet-button.lay-selection-button.lay-1 .bet-button-price'),
+                            lay2: q('.bet-button.lay-selection-button.lay-2 .bet-button-price'),
+                            lay3: q('.bet-button.lay-selection-button.lay-3 .bet-button-price')
+                        };
+                    ", row);
 
+                    string Get(string key) => elementData.TryGetValue(key, out var v) ? v?.ToString() ?? string.Empty : string.Empty;
                     var flow = new RunnerFlow
                     {
                         MarketId = marketId,
                         SelectionId = selectionId,
-                        ClothNumber = TryParseByte(SafeText(row, By.CssSelector(".runner-number"))),
-                        Draw = TryParseByte(SafeText(row, By.CssSelector(".draw"))),
-                        HorseName = SafeText(row, By.CssSelector(".runner-name .runner-name")),
-                        JockeyName = SafeText(row, By.CssSelector(".jockey-name")),
-                        BackPrice1 = ParseDecimal(SafeText(row, By.CssSelector(".bet-button.back-selection-button.back-1 .bet-button-price"))),
-                        BackPrice2 = ParseDecimal(SafeText(row, By.CssSelector(".bet-button.back-selection-button.back-2 .bet-button-price"))),
-                        BackPrice3 = ParseDecimal(SafeText(row, By.CssSelector(".bet-button.back-selection-button.back-3 .bet-button-price"))),
-                        LayPrice1 = ParseDecimal(SafeText(row, By.CssSelector(".bet-button.lay-selection-button.lay-1 .bet-button-price"))),
-                        LayPrice2 = ParseDecimal(SafeText(row, By.CssSelector(".bet-button.lay-selection-button.lay-2 .bet-button-price"))),
-                        LayPrice3 = ParseDecimal(SafeText(row, By.CssSelector(".bet-button.lay-selection-button.lay-3 .bet-button-price")))
+                        ClothNumber = TryParseByte(Get("cloth")),
+                        Draw = TryParseByte(Get("draw")),
+                        HorseName = Get("horse"),
+                        JockeyName = Get("jockey"),
+                        BackPrice1 = ParseDecimal(Get("back1")),
+                        BackPrice2 = ParseDecimal(Get("back2")),
+                        BackPrice3 = ParseDecimal(Get("back3")),
+                        LayPrice1 = ParseDecimal(Get("lay1")),
+                        LayPrice2 = ParseDecimal(Get("lay2")),
+                        LayPrice3 = ParseDecimal(Get("lay3"))
                     };
 
                     try
