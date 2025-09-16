@@ -709,20 +709,43 @@ namespace HorseRacingML.Scraping
         public void ScrapeFromEarliest()
         {
             var minDate = new DateTime(2000, 1, 1);
-            while (true)
+            var earliest = _repo.GetEarliestRaceDate();
+            if (earliest <= minDate)
             {
-                var earliest = _repo.GetEarliestRaceDate();
-                if (earliest <= minDate) break;
-
-                var end = earliest.AddDays(-1);
-                var start = end.AddDays(-(MaxConcurrentRequests - 1));
-                if (start < minDate) start = minDate;
-
-                _status.Update($"Scraping {start:yyyy-MM-dd} to {end:yyyy-MM-dd}");
-                Scrape(start, end);
-
-                if (start == minDate) break;
+                _status.Update("Scraping finished.");
+                return;
             }
+
+            var currentEnd = earliest.AddDays(-1);
+            while (currentEnd >= minDate)
+            {
+                var start = currentEnd.AddDays(-(MaxConcurrentRequests - 1));
+                if (start < minDate)
+                {
+                    start = minDate;
+                }
+
+                _status.Update($"Scraping {start:yyyy-MM-dd} to {currentEnd:yyyy-MM-dd}");
+                Scrape(start, currentEnd);
+
+                if (start == minDate)
+                {
+                    break;
+                }
+
+                var newEarliest = _repo.GetEarliestRaceDate();
+                var candidateEnd = newEarliest.AddDays(-1);
+
+                if (candidateEnd < currentEnd)
+                {
+                    currentEnd = candidateEnd;
+                }
+                else
+                {
+                    currentEnd = start.AddDays(-1);
+                }
+            }
+
             _status.Update("Scraping finished.");
         }
 
