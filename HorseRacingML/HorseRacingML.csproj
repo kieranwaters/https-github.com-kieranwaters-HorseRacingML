@@ -12,20 +12,20 @@
 		<EmbeddedResource Remove="Views\NewFolder\**" />
 		<None Remove="Views\NewFolder\**" />
 	</ItemGroup>
-	<ItemGroup>
+	<!--<ItemGroup>
 		<PackageReference Include="DotNetSeleniumExtras.WaitHelpers" Version="3.11.0" />
 		<PackageReference Include="HtmlAgilityPack" Version="1.11.58" />
 		<PackageReference Include="Selenium.Support" Version="4.35.0" />
 		<PackageReference Include="Selenium.WebDriver" Version="4.35.0" />
 		<PackageReference Include="Selenium.WebDriver.ChromeDriver" Version="139.0.7258.6800" />
-	</ItemGroup>
+	</ItemGroup>-->
 
-	<!--<ItemGroup>
+	<ItemGroup>
 		<PackageReference Include="DotNetSeleniumExtras.WaitHelpers" Version="3.11.0" />
 		<PackageReference Include="Selenium.Support" Version="4.35.0" />
 		<PackageReference Include="Selenium.WebDriver" Version="4.35.0" />
 		<PackageReference Include="Selenium.WebDriver.ChromeDriver" Version="139.0.7258.6800" />
-	</ItemGroup>-->
+	</ItemGroup>
 
 
 	<ItemGroup>
