@@ -1526,25 +1526,34 @@ namespace HorseRacingML.Scraping
                 yield return match.Value;
             }
         }
-
         private IEnumerable<string> ExtractLinksFromJsonStructure(string json, DateTime date)
         {
             if (string.IsNullOrWhiteSpace(json)) yield break;
 
-            try
+            if (!TryParseJsonDocument(json, out var jsonDoc)) yield break;
+
+            using (jsonDoc)
             {
-                using var jsonDoc = JsonDocument.Parse(json);
                 foreach (var link in ExtractLinksFromJsonElement(jsonDoc.RootElement, date, false))
                 {
                     yield return link;
                 }
             }
-            catch (JsonException)
-            {
-                yield break;
-            }
         }
 
+        private static bool TryParseJsonDocument(string json, out JsonDocument jsonDocument)
+        {
+            try
+            {
+                jsonDocument = JsonDocument.Parse(json);
+                return true;
+            }
+            catch (JsonException)
+            {
+                jsonDocument = null!;
+                return false;
+            }
+        }
         private IEnumerable<string> ExtractLinksFromJsonElement(JsonElement element, DateTime date, bool dateContext)
         {
             switch (element.ValueKind)
