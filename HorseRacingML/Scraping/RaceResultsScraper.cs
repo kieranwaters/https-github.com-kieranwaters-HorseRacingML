@@ -697,6 +697,128 @@ namespace HorseRacingML.Scraping
             _status = status;
             _httpClient = httpClient;
         }
+        private enum DayScrapeStatus
+        {
+            Inserted,
+            NoResults,
+            NoLinks
+        }
+
+        private async Task ScrapeAsync(DateTime startDate, DateTime endDate)
+        {
+            var start = startDate.Date;
+            var end = endDate.Date;
+            var today = DateTime.Today;
+
+            if (end > today) end = today;
+            if (start > end) return;
+
+            var dates = Enumerable.Range(0, (end - start).Days + 1)
+                                   .Select(i => end.AddDays(-i))
+                                   .ToList();
+
+            using var semaphore = new SemaphoreSlim(MaxConcurrentRequests);
+            var tasks = dates.Select(async date =>
+            {
+                await semaphore.WaitAsync();
+                try
+                {
+                    var result = await ScrapeDayAsync(date);
+
+                    string msg;
+                    var writeToStdOut = true;
+
+                    switch (result)
+                    {
+                        case DayScrapeStatus.Inserted:
+                            msg = $"[{date:yyyy-MM-dd}] parsed and inserted";
+                            break;
+                        case DayScrapeStatus.NoResults:
+                            msg = $"[{date:yyyy-MM-dd}] parsed (no race results)";
+                            break;
+                        case DayScrapeStatus.NoLinks:
+                            msg = $"[{date:yyyy-MM-dd}] No race links detected";
+                            writeToStdOut = false;
+                            break;
+                        default:
+                            msg = $"[{date:yyyy-MM-dd}] parsed";
+                            break;
+                    }
+
+                    if (writeToStdOut)
+                    {
+                        Console.WriteLine(msg);
+                    }
+
+                    _status.Update(msg);
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"[Skip Day] {date:yyyy-MM-dd} {ex.Message}");
+                }
+                finally
+                {
+                    semaphore.Release();
+                }
+            }).ToArray();
+
+            await Task.WhenAll(tasks);
+        }
+
+        private async Task<DayScrapeStatus> ScrapeDayAsync(DateTime date)
+        {
+            var dayUri = new Uri(BaseUri, $"racing/results/{date:yyyy-MM-dd}");
+            var (dayDoc, dayHtml) = await LoadDocumentAsync(dayUri);
+            var raceLinks = ExtractRaceLinks(dayDoc, dayHtml, date).ToList();
+            if (raceLinks.Count == 0)
+            {
+                Console.Error.WriteLine($"[{date:yyyy-MM-dd}] No race links detected");
+                return DayScrapeStatus.NoLinks;
+            }
+            Console.WriteLine($"[{date:yyyy-MM-dd}] Found {raceLinks.Count} race links");
+            var resultsBag = new ConcurrentBag<RunnerResult>();
+            using var semaphore = new SemaphoreSlim(MaxConcurrentRequests);
+
+            var raceTasks = raceLinks.Select(async raceUrl =>
+            {
+                await semaphore.WaitAsync();
+                try
+                {
+                    var (raceDoc, raceHtml) = await LoadDocumentAsync(new Uri(raceUrl));
+                    var results = ParseRacePage(raceDoc, raceHtml, date);
+                    foreach (var result in results)
+                    {
+                        resultsBag.Add(result);
+                    }
+                }
+                catch (HttpRequestException ex)
+                {
+                    Console.Error.WriteLine($"[Skip Race] {date:yyyy-MM-dd} {raceUrl}: {ex.Message}");
+                }
+                catch (TaskCanceledException ex)
+                {
+                    Console.Error.WriteLine($"[Skip Race] {date:yyyy-MM-dd} {raceUrl}: {ex.Message}");
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"[Skip Race] {date:yyyy-MM-dd} {raceUrl}: {ex.Message}");
+                }
+                finally
+                {
+                    semaphore.Release();
+                }
+            }).ToArray();
+
+            await Task.WhenAll(raceTasks);
+
+            if (!resultsBag.IsEmpty)
+            {
+                _repo.BulkInsertRunnerResults(resultsBag.ToList());
+                return DayScrapeStatus.Inserted;
+            }
+
+            return DayScrapeStatus.NoResults;
+        }
 
         private static HttpClient CreateDefaultClient()
         {
@@ -799,15 +921,32 @@ namespace HorseRacingML.Scraping
 
             if (!string.IsNullOrWhiteSpace(rawHtml))
             {
-                var regex = new Regex($"(https://www\\.sportinglife\\.com)?(/racing/results/{dateToken}/[^\"'#<\\s]+)", RegexOptions.IgnoreCase);
-                foreach (Match match in regex.Matches(rawHtml))
+                var regexSource = rawHtml;
+                if (regexSource.IndexOf("\\/", StringComparison.Ordinal) >= 0)
+                {
+                    regexSource = regexSource.Replace("\\/", "/");
+                }
+
+                if (regexSource.IndexOf("\\u002f", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    regexSource = regexSource
+                        .Replace("\\u002F", "/")
+                        .Replace("\\u002f", "/");
+                }
+
+                var regex = new Regex($"((?:https?:)?//(?:www\\.)?sportinglife\\.com)?/racing/results/{dateToken}/[^\"'#<\\s]+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+                foreach (Match match in regex.Matches(regexSource))
                 {
                     regexMatches++;
 
                     var captured = match.Value;
                     try
                     {
-                        if (!captured.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+                        if (captured.StartsWith("//", StringComparison.Ordinal))
+                        {
+                            captured = $"https:{captured}";
+                        }
+                        else if (!captured.StartsWith("http", StringComparison.OrdinalIgnoreCase))
                         {
                             captured = new Uri(BaseUri, captured).ToString();
                         }
@@ -949,95 +1088,7 @@ namespace HorseRacingML.Scraping
 
             return links.OrderBy(l => l, StringComparer.OrdinalIgnoreCase);
         }
-        private async Task ScrapeAsync(DateTime startDate, DateTime endDate)
-        {
-            var start = startDate.Date;
-            var end = endDate.Date;
-            var today = DateTime.Today;
-
-            if (end > today) end = today;
-            if (start > end) return;
-
-            var dates = Enumerable.Range(0, (end - start).Days + 1)
-                                   .Select(i => end.AddDays(-i))
-                                   .ToList();
-
-            using var semaphore = new SemaphoreSlim(MaxConcurrentRequests);
-            var tasks = dates.Select(async date =>
-            {
-                await semaphore.WaitAsync();
-                try
-                {
-                    await ScrapeDayAsync(date);
-                    var msg = $"[{date:yyyy-MM-dd}] parsed and inserted";
-                    Console.WriteLine(msg);
-                    _status.Update(msg);
-                }
-                catch (Exception ex)
-                {
-                    Console.Error.WriteLine($"[Skip Day] {date:yyyy-MM-dd} {ex.Message}");
-                }
-                finally
-                {
-                    semaphore.Release();
-                }
-            }).ToArray();
-
-            await Task.WhenAll(tasks);
-        }
-
-        private async Task ScrapeDayAsync(DateTime date)
-        {
-            var dayUri = new Uri(BaseUri, $"racing/results/{date:yyyy-MM-dd}");
-            var (dayDoc, dayHtml) = await LoadDocumentAsync(dayUri);
-            var raceLinks = ExtractRaceLinks(dayDoc, dayHtml, date).ToList();
-            if (raceLinks.Count == 0)
-            {
-                Console.Error.WriteLine($"[{date:yyyy-MM-dd}] No race links detected");
-                return;
-            }
-            Console.WriteLine($"[{date:yyyy-MM-dd}] Found {raceLinks.Count} race links");
-            var resultsBag = new ConcurrentBag<RunnerResult>();
-            using var semaphore = new SemaphoreSlim(MaxConcurrentRequests);
-
-            var raceTasks = raceLinks.Select(async raceUrl =>
-            {
-                await semaphore.WaitAsync();
-                try
-                {
-                    var (raceDoc, raceHtml) = await LoadDocumentAsync(new Uri(raceUrl));
-                    var results = ParseRacePage(raceDoc, raceHtml, date);
-                    foreach (var result in results)
-                    {
-                        resultsBag.Add(result);
-                    }
-                }
-                catch (HttpRequestException ex)
-                {
-                    Console.Error.WriteLine($"[Skip Race] {date:yyyy-MM-dd} {raceUrl}: {ex.Message}");
-                }
-                catch (TaskCanceledException ex)
-                {
-                    Console.Error.WriteLine($"[Skip Race] {date:yyyy-MM-dd} {raceUrl}: {ex.Message}");
-                }
-                catch (Exception ex)
-                {
-                    Console.Error.WriteLine($"[Skip Race] {date:yyyy-MM-dd} {raceUrl}: {ex.Message}");
-                }
-                finally
-                {
-                    semaphore.Release();
-                }
-            }).ToArray();
-
-            await Task.WhenAll(raceTasks);
-
-            if (!resultsBag.IsEmpty)
-            {
-                _repo.BulkInsertRunnerResults(resultsBag.ToList());
-            }
-        }
-
+        
         private async Task<(HtmlDocument Document, string RawHtml)> LoadDocumentAsync(Uri uri)
         {
             using var response = await _httpClient.GetAsync(uri);
