@@ -685,6 +685,20 @@ namespace HorseRacingML.Scraping
 
         private const int MaxConcurrentRequests = 6;
         private static readonly Uri BaseUri = new Uri("https://www.sportinglife.com/");
+        private static readonly string[] InternationalQuerySuffixes = new[]
+        {
+            "?tab=international",
+            "?region=international",
+            "?switch=international",
+            "?country=international",
+            "?countries=international"
+        };
+
+        private sealed record RaceLinkExtractionResult(
+            IReadOnlyCollection<string> Links,
+            IReadOnlyCollection<Uri> AlternateRegionUris,
+            bool SawInternationalToggle);
+
 
         public RaceResultsScraper(RacingRepository repo, ScrapingStatusService status)
             : this(repo, status, CreateDefaultClient())
@@ -769,7 +783,99 @@ namespace HorseRacingML.Scraping
         {
             var dayUri = new Uri(BaseUri, $"racing/results/{date:yyyy-MM-dd}");
             var (dayDoc, dayHtml) = await LoadDocumentAsync(dayUri);
-            var raceLinks = ExtractRaceLinks(dayDoc, dayHtml, date).ToList();
+            var visitedPages = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                dayUri.ToString()
+            };
+            var fallbackPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var pendingPages = new Queue<Uri>();
+            var raceLinkSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            static bool ContainsInternationalText(string? html) =>
+                !string.IsNullOrEmpty(html) &&
+                html.IndexOf("International", StringComparison.OrdinalIgnoreCase) >= 0;
+
+            void EnqueuePage(Uri uri)
+            {
+                var key = uri.ToString();
+                if (visitedPages.Add(key))
+                {
+                    pendingPages.Enqueue(uri);
+                }
+            }
+
+            void EnqueueFallbackCandidates(Uri baseUri)
+            {
+                var basePath = baseUri.GetLeftPart(UriPartial.Path);
+                if (!fallbackPaths.Add(basePath))
+                {
+                    return;
+                }
+
+                foreach (var suffix in InternationalQuerySuffixes)
+                {
+                    if (Uri.TryCreate(basePath + suffix, UriKind.Absolute, out var candidate))
+                    {
+                        EnqueuePage(candidate);
+                    }
+                }
+            }
+
+            var initialExtraction = ExtractRaceLinks(dayDoc, dayHtml, date, dayUri);
+            foreach (var link in initialExtraction.Links)
+            {
+                raceLinkSet.Add(link);
+            }
+
+            foreach (var altUri in initialExtraction.AlternateRegionUris)
+            {
+                EnqueuePage(altUri);
+            }
+
+            if (initialExtraction.SawInternationalToggle || ContainsInternationalText(dayHtml))
+            {
+                EnqueueFallbackCandidates(dayUri);
+            }
+
+            while (pendingPages.Count > 0)
+            {
+                var pageUri = pendingPages.Dequeue();
+                HtmlDocument pageDoc;
+                string pageHtml;
+
+                try
+                {
+                    (pageDoc, pageHtml) = await LoadDocumentAsync(pageUri);
+                }
+                catch (HttpRequestException ex)
+                {
+                    Console.Error.WriteLine($"[{date:yyyy-MM-dd}] Alternate page fetch failed {pageUri}: {ex.Message}");
+                    continue;
+                }
+                catch (TaskCanceledException ex)
+                {
+                    Console.Error.WriteLine($"[{date:yyyy-MM-dd}] Alternate page fetch timed out {pageUri}: {ex.Message}");
+                    continue;
+                }
+
+                var extraction = ExtractRaceLinks(pageDoc, pageHtml, date, pageUri);
+                foreach (var link in extraction.Links)
+                {
+                    raceLinkSet.Add(link);
+                }
+
+                foreach (var nextUri in extraction.AlternateRegionUris)
+                {
+                    EnqueuePage(nextUri);
+                }
+
+                if (extraction.SawInternationalToggle || ContainsInternationalText(pageHtml))
+                {
+                    EnqueueFallbackCandidates(pageUri);
+                }
+            }
+
+            var raceLinks = raceLinkSet.OrderBy(l => l, StringComparer.OrdinalIgnoreCase).ToList();
             if (raceLinks.Count == 0)
             {
                 Console.Error.WriteLine($"[{date:yyyy-MM-dd}] No race links detected");
@@ -918,6 +1024,7 @@ namespace HorseRacingML.Scraping
             int regexAdded = 0;
             int regexDateOnly = 0;
             int regexInvalid = 0;
+            int regexSkipped = 0;
 
             if (!string.IsNullOrWhiteSpace(rawHtml))
             {
@@ -940,35 +1047,27 @@ namespace HorseRacingML.Scraping
                     regexMatches++;
 
                     var captured = match.Value;
-                    try
-                    {
-                        if (captured.StartsWith("//", StringComparison.Ordinal))
-                        {
-                            captured = $"https:{captured}";
-                        }
-                        else if (!captured.StartsWith("http", StringComparison.OrdinalIgnoreCase))
-                        {
-                            captured = new Uri(BaseUri, captured).ToString();
-                        }
-                    }
-                    catch (UriFormatException)
+                    if (!TryNormalizeRaceUrl(captured, out var normalized, out var isDateOnly))
                     {
                         regexInvalid++;
                         continue;
                     }
 
-                    captured = NormalizeUrl(captured);
-                    AddSample(captured);
+                    AddSample(normalized);
 
-                    if (captured.EndsWith($"/{dateToken}", StringComparison.OrdinalIgnoreCase))
+                    if (isDateOnly)
                     {
                         regexDateOnly++;
                         continue;
                     }
 
-                    if (links.Add(captured))
+                    if (links.Add(normalized))
                     {
                         regexAdded++;
+                    }
+                    else
+                    {
+                        regexSkipped++;
                     }
                 }
             }
@@ -979,6 +1078,7 @@ namespace HorseRacingML.Scraping
             int anchorAdded = 0;
             int anchorDateOnly = 0;
             int anchorInvalid = 0;
+            int anchorSkipped = 0;
 
             if (anchorNodes != null)
             {
@@ -991,32 +1091,62 @@ namespace HorseRacingML.Scraping
 
                     anchorMatches++;
 
-                    try
-                    {
-                        if (!href.StartsWith("http", StringComparison.OrdinalIgnoreCase))
-                        {
-                            href = new Uri(BaseUri, href).ToString();
-                        }
-                    }
-                    catch (UriFormatException)
+                    if (!TryNormalizeRaceUrl(href, out var normalized, out var isDateOnly))
                     {
                         anchorInvalid++;
                         continue;
                     }
 
-                    href = NormalizeUrl(href);
-                    AddSample(href);
+                    AddSample(normalized);
 
-                    if (href.EndsWith($"/{dateToken}", StringComparison.OrdinalIgnoreCase))
+                    if (isDateOnly)
                     {
                         anchorDateOnly++;
                         continue;
                     }
 
-                    if (links.Add(href))
+                    if (links.Add(normalized))
                     {
                         anchorAdded++;
                     }
+                    else
+                    {
+                        anchorSkipped++;
+                    }
+                }
+            }
+
+            int jsonMatches = 0;
+            int jsonAdded = 0;
+            int jsonInvalid = 0;
+            int jsonDateOnly = 0;
+            int jsonSkipped = 0;
+
+            foreach (var candidate in ExtractLinksFromEmbeddedJson(doc, date))
+            {
+                jsonMatches++;
+
+                if (!TryNormalizeRaceUrl(candidate, out var normalized, out var isDateOnly))
+                {
+                    jsonInvalid++;
+                    continue;
+                }
+
+                AddSample(normalized);
+
+                if (isDateOnly)
+                {
+                    jsonDateOnly++;
+                    continue;
+                }
+
+                if (links.Add(normalized))
+                {
+                    jsonAdded++;
+                }
+                else
+                {
+                    jsonSkipped++;
                 }
             }
 
@@ -1070,25 +1200,384 @@ namespace HorseRacingML.Scraping
                     $"regexAdded={regexAdded}",
                     $"regexDateOnly={regexDateOnly}",
                     $"regexInvalid={regexInvalid}",
+                    $"regexSkipped={regexSkipped}",
                     $"anchorNodes={anchorNodeCount}",
                     $"anchorMatches={anchorMatches}",
                     $"anchorAdded={anchorAdded}",
                     $"anchorDateOnly={anchorDateOnly}",
                     $"anchorInvalid={anchorInvalid}",
+                    $"anchorSkipped={anchorSkipped}",
+                    $"jsonMatches={jsonMatches}",
+                    $"jsonAdded={jsonAdded}",
+                    $"jsonDateOnly={jsonDateOnly}",
+                    $"jsonInvalid={jsonInvalid}",
+                    $"jsonSkipped={jsonSkipped}",
                     $"raceContainers={raceContainers?.Count ?? 0}",
                     $"meetingCards={meetingCards?.Count ?? 0}",
                     $"noMeetingsFlags={noMeetingNodes?.Count ?? 0}",
                     $"tabs={(distinctTabs.Count > 0 ? "[" + string.Join(", ", distinctTabs) + "]" : "<none>")}",
                     $"samples={(truncatedSamples.Count > 0 ? "[" + string.Join(", ", truncatedSamples) + "]" : "<none>")}",
-                    $"htmlLength={(rawHtml?.Length ?? 0)}"
+                     $"htmlLength={(rawHtml?.Length ?? 0)}",
+                    $"alternatePages={alternatePages.Count}",
+                    $"sawInternationalToggle={sawInternationalToggle}",
+                    $"pageUri={pageUri}"
                 };
 
                 Console.Error.WriteLine($"[Debug] {date:yyyy-MM-dd} ExtractRaceLinks: {string.Join(", ", debugParts)}");
             }
 
-            return links.OrderBy(l => l, StringComparer.OrdinalIgnoreCase);
+            var orderedLinks = links.OrderBy(l => l, StringComparer.OrdinalIgnoreCase).ToList();
+            var alternateUris = alternatePages
+                .Select(u =>
+                {
+                    try { return new Uri(u); }
+                    catch { return null; }
+                })
+                .Where(u => u != null)
+                .Cast<Uri>()
+                .ToList();
+
+            return new RaceLinkExtractionResult(orderedLinks, alternateUris, sawInternationalToggle);
         }
-        
+        private bool TryNormalizeRaceUrl(string rawUrl, out string normalized, out bool isDateOnly)
+        {
+            normalized = string.Empty;
+            isDateOnly = false;
+
+            if (string.IsNullOrWhiteSpace(rawUrl))
+            {
+                return false;
+            }
+
+            var candidate = rawUrl.Trim();
+
+            try
+            {
+                if (candidate.StartsWith("//", StringComparison.Ordinal))
+                {
+                    candidate = $"https:{candidate}";
+                }
+
+                var uri = candidate.StartsWith("http", StringComparison.OrdinalIgnoreCase)
+                    ? new Uri(candidate, UriKind.Absolute)
+                    : new Uri(BaseUri, candidate);
+
+                normalized = NormalizeUrl(uri.ToString());
+
+                var segments = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+                var resultsIndex = Array.IndexOf(segments, "results");
+                if (resultsIndex < 0)
+                {
+                    return false;
+                }
+
+                var remaining = segments.Length - (resultsIndex + 1);
+                if (remaining <= 0)
+                {
+                    isDateOnly = true;
+                    return true;
+                }
+
+                if (remaining == 1)
+                {
+                    var segment = segments[resultsIndex + 1];
+                    if (Regex.IsMatch(segment, @"^\d{4}-\d{2}-\d{2}$", RegexOptions.CultureInvariant))
+                    {
+                        if (string.IsNullOrEmpty(uri.Query))
+                        {
+                            isDateOnly = true;
+                        }
+
+                        return true;
+                    }
+
+                    if (string.Equals(segment, "calendar", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(segment, "fast-results", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(segment, "today", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(segment, "tomorrow", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(segment, "yesterday", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return false;
+                    }
+
+                    if (string.IsNullOrEmpty(uri.Query) && Regex.IsMatch(segment, @"^(?:today|yesterday|tomorrow)$", RegexOptions.IgnoreCase))
+                    {
+                        return false;
+                    }
+                }
+
+                return true;
+            }
+            catch (UriFormatException)
+            {
+                normalized = string.Empty;
+                return false;
+            }
+        }
+        private IEnumerable<string> ExtractLinksFromEmbeddedJson(HtmlDocument doc, DateTime date)
+        {
+            var seenNodes = new HashSet<HtmlNode>();
+            var yielded = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            string[] primarySelectors =
+            {
+                "//script[@id='__NEXT_DATA__']",
+                "//script[@id='__NUXT_DATA__']",
+                "//script[contains(@id,'__NEXT_DATA__')]",
+                "//script[contains(@id,'__NUXT_DATA__')]",
+                "//script[contains(@type,'application/json')]"
+            };
+
+            foreach (var selector in primarySelectors)
+            {
+                var nodes = doc.DocumentNode.SelectNodes(selector);
+                if (nodes == null) continue;
+
+                foreach (var node in nodes)
+                {
+                    if (!seenNodes.Add(node)) continue;
+
+                    foreach (var link in ExtractLinksFromScriptNode(node, date))
+                    {
+                        if (yielded.Add(link))
+                        {
+                            yield return link;
+                        }
+                    }
+                }
+            }
+
+            var otherScripts = doc.DocumentNode.SelectNodes("//script[not(@src)]");
+            if (otherScripts == null) yield break;
+
+            foreach (var node in otherScripts)
+            {
+                if (!seenNodes.Add(node)) continue;
+
+                foreach (var link in ExtractLinksFromScriptNode(node, date))
+                {
+                    if (yielded.Add(link))
+                    {
+                        yield return link;
+                    }
+                }
+            }
+        }
+
+        private IEnumerable<string> ExtractLinksFromScriptNode(HtmlNode node, DateTime date)
+        {
+            var raw = HtmlEntity.DeEntitize(node.InnerText ?? string.Empty);
+            if (string.IsNullOrWhiteSpace(raw)) yield break;
+
+            if (!raw.Contains("/racing/results/", StringComparison.OrdinalIgnoreCase)) yield break;
+
+            foreach (var link in ExtractLinksFromJsonText(raw, date))
+            {
+                yield return link;
+            }
+        }
+
+        private IEnumerable<string> ExtractLinksFromJsonText(string text, DateTime date)
+        {
+            if (string.IsNullOrWhiteSpace(text)) yield break;
+
+            foreach (var link in ExtractLinksFromJsonStructure(text, date))
+            {
+                yield return link;
+            }
+
+            var firstBrace = text.IndexOf('{');
+            var lastBrace = text.LastIndexOf('}');
+            if (firstBrace >= 0 && lastBrace > firstBrace)
+            {
+                var span = text.Substring(firstBrace, lastBrace - firstBrace + 1);
+                foreach (var link in ExtractLinksFromJsonStructure(span, date))
+                {
+                    yield return link;
+                }
+            }
+
+            foreach (Match match in Regex.Matches(text, @"((?:https?:)?//(?:www\\.)?sportinglife\\.com)?/racing/results/[^\""'#<\\s]+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+            {
+                yield return match.Value;
+            }
+        }
+
+        private IEnumerable<string> ExtractLinksFromJsonStructure(string json, DateTime date)
+        {
+            if (string.IsNullOrWhiteSpace(json)) yield break;
+
+            try
+            {
+                using var jsonDoc = JsonDocument.Parse(json);
+                foreach (var link in ExtractLinksFromJsonElement(jsonDoc.RootElement, date, false))
+                {
+                    yield return link;
+                }
+            }
+            catch (JsonException)
+            {
+                yield break;
+            }
+        }
+
+        private IEnumerable<string> ExtractLinksFromJsonElement(JsonElement element, DateTime date, bool dateContext)
+        {
+            switch (element.ValueKind)
+            {
+                case JsonValueKind.Object:
+                    {
+                        bool objectHasDate = dateContext;
+
+                        if (!objectHasDate)
+                        {
+                            foreach (var property in element.EnumerateObject())
+                            {
+                                if (property.Value.ValueKind == JsonValueKind.String && ContainsDateToken(property.Value.GetString(), date))
+                                {
+                                    objectHasDate = true;
+                                    break;
+                                }
+
+                                if (property.Value.ValueKind == JsonValueKind.Number && MatchesDateNumber(property.Value, date))
+                                {
+                                    objectHasDate = true;
+                                    break;
+                                }
+                            }
+                        }
+
+                        foreach (var property in element.EnumerateObject())
+                        {
+                            foreach (var link in ExtractLinksFromJsonElement(property.Value, date, objectHasDate))
+                            {
+                                yield return link;
+                            }
+                        }
+
+                        break;
+                    }
+
+                case JsonValueKind.Array:
+                    foreach (var item in element.EnumerateArray())
+                    {
+                        foreach (var link in ExtractLinksFromJsonElement(item, date, dateContext))
+                        {
+                            yield return link;
+                        }
+                    }
+
+                    break;
+
+                case JsonValueKind.String:
+                    {
+                        var value = element.GetString();
+                        if (string.IsNullOrWhiteSpace(value)) break;
+
+                        var hasDate = ContainsDateToken(value, date);
+
+                        if (value.Contains("/racing/results/", StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (dateContext || hasDate)
+                            {
+                                yield return value;
+                            }
+                        }
+
+                        break;
+                    }
+            }
+        }
+
+        private static bool ContainsDateToken(string? value, DateTime date)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return false;
+
+            if (value.IndexOf(date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return true;
+            }
+
+            if (value.IndexOf(date.ToString("yyyyMMdd", CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return true;
+            }
+
+            if (value.IndexOf(date.ToString("dd MMM yyyy", CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return true;
+            }
+
+            if (value.IndexOf(date.ToString("dd MMMM yyyy", CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return true;
+            }
+
+            if (value.IndexOf(date.ToString("ddd dd MMM yyyy", CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return true;
+            }
+
+            if (value.IndexOf(date.ToString("ddd dd MMMM yyyy", CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return true;
+            }
+
+            if (value.IndexOf(date.ToString("dd-MM-yyyy", CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return true;
+            }
+
+            if (value.IndexOf(date.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return true;
+            }
+
+            if (DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var parsed))
+            {
+                if (parsed.Date == date.Date)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool MatchesDateNumber(JsonElement element, DateTime date)
+        {
+            if (!element.TryGetInt64(out var value))
+            {
+                return false;
+            }
+
+            try
+            {
+                if (value >= 1_000_000_000 && value <= 4_000_000_000)
+                {
+                    var seconds = DateTimeOffset.FromUnixTimeSeconds(value);
+                    if (seconds.Date == date.Date)
+                    {
+                        return true;
+                    }
+                }
+
+                if (value >= 1_000_000_000_000 && value <= 4_000_000_000_000)
+                {
+                    var milliseconds = DateTimeOffset.FromUnixTimeMilliseconds(value);
+                    if (milliseconds.Date == date.Date)
+                    {
+                        return true;
+                    }
+                }
+            }
+            catch
+            {
+                return false;
+            }
+
+            return false;
+        }
         private async Task<(HtmlDocument Document, string RawHtml)> LoadDocumentAsync(Uri uri)
         {
             using var response = await _httpClient.GetAsync(uri);
