@@ -1003,10 +1003,12 @@ namespace HorseRacingML.Scraping
         {
             ScrapeAsync(startDate, endDate).GetAwaiter().GetResult();
         }
-        private IEnumerable<string> ExtractRaceLinks(HtmlDocument doc, string rawHtml, DateTime date)
+        private RaceLinkExtractionResult ExtractRaceLinks(HtmlDocument doc, string rawHtml, DateTime date, Uri pageUri)
         {
             var links = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var dateToken = date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            var alternatePages = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var sawInternationalToggle = false;
 
             var sampleLinks = new List<string>();
             var sampleSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -1019,6 +1021,129 @@ namespace HorseRacingML.Scraping
                     sampleLinks.Add(value);
                 }
             }
+
+            bool TryCollectAlternatePage(string? raw)
+            {
+                if (string.IsNullOrWhiteSpace(raw))
+                {
+                    return false;
+                }
+
+                var candidateText = HtmlEntity.DeEntitize(raw).Trim();
+                if (candidateText.Length == 0)
+                {
+                    return false;
+                }
+
+                if (candidateText.StartsWith("javascript:", StringComparison.OrdinalIgnoreCase))
+                {
+                    return false;
+                }
+
+                if (candidateText.StartsWith("//", StringComparison.Ordinal))
+                {
+                    candidateText = $"https:{candidateText}";
+                }
+
+                Uri? candidateUri = null;
+                if (Uri.TryCreate(candidateText, UriKind.Absolute, out var absolute))
+                {
+                    candidateUri = absolute;
+                }
+                else if (Uri.TryCreate(pageUri, candidateText, out var relativeToPage))
+                {
+                    candidateUri = relativeToPage;
+                }
+                else if (Uri.TryCreate(BaseUri, candidateText, out var relativeToBase))
+                {
+                    candidateUri = relativeToBase;
+                }
+
+                if (candidateUri == null)
+                {
+                    return false;
+                }
+
+                if (!string.Equals(candidateUri.Host, BaseUri.Host, StringComparison.OrdinalIgnoreCase))
+                {
+                    return false;
+                }
+
+                var segments = candidateUri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+                var resultsIndex = Array.IndexOf(segments, "results");
+                if (resultsIndex < 0 || resultsIndex + 1 >= segments.Length)
+                {
+                    return false;
+                }
+
+                var dateSegment = segments[resultsIndex + 1];
+                if (!string.Equals(dateSegment, dateToken, StringComparison.OrdinalIgnoreCase))
+                {
+                    return false;
+                }
+
+                if (segments.Length > resultsIndex + 2)
+                {
+                    return false;
+                }
+
+                var query = candidateUri.Query;
+                if (string.IsNullOrEmpty(query))
+                {
+                    return false;
+                }
+
+                if (query.IndexOf("international", StringComparison.OrdinalIgnoreCase) < 0)
+                {
+                    return false;
+                }
+
+                if (!alternatePages.Add(candidateUri.ToString()))
+                {
+                    return false;
+                }
+
+                sawInternationalToggle = true;
+                return true;
+            }
+
+            try
+            {
+                var switchNodes = doc.DocumentNode.SelectNodes("//*[@data-test-id][contains(@data-test-id,'switch') or contains(@data-test-id,'toggle') or contains(@data-test-id,'country')]");
+                if (switchNodes != null)
+                {
+                    foreach (var node in switchNodes)
+                    {
+                        var text = Normalize(node.InnerText ?? string.Empty);
+                        if (!string.IsNullOrEmpty(text) && text.IndexOf("international", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            sawInternationalToggle = true;
+                            break;
+                        }
+
+                        var attr = node.GetAttributeValue("data-test-id", string.Empty);
+                        if (attr.IndexOf("international", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            sawInternationalToggle = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // Ignore toggle detection errors – debugging will capture missing toggles.
+            }
+
+            if (!sawInternationalToggle && !string.IsNullOrEmpty(rawHtml))
+            {
+                if (rawHtml.IndexOf("new-switch-button", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                    rawHtml.IndexOf("international", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    sawInternationalToggle = true;
+                }
+            }
+
 
             int regexMatches = 0;
             int regexAdded = 0;
@@ -1047,6 +1172,7 @@ namespace HorseRacingML.Scraping
                     regexMatches++;
 
                     var captured = match.Value;
+                    TryCollectAlternatePage(captured);
                     if (!TryNormalizeRaceUrl(captured, out var normalized, out var isDateOnly))
                     {
                         regexInvalid++;
@@ -1090,7 +1216,7 @@ namespace HorseRacingML.Scraping
                     if (!href.Contains(dateToken, StringComparison.OrdinalIgnoreCase)) continue;
 
                     anchorMatches++;
-
+                    TryCollectAlternatePage(href);
                     if (!TryNormalizeRaceUrl(href, out var normalized, out var isDateOnly))
                     {
                         anchorInvalid++;
@@ -1125,6 +1251,7 @@ namespace HorseRacingML.Scraping
             foreach (var candidate in ExtractLinksFromEmbeddedJson(doc, date))
             {
                 jsonMatches++;
+                TryCollectAlternatePage(candidate);
 
                 if (!TryNormalizeRaceUrl(candidate, out var normalized, out var isDateOnly))
                 {
@@ -1283,10 +1410,7 @@ namespace HorseRacingML.Scraping
                     var segment = segments[resultsIndex + 1];
                     if (Regex.IsMatch(segment, @"^\d{4}-\d{2}-\d{2}$", RegexOptions.CultureInvariant))
                     {
-                        if (string.IsNullOrEmpty(uri.Query))
-                        {
-                            isDateOnly = true;
-                        }
+                        isDateOnly = true;
 
                         return true;
                     }
