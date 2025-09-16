@@ -775,7 +775,180 @@ namespace HorseRacingML.Scraping
         {
             ScrapeAsync(startDate, endDate).GetAwaiter().GetResult();
         }
+        private IEnumerable<string> ExtractRaceLinks(HtmlDocument doc, string rawHtml, DateTime date)
+        {
+            var links = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var dateToken = date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
+            var sampleLinks = new List<string>();
+            var sampleSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            void AddSample(string value)
+            {
+                if (string.IsNullOrWhiteSpace(value)) return;
+                if (sampleSet.Count >= 5) return;
+                if (sampleSet.Add(value))
+                {
+                    sampleLinks.Add(value);
+                }
+            }
+
+            int regexMatches = 0;
+            int regexAdded = 0;
+            int regexDateOnly = 0;
+            int regexInvalid = 0;
+
+            if (!string.IsNullOrWhiteSpace(rawHtml))
+            {
+                var regex = new Regex($"(https://www\\.sportinglife\\.com)?(/racing/results/{dateToken}/[^\"'#<\\s]+)", RegexOptions.IgnoreCase);
+                foreach (Match match in regex.Matches(rawHtml))
+                {
+                    regexMatches++;
+
+                    var captured = match.Value;
+                    try
+                    {
+                        if (!captured.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+                        {
+                            captured = new Uri(BaseUri, captured).ToString();
+                        }
+                    }
+                    catch (UriFormatException)
+                    {
+                        regexInvalid++;
+                        continue;
+                    }
+
+                    captured = NormalizeUrl(captured);
+                    AddSample(captured);
+
+                    if (captured.EndsWith($"/{dateToken}", StringComparison.OrdinalIgnoreCase))
+                    {
+                        regexDateOnly++;
+                        continue;
+                    }
+
+                    if (links.Add(captured))
+                    {
+                        regexAdded++;
+                    }
+                }
+            }
+
+            var anchorNodes = doc.DocumentNode.SelectNodes("//a[@href]");
+            var anchorNodeCount = anchorNodes?.Count ?? 0;
+            int anchorMatches = 0;
+            int anchorAdded = 0;
+            int anchorDateOnly = 0;
+            int anchorInvalid = 0;
+
+            if (anchorNodes != null)
+            {
+                foreach (var node in anchorNodes)
+                {
+                    var href = node.GetAttributeValue("href", string.Empty);
+                    if (string.IsNullOrWhiteSpace(href)) continue;
+                    if (!href.Contains("/racing/results/", StringComparison.OrdinalIgnoreCase)) continue;
+                    if (!href.Contains(dateToken, StringComparison.OrdinalIgnoreCase)) continue;
+
+                    anchorMatches++;
+
+                    try
+                    {
+                        if (!href.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+                        {
+                            href = new Uri(BaseUri, href).ToString();
+                        }
+                    }
+                    catch (UriFormatException)
+                    {
+                        anchorInvalid++;
+                        continue;
+                    }
+
+                    href = NormalizeUrl(href);
+                    AddSample(href);
+
+                    if (href.EndsWith($"/{dateToken}", StringComparison.OrdinalIgnoreCase))
+                    {
+                        anchorDateOnly++;
+                        continue;
+                    }
+
+                    if (links.Add(href))
+                    {
+                        anchorAdded++;
+                    }
+                }
+            }
+
+            if (links.Count == 0)
+            {
+                List<string> tabLabels = new();
+                void CollectTabText(string xpath)
+                {
+                    var nodes = doc.DocumentNode.SelectNodes(xpath);
+                    if (nodes == null) return;
+
+                    foreach (var node in nodes)
+                    {
+                        var text = Normalize(node.InnerText ?? string.Empty);
+                        if (!string.IsNullOrWhiteSpace(text))
+                        {
+                            tabLabels.Add(text);
+                        }
+                    }
+                }
+
+                CollectTabText("//*[@data-test-id='generic-tab']");
+                CollectTabText("//*[@data-test-id='results-tab']");
+                CollectTabText("//*[@data-test-id='meeting-tab']");
+                CollectTabText("//*[@data-test-id][contains(@data-test-id,'country')]");
+                CollectTabText("//*[@data-test-id][contains(@data-test-id,'tab')]");
+                CollectTabText("//*[contains(@class,'Tab')]");
+
+                var distinctTabs = tabLabels
+                    .Where(t => !string.IsNullOrWhiteSpace(t))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                const int maxTabLog = 10;
+                if (distinctTabs.Count > maxTabLog)
+                {
+                    distinctTabs = distinctTabs.Take(maxTabLog - 1).Concat(new[] { "…" }).ToList();
+                }
+
+                var noMeetingNodes = doc.DocumentNode.SelectNodes("//*[@data-test-id][contains(@data-test-id,'no-meetings')]");
+                var meetingCards = doc.DocumentNode.SelectNodes("//*[@data-test-id][contains(@data-test-id,'meeting-card')]");
+                var raceContainers = doc.DocumentNode.SelectNodes("//*[@data-test-id='race-container']");
+
+                var truncatedSamples = sampleLinks
+                    .Select(s => s.Length > 120 ? s.Substring(0, 120) + "…" : s)
+                    .ToList();
+
+                var debugParts = new List<string>
+                {
+                    $"regexMatches={regexMatches}",
+                    $"regexAdded={regexAdded}",
+                    $"regexDateOnly={regexDateOnly}",
+                    $"regexInvalid={regexInvalid}",
+                    $"anchorNodes={anchorNodeCount}",
+                    $"anchorMatches={anchorMatches}",
+                    $"anchorAdded={anchorAdded}",
+                    $"anchorDateOnly={anchorDateOnly}",
+                    $"anchorInvalid={anchorInvalid}",
+                    $"raceContainers={raceContainers?.Count ?? 0}",
+                    $"meetingCards={meetingCards?.Count ?? 0}",
+                    $"noMeetingsFlags={noMeetingNodes?.Count ?? 0}",
+                    $"tabs={(distinctTabs.Count > 0 ? "[" + string.Join(", ", distinctTabs) + "]" : "<none>")}",
+                    $"samples={(truncatedSamples.Count > 0 ? "[" + string.Join(", ", truncatedSamples) + "]" : "<none>")}",
+                    $"htmlLength={(rawHtml?.Length ?? 0)}"
+                };
+
+                Console.Error.WriteLine($"[Debug] {date:yyyy-MM-dd} ExtractRaceLinks: {string.Join(", ", debugParts)}");
+            }
+
+            return links.OrderBy(l => l, StringComparer.OrdinalIgnoreCase);
+        }
         private async Task ScrapeAsync(DateTime startDate, DateTime endDate)
         {
             var start = startDate.Date;
@@ -823,7 +996,7 @@ namespace HorseRacingML.Scraping
                 Console.Error.WriteLine($"[{date:yyyy-MM-dd}] No race links detected");
                 return;
             }
-
+            Console.WriteLine($"[{date:yyyy-MM-dd}] Found {raceLinks.Count} race links");
             var resultsBag = new ConcurrentBag<RunnerResult>();
             using var semaphore = new SemaphoreSlim(MaxConcurrentRequests);
 
@@ -875,55 +1048,7 @@ namespace HorseRacingML.Scraping
             return (doc, html);
         }
 
-        private IEnumerable<string> ExtractRaceLinks(HtmlDocument doc, string rawHtml, DateTime date)
-        {
-            var links = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var dateToken = date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-
-            if (!string.IsNullOrWhiteSpace(rawHtml))
-            {
-                var regex = new Regex($"(https://www\\.sportinglife\\.com)?(/racing/results/{dateToken}/[^\"'#<\\s]+)", RegexOptions.IgnoreCase);
-                foreach (Match match in regex.Matches(rawHtml))
-                {
-                    var captured = match.Value;
-                    if (!captured.StartsWith("http", StringComparison.OrdinalIgnoreCase))
-                    {
-                        captured = new Uri(BaseUri, captured).ToString();
-                    }
-                    captured = NormalizeUrl(captured);
-                    if (!captured.EndsWith($"/{dateToken}", StringComparison.OrdinalIgnoreCase))
-                    {
-                        links.Add(captured);
-                    }
-                }
-            }
-
-            var anchorNodes = doc.DocumentNode.SelectNodes("//a[@href]");
-            if (anchorNodes != null)
-            {
-                foreach (var node in anchorNodes)
-                {
-                    var href = node.GetAttributeValue("href", string.Empty);
-                    if (string.IsNullOrWhiteSpace(href)) continue;
-                    if (!href.Contains("/racing/results/", StringComparison.OrdinalIgnoreCase)) continue;
-                    if (!href.Contains(dateToken, StringComparison.OrdinalIgnoreCase)) continue;
-
-                    if (!href.StartsWith("http", StringComparison.OrdinalIgnoreCase))
-                    {
-                        href = new Uri(BaseUri, href).ToString();
-                    }
-
-                    href = NormalizeUrl(href);
-                    if (!href.EndsWith($"/{dateToken}", StringComparison.OrdinalIgnoreCase))
-                    {
-                        links.Add(href);
-                    }
-                }
-            }
-
-            return links.OrderBy(l => l, StringComparer.OrdinalIgnoreCase);
-        }
-
+        
         private static string NormalizeUrl(string url)
         {
             try
