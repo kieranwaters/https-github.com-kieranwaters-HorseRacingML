@@ -63,8 +63,17 @@ namespace HorseRacingML.Scraping
                 }
 
                 var title = TextOrEmpty(driver, By.CssSelector("[data-testid='marketTitle']"));
+                var venueText = TextOrEmpty(driver, By.CssSelector(".venue-name"));
+                var eventDateText = TextOrEmpty(driver, By.CssSelector(".event-date"));
+                var raceDetailsText = TextOrEmpty(driver, By.CssSelector(".market-name"));
                 var offTimeText = TextOrEmpty(driver, By.CssSelector("[data-testid='startTime']"));
                 TimeSpan? offTime = TimeSpan.TryParse(offTimeText, out var t) ? t : (TimeSpan?)null;
+                var (venueTime, venueName, venueCountry) = ParseVenueDetails(venueText);
+                if (!offTime.HasValue && venueTime.HasValue)
+                {
+                    offTime = venueTime;
+                }
+                var parsedRaceDate = ParseEventDate(eventDateText, DateTime.Today);
                 Console.WriteLine($"\tScraping market {marketId} - {title}");
 
                 try
@@ -74,7 +83,11 @@ namespace HorseRacingML.Scraping
                         MarketId = marketId,
                         OffTime = offTime,
                         Title = title,
-                        RaceDate = DateTime.Today
+                        RaceDate = parsedRaceDate ?? DateTime.Today,
+                        VenueName = venueName,
+                        VenueCountry = venueCountry,
+                        EventDateText = string.IsNullOrWhiteSpace(eventDateText) ? null : eventDateText.Trim(),
+                        RaceDetails = string.IsNullOrWhiteSpace(raceDetailsText) ? null : raceDetailsText.Trim()
                     };
                     lock (_repoLock)
                     {
@@ -118,12 +131,15 @@ namespace HorseRacingML.Scraping
                     var js = (IJavaScriptExecutor)driver;
                     var elementData = (IDictionary<string, object>)js.ExecuteScript(@"
                         const row = arguments[0];
-                        const q = s => row.querySelector(s)?.innerText.trim() ?? '';
+                        const q = s => {
+                            const el = row.querySelector(s);
+                            return el ? el.textContent.trim() : '';
+                        };
                         return {
                             cloth: q('.runner-number'),
                             draw: q('.draw'),
-                            horse: q('.runner-name .runner-name'),
-                            jockey: q('.jockey-name'),
+                            horse: q('.name .runner-name'),
+                            jockey: q('.name .jockey-name'),
                             back1: q('.bet-button.back-selection-button.back-1 .bet-button-price'),
                             back2: q('.bet-button.back-selection-button.back-2 .bet-button-price'),
                             back3: q('.bet-button.back-selection-button.back-3 .bet-button-price'),
@@ -172,6 +188,102 @@ namespace HorseRacingML.Scraping
                     }
                 }
             });
+        }
+        private static (TimeSpan? Time, string? Venue, string? Country) ParseVenueDetails(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return (null, null, null);
+            }
+
+            var trimmed = text.Trim();
+            var match = Regex.Match(trimmed, @"^(?<time>\d{1,2}:\d{2})\s+(?<venue>.*?)(?:\s+\((?<country>[A-Z]{2,})\))?$");
+
+            if (match.Success)
+            {
+                TimeSpan? parsedTime = null;
+                if (TimeSpan.TryParse(match.Groups["time"].Value, out var ts))
+                {
+                    parsedTime = ts;
+                }
+
+                var venueName = match.Groups["venue"].Value.Trim();
+                var country = match.Groups["country"].Success ? match.Groups["country"].Value.Trim() : null;
+
+                return (parsedTime, string.IsNullOrWhiteSpace(venueName) ? null : venueName, country);
+            }
+
+            return (null, trimmed, null);
+        }
+
+        private static DateTime? ParseEventDate(string text, DateTime today)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return null;
+            }
+
+            var trimmed = text.Trim();
+            var tokens = trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            string? dayToken = null;
+            string? monthToken = null;
+            string? yearToken = null;
+
+            foreach (var token in tokens)
+            {
+                var clean = token.Trim();
+                if (dayToken == null && int.TryParse(clean, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
+                {
+                    dayToken = clean;
+                    continue;
+                }
+
+                if (dayToken != null && monthToken == null)
+                {
+                    monthToken = clean.TrimEnd(',', '.');
+                    continue;
+                }
+
+                if (dayToken != null && monthToken != null && yearToken == null && int.TryParse(clean, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
+                {
+                    yearToken = clean;
+                    break;
+                }
+            }
+
+            if (dayToken != null && monthToken != null)
+            {
+                var hasExplicitYear = int.TryParse(yearToken, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedYear);
+                var candidateYear = hasExplicitYear ? parsedYear : today.Year;
+                var formats = new[] { "d MMM yyyy", "dd MMM yyyy", "d MMMM yyyy", "dd MMMM yyyy" };
+
+                foreach (var format in formats)
+                {
+                    if (DateTime.TryParseExact($"{dayToken} {monthToken} {candidateYear}", format, CultureInfo.InvariantCulture, DateTimeStyles.None, out var candidate))
+                    {
+                        candidate = candidate.Date;
+                        if (!hasExplicitYear)
+                        {
+                            if (candidate < today.AddDays(-7))
+                            {
+                                candidate = candidate.AddYears(1);
+                            }
+                            else if (candidate > today.AddDays(200))
+                            {
+                                candidate = candidate.AddYears(-1);
+                            }
+                        }
+                        return candidate;
+                    }
+                }
+            }
+
+            if (DateTime.TryParse(trimmed, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out var fallback))
+            {
+                return fallback.Date;
+            }
+
+            return null;
         }
         private static string TextOrEmpty(IWebDriver d, By by)
         {

@@ -84,6 +84,10 @@ namespace HorseRacingML.Models
         public DateTime? RaceDate { get; set; }
         public TimeSpan? OffTime { get; set; }
         public string? Title { get; set; }
+        public string? VenueName { get; set; }
+        public string? VenueCountry { get; set; }
+        public string? EventDateText { get; set; }
+        public string? RaceDetails { get; set; }
     }
 
     public class RunnerFlow

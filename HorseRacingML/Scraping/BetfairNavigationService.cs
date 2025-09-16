@@ -25,7 +25,6 @@ public class BetfairNavigationService : IDisposable
 
         var options = new ChromeOptions();
         options.AddArguments(
-            "--headless=new",
             "--disable-extensions",
             "--blink-settings=imagesEnabled=false",
             "--disable-gpu",
