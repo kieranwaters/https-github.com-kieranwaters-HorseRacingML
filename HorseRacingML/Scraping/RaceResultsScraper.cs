@@ -673,6 +673,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Xml;
+using System.Collections.Concurrent;
 
 namespace HorseRacingML.Scraping
 {
@@ -823,14 +824,20 @@ namespace HorseRacingML.Scraping
                 return;
             }
 
-            var sessionResults = new List<RunnerResult>();
-            foreach (var raceUrl in raceLinks)
+            var resultsBag = new ConcurrentBag<RunnerResult>();
+            using var semaphore = new SemaphoreSlim(MaxConcurrentRequests);
+
+            var raceTasks = raceLinks.Select(async raceUrl =>
             {
+                await semaphore.WaitAsync();
                 try
                 {
                     var (raceDoc, raceHtml) = await LoadDocumentAsync(new Uri(raceUrl));
                     var results = ParseRacePage(raceDoc, raceHtml, date);
-                    sessionResults.AddRange(results);
+                    foreach (var result in results)
+                    {
+                        resultsBag.Add(result);
+                    }
                 }
                 catch (HttpRequestException ex)
                 {
@@ -844,11 +851,17 @@ namespace HorseRacingML.Scraping
                 {
                     Console.Error.WriteLine($"[Skip Race] {date:yyyy-MM-dd} {raceUrl}: {ex.Message}");
                 }
-            }
+                finally
+                {
+                    semaphore.Release();
+                }
+            }).ToArray();
 
-            if (sessionResults.Count > 0)
+            await Task.WhenAll(raceTasks);
+
+            if (!resultsBag.IsEmpty)
             {
-                _repo.BulkInsertRunnerResults(sessionResults);
+                _repo.BulkInsertRunnerResults(resultsBag.ToList());
             }
         }
 
