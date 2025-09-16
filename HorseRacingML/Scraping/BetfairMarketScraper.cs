@@ -67,6 +67,8 @@ namespace HorseRacingML.Scraping
                 var eventDateText = TextOrEmpty(driver, By.CssSelector(".event-date"));
                 var raceDetailsText = TextOrEmpty(driver, By.CssSelector(".market-name"));
                 var offTimeText = TextOrEmpty(driver, By.CssSelector("[data-testid='startTime']"));
+                var backBookText = TextOrEmpty(driver, By.CssSelector(".rh-back-book-percentage-label"));
+                var layBookText = TextOrEmpty(driver, By.CssSelector(".rh-lay-book-percentage-label"));
                 TimeSpan? offTime = TimeSpan.TryParse(offTimeText, out var t) ? t : (TimeSpan?)null;
                 var (venueTime, venueName, venueCountry) = ParseVenueDetails(venueText);
                 if (!offTime.HasValue && venueTime.HasValue)
@@ -74,6 +76,8 @@ namespace HorseRacingML.Scraping
                     offTime = venueTime;
                 }
                 var parsedRaceDate = ParseEventDate(eventDateText, DateTime.Today);
+                var backBookPercentage = ParsePercentage(backBookText);
+                var layBookPercentage = ParsePercentage(layBookText);
                 Console.WriteLine($"\tScraping market {marketId} - {title}");
 
                 try
@@ -87,7 +91,9 @@ namespace HorseRacingML.Scraping
                         VenueName = venueName,
                         VenueCountry = venueCountry,
                         EventDateText = string.IsNullOrWhiteSpace(eventDateText) ? null : eventDateText.Trim(),
-                        RaceDetails = string.IsNullOrWhiteSpace(raceDetailsText) ? null : raceDetailsText.Trim()
+                        RaceDetails = string.IsNullOrWhiteSpace(raceDetailsText) ? null : raceDetailsText.Trim(),
+                        BackBookPercentage = backBookPercentage,
+                        LayBookPercentage = layBookPercentage
                     };
                     lock (_repoLock)
                     {
@@ -189,6 +195,24 @@ namespace HorseRacingML.Scraping
                 }
             });
         }
+        private static decimal? ParsePercentage(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return null;
+            }
+
+            var cleaned = text.Trim();
+            if (cleaned.EndsWith("%", StringComparison.Ordinal))
+            {
+                cleaned = cleaned[..^1];
+            }
+
+            cleaned = cleaned.Replace("%", string.Empty);
+
+            return ParseDecimal(cleaned);
+        }
+
         private static (TimeSpan? Time, string? Venue, string? Country) ParseVenueDetails(string text)
         {
             if (string.IsNullOrWhiteSpace(text))

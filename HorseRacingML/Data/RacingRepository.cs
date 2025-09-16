@@ -183,8 +183,8 @@ namespace HorseRacingML.Data
         public void InsertRaceScreen(RaceScreen screen)
         {
             const string sql = @"
-INSERT INTO RaceScreen(MarketId, RaceDate, OffTime, Title, VenueName, VenueCountry, EventDateText, RaceDetails)
-VALUES(@MarketId, @RaceDate, @OffTime, @Title, @VenueName, @VenueCountry, @EventDateText, @RaceDetails);";
+INSERT INTO RaceScreen(MarketId, RaceDate, OffTime, Title, VenueName, VenueCountry, EventDateText, RaceDetails, BackBookPercentage, LayBookPercentage)
+VALUES(@MarketId, @RaceDate, @OffTime, @Title, @VenueName, @VenueCountry, @EventDateText, @RaceDetails, @BackBookPercentage, @LayBookPercentage);";
             using var conn = OpenConnection();
             conn.Execute(sql, screen);
         }
