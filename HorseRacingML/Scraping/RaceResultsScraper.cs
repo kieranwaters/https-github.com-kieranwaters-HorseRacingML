@@ -674,6 +674,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Xml;
 using System.Collections.Concurrent;
+using System.Xml.XPath;
 
 namespace HorseRacingML.Scraping
 {
@@ -1741,13 +1742,8 @@ namespace HorseRacingML.Scraping
 
         private IEnumerable<RunnerResult> ParseRacePage(HtmlDocument doc, string rawHtml, DateTime defaultDate)
         {
-            var rows = doc.DocumentNode.SelectNodes("//*[contains(@class,'ResultRunner__StyledResultRunnerWrapper')]");
-            if (rows == null || rows.Count == 0)
-            {
-                rows = doc.DocumentNode.SelectNodes("//*[@data-test-id='result-runner']");
-            }
-
-            if (rows == null || rows.Count == 0)
+            var rows = FindRunnerRows(doc);
+            if (rows.Count == 0)
             {
                 return Array.Empty<RunnerResult>();
             }
@@ -1873,13 +1869,37 @@ namespace HorseRacingML.Scraping
             foreach (var row in rows)
             {
                 var posRaw = HtmlText(row, ".//*[@data-test-id='position-no']", ".//*[contains(@class,'position-no')]");
+                if (string.IsNullOrWhiteSpace(posRaw))
+                {
+                    posRaw = HtmlTextByAttributeContains(row, "data-test-id", "position", "pos");
+                }
+                if (string.IsNullOrWhiteSpace(posRaw))
+                {
+                    posRaw = HtmlTextByAttributeContains(row, "class", "position", "pos");
+                }
                 var finishPos = TryParseOrdinalInt(posRaw);
                 var outcome = finishPos.HasValue ? string.Empty : ParseOutcomeCode(posRaw);
 
                 var cloth = HtmlText(row, ".//*[@data-test-id='saddle-cloth-no']");
+                if (string.IsNullOrWhiteSpace(cloth))
+                {
+                    cloth = HtmlTextByAttributeContains(row, "data-test-id", "saddle", "cloth", "number");
+                }
+                if (string.IsNullOrWhiteSpace(cloth))
+                {
+                    cloth = HtmlTextByAttributeContains(row, "class", "saddle", "cloth", "number");
+                }
                 var saddle = TryParseByte(cloth);
 
                 var drawRaw = HtmlText(row, ".//*[@data-test-id='stall-no']");
+                if (string.IsNullOrWhiteSpace(drawRaw))
+                {
+                    drawRaw = HtmlTextByAttributeContains(row, "data-test-id", "stall", "draw", "gate");
+                }
+                if (string.IsNullOrWhiteSpace(drawRaw))
+                {
+                    drawRaw = HtmlTextByAttributeContains(row, "class", "stall", "draw", "gate");
+                }
                 var stall = TryParseByteLoose(drawRaw);
 
                 var horseName = HtmlText(row, ".//a[contains(@href,'/racing/profiles/horse/')]");
@@ -1889,10 +1909,39 @@ namespace HorseRacingML.Scraping
                 }
                 if (string.IsNullOrWhiteSpace(horseName))
                 {
+                    horseName = HtmlTextByAttributeContains(row, "data-test-id", "horse-name", "runner-name", "horse");
+                }
+                if (string.IsNullOrWhiteSpace(horseName))
+                {
+                    var fallbackLinks = row.SelectNodes(".//a[contains(@href,'/racing/')]");
+                    if (fallbackLinks != null)
+                    {
+                        foreach (var link in fallbackLinks)
+                        {
+                            var href = link.GetAttributeValue("href", string.Empty);
+                            if (href.IndexOf("trainer", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                href.IndexOf("jockey", StringComparison.OrdinalIgnoreCase) >= 0)
+                            {
+                                continue;
+                            }
+
+                            var text = Normalize(link.InnerText ?? string.Empty);
+                            if (!string.IsNullOrWhiteSpace(text))
+                            {
+                                horseName = text;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (string.IsNullOrWhiteSpace(horseName))
+                {
                     continue;
                 }
 
-                var subInfo = row.SelectSingleNode(".//*[@data-test-id='horse-sub-info']");
+                var subInfo = row.SelectSingleNode(".//*[@data-test-id='horse-sub-info']")
+                    ?? row.SelectSingleNode(".//*[@data-test-id][contains(translate(@data-test-id,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'sub-info')]")
+                    ?? row.SelectSingleNode(".//*[contains(translate(@class,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'sub-info')]");
                 string ageTxt = string.Empty;
                 string weightTxt = string.Empty;
                 if (subInfo != null)
@@ -1930,10 +1979,26 @@ namespace HorseRacingML.Scraping
                 {
                     spFrac = HtmlText(row, ".//*[@data-test-id='sp-odds']");
                 }
+                if (string.IsNullOrWhiteSpace(spFrac))
+                {
+                    spFrac = HtmlTextByAttributeContains(row, "data-test-id", "sp", "odds", "price");
+                }
+                if (string.IsNullOrWhiteSpace(spFrac))
+                {
+                    spFrac = HtmlTextByAttributeContains(row, "class", "sp", "odds", "price");
+                }
                 var spDec = FractionToDecimal(spFrac);
                 var favTag = ExtractFavouriteTag(spFrac);
 
                 var beatenTxt = HtmlText(row, ".//*[contains(@class,'StyledFinishDistance')]", ".//*[@data-test-id='finish-distance']");
+                if (string.IsNullOrWhiteSpace(beatenTxt))
+                {
+                    beatenTxt = HtmlTextByAttributeContains(row, "data-test-id", "distance", "beaten");
+                }
+                if (string.IsNullOrWhiteSpace(beatenTxt))
+                {
+                    beatenTxt = HtmlTextByAttributeContains(row, "class", "distance", "beaten");
+                }
                 var beatenLen = ParseBeatenLengths(beatenTxt);
 
                 var rowText = Normalize(row.InnerText ?? string.Empty);
@@ -1941,7 +2006,14 @@ namespace HorseRacingML.Scraping
                 var (tchLow, tchHigh) = ExtractTouchedTokens(rowText);
 
                 var comment = HtmlText(row, ".//*[@data-test-id='ride-description']", ".//*[contains(@class,'StyledRideDescription')]");
-
+                if (string.IsNullOrWhiteSpace(comment))
+                {
+                    comment = HtmlTextByAttributeContains(row, "data-test-id", "comment", "summary", "verdict", "analysis");
+                }
+                if (string.IsNullOrWhiteSpace(comment))
+                {
+                    comment = HtmlTextByAttributeContains(row, "class", "comment", "summary", "verdict", "analysis");
+                }
                 var trainerId = string.IsNullOrWhiteSpace(trainer) ? (int?)null : _repo.InsertTrainer(new Trainer { Name = trainer });
                 var jockeyId = string.IsNullOrWhiteSpace(jockey) ? (int?)null : _repo.InsertJockey(new Jockey { Name = jockey });
                 var horseId = _repo.InsertHorse(new Horse { Name = horseName });
@@ -1974,6 +2046,154 @@ namespace HorseRacingML.Scraping
             }
 
             return results;
+        }
+        private static List<HtmlNode> FindRunnerRows(HtmlDocument doc)
+        {
+            var result = new List<HtmlNode>();
+            var seen = new HashSet<HtmlNode>();
+
+            string[] selectors =
+            {
+                "//*[contains(@class,'ResultRunner__StyledResultRunnerWrapper')]",
+                "//*[@data-test-id='result-runner']",
+                "//*[@data-test-id='race-result-runner']",
+                "//*[@data-test-id='racecard-result-runner']",
+                "//*[@data-test-id='result-runner-row']",
+                "//*[@data-test-id='full-result-runner']",
+                "//*[@data-test-id='result-runner-item']",
+                "//*[contains(@data-test-id,'result-runner')]",
+                "//*[contains(@class,'ResultRunner')]",
+                "//*[contains(@class,'result-runner')]",
+                "//*[contains(@class,'RaceResultRunner')]",
+                "//*[contains(@data-test-id,'runner-row')]",
+                "//*[contains(@data-test-id,'result-row')]",
+                "//*[contains(@class,'result-row')]"
+            };
+
+            foreach (var selector in selectors)
+            {
+                HtmlNodeCollection? nodes = null;
+                try
+                {
+                    nodes = doc.DocumentNode.SelectNodes(selector);
+                }
+                catch (XPathException)
+                {
+                    continue;
+                }
+
+                if (nodes == null) continue;
+
+                foreach (var node in nodes)
+                {
+                    if (node == null) continue;
+
+                    if (result.Any(existing => existing != null && !ReferenceEquals(existing, node) && existing.Ancestors().Contains(node)))
+                    {
+                        continue;
+                    }
+
+                    if (!seen.Add(node))
+                    {
+                        continue;
+                    }
+
+                    result.Add(node);
+                }
+            }
+
+            if (result.Count == 0)
+            {
+                var tableRows = doc.DocumentNode.SelectNodes("//tr[.//a[contains(@href,'/racing/profiles/horse/')]]");
+                if (tableRows != null)
+                {
+                    foreach (var row in tableRows)
+                    {
+                        if (row == null) continue;
+                        if (!seen.Add(row)) continue;
+                        result.Add(row);
+                    }
+                }
+            }
+
+            if (result.Count > 1)
+            {
+                result = result
+                    .Where(node => node != null && !result.Any(other => other != null && !ReferenceEquals(other, node) && other.Ancestors().Contains(node)))
+                    .ToList();
+            }
+
+            result = result
+                .Where(node => node != null && NodeContainsHorseCandidate(node))
+                .ToList();
+
+            return result;
+        }
+
+        private static bool NodeContainsHorseCandidate(HtmlNode node)
+        {
+            if (node.SelectSingleNode(".//a[contains(@href,'/racing/profiles/horse/')]") != null)
+            {
+                return true;
+            }
+
+            foreach (var descendant in node.Descendants())
+            {
+                var dataId = descendant.GetAttributeValue("data-test-id", string.Empty);
+                if (!string.IsNullOrWhiteSpace(dataId) &&
+                    (dataId.IndexOf("horse", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                     dataId.IndexOf("runner", StringComparison.OrdinalIgnoreCase) >= 0))
+                {
+                    return true;
+                }
+
+                var classAttr = descendant.GetAttributeValue("class", string.Empty);
+                if (!string.IsNullOrWhiteSpace(classAttr) &&
+                    (classAttr.IndexOf("horse", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                     classAttr.IndexOf("runner", StringComparison.OrdinalIgnoreCase) >= 0))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+        private static string HtmlTextByAttributeContains(HtmlNode node, string attributeName, params string[] tokens)
+        {
+            if (tokens == null || tokens.Length == 0) return string.Empty;
+
+            foreach (var current in EnumerateNodeAndDescendants(node))
+            {
+                var attr = current.GetAttributeValue(attributeName, string.Empty);
+                if (string.IsNullOrWhiteSpace(attr)) continue;
+
+                foreach (var token in tokens)
+                {
+                    if (attr.IndexOf(token, StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        var text = Normalize(current.InnerText ?? string.Empty);
+                        if (!string.IsNullOrWhiteSpace(text))
+                        {
+                            return text;
+                        }
+                    }
+                }
+            }
+
+            return string.Empty;
+        }
+
+        private static IEnumerable<HtmlNode> EnumerateNodeAndDescendants(HtmlNode node)
+        {
+            yield return node;
+
+            foreach (var child in node.ChildNodes)
+            {
+                foreach (var descendant in EnumerateNodeAndDescendants(child))
+                {
+                    yield return descendant;
+                }
+            }
         }
 
         private static string HtmlText(HtmlNode node, params string[] xpaths)
@@ -2180,6 +2400,25 @@ namespace HorseRacingML.Scraping
                 {
                     jockey = Normalize(nameSpans[1].InnerText ?? string.Empty);
                 }
+            }
+            if (string.IsNullOrWhiteSpace(trainer))
+            {
+                trainer = HtmlTextByAttributeContains(row, "data-test-id", "trainer");
+            }
+
+            if (string.IsNullOrWhiteSpace(jockey))
+            {
+                jockey = HtmlTextByAttributeContains(row, "data-test-id", "jockey");
+            }
+
+            if (string.IsNullOrWhiteSpace(trainer))
+            {
+                trainer = HtmlTextByAttributeContains(row, "class", "trainer");
+            }
+
+            if (string.IsNullOrWhiteSpace(jockey))
+            {
+                jockey = HtmlTextByAttributeContains(row, "class", "jockey");
             }
 
             if (string.IsNullOrWhiteSpace(trainer) || string.IsNullOrWhiteSpace(jockey))
