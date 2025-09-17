@@ -7,6 +7,7 @@ using OpenQA.Selenium.Chrome;
 using OpenQA.Selenium.Support.UI;
 using SeleniumExtras.WaitHelpers;
 using HorseRacingML.Data;
+using HorseRacingML.Models;
 
 namespace HorseRacingML.Scraping;
 
@@ -17,11 +18,15 @@ public class BetfairNavigationService : IDisposable
     private readonly string _username;
     private readonly string _password;
     private readonly IWebDriver _driver;
+    private readonly decimal _bankroll;
+    private readonly decimal? _maxKellyFraction;
 
     public BetfairNavigationService(IConfiguration config)
     {
         _username = config["Betfair:Username"] ?? HardCodedUsername;
         _password = config["Betfair:Password"] ?? HardCodedPassword;
+        _bankroll = config.GetValue<decimal?>("Betting:Bankroll") ?? 100m;
+        _maxKellyFraction = config.GetValue<decimal?>("Betting:MaxKellyFraction");
 
         var options = new ChromeOptions();
         options.AddArguments(
@@ -34,10 +39,10 @@ public class BetfairNavigationService : IDisposable
     }
 
     public IWebDriver Driver => _driver;
-    public void ScrapeOpenRaceTabs(RacingRepository repo)
+    public IReadOnlyList<BetRecommendation> ScrapeOpenRaceTabs(RacingRepository repo)
     {
-        var scraper = new BetfairMarketScraper(repo);
-        scraper.ScrapeOpenRaceTabs(_driver);
+        var scraper = new BetfairMarketScraper(repo, _bankroll, _maxKellyFraction);
+        return scraper.ScrapeOpenRaceTabs(_driver);
     }
     public async Task LoginAsync()
     {

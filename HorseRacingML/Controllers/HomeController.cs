@@ -5,6 +5,8 @@ using HorseRacingML.Services;
 using Microsoft.AspNetCore.Mvc;
 using System.Diagnostics;
 using System.Threading.Tasks;
+using System.Globalization;
+using System.Linq;
 
 namespace HorseRacingML.Controllers
 {
@@ -30,6 +32,40 @@ namespace HorseRacingML.Controllers
                 LogLoss = logLoss
             };
             return View(model);
+        }
+        public async Task<IActionResult> AutomateBets([FromServices] BetfairNavigationService betfair)
+        {
+            await betfair.LoginAsync();
+            await betfair.OpenHorseRaceMeetingsInNewTabsAsync();
+            var recommendations = betfair.ScrapeOpenRaceTabs(_repository);
+            if (recommendations.Count > 0)
+            {
+                var best = recommendations
+                    .OrderByDescending(r => r.Differential)
+                    .ThenByDescending(r => r.KellyFraction)
+                    .First();
+
+                var horse = string.IsNullOrWhiteSpace(best.HorseName) ? "selection" : best.HorseName;
+                var race = string.IsNullOrWhiteSpace(best.RaceTitle) ? "race" : best.RaceTitle;
+                var venue = string.IsNullOrWhiteSpace(best.VenueName) ? string.Empty : $" at {best.VenueName}";
+                var odds = best.DecimalOdds.ToString("0.00", CultureInfo.InvariantCulture);
+                var aiProb = (best.AiProbability * 100).ToString("0.##", CultureInfo.InvariantCulture);
+                var marketProb = (best.MarketProbability * 100).ToString("0.##", CultureInfo.InvariantCulture);
+                var diff = (best.Differential * 100).ToString("0.##", CultureInfo.InvariantCulture);
+                var stake = best.Stake.ToString("0.##", CultureInfo.InvariantCulture);
+                var kelly = (best.KellyFraction * 100m).ToString("0.##", CultureInfo.InvariantCulture);
+
+                var message = $"Best value bet: {horse}{venue} ({race}) – odds {odds}, AI win {aiProb}% vs market {marketProb}% (diff {diff}%). Kelly stake {stake} ({kelly}% bankroll).";
+                TempData["Message"] = message;
+                _status.Update(message);
+            }
+            else
+            {
+                const string message = "No positive expected value opportunities were found while scanning markets.";
+                TempData["Message"] = message;
+                _status.Update(message);
+            }
+            return RedirectToAction("Index");
         }
         [HttpGet]
         public IActionResult ScrapeRaceResults([FromServices] RaceResultsScraper scraper)
@@ -60,14 +96,6 @@ namespace HorseRacingML.Controllers
         public IActionResult Privacy()
         {
             return View();
-        }
-        public async Task<IActionResult> AutomateBets([FromServices] BetfairNavigationService betfair)
-        {
-            await betfair.LoginAsync();
-            // TODO: add bet placement automation here
-            await betfair.OpenHorseRaceMeetingsInNewTabsAsync();
-            betfair.ScrapeOpenRaceTabs(_repository);
-            return RedirectToAction("Index");
         }
         [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
         public IActionResult Error()

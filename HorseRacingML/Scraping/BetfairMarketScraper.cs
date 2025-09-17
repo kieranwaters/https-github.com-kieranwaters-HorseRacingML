@@ -10,6 +10,7 @@ using HorseRacingML.Models;
 using System.Collections.Generic;
 using HorseRacingML.ML;
 using System.IO;
+using System.Collections.Concurrent;
 
 namespace HorseRacingML.Scraping
 {
@@ -17,17 +18,21 @@ namespace HorseRacingML.Scraping
     {
         private readonly RacingRepository _repo;
         private readonly object _repoLock = new();
-
-        public BetfairMarketScraper(RacingRepository repo)
+        private readonly decimal _bankroll;
+        private readonly decimal? _maxKellyFraction;
+        public BetfairMarketScraper(RacingRepository repo, decimal bankroll, decimal? maxKellyFraction = null)
         {
             _repo = repo;
+            _bankroll = bankroll;
+            _maxKellyFraction = maxKellyFraction;
         }
-        public void ScrapeOpenRaceTabs(IWebDriver driver)
+        public IReadOnlyList<BetRecommendation> ScrapeOpenRaceTabs(IWebDriver driver)
         {
             var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10));
             var handles = driver.WindowHandles.ToList();
             var weightPath = Path.Combine(AppContext.BaseDirectory, "aiweights.json");
             var aiCalculator = new AIOddsCalculator(weightPath);
+            var recommendations = new ConcurrentBag<BetRecommendation>();
             Parallel.ForEach(handles, handle =>
             {
                 driver.SwitchTo().Window(handle);
@@ -195,6 +200,16 @@ namespace HorseRacingML.Scraping
                 }
 
                 NormalizeAiOdds(flows);
+                var recommendation = CreateRecommendation(flows, marketId, title, venueName, parsedRaceDate);
+                if (recommendation != null)
+                {
+                    recommendations.Add(recommendation);
+                    Console.WriteLine($"\tKelly stake {recommendation.Stake.ToString("0.##", CultureInfo.InvariantCulture)} on {recommendation.HorseName ?? "unknown"} (diff {recommendation.Differential.ToString("0.####", CultureInfo.InvariantCulture)})");
+                }
+                else
+                {
+                    Console.WriteLine($"\tNo positive value opportunity identified for market {marketId}");
+                }
 
                 foreach (var flow in flows)
                 {
@@ -213,6 +228,114 @@ namespace HorseRacingML.Scraping
                     }
                 }
             });
+            return recommendations
+                .OrderByDescending(r => r.Differential)
+                .ThenByDescending(r => r.KellyFraction)
+                .ToList();
+        }
+        private BetRecommendation? CreateRecommendation(
+            IEnumerable<RunnerFlow> flows,
+            string marketId,
+            string? raceTitle,
+            string? venueName,
+            DateTime? raceDate)
+        {
+            if (_bankroll <= 0m)
+            {
+                return null;
+            }
+
+            var best = flows
+                .Where(f => f.AiOdds.HasValue && f.BackPrice1.HasValue && f.BackPrice1.Value > 1m)
+                .Select(f => new
+                {
+                    Flow = f,
+                    DecimalOdds = f.BackPrice1!.Value,
+                    AiProbability = f.AiOdds!.Value,
+                    MarketProbability = 1.0 / (double)f.BackPrice1!.Value,
+                })
+                .Select(x => new
+                {
+                    x.Flow,
+                    x.DecimalOdds,
+                    x.AiProbability,
+                    x.MarketProbability,
+                    Differential = x.AiProbability - x.MarketProbability
+                })
+                .OrderByDescending(x => x.Differential)
+                .FirstOrDefault();
+
+            if (best == null || best.Differential <= 0)
+            {
+                return null;
+            }
+
+            var kellyFraction = CalculateKellyFraction(best.AiProbability, (double)best.DecimalOdds);
+            if (kellyFraction <= 0)
+            {
+                return null;
+            }
+
+            var stake = _bankroll * kellyFraction;
+            if (stake <= 0)
+            {
+                return null;
+            }
+
+            return new BetRecommendation
+            {
+                MarketId = marketId,
+                SelectionId = best.Flow.SelectionId,
+                HorseName = best.Flow.HorseName,
+                RaceTitle = raceTitle,
+                VenueName = venueName,
+                RaceDate = raceDate,
+                DecimalOdds = best.DecimalOdds,
+                AiProbability = best.AiProbability,
+                MarketProbability = best.MarketProbability,
+                Differential = best.Differential,
+                KellyFraction = kellyFraction,
+                Stake = stake
+            };
+        }
+        private decimal CalculateKellyFraction(double probability, double decimalOdds)
+        {
+            if (probability <= 0 || probability >= 1 || decimalOdds <= 1)
+            {
+                return 0m;
+            }
+
+            var b = decimalOdds - 1.0;
+            if (Math.Abs(b) < double.Epsilon)
+            {
+                return 0m;
+            }
+
+            var q = 1.0 - probability;
+            var fraction = (b * probability - q) / b;
+
+            if (!double.IsFinite(fraction))
+            {
+                return 0m;
+            }
+
+            var result = (decimal)fraction;
+            if (result < 0m)
+            {
+                result = 0m;
+            }
+
+            if (_maxKellyFraction.HasValue && result > _maxKellyFraction.Value)
+            {
+                result = _maxKellyFraction.Value;
+            }
+
+            if (result > 1m)
+            {
+                result = 1m;
+            }
+
+            return result;
         }
         private static void NormalizeAiOdds(ICollection<RunnerFlow> flows)
         {
