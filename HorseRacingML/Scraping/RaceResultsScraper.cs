@@ -384,6 +384,11 @@ namespace HorseRacingML.Scraping
             if (string.IsNullOrWhiteSpace(runners) && meta.TryGetValue("runners", out var r1)) runners = r1; // runners
             if (string.IsNullOrWhiteSpace(offTime) && meta.TryGetValue("off", out var o1)) offTime = o1; // off time
             if (string.IsNullOrWhiteSpace(winTime) && meta.TryGetValue("win", out var w1)) winTime = w1; // winning time
+            if (!classVal.HasValue && meta.TryGetValue("class", out var c1))
+            {
+                var mClassToken = System.Text.RegularExpressions.Regex.Match(c1, @"\d+");
+                if (mClassToken.Success) classVal = byte.Parse(mClassToken.Value);
+            }
             if (!classVal.HasValue) classVal = ExtractClass(metaLine); // class
             if (string.IsNullOrWhiteSpace(surface)) surface = InferSurface(metaLine); // surface guess
 
@@ -585,19 +590,56 @@ namespace HorseRacingML.Scraping
 
             foreach (var p in parts)
             {
-                var t = p.Trim();
+                if (string.IsNullOrEmpty(t)) continue;
+                var clean = CleanMetaValue(t);
 
-                if (t.Contains("YO", StringComparison.OrdinalIgnoreCase)) r["age"] = t; // age
-                else if (t.Contains("Runners", StringComparison.OrdinalIgnoreCase)) r["runners"] = t; // runners
-                else if (t.StartsWith("Off time", StringComparison.OrdinalIgnoreCase)) r["off"] = t.Split(':', 2)[1].Trim(); // off time
-                else if (t.StartsWith("Winning time", StringComparison.OrdinalIgnoreCase)) r["win"] = t.Split(':', 2)[1].Trim(); // win time
-                else if (IsGoingToken(t)) r["going"] = t; // going
-                else if (HasDistanceToken(t)) r["dist"] = t; // distance
+                if (t.Contains("YO", StringComparison.OrdinalIgnoreCase)) r["age"] = clean; // age
+                else if (t.Contains("Runners", StringComparison.OrdinalIgnoreCase)) r["runners"] = clean; // runners
+                else if (t.StartsWith("Off time", StringComparison.OrdinalIgnoreCase)) r["off"] = CleanMetaValue(t.Split(':', 2)[1]); // off time
+                else if (t.StartsWith("Winning time", StringComparison.OrdinalIgnoreCase)) r["win"] = CleanMetaValue(t.Split(':', 2)[1]); // win time
+                else if (System.Text.RegularExpressions.Regex.IsMatch(t, @"\bClass\s*\d", System.Text.RegularExpressions.RegexOptions.IgnoreCase)) r["class"] = clean; // class token
+                else if (IsGoingToken(t)) r["going"] = clean; // going
+                else if (HasDistanceToken(t)) r["dist"] = clean; // distance
             }
 
             return r;
         }
+        private static string CleanMetaValue(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return "";
+            value = value.Trim();
+            value = value.TrimEnd('.', ';', ',');
+            return value;
+        }
+        private static int? ParseWinningMs(string? t)
+        {
+            if (string.IsNullOrWhiteSpace(t) || t == "-") return null; // "1m 15.11s" or "59.87s"
+            try
+            {
+                t = t.Trim();
+                var match = System.Text.RegularExpressions.Regex.Match(t, @"([0-9]+m\s*[0-9.]+s|[0-9.]+s)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (match.Success) t = match.Groups[1].Value;
+                t = t.Trim().TrimEnd('.', ';', ',');
 
+                double seconds = 0;
+                if (t.Contains('m'))
+                {
+                    var parts = t.Split('m', 2, StringSplitOptions.TrimEntries);
+                    if (parts.Length != 2) return null;
+                    var mins = int.Parse(parts[0], CultureInfo.InvariantCulture);
+                    var secsText = parts[1].Trim().TrimEnd('s', 'S');
+                    var secs = double.Parse(secsText, CultureInfo.InvariantCulture);
+                    seconds = mins * 60 + secs;
+                }
+                else
+                {
+                    var secsText = t.TrimEnd('s', 'S');
+                    seconds = double.Parse(secsText, CultureInfo.InvariantCulture);
+                }
+                return (int)Math.Round(seconds * 1000.0);
+            }
+            catch { return null; }
+        }
         private static bool IsGoingToken(string s) { if (string.IsNullOrWhiteSpace(s)) return false; var keys = new[] { "Good", "Firm", "Soft", "Heavy", "Standard", "Yielding" }; return keys.Any(k => s.Contains(k, StringComparison.OrdinalIgnoreCase)); } // going marker
 
         private static bool HasDistanceToken(string s)
@@ -619,20 +661,6 @@ namespace HorseRacingML.Scraping
         }
 
         private static TimeSpan? ParseClockTime(string? t) { if (string.IsNullOrWhiteSpace(t)) return null; return TimeSpan.TryParse(t, CultureInfo.InvariantCulture, out var ts) ? ts : null; } // HH:mm
-
-        private static int? ParseWinningMs(string? t)
-        {
-            if (string.IsNullOrWhiteSpace(t) || t == "-") return null; // "1m 15.11s" or "59.87s"
-            try
-            {
-                t = t.Trim(); double seconds = 0;
-                if (t.Contains('m')) { var parts = t.Replace("s", "").Split('m', StringSplitOptions.TrimEntries); var mins = int.Parse(parts[0]); var secs = double.Parse(parts[1], CultureInfo.InvariantCulture); seconds = mins * 60 + secs; }
-                else { seconds = double.Parse(t.TrimEnd('s'), CultureInfo.InvariantCulture); }
-                return (int)Math.Round(seconds * 1000.0);
-            }
-            catch { return null; }
-        }
-
         private static string ParseOutcomeCode(string posText)
         {
             if (string.IsNullOrWhiteSpace(posText)) return ""; var t = posText.Trim().ToUpperInvariant(); var letters = new string(t.Where(char.IsLetter).ToArray()); if (letters.Length == 0) return "";
