@@ -58,7 +58,12 @@ namespace HorseRacingML.ML
             }
 
             var prob = 1.0 / (1.0 + Math.Exp(-z));
-            return prob > 0 ? 1.0 / prob : double.PositiveInfinity;
+            if (double.IsNaN(prob) || double.IsInfinity(prob) || prob < 0)
+            {
+                return 0;
+            }
+
+            return prob;
         }
     }
 }

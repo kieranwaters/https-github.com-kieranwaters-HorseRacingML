@@ -116,6 +116,7 @@ namespace HorseRacingML.Scraping
                     return;
                 }
                 Console.WriteLine($"\tFound {rows.Count} runners for market {marketId}");
+                var flows = new List<RunnerFlow>();
                 foreach (var row in rows)
                 {
                     // Some runner rows nest the data-selection-id on a child element, so
@@ -173,12 +174,30 @@ namespace HorseRacingML.Scraping
                     };
                     try
                     {
-                        flow.AiOdds = aiCalculator.CalculateOdds(flow);
+                        var probability = aiCalculator.CalculateOdds(flow);
+                        if (double.IsFinite(probability) && probability >= 0)
+                        {
+                            flow.AiOdds = probability;
+                        }
+                        else
+                        {
+                            flow.AiOdds = null;
+                            Console.Error.WriteLine($"\tInvalid AI odds calculated for selection {selectionId ?? "unknown"} in market {marketId}");
+                        }
                     }
-                    catch
+                    catch (Exception ex)
                     {
                         flow.AiOdds = null;
+                        Console.Error.WriteLine($"\tFailed to calculate AI odds for selection {selectionId ?? "unknown"} in market {marketId}: {ex.Message}");
                     }
+
+                    flows.Add(flow);
+                }
+
+                NormalizeAiOdds(flows);
+
+                foreach (var flow in flows)
+                {
                     try
                     {
                         lock (_repoLock)
@@ -194,6 +213,34 @@ namespace HorseRacingML.Scraping
                     }
                 }
             });
+        }
+        private static void NormalizeAiOdds(ICollection<RunnerFlow> flows)
+        {
+            var valid = flows
+                .Where(f => f.AiOdds.HasValue && double.IsFinite(f.AiOdds.Value) && f.AiOdds.Value >= 0)
+                .ToList();
+
+            if (valid.Count == 0)
+            {
+                return;
+            }
+
+            var sum = valid.Sum(f => f.AiOdds!.Value);
+
+            if (sum <= double.Epsilon)
+            {
+                var uniform = 1.0 / valid.Count;
+                foreach (var flow in valid)
+                {
+                    flow.AiOdds = uniform;
+                }
+                return;
+            }
+
+            foreach (var flow in valid)
+            {
+                flow.AiOdds = Math.Max(flow.AiOdds!.Value / sum, 0);
+            }
         }
         private static decimal? ParsePercentage(string text)
         {

@@ -192,8 +192,8 @@ VALUES(@MarketId, @RaceDate, @OffTime, @Title, @VenueName, @VenueCountry, @Event
         public void InsertRunnerFlow(RunnerFlow flow)
         {
             const string sql = @"
-INSERT INTO RunnerFlow(MarketId, SelectionId, ClothNumber, Draw, HorseName, JockeyName, BackPrice1, BackPrice2, BackPrice3, LayPrice1, LayPrice2, LayPrice3)
-VALUES(@MarketId, @SelectionId, @ClothNumber, @Draw, @HorseName, @JockeyName, @BackPrice1, @BackPrice2, @BackPrice3, @LayPrice1, @LayPrice2, @LayPrice3);";
+INSERT INTO RunnerFlow(MarketId, SelectionId, ClothNumber, Draw, HorseName, JockeyName, BackPrice1, BackPrice2, BackPrice3, LayPrice1, LayPrice2, LayPrice3, AiOdds)
+VALUES(@MarketId, @SelectionId, @ClothNumber, @Draw, @HorseName, @JockeyName, @BackPrice1, @BackPrice2, @BackPrice3, @LayPrice1, @LayPrice2, @LayPrice3, @AiOdds);";
             using var conn = OpenConnection();
             conn.Execute(sql, flow);
         }
