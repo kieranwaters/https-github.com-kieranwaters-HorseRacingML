@@ -431,21 +431,25 @@ namespace HorseRacingML.Scraping
             DateTime raceDate = ParseDateSafe(dateText) ?? defaultDate; // parsed date
             var raceTitle = TextOrEmpty(driver, By.CssSelector("h1[data-test-id='racecard-race-name'], h1[class*='RacingRacecardSummary__StyledTitle']")); // race title
 
-            string metaLine = TextOrEmpty(driver, By.CssSelector("li[class*='RacingRacecardSummary__StyledAdditionalInfo'], [data-test-id='racecard-additional-info']")); // primary meta
+            string metaLine = CollectMetaLine(driver); // combined meta text
             if (string.IsNullOrWhiteSpace(metaLine))
             {
-                try
+                metaLine = TextOrEmpty(driver, By.CssSelector("li[class*='RacingRacecardSummary__StyledAdditionalInfo'], [data-test-id='racecard-additional-info']")); // primary meta fallback
+                if (string.IsNullOrWhiteSpace(metaLine))
                 {
-                    metaLine = (string)((IJavaScriptExecutor)driver).ExecuteScript("var cand=[\"li[class*='RacingRacecardSummary__StyledAdditionalInfo']\",\"[data-test-id='racecard-additional-info']\",\"[class*='RacingRacecardSummary__StyledAdditionalInfoWrapper']\",\"[data-test-id='race-summary']\",\"[data-test-id='result-additional-info']\"];for(var i=0;i<cand.length;i++){var el=document.querySelector(cand[i]);if(el){return (el.innerText||el.textContent||'');}}return ''"); // scan likely containers
+                    try
+                    {
+                        metaLine = (string)((IJavaScriptExecutor)driver).ExecuteScript("var cand=[\"li[class*='RacingRacecardSummary__StyledAdditionalInfo']\",\"[data-test-id='racecard-additional-info']\",\"[class*='RacingRacecardSummary__StyledAdditionalInfoWrapper']\",\"[data-test-id='race-summary']\",\"[data-test-id='result-additional-info']\"];for(var i=0;i<cand.length;i++){var el=document.querySelector(cand[i]);if(el){return (el.innerText||el.textContent||'');}}return ''"); // scan likely containers
+                    }
+                    catch { metaLine = ""; } // ignore
                 }
-                catch { metaLine = ""; } // ignore
-            }
-            if (string.IsNullOrWhiteSpace(metaLine))
-            {
-                try
+                if (string.IsNullOrWhiteSpace(metaLine))
                 {
-                    metaLine = (string)((IJavaScriptExecutor)driver).ExecuteScript("var w=document.querySelector(\"[data-test-id='race-container']\");return w?(w.innerText||''):''"); // broad section grab
-                }
+                    try
+                    {
+                        metaLine = (string)((IJavaScriptExecutor)driver).ExecuteScript("var w=document.querySelector(\"[data-test-id='race-container']\");return w?(w.innerText||''):''"); // broad section grab
+                    }
+                } 
                 catch { }
             }
             metaLine = Normalize(metaLine.Replace("•", "|").Replace("·", "|")); // normalize bullets
@@ -636,7 +640,30 @@ namespace HorseRacingML.Scraping
             if (results.Count > 0) sessionResults.AddRange(results); // accumulate for bulk insert
             RecordRaceProcessed();
         }
+        private static string CollectMetaLine(IWebDriver driver)
+        {
+            try
+            {
+                var selectors = new[]
+                {
+                    "[data-test-id='race-summary'] li",
+                    "[data-test-id='racecard-additional-info'] li",
+                    "[data-test-id='result-additional-info'] li",
+                    "ul[class*='MainDetailsList'] li",
+                    "li[class*='RacingRacecardSummary__StyledAdditionalInfo']"
+                };
 
+                foreach (var selector in selectors)
+                {
+                    var nodes = driver.FindElements(By.CssSelector(selector));
+                    var parts = nodes.Select(n => Normalize(n.Text)).Where(t => !string.IsNullOrWhiteSpace(t)).ToList();
+                    if (parts.Count > 0) return string.Join(" | ", parts);
+                }
+            }
+            catch { }
+
+            return string.Empty;
+        }
         private static byte? TryParseByteLoose(string? s) { if (string.IsNullOrWhiteSpace(s)) return null; var m = System.Text.RegularExpressions.Regex.Match(s, @"\d+"); return m.Success && byte.TryParse(m.Value, out var v) ? v : (byte?)null; } // handles "(2)", " 2 ", etc.
         private static (string trainer, string jockey) ExtractTrainerJockey(IWebElement row)
         {
@@ -694,14 +721,35 @@ namespace HorseRacingML.Scraping
 
                 if (p.Contains("YO", StringComparison.OrdinalIgnoreCase)) r["age"] = clean; // age
                 else if (p.Contains("Runners", StringComparison.OrdinalIgnoreCase)) r["runners"] = clean; // runners
-                else if (p.StartsWith("Off time", StringComparison.OrdinalIgnoreCase)) r["off"] = CleanMetaValue(p.Split(':', 2)[1]); // off time
-                else if (p.StartsWith("Winning time", StringComparison.OrdinalIgnoreCase)) r["win"] = CleanMetaValue(p.Split(':', 2)[1]); // win time
-                else if (System.Text.RegularExpressions.Regex.IsMatch(p, @"\bClass\s*\d", System.Text.RegularExpressions.RegexOptions.IgnoreCase)) r["class"] = clean; // class token
+                else if (p.StartsWith("Off time", StringComparison.OrdinalIgnoreCase)) r["off"] = ExtractMetaValue(p); // off time
+                else if (p.StartsWith("Winning time", StringComparison.OrdinalIgnoreCase)) r["win"] = ExtractMetaValue(p); // win time
+                else if (System.Text.RegularExpressions.Regex.IsMatch(p, @"\bClass\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase) && System.Text.RegularExpressions.Regex.IsMatch(p, @"\d")) r["class"] = clean; // class token
                 else if (IsGoingToken(p)) r["going"] = clean; // going
                 else if (HasDistanceToken(p)) r["dist"] = clean; // distance
             }
 
             return r;
+        }
+        private static string ExtractMetaValue(string token)
+        {
+            if (string.IsNullOrWhiteSpace(token)) return string.Empty;
+
+            int idx = token.IndexOf(':');
+            if (idx < 0)
+            {
+                idx = token.IndexOf('–'); // en dash
+                if (idx < 0) idx = token.IndexOf('-');
+            }
+
+            string value;
+            if (idx >= 0 && idx + 1 < token.Length) value = token.Substring(idx + 1);
+            else
+            {
+                var parts = token.Split(' ', 2, StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+                value = parts.Length == 2 ? parts[1] : string.Empty;
+            }
+
+            return CleanMetaValue(value);
         }
         private static string CleanMetaValue(string value)
         {
@@ -772,18 +820,89 @@ namespace HorseRacingML.Scraping
             return (age, lbs, wt); // age & lbs
         }
         private static string InferRaceType(string title) { if (string.IsNullOrWhiteSpace(title)) return ""; var keys = new[] { "Handicap", "Maiden", "Novice", "Apprentice", "Claiming", "Selling", "Stakes" }; return keys.FirstOrDefault(k => title.IndexOf(k, StringComparison.OrdinalIgnoreCase) >= 0) ?? ""; } // type
-        private static byte? ExtractClass(string meta) { if (string.IsNullOrWhiteSpace(meta)) return null; var m = System.Text.RegularExpressions.Regex.Match(meta, @"Class\s+(\d)"); return m.Success ? (byte?)byte.Parse(m.Groups[1].Value) : null; } // Class 1..7
+        private static byte? ExtractClass(string meta) { if (string.IsNullOrWhiteSpace(meta)) return null; var m = System.Text.RegularExpressions.Regex.Match(meta, @"Class\s*[:\-]?\s*(\d)", System.Text.RegularExpressions.RegexOptions.IgnoreCase); return m.Success ? (byte?)byte.Parse(m.Groups[1].Value) : null; } // Class 1..7
         private static string InferSurface(string meta) { if (string.IsNullOrWhiteSpace(meta)) return null; if (meta.Contains("All Weather", StringComparison.OrdinalIgnoreCase) || meta.Contains("Allweather", StringComparison.OrdinalIgnoreCase)) return "Allweather"; return "Turf"; } // surface
 
         private static bool AcceptTermsIfPresent(IWebDriver driver)
         {
             try
             {
-                var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(2)); var acceptButton = wait.Until(d => { var buttons = d.FindElements(By.XPath("//button[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'allow all cookies')]")); return buttons.FirstOrDefault(b => b.Displayed && b.Enabled); }); acceptButton?.Click(); return acceptButton != null; // clicked
+                var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(5))
+                {
+                    PollingInterval = TimeSpan.FromMilliseconds(200)
+                };
+                wait.IgnoreExceptionTypes(
+                    typeof(NoSuchElementException),
+                    typeof(StaleElementReferenceException),
+                    typeof(WebDriverException));
+
+                return wait.Until(d =>
+                {
+                    try
+                    {
+                        var buttons = d.FindElements(By.XPath("//button|//a"));
+                        foreach (var button in buttons)
+                        {
+                            if (!button.Displayed || !button.Enabled) continue;
+                            var text = (button.Text ?? string.Empty).Trim();
+                            if (string.IsNullOrEmpty(text)) continue;
+
+                            var lower = text.ToLowerInvariant();
+                            if (!(lower.Contains("accept all") ||
+                                  lower.Contains("allow all") ||
+                                  lower.Contains("accept cookies") ||
+                                  lower.Contains("agree")))
+                            {
+                                continue;
+                            }
+
+                            try
+                            {
+                                button.Click();
+                            }
+                            catch (ElementClickInterceptedException)
+                            {
+                                try
+                                {
+                                    if (d is IJavaScriptExecutor js)
+                                    {
+                                        js.ExecuteScript("arguments[0].click();", button);
+                                        return true;
+                                    }
+                                }
+                                catch (WebDriverException)
+                                {
+                                    return false;
+                                }
+                                return false;
+                            }
+                            catch (WebDriverException)
+                            {
+                                return false;
+                            }
+
+                            return true;
+                        }
+
+                        return false;
+                    }
+                    catch (WebDriverException)
+                    {
+                        return false;
+                    }
+                });
             }
-            catch (WebDriverTimeoutException) { return false; } // none
+            catch (WebDriverTimeoutException)
+            {
+                return false;
+            }
+            catch (WebDriverException)
+            {
+                return false;
+            }
         }
-    }
+    
+}
 }
 //using HorseRacingML.Data;
 //using HorseRacingML.Models;
