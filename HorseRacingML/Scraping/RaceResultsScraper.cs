@@ -21,11 +21,107 @@ namespace HorseRacingML.Scraping
     {
         private readonly RacingRepository _repo;
         private readonly ScrapingStatusService _status;
-        private const int MaxParallelDrivers = 8;
+        private const int MaxParallelDrivers = 15;
+        private static readonly TimeSpan EstimateOutputInterval = TimeSpan.FromMinutes(3);
+        private readonly object _estimateLock = new object();
+        private DateTime _estimateStartUtc = DateTime.MinValue;
+        private DateTime _lastEstimateOutputUtc = DateTime.MinValue;
+        private long _racesProcessed = 0;
         public RaceResultsScraper(RacingRepository repo, ScrapingStatusService status)
         {
             _repo = repo;
             _status = status;
+        }
+        private void ResetEstimateSession()
+        {
+            lock (_estimateLock)
+            {
+                _estimateStartUtc = DateTime.UtcNow;
+                _lastEstimateOutputUtc = _estimateStartUtc;
+            }
+            Interlocked.Exchange(ref _racesProcessed, 0);
+        }
+        private void EnsureEstimateSession()
+        {
+            lock (_estimateLock)
+            {
+                if (_estimateStartUtc == DateTime.MinValue)
+                {
+                    _estimateStartUtc = DateTime.UtcNow;
+                    _lastEstimateOutputUtc = _estimateStartUtc;
+                }
+            }
+        }
+        private void RecordRaceProcessed()
+        {
+            EnsureEstimateSession();
+            Interlocked.Increment(ref _racesProcessed);
+            MaybeEmitEstimate();
+        }
+        private void MaybeEmitEstimate()
+        {
+            var nowUtc = DateTime.UtcNow;
+            DateTime startUtc;
+            bool shouldEmit;
+
+            lock (_estimateLock)
+            {
+                startUtc = _estimateStartUtc;
+                if (startUtc == DateTime.MinValue)
+                {
+                    return;
+                }
+
+                if (nowUtc - _lastEstimateOutputUtc >= EstimateOutputInterval)
+                {
+                    _lastEstimateOutputUtc = nowUtc;
+                    shouldEmit = true;
+                }
+                else
+                {
+                    shouldEmit = false;
+                }
+            }
+
+            if (!shouldEmit)
+            {
+                return;
+            }
+
+            var processed = Interlocked.Read(ref _racesProcessed);
+            if (processed <= 0)
+            {
+                return;
+            }
+
+            var elapsedMinutes = (nowUtc - startUtc).TotalMinutes;
+            if (elapsedMinutes <= 0)
+            {
+                return;
+            }
+
+            var racesPerMinute = processed / elapsedMinutes;
+            if (double.IsNaN(racesPerMinute) || double.IsInfinity(racesPerMinute) || racesPerMinute <= 0)
+            {
+                return;
+            }
+
+            var projected = racesPerMinute * 60 * 24;
+            if (double.IsNaN(projected) || double.IsInfinity(projected) || projected <= 0)
+            {
+                return;
+            }
+
+            var message = string.Format(
+                CultureInfo.InvariantCulture,
+                "[Estimator] {0} races processed in {1:F1} minutes (avg {2:F2} races/min). Projected {3:F0} races in next 24h.",
+                processed,
+                elapsedMinutes,
+                racesPerMinute,
+                projected);
+
+            Console.WriteLine(message);
+            _status.Update(message);
         }
         private static int GetFreeTcpPort()
         {
@@ -131,6 +227,7 @@ namespace HorseRacingML.Scraping
         }
         public void ScrapeFromLatest()
         {
+            ResetEstimateSession();
             var today = DateTime.Today;
             while (true)
             {
@@ -147,6 +244,7 @@ namespace HorseRacingML.Scraping
         }//
         public void Scrape(DateTime startDate, DateTime endDate)
         {
+            EnsureEstimateSession();
             var start = startDate.Date;
             var end = endDate.Date;
             var today = DateTime.Today;
@@ -167,8 +265,8 @@ namespace HorseRacingML.Scraping
                     svc.HideCommandPromptWindow = true;
                     svc.Port = GetFreeTcpPort(); // let OS choose a free port to avoid collisions
                     using var driver = new ChromeDriver(svc, BuildChromeOptions(), TimeSpan.FromSeconds(60));
-                    driver.Manage().Timeouts().PageLoad = TimeSpan.FromSeconds(45);
-                    driver.Manage().Timeouts().AsynchronousJavaScript = TimeSpan.FromSeconds(15);
+                    driver.Manage().Timeouts().PageLoad = TimeSpan.FromSeconds(5);
+                    driver.Manage().Timeouts().AsynchronousJavaScript = TimeSpan.FromSeconds(5);
                     driver.Manage().Timeouts().ImplicitWait = TimeSpan.FromSeconds(0); // timeouts
 
                     while (queue.TryDequeue(out var date))
@@ -296,7 +394,7 @@ namespace HorseRacingML.Scraping
 
                             var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(5));
                             wait.Until(d => d.FindElements(By.CssSelector("[data-test-id='generic-tab']")).Count > 0 || d.FindElements(By.CssSelector("[data-test-id*='no-meetings']")).Count > 0); // wait meetings
-                            ScrapeMeetingTabs(driver, new WebDriverWait(driver, TimeSpan.FromSeconds(6)), date, dayHandle, dayResults); anyMeetingsProcessed = true; // scrape meetings for this region
+                            ScrapeMeetingTabs(driver, new WebDriverWait(driver, TimeSpan.FromSeconds(3)), date, dayHandle, dayResults); anyMeetingsProcessed = true; // scrape meetings for this region
                         }
                         catch (WebDriverException ex) { Console.Error.WriteLine($"[{date:yyyy-MM-dd}] Region '{region}' error: {ex.Message}"); }
                         catch (Exception ex) { Console.Error.WriteLine($"[{date:yyyy-MM-dd}] Unexpected region error '{region}': {ex.Message}"); }
@@ -536,6 +634,7 @@ namespace HorseRacingML.Scraping
                 results.Add(result); // add row
             }
             if (results.Count > 0) sessionResults.AddRange(results); // accumulate for bulk insert
+            RecordRaceProcessed();
         }
 
         private static byte? TryParseByteLoose(string? s) { if (string.IsNullOrWhiteSpace(s)) return null; var m = System.Text.RegularExpressions.Regex.Match(s, @"\d+"); return m.Success && byte.TryParse(m.Value, out var v) ? v : (byte?)null; } // handles "(2)", " 2 ", etc.
@@ -590,16 +689,16 @@ namespace HorseRacingML.Scraping
 
             foreach (var p in parts)
             {
-                if (string.IsNullOrEmpty(t)) continue;
-                var clean = CleanMetaValue(t);
+                if (string.IsNullOrEmpty(p)) continue;
+                var clean = CleanMetaValue(p);
 
-                if (t.Contains("YO", StringComparison.OrdinalIgnoreCase)) r["age"] = clean; // age
-                else if (t.Contains("Runners", StringComparison.OrdinalIgnoreCase)) r["runners"] = clean; // runners
-                else if (t.StartsWith("Off time", StringComparison.OrdinalIgnoreCase)) r["off"] = CleanMetaValue(t.Split(':', 2)[1]); // off time
-                else if (t.StartsWith("Winning time", StringComparison.OrdinalIgnoreCase)) r["win"] = CleanMetaValue(t.Split(':', 2)[1]); // win time
-                else if (System.Text.RegularExpressions.Regex.IsMatch(t, @"\bClass\s*\d", System.Text.RegularExpressions.RegexOptions.IgnoreCase)) r["class"] = clean; // class token
-                else if (IsGoingToken(t)) r["going"] = clean; // going
-                else if (HasDistanceToken(t)) r["dist"] = clean; // distance
+                if (p.Contains("YO", StringComparison.OrdinalIgnoreCase)) r["age"] = clean; // age
+                else if (p.Contains("Runners", StringComparison.OrdinalIgnoreCase)) r["runners"] = clean; // runners
+                else if (p.StartsWith("Off time", StringComparison.OrdinalIgnoreCase)) r["off"] = CleanMetaValue(p.Split(':', 2)[1]); // off time
+                else if (p.StartsWith("Winning time", StringComparison.OrdinalIgnoreCase)) r["win"] = CleanMetaValue(p.Split(':', 2)[1]); // win time
+                else if (System.Text.RegularExpressions.Regex.IsMatch(p, @"\bClass\s*\d", System.Text.RegularExpressions.RegexOptions.IgnoreCase)) r["class"] = clean; // class token
+                else if (IsGoingToken(p)) r["going"] = clean; // going
+                else if (HasDistanceToken(p)) r["dist"] = clean; // distance
             }
 
             return r;
