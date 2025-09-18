@@ -8,6 +8,8 @@ using OpenQA.Selenium.Support.UI;
 using SeleniumExtras.WaitHelpers;
 using HorseRacingML.Data;
 using HorseRacingML.Models;
+using System.Globalization;
+using System.Text.RegularExpressions;
 
 namespace HorseRacingML.Scraping;
 
@@ -18,14 +20,16 @@ public class BetfairNavigationService : IDisposable
     private readonly string _username;
     private readonly string _password;
     private readonly IWebDriver _driver;
-    private readonly decimal _bankroll;
+    private readonly decimal _configuredBankroll;
+    private decimal _bankroll;
     private readonly decimal? _maxKellyFraction;
 
     public BetfairNavigationService(IConfiguration config)
     {
         _username = config["Betfair:Username"] ?? HardCodedUsername;
         _password = config["Betfair:Password"] ?? HardCodedPassword;
-        _bankroll = config.GetValue<decimal?>("Betting:Bankroll") ?? 100m;
+        _configuredBankroll = config.GetValue<decimal?>("Betting:Bankroll") ?? 100m;
+        _bankroll = _configuredBankroll;
         _maxKellyFraction = config.GetValue<decimal?>("Betting:MaxKellyFraction");
 
         var options = new ChromeOptions();
@@ -41,8 +45,142 @@ public class BetfairNavigationService : IDisposable
     public IWebDriver Driver => _driver;
     public IReadOnlyList<BetRecommendation> ScrapeOpenRaceTabs(RacingRepository repo)
     {
-        var scraper = new BetfairMarketScraper(repo, _bankroll, _maxKellyFraction);
+        var bankroll = GetEffectiveBankroll();
+        var scraper = new BetfairMarketScraper(repo, bankroll, _maxKellyFraction);
         return scraper.ScrapeOpenRaceTabs(_driver);
+    }
+    private decimal GetEffectiveBankroll()
+    {
+        var refreshed = TryRefreshBankrollFromPage();
+        if (refreshed.HasValue && refreshed.Value > 0m)
+        {
+            _bankroll = refreshed.Value;
+        }
+
+        if (_bankroll <= 0m)
+        {
+            _bankroll = _configuredBankroll;
+        }
+
+        return _bankroll;
+    }
+
+    private decimal? TryRefreshBankrollFromPage()
+    {
+        string? balanceText = null;
+        var wait = new WebDriverWait(_driver, TimeSpan.FromSeconds(5));
+
+        var strategies = new Func<IWebDriver, IWebElement?>[]
+        {
+            drv => FindDisplayedElement(drv, By.XPath("/html/body/ui-view/div/div/div[1]/div[1]/div/bf-ssc-header/div/div/div/div/div/div/table/tbody/tr/td[4]/div/div/div/form/div[3]/div[1]/table/tbody/tr[1]/td[2]")),
+            drv => FindDisplayedElement(drv, By.CssSelector("#ssc-wallet-balance-value")),
+            drv => FindDisplayedElement(drv, By.CssSelector("span.ssc-wallet__balance-value"))
+        };
+
+        foreach (var strategy in strategies)
+        {
+            try
+            {
+                var element = wait.Until(driver =>
+                {
+                    try
+                    {
+                        var candidate = strategy(driver);
+                        if (candidate != null)
+                        {
+                            var text = candidate.Text;
+                            if (string.IsNullOrWhiteSpace(text))
+                            {
+                                text = candidate.GetAttribute("textContent");
+                            }
+
+                            if (!string.IsNullOrWhiteSpace(text))
+                            {
+                                return candidate;
+                            }
+                        }
+                    }
+                    catch (StaleElementReferenceException)
+                    {
+                        return null;
+                    }
+
+                    return null;
+                });
+
+                if (element != null)
+                {
+                    balanceText = element.Text;
+                    if (string.IsNullOrWhiteSpace(balanceText))
+                    {
+                        balanceText = element.GetAttribute("textContent");
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(balanceText))
+                {
+                    break;
+                }
+            }
+            catch (WebDriverTimeoutException)
+            {
+                // continue to next strategy
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(balanceText))
+        {
+            return null;
+        }
+
+        if (TryParseCurrency(balanceText, out var value) && value >= 0m)
+        {
+            return value;
+        }
+
+        return null;
+    }
+
+    private static IWebElement? FindDisplayedElement(IWebDriver driver, By by)
+    {
+        try
+        {
+            var element = driver.FindElement(by);
+            return element.Displayed ? element : null;
+        }
+        catch (NoSuchElementException)
+        {
+            return null;
+        }
+    }
+
+    private static bool TryParseCurrency(string? text, out decimal value)
+    {
+        value = 0m;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
+
+        var trimmed = text.Trim();
+        var cultures = new[]
+        {
+            CultureInfo.GetCultureInfo("en-GB"),
+            CultureInfo.InvariantCulture
+        };
+
+        foreach (var culture in cultures)
+        {
+            if (decimal.TryParse(trimmed, NumberStyles.Currency | NumberStyles.AllowThousands, culture, out value))
+            {
+                return true;
+            }
+        }
+
+        var sanitized = Regex.Replace(trimmed, "[^0-9\.,-]", string.Empty);
+        sanitized = sanitized.Replace(",", string.Empty);
+
+        return decimal.TryParse(sanitized, NumberStyles.Number | NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out value);
     }
     public async Task LoginAsync()
     {
