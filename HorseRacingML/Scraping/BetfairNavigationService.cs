@@ -177,7 +177,7 @@ public class BetfairNavigationService : IDisposable
             }
         }
 
-        var sanitized = Regex.Replace(trimmed, "[^0-9\.,-]", string.Empty);
+        var sanitized = Regex.Replace(trimmed, "[^0-9.,-]", string.Empty);
         sanitized = sanitized.Replace(",", string.Empty);
 
         return decimal.TryParse(sanitized, NumberStyles.Number | NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out value);
