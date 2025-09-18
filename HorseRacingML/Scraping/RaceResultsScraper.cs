@@ -466,15 +466,16 @@ namespace HorseRacingML.Scraping
                     var dict = JsonSerializer.Deserialize<Dictionary<string, string>>(detailsJson);
                     if (dict != null)
                     {
+                        var normalizedDict = NormalizeDetailDictionary(dict);
                         string v;
-                        if (dict.TryGetValue("age restriction", out v)) ageRestriction = Normalize(v);
-                        if (dict.TryGetValue("distance", out v)) distanceText = Normalize(v);
-                        if (dict.TryGetValue("going", out v)) going = Normalize(v);
-                        if (dict.TryGetValue("runners", out v)) runners = Normalize(v);
-                        if (dict.TryGetValue("off time", out v)) offTime = Normalize(v);
-                        if (dict.TryGetValue("winning time", out v)) winTime = Normalize(v);
-                        if (dict.TryGetValue("surface", out v)) surface = Normalize(v);
-                        if (dict.TryGetValue("class", out v)) { var m = System.Text.RegularExpressions.Regex.Match(v, @"\d+"); if (m.Success) classVal = byte.Parse(m.Value); }
+                        if (TryGetDetailValue(normalizedDict, out v, "age restriction")) ageRestriction = v;
+                        if (TryGetDetailValue(normalizedDict, out v, "distance")) distanceText = v;
+                        if (TryGetDetailValue(normalizedDict, out v, "going")) going = v;
+                        if (TryGetDetailValue(normalizedDict, out v, "runners")) runners = v;
+                        if (TryGetDetailValue(normalizedDict, out v, "off time", "off")) offTime = v;
+                        if (TryGetDetailValue(normalizedDict, out v, "winning time", "win time", "winning-time")) winTime = v;
+                        if (TryGetDetailValue(normalizedDict, out v, "surface")) surface = v;
+                        if (TryGetDetailValue(normalizedDict, out v, "class")) { var m = System.Text.RegularExpressions.Regex.Match(v, @"\d+"); if (m.Success) classVal = byte.Parse(m.Value); }
                     }
                 }
             }
@@ -640,6 +641,41 @@ namespace HorseRacingML.Scraping
             if (results.Count > 0) sessionResults.AddRange(results); // accumulate for bulk insert
             RecordRaceProcessed();
         }
+        private static Dictionary<string, string> NormalizeDetailDictionary(Dictionary<string, string> source)
+        {
+            var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var kvp in source)
+            {
+                var key = NormalizeDetailKey(kvp.Key);
+                if (string.IsNullOrEmpty(key)) continue;
+                if (!result.ContainsKey(key)) result[key] = kvp.Value;
+            }
+            return result;
+        }
+
+        private static string NormalizeDetailKey(string key)
+        {
+            if (string.IsNullOrWhiteSpace(key)) return string.Empty;
+            key = key.Replace('\u00A0', ' ').Trim();
+            key = key.TrimEnd(':', '-', '–');
+            key = System.Text.RegularExpressions.Regex.Replace(key, @"\s+", " ");
+            return key.ToLowerInvariant();
+        }
+
+        private static bool TryGetDetailValue(Dictionary<string, string> details, out string value, params string[] keys)
+        {
+            foreach (var key in keys)
+            {
+                if (details.TryGetValue(key, out var raw) && !string.IsNullOrWhiteSpace(raw))
+                {
+                    value = Normalize(raw);
+                    return true;
+                }
+            }
+            value = string.Empty;
+            return false;
+        }
+
         private static string CollectMetaLine(IWebDriver driver)
         {
             try
