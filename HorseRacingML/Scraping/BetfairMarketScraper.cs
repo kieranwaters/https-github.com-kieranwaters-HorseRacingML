@@ -2,7 +2,7 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
 using System.Linq;
-using System.Threading.Tasks;
+using System.Threading;
 using OpenQA.Selenium;
 using OpenQA.Selenium.Support.UI;
 using HorseRacingML.Data;
@@ -10,7 +10,6 @@ using HorseRacingML.Models;
 using System.Collections.Generic;
 using HorseRacingML.ML;
 using System.IO;
-using System.Collections.Concurrent;
 
 namespace HorseRacingML.Scraping
 {
@@ -32,15 +31,15 @@ namespace HorseRacingML.Scraping
             var handles = driver.WindowHandles.ToList();
             var weightPath = Path.Combine(AppContext.BaseDirectory, "aiweights.json");
             var aiCalculator = new AIOddsCalculator(weightPath);
-            var recommendations = new ConcurrentBag<BetRecommendation>();
-            Parallel.ForEach(handles, handle =>
+            var recommendations = new List<BetRecommendation>();
+            foreach (var handle in handles)
             {
                 driver.SwitchTo().Window(handle);
                 Console.WriteLine($"Processing tab: {driver.Url}");
                 if (!driver.Url.Contains("/horse-racing/", StringComparison.OrdinalIgnoreCase))
                 {
                     Console.WriteLine("\tSkipping non-racing tab");
-                    return;
+                    continue;
                 }
 
                 try
@@ -57,14 +56,14 @@ namespace HorseRacingML.Scraping
                 catch (WebDriverTimeoutException)
                 {
                     Console.Error.WriteLine("\tTimed out waiting for runner rows");
-                    return;
+                    continue;
                 }
 
                 var marketId = ExtractMarketId(driver.Url);
                 if (string.IsNullOrEmpty(marketId))
                 {
                     Console.Error.WriteLine($"\tFailed to extract market ID from URL: {driver.Url}");
-                    return;
+                    continue;
                 }
 
                 var title = TextOrEmpty(driver, By.CssSelector("[data-testid='marketTitle']"));
@@ -109,7 +108,7 @@ namespace HorseRacingML.Scraping
                 catch (Exception ex)
                 {
                     Console.Error.WriteLine($"\tInsertRaceScreen failed for market {marketId}: {ex.Message}");
-                    return;
+                    continue;
                 }
 
                 // Retrieve the runner rows using the updated selector described above
@@ -118,10 +117,11 @@ namespace HorseRacingML.Scraping
                 if (rows.Count == 0)
                 {
                     Console.Error.WriteLine($"\tNo runner rows found for market {marketId}");
-                    return;
+                    continue;
                 }
                 Console.WriteLine($"\tFound {rows.Count} runners for market {marketId}");
                 var flows = new List<RunnerFlow>();
+                var runnerEntries = new List<(IWebElement Row, RunnerFlow Flow)>();
                 foreach (var row in rows)
                 {
                     // Some runner rows nest the data-selection-id on a child element, so
@@ -197,14 +197,21 @@ namespace HorseRacingML.Scraping
                     }
 
                     flows.Add(flow);
+                    runnerEntries.Add((row, flow));
                 }
 
                 NormalizeAiOdds(flows);
-                var recommendation = CreateRecommendation(flows, marketId, title, venueName, parsedRaceDate);
-                if (recommendation != null)
+                var raceRecommendations = CreateRecommendations(flows, marketId, title, venueName, parsedRaceDate)
+                    .OrderByDescending(r => r.Differential)
+                    .ThenByDescending(r => r.KellyFraction)
+                    .ToList();
+
+                if (raceRecommendations.Count > 0)
                 {
-                    recommendations.Add(recommendation);
-                    Console.WriteLine($"\tKelly stake {recommendation.Stake.ToString("0.##", CultureInfo.InvariantCulture)} on {recommendation.HorseName ?? "unknown"} (diff {recommendation.Differential.ToString("0.####", CultureInfo.InvariantCulture)})");
+                    recommendations.AddRange(raceRecommendations);
+                    var top = raceRecommendations.First();
+                    Console.WriteLine($"\tKelly stake {top.Stake.ToString("0.##", CultureInfo.InvariantCulture)} on {top.HorseName ?? "unknown"} (diff {top.Differential.ToString("0.####", CultureInfo.InvariantCulture)})");
+                    ExecuteBackAllClicks(driver, runnerEntries, raceRecommendations);
                 }
                 else
                 {
@@ -227,13 +234,13 @@ namespace HorseRacingML.Scraping
                         Console.Error.WriteLine($"\tInsertRunnerFlow failed for market {marketId}, selection {selId}: {ex.Message}");
                     }
                 }
-            });
+            }
             return recommendations
                 .OrderByDescending(r => r.Differential)
                 .ThenByDescending(r => r.KellyFraction)
                 .ToList();
         }
-        private BetRecommendation? CreateRecommendation(
+        private IEnumerable<BetRecommendation> CreateRecommendations(
             IEnumerable<RunnerFlow> flows,
             string marketId,
             string? raceTitle,
@@ -242,61 +249,261 @@ namespace HorseRacingML.Scraping
         {
             if (_bankroll <= 0m)
             {
-                return null;
+                return Enumerable.Empty<BetRecommendation>();
             }
 
-            var best = flows
-                .Where(f => f.AiOdds.HasValue && f.BackPrice1.HasValue && f.BackPrice1.Value > 1m)
-                .Select(f => new
+            var recommendations = new List<BetRecommendation>();
+
+            foreach (var flow in flows)
+            {
+                if (!flow.AiOdds.HasValue || !double.IsFinite(flow.AiOdds.Value) || flow.AiOdds.Value <= 0)
                 {
-                    Flow = f,
-                    DecimalOdds = f.BackPrice1!.Value,
-                    AiProbability = f.AiOdds!.Value,
-                    MarketProbability = 1.0 / (double)f.BackPrice1!.Value,
-                })
-                .Select(x => new
+                    continue;
+                }
+
+                if (!flow.BackPrice1.HasValue || flow.BackPrice1.Value <= 1m)
                 {
-                    x.Flow,
-                    x.DecimalOdds,
-                    x.AiProbability,
-                    x.MarketProbability,
-                    Differential = x.AiProbability - x.MarketProbability
-                })
-                .OrderByDescending(x => x.Differential)
-                .FirstOrDefault();
+                    continue;
+                }
 
-            if (best == null || best.Differential <= 0)
-            {
-                return null;
+                var decimalOdds = flow.BackPrice1.Value;
+                var aiProbability = flow.AiOdds.Value;
+                var marketProbability = 1.0 / (double)decimalOdds;
+                var differential = aiProbability - marketProbability;
+
+                if (differential <= 0)
+                {
+                    continue;
+                }
+
+                var kellyFraction = CalculateKellyFraction(aiProbability, (double)decimalOdds);
+                if (kellyFraction <= 0)
+                {
+                    continue;
+                }
+
+                var stake = _bankroll * kellyFraction;
+                if (stake <= 0)
+                {
+                    continue;
+                }
+
+                recommendations.Add(new BetRecommendation
+                {
+                    MarketId = marketId,
+                    SelectionId = flow.SelectionId,
+                    HorseName = flow.HorseName,
+                    RaceTitle = raceTitle,
+                    VenueName = venueName,
+                    RaceDate = raceDate,
+                    DecimalOdds = decimalOdds,
+                    AiDecimalOdds = CalculateAiDecimalOdds(aiProbability),
+                    AiProbability = aiProbability,
+                    MarketProbability = marketProbability,
+                    Differential = differential,
+                    KellyFraction = kellyFraction,
+                    Stake = stake
+                });
             }
 
-            var kellyFraction = CalculateKellyFraction(best.AiProbability, (double)best.DecimalOdds);
-            if (kellyFraction <= 0)
+            return recommendations;
+        }
+        private void ExecuteBackAllClicks(
+            IWebDriver driver,
+            IReadOnlyList<(IWebElement Row, RunnerFlow Flow)> runnerEntries,
+            IReadOnlyList<BetRecommendation> recommendations)
+        {
+            if (runnerEntries.Count == 0 || recommendations.Count == 0)
             {
-                return null;
+                return;
             }
 
-            var stake = _bankroll * kellyFraction;
-            if (stake <= 0)
+            foreach (var recommendation in recommendations)
             {
-                return null;
-            }
+                if (recommendation.Differential <= 0)
+                {
+                    continue;
+                }
 
-            return new BetRecommendation
+                var match = runnerEntries.FirstOrDefault(entry =>
+                    (!string.IsNullOrEmpty(recommendation.SelectionId) &&
+                        string.Equals(entry.Flow.SelectionId, recommendation.SelectionId, StringComparison.Ordinal)) ||
+                    (!string.IsNullOrWhiteSpace(recommendation.HorseName) &&
+                        !string.IsNullOrWhiteSpace(entry.Flow.HorseName) &&
+                        string.Equals(entry.Flow.HorseName, recommendation.HorseName, StringComparison.OrdinalIgnoreCase)));
+
+                if (match.Row == null)
+                {
+                    Console.Error.WriteLine($"\tUnable to locate row for {recommendation.HorseName ?? recommendation.SelectionId ?? "unknown"} to click Back-All");
+                    continue;
+                }
+
+                TryClickBackAllButton(driver, match.Row, recommendation);
+                Thread.Sleep(TimeSpan.FromMilliseconds(400));
+            }
+        }
+        private void TryClickBackAllButton(IWebDriver driver, IWebElement row, BetRecommendation recommendation)
+        {
+            var identifier = recommendation.HorseName ?? recommendation.SelectionId ?? "unknown";
+
+            try
             {
-                MarketId = marketId,
-                SelectionId = best.Flow.SelectionId,
-                HorseName = best.Flow.HorseName,
-                RaceTitle = raceTitle,
-                VenueName = venueName,
-                RaceDate = raceDate,
-                DecimalOdds = best.DecimalOdds,
-                AiProbability = best.AiProbability,
-                MarketProbability = best.MarketProbability,
-                Differential = best.Differential,
-                KellyFraction = kellyFraction,
-                Stake = stake
+                var button = FindBackAllButton(row);
+                var js = (IJavaScriptExecutor)driver;
+
+                if (button == null)
+                {
+                    if (TryClickBackAllViaScript(js, row))
+                    {
+                        Console.WriteLine($"\tClicked Back-All for {identifier} using script fallback");
+                    }
+                    else
+                    {
+                        Console.Error.WriteLine($"\tBack-All button not found for {identifier}");
+                    }
+                    return;
+                }
+
+                try
+                {
+                    js.ExecuteScript("arguments[0].scrollIntoView({block:'center'});", button);
+                }
+                catch (Exception)
+                {
+                }
+
+                try
+                {
+                    button.Click();
+                    Console.WriteLine($"\tClicked Back-All for {identifier}");
+                    return;
+                }
+                catch (Exception)
+                {
+                }
+
+                try
+                {
+                    js.ExecuteScript("arguments[0].click();", button);
+                    Console.WriteLine($"\tClicked Back-All for {identifier} using JavaScript");
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"\tFailed to click Back-All for {identifier}: {ex.Message}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"\tUnexpected error clicking Back-All for {identifier}: {ex.Message}");
+            }
+        }
+        private static IWebElement? FindBackAllButton(IWebElement row)
+        {
+            var selectors = new[]
+            {
+                By.CssSelector("button[data-testid='back-all']"),
+                By.CssSelector("button.back-all"),
+                By.CssSelector("button.back-all-button"),
+                By.CssSelector("button[class*='back-all']")
             };
+
+            foreach (var selector in selectors)
+            {
+                var button = TryFindElement(row, selector);
+                if (button != null)
+                {
+                    return button;
+                }
+            }
+
+            try
+            {
+                var buttons = row.FindElements(By.TagName("button"));
+                foreach (var candidate in buttons)
+                {
+                    var text = candidate.Text;
+                    if (string.IsNullOrWhiteSpace(text))
+                    {
+                        text = candidate.GetAttribute("textContent");
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(text) && text.IndexOf("back all", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        return candidate;
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            return null;
+        }
+        private static bool TryClickBackAllViaScript(IJavaScriptExecutor js, IWebElement row)
+        {
+            try
+            {
+                var result = js.ExecuteScript(@"const runnerRow = arguments[0];
+                    if (!runnerRow) { return false; }
+                    const toLower = el => (el.textContent || '').trim().toLowerCase();
+                    const buttons = Array.from(runnerRow.querySelectorAll('button, [role=""button""], .bet-button'));
+                    for (const btn of buttons) {
+                        if (toLower(btn).includes('back all')) {
+                            btn.scrollIntoView({block: 'center'});
+                            btn.click();
+                            return true;
+                        }
+                    }
+                    const fallback = Array.from(runnerRow.querySelectorAll('*')).find(el => toLower(el).includes('back all'));
+                    if (fallback) {
+                        fallback.scrollIntoView({block: 'center'});
+                        fallback.click();
+                        return true;
+                    }
+                    return false;", row);
+
+                return result is bool success && success;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+        private static IWebElement? TryFindElement(ISearchContext context, By by)
+        {
+            try
+            {
+                return context.FindElement(by);
+            }
+            catch (NoSuchElementException)
+            {
+                return null;
+            }
+            catch (StaleElementReferenceException)
+            {
+                return null;
+            }
+        }
+        private static decimal CalculateAiDecimalOdds(double aiProbability)
+        {
+            if (aiProbability <= 0)
+            {
+                return 0m;
+            }
+
+            var inverted = 1.0 / aiProbability;
+
+            if (!double.IsFinite(inverted) || inverted <= 0)
+            {
+                return 0m;
+            }
+
+            if (inverted > (double)decimal.MaxValue)
+            {
+                return decimal.MaxValue;
+            }
+
+            return (decimal)inverted;
         }
         private decimal CalculateKellyFraction(double probability, double decimalOdds)
         {

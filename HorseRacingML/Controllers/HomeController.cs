@@ -50,13 +50,13 @@ namespace HorseRacingML.Controllers
                 var venue = string.IsNullOrWhiteSpace(best.VenueName) ? string.Empty : $" at {best.VenueName}";
                 var odds = best.DecimalOdds.ToString("0.00", CultureInfo.InvariantCulture);
                 var aiProb = (best.AiProbability * 100).ToString("0.##", CultureInfo.InvariantCulture);
+                var aiReturn = best.AiDecimalOdds.ToString("0.00", CultureInfo.InvariantCulture);
                 var marketProb = (best.MarketProbability * 100).ToString("0.##", CultureInfo.InvariantCulture);
                 var diff = (best.Differential * 100).ToString("0.##", CultureInfo.InvariantCulture);
                 var stake = best.Stake.ToString("0.##", CultureInfo.InvariantCulture);
                 var kelly = (best.KellyFraction * 100m).ToString("0.##", CultureInfo.InvariantCulture);
 
-                var message = $"Best value bet: {horse}{venue} ({race}) – odds {odds}, AI win {aiProb}% vs market {marketProb}% (diff {diff}%). Kelly stake {stake} ({kelly}% bankroll).";
-                TempData["Message"] = message;
+                var message = $"Best value bet: {horse}{venue} ({race})  odds {odds}, AI win {aiProb}% (AI return {aiReturn}) vs market {marketProb}% (diff {diff}%). Kelly stake {stake} ({kelly}% bankroll).";
                 _status.Update(message);
             }
             else
