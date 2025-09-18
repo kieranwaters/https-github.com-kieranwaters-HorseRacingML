@@ -394,7 +394,7 @@ namespace HorseRacingML.Scraping
 
                             var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(5));
                             wait.Until(d => d.FindElements(By.CssSelector("[data-test-id='generic-tab']")).Count > 0 || d.FindElements(By.CssSelector("[data-test-id*='no-meetings']")).Count > 0); // wait meetings
-                            ScrapeMeetingTabs(driver, new WebDriverWait(driver, TimeSpan.FromSeconds(3)), date, dayHandle, dayResults); anyMeetingsProcessed = true; // scrape meetings for this region
+                            ScrapeMeetingTabs(driver, new WebDriverWait(driver, TimeSpan.FromSeconds(10)), date, dayHandle, dayResults); anyMeetingsProcessed = true; // scrape meetings for this region
                         }
                         catch (WebDriverException ex) { Console.Error.WriteLine($"[{date:yyyy-MM-dd}] Region '{region}' error: {ex.Message}"); }
                         catch (Exception ex) { Console.Error.WriteLine($"[{date:yyyy-MM-dd}] Unexpected region error '{region}': {ex.Message}"); }
@@ -449,8 +449,8 @@ namespace HorseRacingML.Scraping
                     {
                         metaLine = (string)((IJavaScriptExecutor)driver).ExecuteScript("var w=document.querySelector(\"[data-test-id='race-container']\");return w?(w.innerText||''):''"); // broad section grab
                     }
-                } 
-                catch { }
+                    catch { }
+                }
             }
             metaLine = Normalize(metaLine.Replace("•", "|").Replace("·", "|")); // normalize bullets
 
