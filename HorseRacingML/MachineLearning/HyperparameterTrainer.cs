@@ -246,7 +246,10 @@ namespace HorseRacingML.ML
                 var courseStats = new Dictionary<int, Dictionary<int, (int starts, int wins, float sumNorm, float lastNorm)>>();
                 var ageStats = new Dictionary<int, Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>>();
                 var distanceBucketStats = new Dictionary<int, Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>>();
-                var goingDistanceStats = new Dictionary<(int horseId, string going, string bucket), (int starts, int wins, float sumNorm, float lastNorm)>();
+            var horseClassStats = new Dictionary<(int horseId, int classVal), (int starts, int wins, float sumNorm, float lastNorm)>();
+            var trainerClassStats = new Dictionary<(int trainerId, int classVal), (int starts, int wins, float sumNorm, float lastNorm)>();
+            var jockeyClassStats = new Dictionary<(int jockeyId, int classVal), (int starts, int wins, float sumNorm, float lastNorm)>();
+            var goingDistanceStats = new Dictionary<(int horseId, string going, string bucket), (int starts, int wins, float sumNorm, float lastNorm)>();
                 var drawStats = new Dictionary<(int courseId, string bucket, int draw), (int starts, int wins)>();
                 var drawBaselineStats = new Dictionary<(int courseId, string bucket), (int starts, int wins)>();
                 var horseDistanceAll = new Dictionary<int, (double sum, int count)>();
@@ -333,7 +336,59 @@ namespace HorseRacingML.ML
                     int age = row["Age"] != null ? Convert.ToInt32(row["Age"]) : 0;
                     row["AgeRelative"] = age - raceStat.AvgAge;
                     int classVal = row["Class"] != null ? Convert.ToInt32(row["Class"]) : 0;
-                    if (!horseHistory.TryGetValue(horseId, out var history))
+                var horseClassKey = (horseId, classVal);
+                if (!horseClassStats.TryGetValue(horseClassKey, out var horseClassStat))
+                    horseClassStat = (0, 0, 0f, 0f);
+                row["ClassWinRate"] = SmoothedWinRate(horseClassStat.wins, horseClassStat.starts);
+                row["ClassAvgNorm"] = horseClassStat.starts > 0
+                    ? horseClassStat.sumNorm / horseClassStat.starts
+                    : 0f;
+                row["LastClassNormPos"] = horseClassStat.lastNorm;
+
+                (int trainerId, int classVal) trainerClassKey = default;
+                (int starts, int wins, float sumNorm, float lastNorm) trainerClassStat = default;
+                bool hasTrainerClass = false;
+                if (trainerId.HasValue)
+                {
+                    trainerClassKey = (trainerId.Value, classVal);
+                    if (!trainerClassStats.TryGetValue(trainerClassKey, out trainerClassStat))
+                        trainerClassStat = (0, 0, 0f, 0f);
+                    row["TrainerClassWinRate"] = SmoothedWinRate(trainerClassStat.wins, trainerClassStat.starts);
+                    row["TrainerClassAvgNorm"] = trainerClassStat.starts > 0
+                        ? trainerClassStat.sumNorm / trainerClassStat.starts
+                        : 0f;
+                    row["LastTrainerClassNormPos"] = trainerClassStat.lastNorm;
+                    hasTrainerClass = true;
+                }
+                else
+                {
+                    row["TrainerClassWinRate"] = 0f;
+                    row["TrainerClassAvgNorm"] = 0f;
+                    row["LastTrainerClassNormPos"] = 0f;
+                }
+
+                (int jockeyId, int classVal) jockeyClassKey = default;
+                (int starts, int wins, float sumNorm, float lastNorm) jockeyClassStat = default;
+                bool hasJockeyClass = false;
+                if (jockeyId.HasValue)
+                {
+                    jockeyClassKey = (jockeyId.Value, classVal);
+                    if (!jockeyClassStats.TryGetValue(jockeyClassKey, out jockeyClassStat))
+                        jockeyClassStat = (0, 0, 0f, 0f);
+                    row["JockeyClassWinRate"] = SmoothedWinRate(jockeyClassStat.wins, jockeyClassStat.starts);
+                    row["JockeyClassAvgNorm"] = jockeyClassStat.starts > 0
+                        ? jockeyClassStat.sumNorm / jockeyClassStat.starts
+                        : 0f;
+                    row["LastJockeyClassNormPos"] = jockeyClassStat.lastNorm;
+                    hasJockeyClass = true;
+                }
+                else
+                {
+                    row["JockeyClassWinRate"] = 0f;
+                    row["JockeyClassAvgNorm"] = 0f;
+                    row["LastJockeyClassNormPos"] = 0f;
+                }
+                if (!horseHistory.TryGetValue(horseId, out var history))
                     {
                         history = new List<(DateTime date, float normFinish, short? finish, string going, string surface, int courseId, string bucket, int raceClass, float speed, float speedDiff, int age, bool win, float rating, float weight)>();
                         horseHistory[horseId] = history;
@@ -854,7 +909,30 @@ namespace HorseRacingML.ML
                         ? (runnerCount - finish.Value) / (float)(runnerCount - 1)
                         : 0f;
                     history.Add((date, normFinish, finish, going, surface, courseId, bucket, classVal, runnerSpeed, speedDiff, age, finish.HasValue && finish.Value == 1, rating, weight));
-                    if (history.Count > HistoryLength)
+                horseClassStat.starts++;
+                horseClassStat.sumNorm += normFinish;
+                if (finish.HasValue && finish.Value == 1) horseClassStat.wins++;
+                horseClassStat.lastNorm = normFinish;
+                horseClassStats[horseClassKey] = horseClassStat;
+
+                if (hasTrainerClass)
+                {
+                    trainerClassStat.starts++;
+                    trainerClassStat.sumNorm += normFinish;
+                    if (finish.HasValue && finish.Value == 1) trainerClassStat.wins++;
+                    trainerClassStat.lastNorm = normFinish;
+                    trainerClassStats[trainerClassKey] = trainerClassStat;
+                }
+
+                if (hasJockeyClass)
+                {
+                    jockeyClassStat.starts++;
+                    jockeyClassStat.sumNorm += normFinish;
+                    if (finish.HasValue && finish.Value == 1) jockeyClassStat.wins++;
+                    jockeyClassStat.lastNorm = normFinish;
+                    jockeyClassStats[jockeyClassKey] = jockeyClassStat;
+                }
+                if (history.Count > HistoryLength)
                         history.RemoveAt(0);
                     sStats.starts++;
                     sStats.sumNorm += normFinish;
@@ -1239,6 +1317,15 @@ namespace HorseRacingML.ML
             featureDims["JockeyGoingDistanceAvgNorm"] = 1;
             featureDims["LastJockeyGoingDistanceNormPos"] = 1;
             featureDims["TrainerJockeyCourseWinRate"] = 1;
+            featureDims["ClassWinRate"] = 1;
+            featureDims["ClassAvgNorm"] = 1;
+            featureDims["LastClassNormPos"] = 1;
+            featureDims["TrainerClassWinRate"] = 1;
+            featureDims["TrainerClassAvgNorm"] = 1;
+            featureDims["LastTrainerClassNormPos"] = 1;
+            featureDims["JockeyClassWinRate"] = 1;
+            featureDims["JockeyClassAvgNorm"] = 1;
+            featureDims["LastJockeyClassNormPos"] = 1;
             foreach (var window in PerformanceWindows)
             {
                 featureDims[$"AvgRatingLast{window}"] = 1;
