@@ -185,14 +185,25 @@ namespace HorseRacingML.ML
                         g =>
                         {
                             int cnt = g.Count();
-                            float avgDraw = g.Where(r => r["Draw"] != null)
-                                             .Select(r => Convert.ToSingle(r["Draw"]))
-                                             .DefaultIfEmpty(0f)
-                                             .Average();
-                            float avgWeight = g.Where(r => r["WeightLbs"] != null)
-                                               .Select(r => Convert.ToSingle(r["WeightLbs"]))
-                                               .DefaultIfEmpty(0f)
-                                               .Average();
+                            var drawValues = g.Where(r => r["Draw"] != null)
+                                                                          .Select(r => Convert.ToSingle(r["Draw"]))
+                                                                          .ToList();
+                            float avgDraw = drawValues.Count > 0 ? drawValues.Average() : 0f;
+
+                            var weightValues = g.Where(r => r["WeightLbs"] != null)
+                                                .Select(r => Convert.ToSingle(r["WeightLbs"]))
+                                                .ToList();
+                            float avgWeight = weightValues.Count > 0 ? weightValues.Average() : 0f;
+                            float minWeight = weightValues.Count > 0 ? weightValues.Min() : 0f;
+                            float maxWeight = weightValues.Count > 0 ? weightValues.Max() : 0f;
+
+                            var saddleclothValues = g
+                                .Where(r => r.TryGetValue("SaddleclothNumber", out var scObj) && scObj != null)
+                                .Select(r => Convert.ToSingle(r["SaddleclothNumber"]))
+                                .ToList();
+                            float avgSaddlecloth = saddleclothValues.Count > 0 ? saddleclothValues.Average() : 0f;
+                            float minSaddlecloth = saddleclothValues.Count > 0 ? saddleclothValues.Min() : 0f;
+                            float maxSaddlecloth = saddleclothValues.Count > 0 ? saddleclothValues.Max() : 0f;
                             float avgAge = g.Where(r => r["Age"] != null)
                                              .Select(r => Convert.ToSingle(r["Age"]))
                                              .DefaultIfEmpty(0f)
@@ -218,10 +229,17 @@ namespace HorseRacingML.ML
                             return (RunnerCount: cnt,
                                     AvgDraw: avgDraw,
                                     AvgWeight: avgWeight,
+                                     MinWeight: minWeight,
+                                    MaxWeight: maxWeight,
                                     AvgAge: avgAge,
                                     AvgRating: avgRating,
                                     StdRating: stdRating,
-                                    TotalPurse: purse);
+                                    TotalPurse: purse,
+                                    AvgSaddlecloth: avgSaddlecloth,
+                                    MinSaddlecloth: minSaddlecloth,
+                                    MaxSaddlecloth: maxSaddlecloth,
+                                    HasWeightStats: weightValues.Count > 0,
+                                    HasSaddleclothStats: saddleclothValues.Count > 0);
                         });
 
                 var ordered = rows
@@ -329,11 +347,21 @@ namespace HorseRacingML.ML
                 float rating = ratingMissing ? raceStat.AvgRating : Convert.ToSingle(ratingObj);
                 row["RatingMissing"] = ratingMissing;
                 row["RelativeDraw"] = runnerCount > 0 ? (float)draw / runnerCount : 0f;
-                    row["WeightDiffFromMean"] = weight - raceStat.AvgWeight;
-                    row["RatingDiffFromField"] = rating - raceStat.AvgRating;
-                    row["FieldRatingStdDev"] = raceStat.StdRating;
-                    row["PurseLevel"] = raceStat.TotalPurse;
-                    int age = row["Age"] != null ? Convert.ToInt32(row["Age"]) : 0;
+                bool saddleclothMissing = !(row.TryGetValue("SaddleclothNumber", out var saddleclothObj) && saddleclothObj != null);
+                int saddlecloth = saddleclothMissing ? 0 : Convert.ToInt32(saddleclothObj);
+                row["SaddleclothMissing"] = saddleclothMissing;
+                row["SaddleclothRelative"] = !saddleclothMissing && runnerCount > 0 ? (float)saddlecloth / runnerCount : 0f;
+                row["SaddleclothDiffFromMean"] = !saddleclothMissing && raceStat.HasSaddleclothStats
+                    ? saddlecloth - raceStat.AvgSaddlecloth
+                    : 0f;
+                row["WeightDiffFromMean"] = weight - raceStat.AvgWeight;
+                bool hasWeightStats = raceStat.HasWeightStats;
+                row["IsTopWeight"] = !weightMissing && hasWeightStats && Math.Abs(weight - raceStat.MaxWeight) < 0.001f;
+                row["IsBottomWeight"] = !weightMissing && hasWeightStats && Math.Abs(weight - raceStat.MinWeight) < 0.001f;
+                row["RatingDiffFromField"] = rating - raceStat.AvgRating;
+                row["FieldRatingStdDev"] = raceStat.StdRating;
+                row["PurseLevel"] = raceStat.TotalPurse;
+                int age = row["Age"] != null ? Convert.ToInt32(row["Age"]) : 0;
                     row["AgeRelative"] = age - raceStat.AvgAge;
                     int classVal = row["Class"] != null ? Convert.ToInt32(row["Class"]) : 0;
                 var horseClassKey = (horseId, classVal);
@@ -1313,6 +1341,11 @@ namespace HorseRacingML.ML
             featureDims["DrawBias"] = 1;
             featureDims["DistanceBeatenLengths"] = 1;
             featureDims["DistanceBeatenKnown"] = 1;
+            featureDims["SaddleclothMissing"] = 1;
+            featureDims["SaddleclothRelative"] = 1;
+            featureDims["SaddleclothDiffFromMean"] = 1;
+            featureDims["IsTopWeight"] = 1;
+            featureDims["IsBottomWeight"] = 1;
             featureDims["JockeyGoingDistanceWinRate"] = 1;
             featureDims["JockeyGoingDistanceAvgNorm"] = 1;
             featureDims["LastJockeyGoingDistanceNormPos"] = 1;
