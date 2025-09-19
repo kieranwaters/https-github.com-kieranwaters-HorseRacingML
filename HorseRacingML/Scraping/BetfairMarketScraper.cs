@@ -19,11 +19,15 @@ namespace HorseRacingML.Scraping
         private readonly object _repoLock = new();
         private readonly decimal _bankroll;
         private readonly decimal? _maxKellyFraction;
+        private decimal _availableBankroll;
+        private int _betSlipSelectionsFilled;
         public BetfairMarketScraper(RacingRepository repo, decimal bankroll, decimal? maxKellyFraction = null)
         {
             _repo = repo;
             _bankroll = bankroll;
+            _availableBankroll = bankroll;
             _maxKellyFraction = maxKellyFraction;
+            _betSlipSelectionsFilled = 0;
         }
         public IReadOnlyList<BetRecommendation> ScrapeOpenRaceTabs(IWebDriver driver)
         {
@@ -208,10 +212,20 @@ namespace HorseRacingML.Scraping
 
                 if (raceRecommendations.Count > 0)
                 {
-                    recommendations.AddRange(raceRecommendations);
-                    var top = raceRecommendations.First();
-                    Console.WriteLine($"\tKelly stake {top.Stake.ToString("0.##", CultureInfo.InvariantCulture)} on {top.HorseName ?? "unknown"} (diff {top.Differential.ToString("0.####", CultureInfo.InvariantCulture)})");
-                    ExecuteBackAllClicks(driver, runnerEntries, raceRecommendations);
+                    var bankrollBeforeClicks = _availableBankroll;
+                    var clickedRecommendations = ExecuteBackAllClicks(driver, runnerEntries, raceRecommendations);
+
+                    if (clickedRecommendations.Count > 0)
+                    {
+                        var top = clickedRecommendations.First();
+                        Console.WriteLine($"\tKelly stake {top.Stake.ToString("0.##", CultureInfo.InvariantCulture)} on {top.HorseName ?? "unknown"} (diff {top.Differential.ToString("0.####", CultureInfo.InvariantCulture)})");
+                        recommendations.AddRange(clickedRecommendations);
+                        PopulateBetSlipStakes(driver, clickedRecommendations, bankrollBeforeClicks);
+                    }
+                    else
+                    {
+                        Console.WriteLine("\tNo qualifying Back-All clicks were executed for this market");
+                    }
                 }
                 else
                 {
@@ -247,7 +261,7 @@ namespace HorseRacingML.Scraping
             string? venueName,
             DateTime? raceDate)
         {
-            if (_bankroll <= 0m)
+            if (_availableBankroll <= 0m)
             {
                 return Enumerable.Empty<BetRecommendation>();
             }
@@ -282,12 +296,6 @@ namespace HorseRacingML.Scraping
                     continue;
                 }
 
-                var stake = _bankroll * kellyFraction;
-                if (stake <= 0)
-                {
-                    continue;
-                }
-
                 recommendations.Add(new BetRecommendation
                 {
                     MarketId = marketId,
@@ -302,21 +310,23 @@ namespace HorseRacingML.Scraping
                     MarketProbability = marketProbability,
                     Differential = differential,
                     KellyFraction = kellyFraction,
-                    Stake = stake
+                    Stake = 0m
                 });
             }
 
             return recommendations;
         }
-        private void ExecuteBackAllClicks(
+        private IReadOnlyList<BetRecommendation> ExecuteBackAllClicks(
             IWebDriver driver,
             IReadOnlyList<(IWebElement Row, RunnerFlow Flow)> runnerEntries,
             IReadOnlyList<BetRecommendation> recommendations)
         {
             if (runnerEntries.Count == 0 || recommendations.Count == 0)
             {
-                return;
+                return Array.Empty<BetRecommendation>();
             }
+
+            var clicked = new List<BetRecommendation>();
 
             foreach (var recommendation in recommendations)
             {
@@ -324,7 +334,21 @@ namespace HorseRacingML.Scraping
                 {
                     continue;
                 }
+                if (_availableBankroll <= 0m)
+                {
+                    break;
+                }
 
+                if (recommendation.KellyFraction <= 0m)
+                {
+                    continue;
+                }
+
+                var stake = CalculateSequentialStake(_availableBankroll, recommendation.KellyFraction);
+                if (stake <= 0m)
+                {
+                    continue;
+                }
                 var match = runnerEntries.FirstOrDefault(entry =>
                     (!string.IsNullOrEmpty(recommendation.SelectionId) &&
                         string.Equals(entry.Flow.SelectionId, recommendation.SelectionId, StringComparison.Ordinal)) ||
@@ -338,11 +362,22 @@ namespace HorseRacingML.Scraping
                     continue;
                 }
 
-                TryClickBackAllButton(driver, match.Row, recommendation);
-                Thread.Sleep(TimeSpan.FromMilliseconds(400));
+                if (TryClickBackAllButton(driver, match.Row, recommendation))
+                {
+                    var clickedRecommendation = recommendation with { Stake = stake };
+                    clicked.Add(clickedRecommendation);
+                    _availableBankroll -= stake;
+                    if (_availableBankroll < 0m)
+                    {
+                        _availableBankroll = 0m;
+                    }
+
+                    Thread.Sleep(TimeSpan.FromMilliseconds(400));
+                }
             }
+            return clicked;
         }
-        private void TryClickBackAllButton(IWebDriver driver, IWebElement row, BetRecommendation recommendation)
+        private bool TryClickBackAllButton(IWebDriver driver, IWebElement row, BetRecommendation recommendation)
         {
             var identifier = recommendation.HorseName ?? recommendation.SelectionId ?? "unknown";
 
@@ -356,12 +391,13 @@ namespace HorseRacingML.Scraping
                     if (TryClickBackAllViaScript(js, row))
                     {
                         Console.WriteLine($"\tClicked Back-All for {identifier} using script fallback");
+                        return true;
                     }
                     else
                     {
                         Console.Error.WriteLine($"\tBack-All button not found for {identifier}");
                     }
-                    return;
+                    return false;
                 }
 
                 try
@@ -376,7 +412,7 @@ namespace HorseRacingML.Scraping
                 {
                     button.Click();
                     Console.WriteLine($"\tClicked Back-All for {identifier}");
-                    return;
+                    return true;
                 }
                 catch (Exception)
                 {
@@ -386,6 +422,7 @@ namespace HorseRacingML.Scraping
                 {
                     js.ExecuteScript("arguments[0].click();", button);
                     Console.WriteLine($"\tClicked Back-All for {identifier} using JavaScript");
+                    return true;
                 }
                 catch (Exception ex)
                 {
@@ -396,6 +433,7 @@ namespace HorseRacingML.Scraping
             {
                 Console.Error.WriteLine($"\tUnexpected error clicking Back-All for {identifier}: {ex.Message}");
             }
+            return false;
         }
         private static IWebElement? FindBackAllButton(IWebElement row)
         {
@@ -438,6 +476,144 @@ namespace HorseRacingML.Scraping
             }
 
             return null;
+        }
+        private static decimal CalculateSequentialStake(decimal bankroll, decimal kellyFraction)
+        {
+            if (bankroll <= 0m || kellyFraction <= 0m)
+            {
+                return 0m;
+            }
+
+            var stake = bankroll * kellyFraction;
+            if (stake <= 0m)
+            {
+                return 0m;
+            }
+
+            if (stake > bankroll)
+            {
+                stake = bankroll;
+            }
+
+            stake = decimal.Round(stake, 2, MidpointRounding.ToZero);
+
+            return stake;
+        }
+        private void PopulateBetSlipStakes(
+            IWebDriver driver,
+            IReadOnlyList<BetRecommendation> recommendations,
+            decimal startingBankroll)
+        {
+            if (recommendations.Count == 0)
+            {
+                return;
+            }
+
+            var expectedCount = _betSlipSelectionsFilled + recommendations.Count;
+            var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(5));
+            try
+            {
+                wait.Until(d => FindBetSlipStakeInputs(d).Count >= expectedCount);
+            }
+            catch (WebDriverTimeoutException)
+            {
+                // proceed with whatever entries are available
+            }
+
+            var inputs = FindBetSlipStakeInputs(driver);
+
+            if (inputs.Count < _betSlipSelectionsFilled)
+            {
+                _betSlipSelectionsFilled = 0;
+            }
+
+            if (inputs.Count <= _betSlipSelectionsFilled)
+            {
+                return;
+            }
+
+            var startIndex = _betSlipSelectionsFilled;
+            var available = inputs.Skip(startIndex).Take(recommendations.Count).ToList();
+
+            if (available.Count == 0)
+            {
+                return;
+            }
+
+            var js = (IJavaScriptExecutor)driver;
+            var remainingPot = startingBankroll;
+
+            for (var i = 0; i < available.Count && i < recommendations.Count; i++)
+            {
+                var recommendation = recommendations[i];
+                var stake = CalculateSequentialStake(remainingPot, recommendation.KellyFraction);
+                var input = available[i];
+                try
+                {
+                    SetStakeInputValue(js, input, stake);
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"\tFailed to populate stake input: {ex.Message}");
+                }
+
+                remainingPot -= stake;
+                if (remainingPot < 0m)
+                {
+                    remainingPot = 0m;
+                }
+            }
+
+            _betSlipSelectionsFilled += available.Count;
+        }
+
+        private static IReadOnlyList<IWebElement> FindBetSlipStakeInputs(IWebDriver driver)
+        {
+            var selectors = new[]
+            {
+                "input.betslip-size-input",
+                "input[data-testid='betslip-stake-input']",
+                "input[data-testid='bet-slip-input']",
+                "input[data-testid='size-input']",
+                "div.betslip-selection input[type='text']"
+            };
+
+            foreach (var selector in selectors)
+            {
+                try
+                {
+                    var found = driver
+                        .FindElements(By.CssSelector(selector))
+                        .Where(e => e.Displayed)
+                        .ToList();
+
+                    if (found.Count > 0)
+                    {
+                        return found;
+                    }
+                }
+                catch (NoSuchElementException)
+                {
+                }
+            }
+
+            return Array.Empty<IWebElement>();
+        }
+
+        private static void SetStakeInputValue(IJavaScriptExecutor js, IWebElement input, decimal stake)
+        {
+            var text = stake > 0m
+                ? stake.ToString("0.##", CultureInfo.InvariantCulture)
+                : "0";
+
+            js.ExecuteScript(@"const el = arguments[0];
+                const value = arguments[1];
+                if (!el) { return; }
+                el.focus();
+                el.value = value;
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+            ", input, text);
         }
         private static bool TryClickBackAllViaScript(IJavaScriptExecutor js, IWebElement row)
         {
