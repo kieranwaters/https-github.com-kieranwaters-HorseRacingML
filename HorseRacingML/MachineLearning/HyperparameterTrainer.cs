@@ -1454,10 +1454,14 @@ namespace HorseRacingML.ML
             var y = tf.placeholder(tf.float32, shape: new TensorShape(-1, 1), name: "y");
             Tensor layer = x;
             int inputDim = featureCount;
+            var hiddenWeightVars = new List<VariableV1>();
+            var hiddenBiasVars = new List<VariableV1>();
             for (int i = 0; i < param.Layers; i++)
             {
                 var w = tf.Variable(tf.random.normal((inputDim, param.Units)), name: $"w{i}");
                 var b = tf.Variable(tf.zeros(param.Units), name: $"b{i}");
+                hiddenWeightVars.Add(w);
+                hiddenBiasVars.Add(b);
                 layer = tf.nn.relu(tf.matmul(layer, w) + b);
                 if (param.Dropout > 0)
                 {
@@ -1525,15 +1529,44 @@ namespace HorseRacingML.ML
 
             double trainAcc = ComputeWinnerAccuracy(trainRaceIds, trainPreds, trainLabels);
             double valAcc = ComputeWinnerAccuracy(valRaceIds, valPreds, valLabels);
-            var weightData = new
+            var hiddenLayers = new List<LayerWeights>();
+            foreach (var (wVar, bVar) in hiddenWeightVars.Zip(hiddenBiasVars, (wVar, bVar) => (wVar, bVar)))
             {
-                Bias = 0f,
-                Weights = new[] { (float)param.Units, (float)param.LearningRate, (float)param.Dropout }
+                var weightArray = ToJagged2D(sess.run(wVar));
+                var biasArray = sess.run(bVar).ToArray<float>();
+                hiddenLayers.Add(new LayerWeights { Weights = weightArray, Bias = biasArray });
+            }
+
+            var outputLayer = new LayerWeights
+            {
+                Weights = ToJagged2D(sess.run(wOut)),
+                Bias = sess.run(bOut).ToArray<float>()
             };
+
+            var model = new TrainedModel
+            {
+                HiddenLayers = hiddenLayers,
+                OutputLayer = outputLayer,
+                Metadata = new FeatureMetadata
+                {
+                    Keys = new List<string>(featureKeys),
+                    FeatureDimensions = new Dictionary<string, int>(featureDims),
+                    StringMaps = stringMaps.ToDictionary(
+                        kvp => kvp.Key,
+                        kvp => new Dictionary<string, int>(kvp.Value))
+                },
+                Normalization = new NormalizationParameters
+                {
+                    Mean = (float[])means.Clone(),
+                    StdDev = (float[])stdDevs.Clone()
+                }
+            };
+
             var weightPath = Path.Combine(AppContext.BaseDirectory, "aiweights.json");
             try
             {
-                File.WriteAllText(weightPath, JsonSerializer.Serialize(weightData));
+                var options = new JsonSerializerOptions { WriteIndented = true };
+                File.WriteAllText(weightPath, JsonSerializer.Serialize(model, options));
             }
             catch
             {
@@ -1542,6 +1575,24 @@ namespace HorseRacingML.ML
             }
             Console.WriteLine($"Training complete - train brier: {trainBrier:F4} - val brier: {valBrier:F4}");
             return (trainAcc, trainLoss, valAcc, valLoss, trainBrier, valBrier);
+            static float[][] ToJagged2D(NDArray array)
+            {
+                if (array.ndim != 2)
+                    throw new InvalidOperationException($"Expected 2-D tensor but received rank {array.ndim}");
+
+                var shape = array.shape;
+                int rows = shape[0];
+                int cols = shape[1];
+                var flat = array.ToArray<float>();
+                var result = new float[rows][];
+                for (int r = 0; r < rows; r++)
+                {
+                    var row = new float[cols];
+                    Array.Copy(flat, r * cols, row, 0, cols);
+                    result[r] = row;
+                }
+                return result;
+            }
         }
     }
 }
