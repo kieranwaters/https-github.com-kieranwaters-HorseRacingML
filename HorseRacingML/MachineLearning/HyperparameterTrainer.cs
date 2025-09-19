@@ -11,6 +11,7 @@ using System.Linq;
 using System.IO;
 using System.Globalization;
 using System.Text.Json;
+using NpShape = Tensorflow.NumPy.Shape;
 using TensorShape = Tensorflow.Shape;
 
 namespace HorseRacingML.ML
@@ -1522,9 +1523,9 @@ namespace HorseRacingML.ML
                 {
                     var indices = grp.Select(g => g.idx).ToList();
                     var batchX = np.array(indices.SelectMany(i => feats[i]).ToArray())
-                        .reshape(new Shape(indices.Count, featureCount));
+                        .reshape(new NpShape(indices.Count, featureCount));
                     var batchY = np.array(indices.Select(i => labs[i]).ToArray())
-                        .reshape(new Shape(indices.Count, 1));
+                        .reshape(new NpShape(indices.Count, 1));
                     totLoss += sess.run(loss, new FeedItem(x, batchX), new FeedItem(y, batchY)).ToArray<float>()[0];
                     var p = sess.run(prediction, new FeedItem(x, batchX)).ToArray<float>();
                     for (int j = 0; j < indices.Count; j++) preds[indices[j]] = p[j];
@@ -1543,9 +1544,9 @@ namespace HorseRacingML.ML
                                           .Take(Math.Min(param.BatchSize, indices.Count - start))
                                           .ToList();
                     var batchX = np.array(batchIdx.SelectMany(i => trainFeatures[i]).ToArray())
-                                         .reshape(new Shape(batchIdx.Count, featureCount));
+                                         .reshape(new NpShape(batchIdx.Count, featureCount));
                     var batchY = np.array(batchIdx.Select(i => trainLabels[i]).ToArray())
-                                         .reshape(new Shape(batchIdx.Count, 1));
+                                         .reshape(new NpShape(batchIdx.Count, 1));
                     sess.run(optimizer, new FeedItem(x, batchX), new FeedItem(y, batchY));
                 }
                 var epochLoss = ComputeDatasetMetrics(trainFeatures, trainLabels, trainRaceIds, out var epochPreds);

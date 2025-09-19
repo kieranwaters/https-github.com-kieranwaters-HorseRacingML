@@ -108,12 +108,12 @@ namespace HorseRacingML.ML
 
             foreach (var layer in model.HiddenLayers ?? new List<LayerWeights>())
             {
-                _hiddenWeights.Add(Convert(layer.Weights));
-                _hiddenBiases.Add(Convert(layer.Bias));
+                _hiddenWeights.Add(ToDoubleJagged(layer.Weights));
+                _hiddenBiases.Add(ToDoubleArray(layer.Bias));
             }
 
-            _outputWeights = Convert(model.OutputLayer.Weights);
-            _outputBias = Convert(model.OutputLayer.Bias);
+            _outputWeights = ToDoubleJagged(model.OutputLayer.Weights);
+            _outputBias = ToDoubleArray(model.OutputLayer.Bias);
 
             _featureCount = _metadata.Keys.Sum(key =>
                 _metadata.FeatureDimensions.TryGetValue(key, out var dim) ? dim : 0);
@@ -331,7 +331,7 @@ namespace HorseRacingML.ML
                 short s => s,
                 byte b => b,
                 IConvertible convertible => convertible.ToDouble(CultureInfo.InvariantCulture),
-                _ => Convert.ToDouble(value, CultureInfo.InvariantCulture)
+                _ => System.Convert.ToDouble(value, CultureInfo.InvariantCulture)
             };
 
             if (Math.Abs(number) > 1_000_000d)
@@ -424,7 +424,7 @@ namespace HorseRacingML.ML
             return prob;
         }
 
-        private static double[][] Convert(float[][] source)
+        private static double[][] ToDoubleJagged(float[][] source)
         {
             if (source == null || source.Length == 0)
             {
@@ -440,7 +440,7 @@ namespace HorseRacingML.ML
             return result;
         }
 
-        private static double[] Convert(float[] source)
+        private static double[] ToDoubleArray(float[] source)
         {
             return source?.Select(f => (double)f).ToArray() ?? Array.Empty<double>();
         }
