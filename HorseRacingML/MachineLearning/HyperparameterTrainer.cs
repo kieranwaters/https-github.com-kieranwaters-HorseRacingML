@@ -11,7 +11,6 @@ using System.Linq;
 using System.IO;
 using System.Globalization;
 using System.Text.Json;
-using NpShape = Tensorflow.NumPy.Shape;
 using TensorShape = Tensorflow.Shape;
 
 namespace HorseRacingML.ML
@@ -1522,10 +1521,23 @@ namespace HorseRacingML.ML
                 foreach (var grp in grouped)
                 {
                     var indices = grp.Select(g => g.idx).ToList();
-                    var batchX = np.array(indices.SelectMany(i => feats[i]).ToArray())
-                        .reshape(new NpShape(indices.Count, featureCount));
-                    var batchY = np.array(indices.Select(i => labs[i]).ToArray())
-                        .reshape(new NpShape(indices.Count, 1));
+                    var batchXData = new float[indices.Count, featureCount];
+                    for (int row = 0; row < indices.Count; row++)
+                    {
+                        var source = feats[indices[row]];
+                        for (int col = 0; col < featureCount; col++)
+                        {
+                            batchXData[row, col] = source[col];
+                        }
+                    }
+                    var batchX = np.array(batchXData);
+
+                    var batchYData = new float[indices.Count, 1];
+                    for (int row = 0; row < indices.Count; row++)
+                    {
+                        batchYData[row, 0] = labs[indices[row]];
+                    }
+                    var batchY = np.array(batchYData);
                     totLoss += sess.run(loss, new FeedItem(x, batchX), new FeedItem(y, batchY)).ToArray<float>()[0];
                     var p = sess.run(prediction, new FeedItem(x, batchX)).ToArray<float>();
                     for (int j = 0; j < indices.Count; j++) preds[indices[j]] = p[j];
@@ -1543,10 +1555,23 @@ namespace HorseRacingML.ML
                     var batchIdx = indices.Skip(start)
                                           .Take(Math.Min(param.BatchSize, indices.Count - start))
                                           .ToList();
-                    var batchX = np.array(batchIdx.SelectMany(i => trainFeatures[i]).ToArray())
-                                         .reshape(new NpShape(batchIdx.Count, featureCount));
-                    var batchY = np.array(batchIdx.Select(i => trainLabels[i]).ToArray())
-                                         .reshape(new NpShape(batchIdx.Count, 1));
+                    var batchXData = new float[batchIdx.Count, featureCount];
+                    for (int row = 0; row < batchIdx.Count; row++)
+                    {
+                        var source = trainFeatures[batchIdx[row]];
+                        for (int col = 0; col < featureCount; col++)
+                        {
+                            batchXData[row, col] = source[col];
+                        }
+                    }
+                    var batchX = np.array(batchXData);
+
+                    var batchYData = new float[batchIdx.Count, 1];
+                    for (int row = 0; row < batchIdx.Count; row++)
+                    {
+                        batchYData[row, 0] = trainLabels[batchIdx[row]];
+                    }
+                    var batchY = np.array(batchYData);
                     sess.run(optimizer, new FeedItem(x, batchX), new FeedItem(y, batchY));
                 }
                 var epochLoss = ComputeDatasetMetrics(trainFeatures, trainLabels, trainRaceIds, out var epochPreds);
