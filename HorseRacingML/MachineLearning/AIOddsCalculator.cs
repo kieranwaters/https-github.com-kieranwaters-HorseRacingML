@@ -19,12 +19,12 @@ namespace HorseRacingML.ML
     {
         private readonly List<double[][]> _hiddenWeights = new();
         private readonly List<double[]> _hiddenBiases = new();
-        private readonly double[][]? _outputWeights;
-        private readonly double[]? _outputBias;
-        private readonly FeatureMetadata? _metadata;
-        private readonly double[]? _mean;
-        private readonly double[]? _std;
-        private readonly int _featureCount;
+        private double[][]? _outputWeights;
+        private double[]? _outputBias;
+        private FeatureMetadata? _metadata;
+        private double[]? _mean;
+        private double[]? _std;
+        private int _featureCount;
         private readonly bool _hasTrainedModel;
         private readonly double[] _legacyWeights;
         private readonly double _legacyBias;
