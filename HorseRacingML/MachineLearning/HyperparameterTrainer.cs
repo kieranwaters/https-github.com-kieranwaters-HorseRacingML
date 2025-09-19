@@ -1485,8 +1485,8 @@ namespace HorseRacingML.ML
             var y = tf.placeholder(tf.float32, shape: new TensorShape(-1, 1), name: "y");
             Tensor layer = x;
             int inputDim = featureCount;
-            var hiddenWeightVars = new List<VariableV1>();
-            var hiddenBiasVars = new List<VariableV1>();
+            var hiddenWeightVars = new List<ResourceVariable>();
+            var hiddenBiasVars = new List<ResourceVariable>();
             for (int i = 0; i < param.Layers; i++)
             {
                 var w = tf.Variable(tf.random.normal((inputDim, param.Units)), name: $"w{i}");
