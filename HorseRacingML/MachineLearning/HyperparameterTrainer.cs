@@ -69,6 +69,21 @@ namespace HorseRacingML.ML
             public int Wins;
             public Queue<(DateTime date, bool win)> Recent = new();
         }
+        private readonly record struct HistoryEntry(
+            DateTime Date,
+            float NormFinish,
+            short? Finish,
+            string Going,
+            string Surface,
+            int CourseId,
+            string Bucket,
+            int RaceClass,
+            float Speed,
+            float SpeedDiff,
+            int Age,
+            bool Won,
+            float Rating,
+            float Weight);
         private static float[] EncodeFeature(
             string key,
             object? value,
@@ -247,8 +262,8 @@ namespace HorseRacingML.ML
                     .ThenBy(r => Convert.ToInt32(r["RaceId"]))
                     .ToList();
 
-                var horseHistory = new Dictionary<int, List<(DateTime date, float normFinish, short? finish, string going, string surface, int courseId, string bucket, int raceClass, float speed, float speedDiff, int age, bool win, float rating, float weight)>>();
-                Dictionary<int, RollingStat> trainerStats = new();
+            var horseHistory = new Dictionary<int, List<HistoryEntry>>();
+            Dictionary<int, RollingStat> trainerStats = new();
                 var jockeyStats = new Dictionary<int, RollingStat>();
             var trainerJockeyStats = new Dictionary<(int trainerId, int jockeyId), (int starts, int wins)>();
             var trainerJockeySurfaceStats =
@@ -418,21 +433,21 @@ namespace HorseRacingML.ML
                 }
                 if (!horseHistory.TryGetValue(horseId, out var history))
                     {
-                        history = new List<(DateTime date, float normFinish, short? finish, string going, string surface, int courseId, string bucket, int raceClass, float speed, float speedDiff, int age, bool win, float rating, float weight)>();
-                        horseHistory[horseId] = history;
+                    history = new List<HistoryEntry>();
+                    horseHistory[horseId] = history;
                     }
-                    row["RatingChangeFromLast"] = history.Count > 0 ? rating - history[^1].rating : 0f;
-                    row["WeightChangeFromLast"] = history.Count > 0 ? weight - history[^1].weight : 0f;
-                    row["AgeProgression"] = history.Count > 0 ? age - history[^1].age : 0f;
-                    row["ClassChangeFromLast"] = history.Count > 0 ? classVal - history[^1].raceClass : 0;
-                    row["DaysSinceLastRace"] = history.Count > 0 ? (float)(date - history[^1].date).TotalDays : 0f;
-                    row["LastFinishPos"] = history.Count > 0 ? history[^1].finish ?? 0 : 0;
-                    int lastWinIdx = history.FindLastIndex(h => h.win);
+                row["RatingChangeFromLast"] = history.Count > 0 ? rating - history[^1].Rating : 0f;
+                row["WeightChangeFromLast"] = history.Count > 0 ? weight - history[^1].Weight : 0f;
+                row["AgeProgression"] = history.Count > 0 ? age - history[^1].Age : 0f;
+                row["ClassChangeFromLast"] = history.Count > 0 ? classVal - history[^1].RaceClass : 0;
+                row["DaysSinceLastRace"] = history.Count > 0 ? (float)(date - history[^1].Date).TotalDays : 0f;
+                row["LastFinishPos"] = history.Count > 0 ? history[^1].Finish ?? 0 : 0;
+                int lastWinIdx = history.FindLastIndex(h => h.Won);
                 bool hasLastWin = lastWinIdx >= 0;
                 row["HasLastWin"] = hasLastWin;
                 if (hasLastWin)
                 {
-                    row["DaysSinceLastWin"] = (float?)(date - history[lastWinIdx].date).TotalDays;
+                    row["DaysSinceLastWin"] = (float?)(date - history[lastWinIdx].Date).TotalDays;
                     row["RacesSinceLastWin"] = history.Count - 1 - lastWinIdx;
                 }
                 else
@@ -449,7 +464,7 @@ namespace HorseRacingML.ML
                     {
                         var key = $"Last{i + 1}NormPos";
                         row[key] = i < history.Count
-                            ? history[history.Count - 1 - i].normFinish
+                             ? history[history.Count - 1 - i].NormFinish
                             : 0f;
                     }
                     int normCount = Math.Min(PastRaceCount, history.Count);
@@ -458,7 +473,7 @@ namespace HorseRacingML.ML
                         // Oldest first for regression
                         var recentNorms = history
                             .GetRange(history.Count - normCount, normCount)
-                            .Select(h => h.normFinish)
+                            .Select(h => h.NormFinish)
                             .ToList();
 
                         float xMean = (normCount - 1) / 2f;
@@ -482,7 +497,7 @@ namespace HorseRacingML.ML
                     {
                         var recentSpeeds = history
                             .GetRange(history.Count - speedCount, speedCount)
-                            .Select(h => h.speed)
+                            .Select(h => h.Speed)
                             .ToList();
                         float speedMean = recentSpeeds.Average();
                         float variance = 0f;
@@ -520,7 +535,7 @@ namespace HorseRacingML.ML
                 {
                     var recentRatings = history
                         .GetRange(history.Count - ratingCount, ratingCount)
-                        .Select(h => h.rating)
+                        .Select(h => h.Rating)
                         .ToList();
                     if (ratingCount > 1)
                     {
@@ -548,25 +563,26 @@ namespace HorseRacingML.ML
                 row["RecentImprovement"] =
                         (float)row["Last1NormPos"] - (float)row[$"Last{PastRaceCount}NormPos"];
                     int careerStarts = history.Count;
-                    int careerWins = history.Count(h => h.win);
-                    row["CareerStarts"] = careerStarts;
+                int careerWins = history.Count(h => h.Won);
+                row["CareerStarts"] = careerStarts;
                     row["LifetimeWinRate"] = SmoothedWinRate(careerWins, careerStarts);
                     foreach (var window in PerformanceWindows)
                     {
                         int count = Math.Min(window, history.Count);
 
-                        // Ensure `recent` is available regardless of branch to avoid scope issues.
-                        List<(DateTime date, float normFinish, short? finish, string going, string surface, int courseId, string bucket, int raceClass, float speed, float speedDiff, int age, bool win, float rating, float weight)> recent;
-                        if (count > 0)
+                    // Ensure `recent` is available regardless of branch to avoid scope issues.
+                    List<HistoryEntry> recent;
+                    if (count > 0)
                         {
                             recent = history.GetRange(history.Count - count, count);
-                            int wins = recent.Count(h => h.finish == 1);
-                            row[$"WinRateLast{window}"] = SmoothedWinRate(wins, count);
-                            row[$"AvgNormPosLast{window}"] = recent.Sum(h => h.normFinish) / count;
-                            row[$"AvgSpeedLast{window}"] = recent.Sum(h => h.speed) / count;
-                            row[$"AvgSpeedDiffLast{window}"] = recent.Sum(h => h.speedDiff) / count;
-                        row[$"AvgRatingLast{window}"] = recent.Sum(h => h.rating) / count;
-                    }
+                        int wins = recent.Count(h => h.Finish == 1);
+                        row[$"WinRateLast{window}"] = SmoothedWinRate(wins, count);
+                        row[$"AvgNormPosLast{window}"] = recent.Sum(h => h.NormFinish) / count;
+                        row[$"AvgSpeedLast{window}"] = recent.Sum(h => h.Speed) / count;
+                        row[$"AvgSpeedDiffLast{window}"] = recent.Sum(h => h.SpeedDiff) / count;
+                        row[$"AvgRatingLast{window}"] = recent.Sum(h => h.Rating) / count;
+                    
+                }
                         else
                         {
                             recent = new();
@@ -575,7 +591,8 @@ namespace HorseRacingML.ML
                             row[$"AvgSpeedLast{window}"] = 0f;
                             row[$"AvgSpeedDiffLast{window}"] = 0f;
                         row[$"AvgRatingLast{window}"] = 0f;
-                    }
+                    
+                }
                     }
                     // Going performance
                     string going = row["Going"] as string ?? "Unknown";
@@ -687,33 +704,33 @@ namespace HorseRacingML.ML
                     foreach (var window in PerformanceWindows)
                     {
                         int count = Math.Min(window, history.Count);
-                        if (count > 0)
-                        {
-                            var recent = history.GetRange(history.Count - count, count);
+                    if (count > 0)
+                    {
+                        var recent = history.GetRange(history.Count - count, count);
 
-                            var goingRecent = recent.Where(h => h.going == going).ToList();
-                            row[$"GoingWinRateLast{window}"] = SmoothedWinRate(goingRecent.Count(h => h.finish == 1), goingRecent.Count);
-                            row[$"GoingAvgNormLast{window}"] = goingRecent.Count > 0
-                                ? goingRecent.Sum(h => h.normFinish) / goingRecent.Count
-                                : 0f;
-                            var surfaceRecent = recent.Where(h => h.surface == surface).ToList();
-                            row[$"SurfaceWinRateLast{window}"] = SmoothedWinRate(surfaceRecent.Count(h => h.finish == 1), surfaceRecent.Count);
-                            row[$"SurfaceAvgNormLast{window}"] = surfaceRecent.Count > 0
-                                ? surfaceRecent.Sum(h => h.normFinish) / surfaceRecent.Count
-                                : 0f;
-                            var courseRecent = recent.Where(h => h.courseId == courseId).ToList();
-                            row[$"CourseWinRateLast{window}"] = SmoothedWinRate(courseRecent.Count(h => h.finish == 1), courseRecent.Count);
-                            row[$"CourseAvgNormLast{window}"] = courseRecent.Count > 0
-                                ? courseRecent.Sum(h => h.normFinish) / courseRecent.Count
-                                : 0f;
+                        var goingRecent = recent.Where(h => h.Going == going).ToList();
+                        row[$"GoingWinRateLast{window}"] = SmoothedWinRate(goingRecent.Count(h => h.Finish == 1), goingRecent.Count);
+                        row[$"GoingAvgNormLast{window}"] = goingRecent.Count > 0
+                            ? goingRecent.Sum(h => h.NormFinish) / goingRecent.Count
+                            : 0f;
+                        var surfaceRecent = recent.Where(h => h.Surface == surface).ToList();
+                        row[$"SurfaceWinRateLast{window}"] = SmoothedWinRate(surfaceRecent.Count(h => h.Finish == 1), surfaceRecent.Count);
+                        row[$"SurfaceAvgNormLast{window}"] = surfaceRecent.Count > 0
+                            ? surfaceRecent.Sum(h => h.NormFinish) / surfaceRecent.Count
+                            : 0f;
+                        var courseRecent = recent.Where(h => h.CourseId == courseId).ToList();
+                        row[$"CourseWinRateLast{window}"] = SmoothedWinRate(courseRecent.Count(h => h.Finish == 1), courseRecent.Count);
+                        row[$"CourseAvgNormLast{window}"] = courseRecent.Count > 0
+                            ? courseRecent.Sum(h => h.NormFinish) / courseRecent.Count
+                            : 0f;
 
-                            var bucketRecent = recent.Where(h => h.bucket == bucket).ToList();
-                            row[$"DistanceBucketWinRateLast{window}"] = SmoothedWinRate(bucketRecent.Count(h => h.finish == 1), bucketRecent.Count);
-                            row[$"DistanceBucketAvgNormLast{window}"] = bucketRecent.Count > 0
-                                ? bucketRecent.Sum(h => h.normFinish) / bucketRecent.Count
-                                : 0f;
-                        }
-                        else
+                        var bucketRecent = recent.Where(h => h.Bucket == bucket).ToList();
+                        row[$"DistanceBucketWinRateLast{window}"] = SmoothedWinRate(bucketRecent.Count(h => h.Finish == 1), bucketRecent.Count);
+                        row[$"DistanceBucketAvgNormLast{window}"] = bucketRecent.Count > 0
+                            ? bucketRecent.Sum(h => h.NormFinish) / bucketRecent.Count
+                            : 0f;
+                    }
+                    else
                         {
                             row[$"GoingWinRateLast{window}"] = SmoothedWinRate(0, 0);
                             row[$"GoingAvgNormLast{window}"] = 0f;
@@ -936,7 +953,21 @@ namespace HorseRacingML.ML
                     float normFinish = (finish.HasValue && runnerCount > 1)
                         ? (runnerCount - finish.Value) / (float)(runnerCount - 1)
                         : 0f;
-                    history.Add((date, normFinish, finish, going, surface, courseId, bucket, classVal, runnerSpeed, speedDiff, age, finish.HasValue && finish.Value == 1, rating, weight));
+                history.Add(new HistoryEntry(
+                    date,
+                    normFinish,
+                    finish,
+                    going,
+                    surface,
+                    courseId,
+                    bucket,
+                    classVal,
+                    runnerSpeed,
+                    speedDiff,
+                    age,
+                    finish.HasValue && finish.Value == 1,
+                    rating,
+                    weight));
                 horseClassStat.starts++;
                 horseClassStat.sumNorm += normFinish;
                 if (finish.HasValue && finish.Value == 1) horseClassStat.wins++;
