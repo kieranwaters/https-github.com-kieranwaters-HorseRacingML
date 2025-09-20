@@ -1638,8 +1638,8 @@ namespace HorseRacingML.ML
                     throw new InvalidOperationException($"Expected 2-D tensor but received rank {array.ndim}");
 
                 var shape = array.shape;
-                int rows = shape[0];
-                int cols = shape[1];
+                int rows = (int)shape[0];
+                int cols = (int)shape[1];
                 var flat = array.ToArray<float>();
                 var result = new float[rows][];
                 for (int r = 0; r < rows; r++)
