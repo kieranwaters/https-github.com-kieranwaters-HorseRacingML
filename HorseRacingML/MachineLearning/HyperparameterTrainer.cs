@@ -1396,8 +1396,8 @@ private RaceStats ComputeRaceStats(List<Dictionary<string, object?>> rows)
     foreach (var record in conn.Query(sql, commandTimeout: 6000, buffered: false))
     {
         var source = (IDictionary<string, object?>)record;
-        var row = new Dictionary<string, object?>();
-        foreach (var kvp in source)
+                var row = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+                foreach (var kvp in source)
         {
             row[kvp.Key] = NormalizeDbValue(kvp.Value);
         }
