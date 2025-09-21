@@ -1545,29 +1545,27 @@ namespace HorseRacingML.ML
             foreach (var preparedRace in races)
             {
                 var runners = new List<RunnerExample>(preparedRace.Rows.Count);
-                foreach (var preparedRace in prepared.Races)
+                foreach (var row in preparedRace.Rows)
                 {
-                    var runners = new List<RunnerExample>();
-                    foreach (var row in preparedRace.Rows)
+                    var features = new float[featureCount];
+                    int offset = 0;
+                    foreach (var key in featureKeys)
                     {
-                        var features = new float[featureCount];
-                        int offset = 0;
-                        foreach (var key in featureKeys)
-                        {
-                            int dim = featureDimensions[key];
-                            row.TryGetValue(key, out var value);
-                            var vec = EncodeFeature(key, value, dim, stringMaps);
-                            Array.Copy(vec, 0, features, offset, dim);
-                            offset += dim;
-                        }
-                        float label = row.TryGetValue("FinishPos", out var f) && f != null && Convert.ToInt32(f) == 1 ? 1f : 0f;
-                        runners.Add(new RunnerExample(preparedRace.RaceId, features, label));
+                        int dim = featureDimensions[key];
+                        row.TryGetValue(key, out var value);
+                        var vec = EncodeFeature(key, value, dim, stringMaps);
+                        Array.Copy(vec, 0, features, offset, dim);
+                        offset += dim;
                     }
-                    result.Add(new RaceExample(preparedRace.RaceId, runners));
+
+                    float label = row.TryGetValue("FinishPos", out var f) && f != null && Convert.ToInt32(f) == 1 ? 1f : 0f;
+                    runners.Add(new RunnerExample(preparedRace.RaceId, features, label));
                 }
 
-                return result;
+                result.Add(new RaceExample(preparedRace.RaceId, runners));
             }
+
+            return result;
         }
 
         private TrainingDataset BuildTrainingDataset(
