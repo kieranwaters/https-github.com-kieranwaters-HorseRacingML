@@ -27,13 +27,25 @@ namespace HorseRacingML.Controllers
             {
                 await Task.Run(() =>
                 {
+                    var parameters = batch.Parameters;
+                    Console.WriteLine($"[Hyperparameter] Starting custom run for {parameters.Count} parameter set(s).");
+
                     var dataset = _trainer.PrepareDataset();
-                    foreach (var model in batch.Parameters)
+                    Console.WriteLine($"[Hyperparameter] Dataset prepared with {dataset.Races.Count} races and {dataset.FeatureCount} features.");
+
+                    int modelIndex = 0;
+                    foreach (var model in parameters)
                     {
+                        modelIndex++;
+                        Console.WriteLine($"[Hyperparameter] Starting model {modelIndex}/{parameters.Count} (layers: {model.Layers}, units: {model.Units}, dropout: {model.Dropout}, lr: {model.LearningRate}).");
+
                         model.RunDate = DateTime.UtcNow;
                         for (int i = 0; i < model.Folds; i++)
                         {
+                            Console.WriteLine($"[Hyperparameter]  Fold {i + 1}/{model.Folds} - training in progress...");
                             var result = _trainer.Train(model, dataset, i, model.Folds);
+                            Console.WriteLine($"[Hyperparameter]  Fold {i + 1}/{model.Folds} complete. Train acc: {result.TrainAccuracy:F4}, val acc: {result.ValidationAccuracy:F4}.");
+
                             var foldModel = new MLParameter
                             {
                                 RunDate = model.RunDate,
@@ -52,8 +64,11 @@ namespace HorseRacingML.Controllers
                                 Fold = i + 1
                             };
                             _repository.InsertMLParameter(foldModel);
+                            Console.WriteLine($"[Hyperparameter]  Fold {i + 1}/{model.Folds} results stored.");
                         }
+                        Console.WriteLine($"[Hyperparameter] Completed model {modelIndex}/{parameters.Count}.");
                     }
+                    Console.WriteLine("[Hyperparameter] Custom run finished.");
                 });
                 return RedirectToAction("Index", "Home");
             }
