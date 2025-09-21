@@ -8,6 +8,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Text;
 using Tensorflow;
 using Tensorflow.NumPy;
 using static HorseRacingML.ML.HyperparameterTrainer.TrainingDataset;
@@ -103,7 +104,149 @@ namespace HorseRacingML.ML
                     public int FeatureCount { get; }
                 }
             }
+            private static int GetRequiredInt32(Dictionary<string, object?> row, string key)
+            {
+                if (!row.TryGetValue(key, out var value) || value is null)
+                {
+                    throw new InvalidOperationException($"Missing required column '{key}'.");
+                }
 
+                if (TryConvertToInt32(value, out var result))
+                {
+                    return result;
+                }
+
+                string typeName = value.GetType().FullName ?? value.GetType().Name;
+                string displayValue = value switch
+                {
+                    byte[] bytes => $"0x{BitConverter.ToString(bytes).Replace("-", string.Empty)}",
+                    _ => value.ToString() ?? string.Empty
+                };
+
+                throw new FormatException($"Column '{key}' with value '{displayValue}' of type '{typeName}' could not be converted to Int32.");
+            }
+
+            private static bool TryConvertToInt32(object? value, out int result)
+            {
+                switch (value)
+                {
+                    case null:
+                        result = 0;
+                        return false;
+                    case int i:
+                        result = i;
+                        return true;
+                    case long l when l >= int.MinValue && l <= int.MaxValue:
+                        result = (int)l;
+                        return true;
+                    case short s:
+                        result = s;
+                        return true;
+                    case sbyte sb:
+                        result = sb;
+                        return true;
+                    case byte b:
+                        result = b;
+                        return true;
+                    case ushort us when us <= int.MaxValue:
+                        result = us;
+                        return true;
+                    case uint ui when ui <= int.MaxValue:
+                        result = (int)ui;
+                        return true;
+                    case decimal dec when dec >= int.MinValue && dec <= int.MaxValue:
+                        result = (int)dec;
+                        return true;
+                    case double dbl when dbl >= int.MinValue && dbl <= int.MaxValue:
+                        result = (int)dbl;
+                        return true;
+                    case float fl when fl >= int.MinValue && fl <= int.MaxValue:
+                        result = (int)fl;
+                        return true;
+                    case string str:
+                        if (int.TryParse(str, NumberStyles.Integer, CultureInfo.InvariantCulture, out result))
+                        {
+                            return true;
+                        }
+                        if (int.TryParse(str, NumberStyles.Integer, CultureInfo.CurrentCulture, out result))
+                        {
+                            return true;
+                        }
+
+                        string trimmed = str.Trim();
+                        if (trimmed.Length > 0)
+                        {
+                            var filtered = new string(trimmed.Where(c => char.IsDigit(c) || c == '-' || c == '+').ToArray());
+                            if (!string.IsNullOrWhiteSpace(filtered) &&
+                                int.TryParse(filtered, NumberStyles.Integer, CultureInfo.InvariantCulture, out result))
+                            {
+                                return true;
+                            }
+
+                            var unicodeBytes = Encoding.Unicode.GetBytes(trimmed);
+                            if (TryConvertByteArray(unicodeBytes, out result))
+                            {
+                                return true;
+                            }
+                        }
+                        break;
+                    case byte[] bytes:
+                        if (TryConvertByteArray(bytes, out result))
+                        {
+                            return true;
+                        }
+                        break;
+                    case ReadOnlyMemory<byte> memory:
+                        if (TryConvertByteArray(memory.ToArray(), out result))
+                        {
+                            return true;
+                        }
+                        break;
+                    case IConvertible convertible:
+                        try
+                        {
+                            result = convertible.ToInt32(CultureInfo.InvariantCulture);
+                            return true;
+                        }
+                        catch
+                        {
+                            break;
+                        }
+                }
+
+                result = 0;
+                return false;
+            }
+
+            private static bool TryConvertByteArray(byte[] bytes, out int result)
+            {
+                if (bytes is null || bytes.Length == 0)
+                {
+                    result = 0;
+                    return false;
+                }
+
+                string asString = Encoding.UTF8.GetString(bytes).Trim('\0', ' ', '\t', '\r', '\n');
+                if (asString.Length > 0)
+                {
+                    if (int.TryParse(asString, NumberStyles.Integer, CultureInfo.InvariantCulture, out result) ||
+                        int.TryParse(asString, NumberStyles.Integer, CultureInfo.CurrentCulture, out result))
+                    {
+                        return true;
+                    }
+                }
+
+                if (bytes.Length <= 4)
+                {
+                    var padded = new byte[4];
+                    Array.Copy(bytes, padded, bytes.Length);
+                    result = BitConverter.ToInt32(padded, 0);
+                    return true;
+                }
+
+                result = 0;
+                return false;
+            }
             public class PreparedRace
             {
                 public PreparedRace(int raceId, List<Dictionary<string, object?>> rows)
@@ -392,7 +535,20 @@ namespace HorseRacingML.ML
                 {
                     return;
                 }
+                rows.RemoveAll(row =>
+                {
+                    if (!row.TryGetValue("HorseId", out var horseIdObj) || horseIdObj is null)
+                    {
+                        return true;
+                    }
 
+                    return false;
+                });
+
+                if (rows.Count == 0)
+                {
+                    return;
+                }
                 foreach (var runnerRow in rows)
                 {
                     bool distanceKnown = false;
@@ -421,7 +577,7 @@ namespace HorseRacingML.ML
 
                     foreach (var row in rows)
                     {
-                        int horseId = Convert.ToInt32(row["HorseId"]);
+                        int horseId = GetRequiredInt32(row, "HorseId");
                         DateTime date = (DateTime)row["RaceDate"];
                         TimeSpan? off = null;
                         if (row.TryGetValue("ActualOff", out var offObj) && offObj != null)
@@ -459,17 +615,29 @@ namespace HorseRacingML.ML
                         row.Remove("ScheduledOff");
                         row.Remove("RaceDate");
                         short? finish = row["FinishPos"] != null ? (short?)Convert.ToInt16(row["FinishPos"]) : null;
-                        int raceId = Convert.ToInt32(row["RaceId"]);
-                        int runnerCount = row["RunnerCount"] != null ? Convert.ToInt32(row["RunnerCount"]) : raceStat.RunnerCount;
-                        int? trainerId = row.TryGetValue("TrainerId", out var tObj) && tObj != null
-                            ? Convert.ToInt32(tObj)
+                        int raceId = GetRequiredInt32(row, "RaceId");
+                        int runnerCount = row.TryGetValue("RunnerCount", out var runnerCountObj) &&
+                                            TryConvertToInt32(runnerCountObj, out var runnerValue)
+                            ? runnerValue
+                            : raceStat.RunnerCount;
+                        int? trainerId = row.TryGetValue("TrainerId", out var tObj) &&
+                                          TryConvertToInt32(tObj, out var trainerValue)
+                            ? trainerValue
                             : (int?)null;
-                        int? jockeyId = row.TryGetValue("JockeyId", out var jObj) && jObj != null
-                            ? Convert.ToInt32(jObj)
+                        int? jockeyId = row.TryGetValue("JockeyId", out var jObj) &&
+                                         TryConvertToInt32(jObj, out var jockeyValue)
+                            ? jockeyValue
                             : (int?)null;
 
                         bool drawMissing = row["Draw"] == null;
-                        int draw = !drawMissing ? Convert.ToInt32(row["Draw"]) : 0;
+                        int draw = 0;
+                        if (!drawMissing)
+                        {
+                            if (!TryConvertToInt32(row["Draw"], out draw))
+                            {
+                                drawMissing = true;
+                            }
+                        }
                         row["DrawMissing"] = drawMissing;
 
                         float runnerSpeed = 0f;
@@ -482,8 +650,12 @@ namespace HorseRacingML.ML
                         float rating = ratingMissing ? raceStat.AvgRating : Convert.ToSingle(ratingObj);
                         row["RatingMissing"] = ratingMissing;
                         row["RelativeDraw"] = runnerCount > 0 ? (float)draw / runnerCount : 0f;
-                        bool saddleclothMissing = !(row.TryGetValue("SaddleclothNumber", out var saddleclothObj) && saddleclothObj != null);
-                        int saddlecloth = saddleclothMissing ? 0 : Convert.ToInt32(saddleclothObj);
+                        bool saddleclothMissing = !(row.TryGetValue("SaddleclothNumber", out var saddleclothObj) &&
+                                                     TryConvertToInt32(saddleclothObj, out var saddlecloth));
+                        if (saddleclothMissing)
+                        {
+                            saddlecloth = 0;
+                        }
                         row["SaddleclothMissing"] = saddleclothMissing;
                         row["SaddleclothRelative"] = !saddleclothMissing && runnerCount > 0 ? (float)saddlecloth / runnerCount : 0f;
                         row["SaddleclothDiffFromMean"] = !saddleclothMissing && raceStat.HasSaddleclothStats
@@ -496,9 +668,13 @@ namespace HorseRacingML.ML
                         row["RatingDiffFromField"] = rating - raceStat.AvgRating;
                         row["FieldRatingStdDev"] = raceStat.StdRating;
                         row["PurseLevel"] = raceStat.TotalPurse;
-                        int age = row["Age"] != null ? Convert.ToInt32(row["Age"]) : 0;
+                        int age = row.TryGetValue("Age", out var ageObj) && TryConvertToInt32(ageObj, out var ageValue)
+                            ? ageValue
+                            : 0;
                         row["AgeRelative"] = age - raceStat.AvgAge;
-                        int classVal = row["Class"] != null ? Convert.ToInt32(row["Class"]) : 0;
+                        int classVal = row.TryGetValue("Class", out var classObj) && TryConvertToInt32(classObj, out var classValue)
+                            ? classValue
+                            : 0;
                         var horseClassKey = (horseId, classVal);
                         if (!_horseClassStats.TryGetValue(horseClassKey, out var horseClassStat))
                             horseClassStat = (0, 0, 0f, 0f);
@@ -741,7 +917,9 @@ namespace HorseRacingML.ML
                         row["SurfaceAvgNorm"] = sStats.starts > 0 ? sStats.sumNorm / sStats.starts : 0f;
                         row["LastSurfaceNormPos"] = sStats.lastNorm;
                         // Going + Course preference
-                        int courseId = row["CourseId"] != null ? Convert.ToInt32(row["CourseId"]) : 0;
+                        int courseId = row.TryGetValue("CourseId", out var courseObj) && TryConvertToInt32(courseObj, out var courseIdValue)
+                            ? courseIdValue
+                            : 0;
                         if (!_courseStats.TryGetValue(horseId, out var cDict))
                         {
                             cDict = new();
@@ -775,8 +953,12 @@ namespace HorseRacingML.ML
                         row["LastAgeRestrictionNormPos"] = aStats.lastNorm;
 
                         // Distance specialization
-                        int distanceYards = row["DistanceYards"] != null ? Convert.ToInt32(row["DistanceYards"]) : 0;
-                        int? winningMs = row["WinningTimeMs"] != null ? Convert.ToInt32(row["WinningTimeMs"]) : (int?)null;
+                        int distanceYards = row.TryGetValue("DistanceYards", out var distanceObj) && TryConvertToInt32(distanceObj, out var distanceValue)
+                            ? distanceValue
+                            : 0;
+                        int? winningMs = row.TryGetValue("WinningTimeMs", out var winningObj) && TryConvertToInt32(winningObj, out var winningValue)
+                            ? winningValue
+                            : (int?)null;
                         bool speedMissing = !(winningMs.HasValue && winningMs.Value > 0);
                         float raceSpeed = speedMissing
                             ? 0f
@@ -1402,8 +1584,8 @@ private RaceStats ComputeRaceStats(List<Dictionary<string, object?>> rows)
             row[kvp.Key] = NormalizeDbValue(kvp.Value);
         }
 
-        int raceId = Convert.ToInt32(row["RaceId"] ?? throw new InvalidOperationException("Missing RaceId."));
-        if (currentRaceId.HasValue && raceId != currentRaceId.Value)
+                int raceId = GetRequiredInt32(row, "RaceId");
+                if (currentRaceId.HasValue && raceId != currentRaceId.Value)
         {
             Shuffle(currentRows, rnd);
             featureState.ProcessRace(currentRows);
@@ -1636,7 +1818,9 @@ private static float[] EncodeNumeric(object value, int dim)
                         offset += dim;
                     }
 
-                    float label = row.TryGetValue("FinishPos", out var f) && f != null && Convert.ToInt32(f) == 1 ? 1f : 0f;
+                    float label = row.TryGetValue("FinishPos", out var f) && TryConvertToInt32(f, out var finishPos) && finishPos == 1
+                        ? 1f
+                        : 0f;
                     runners.Add(new RunnerExample(preparedRace.RaceId, features, label));
                 }
 
