@@ -54,8 +54,8 @@ namespace HorseRacingML.Data
             var table = new DataTable();
             table.Columns.Add("RaceId", typeof(int));
             table.Columns.Add("HorseId", typeof(int));
-            table.Columns.Add("TrainerId", typeof(int));
-            table.Columns.Add("JockeyId", typeof(int));
+            table.Columns.Add("TrainerId", typeof(short));
+            table.Columns.Add("JockeyId", typeof(short));
             table.Columns.Add("SaddleclothNumber", typeof(byte));
             table.Columns.Add("Draw", typeof(byte));
             table.Columns.Add("Age", typeof(byte));
@@ -248,7 +248,7 @@ IF NOT EXISTS (SELECT 1 FROM RunnerResult WHERE RaceId=@RaceId AND HorseId=@Hors
             _connectionString = connectionString;
         }
 
-        public int InsertCourse(Course course)
+        public short InsertCourse(Course course)
         {
             StripBracketedText(course);
             const string sql = @"
@@ -260,7 +260,7 @@ BEGIN
     SELECT CAST(SCOPE_IDENTITY() as int);
 END";
             using var conn = OpenConnection();
-            return conn.QuerySingle<int>(sql, course);
+            return conn.QuerySingle<short>(sql, course);
         }
         public int InsertMLParameter(MLParameter param)
         {
@@ -289,7 +289,7 @@ END";
             return conn.QuerySingle<int>(sql, race);
         }
 
-        public int InsertTrainer(Trainer trainer)
+        public short InsertTrainer(Trainer trainer)
         {
             StripBracketedText(trainer);
             const string sql = @"
@@ -301,10 +301,10 @@ BEGIN
     SELECT CAST(SCOPE_IDENTITY() as int);
 END";
             using var conn = OpenConnection();
-            return conn.QuerySingle<int>(sql, trainer);
+            return conn.QuerySingle<short>(sql, trainer);
         }
 
-        public int InsertJockey(Jockey jockey)
+        public short InsertJockey(Jockey jockey)
         {
             StripBracketedText(jockey);
             const string sql = @"
@@ -316,7 +316,7 @@ BEGIN
     SELECT CAST(SCOPE_IDENTITY() as int);
 END";
             using var conn = OpenConnection();
-            return conn.QuerySingle<int>(sql, jockey);
+            return conn.QuerySingle<short>(sql, jockey); 
         }
 
         public int InsertHorse(Horse horse)

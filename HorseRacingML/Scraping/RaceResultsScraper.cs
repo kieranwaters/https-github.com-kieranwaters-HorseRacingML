@@ -564,7 +564,7 @@ namespace HorseRacingML.Scraping
                 AgeRestriction = ageRestriction, // age
                 Surface = surface, // surface
                 Going = going, // going
-                DistanceYards = distanceYards, // yards
+                DistanceYards = (short)distanceYards, // yards
                 DistanceText = distanceText ?? string.Empty, // text
                 RunnerCount = runnerCount.HasValue ? (byte?)runnerCount : null, // runners
                 Status = status, // status
@@ -617,8 +617,8 @@ namespace HorseRacingML.Scraping
                 {
                     RaceId = raceId, // race
                     HorseId = horseId, // horse
-                    TrainerId = trainerId, // trainer
-                    JockeyId = jockeyId, // jockey
+                    TrainerId = (short?)trainerId, // trainer
+                    JockeyId = (short?)jockeyId, // jockey
                     SaddleclothNumber = saddle, // saddle
                     Draw = stall, // draw
                     Age = age, // age

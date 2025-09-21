@@ -5,7 +5,7 @@ namespace HorseRacingML.Models
     // Domain models that map to the SQL schema
     public class Course
     {
-        public int CourseId { get; set; }
+        public short CourseId { get; set; }
         public string Name { get; set; } = string.Empty;
         public string? Country { get; set; }
     }
@@ -13,7 +13,7 @@ namespace HorseRacingML.Models
     public class Race
     {
         public int RaceId { get; set; }
-        public int CourseId { get; set; }
+        public short CourseId { get; set; }
         public DateTime RaceDate { get; set; }
         public TimeSpan ScheduledOff { get; set; }
         public TimeSpan? ActualOff { get; set; }
@@ -23,7 +23,7 @@ namespace HorseRacingML.Models
         public string? AgeRestriction { get; set; }
         public string? Surface { get; set; }
         public string? Going { get; set; }
-        public int DistanceYards { get; set; }
+        public short DistanceYards { get; set; }
         public string DistanceText { get; set; } = string.Empty;
         public byte? RunnerCount { get; set; }
         public string? Status { get; set; }
@@ -33,13 +33,13 @@ namespace HorseRacingML.Models
 
     public class Trainer
     {
-        public int TrainerId { get; set; }
+        public short TrainerId { get; set; }
         public string Name { get; set; } = string.Empty;
     }
 
     public class Jockey
     {
-        public int JockeyId { get; set; }
+        public short JockeyId { get; set; }
         public string Name { get; set; } = string.Empty;
     }
 
@@ -54,8 +54,8 @@ namespace HorseRacingML.Models
         public int RunnerResultId { get; set; }
         public int RaceId { get; set; }
         public int HorseId { get; set; }
-        public int? TrainerId { get; set; }
-        public int? JockeyId { get; set; }
+        public short? TrainerId { get; set; }
+        public short? JockeyId { get; set; }
         public byte? SaddleclothNumber { get; set; }
         public byte? Draw { get; set; }
         public byte? Age { get; set; }
@@ -74,8 +74,8 @@ namespace HorseRacingML.Models
         public string? Comment { get; set; }
         public string? Going { get; set; }
         public string? Surface { get; set; }
-        public int? CourseId { get; set; }
-        public int DistanceYards { get; set; }
+        public short? CourseId { get; set; }
+        public short DistanceYards { get; set; }
     }
     public class RaceScreen
     {
@@ -91,6 +91,7 @@ namespace HorseRacingML.Models
         public decimal? BackBookPercentage { get; set; }
         public decimal? LayBookPercentage { get; set; }
     }
+
 
     public class RunnerFlow
     {
