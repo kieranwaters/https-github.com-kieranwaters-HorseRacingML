@@ -1,16 +1,17 @@
-﻿using Tensorflow;
-using Tensorflow.NumPy;
-using static Tensorflow.Binding;
+﻿using Dapper;
 using HorseRacingML.Models;
-using Dapper;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.IO;
 using System.Globalization;
+using System.IO;
+using System.Linq;
 using System.Text.Json;
+using Tensorflow;
+using Tensorflow.NumPy;
+using static HorseRacingML.ML.HyperparameterTrainer.TrainingDataset;
+using static Tensorflow.Binding;
 using TensorShape = Tensorflow.Shape;
 
 namespace HorseRacingML.ML
@@ -49,7 +50,29 @@ namespace HorseRacingML.ML
                 Normalization = normalization;
                 FeatureCount = featureDimensions.Values.Sum();
             }
+            public class PreparedDataset
+            {
+                public PreparedDataset(List<PreparedRace> races, List<Dictionary<string, object>> rows)
+                {
+                    Races = races;
+                    Rows = rows;
+                }
 
+                public List<PreparedRace> Races { get; }
+                public List<Dictionary<string, object>> Rows { get; }
+            }
+
+            public class PreparedRace
+            {
+                public PreparedRace(int raceId, List<Dictionary<string, object>> rows)
+                {
+                    RaceId = raceId;
+                    Rows = rows;
+                }
+
+                public int RaceId { get; }
+                public List<Dictionary<string, object>> Rows { get; }
+            }
             public List<RaceExample> Races { get; }
             public List<string> FeatureKeys { get; }
             public Dictionary<string, int> FeatureDimensions { get; }
@@ -1241,7 +1264,7 @@ namespace HorseRacingML.ML
             }
             return vec;
         }
-        public TrainingDataset LoadTrainingDataset()
+        public PreparedDataset PrepareDataset()
         {
             // Enable GPU if available
             using var conn = new SqlConnection(_connectionString);
@@ -1304,7 +1327,27 @@ namespace HorseRacingML.ML
 
             AddDerivedFeatures(rows);
 
-            var keys = rows
+            var raceGroups = rows
+                .GroupBy(r => Convert.ToInt32(r["RaceId"]))
+                .Select(g => new PreparedRace(g.Key, g.ToList()))
+                .ToList();
+
+            return new PreparedDataset(raceGroups, rows);
+        }
+
+        private TrainingDataset BuildTrainingDataset(
+            PreparedDataset prepared,
+            List<Dictionary<string, object>> metadataRows,
+            HashSet<int> normalizationRaceIds)
+        {
+            if (prepared is null)
+                throw new ArgumentNullException(nameof(prepared));
+            if (metadataRows is null)
+                throw new ArgumentNullException(nameof(metadataRows));
+            if (normalizationRaceIds is null)
+                throw new ArgumentNullException(nameof(normalizationRaceIds));
+
+            var keys = prepared.Rows
                 .SelectMany(r => r.Keys)
                 .Distinct()
                 .ToList();
@@ -1345,20 +1388,27 @@ namespace HorseRacingML.ML
             var stringMaps = new Dictionary<string, Dictionary<string, int>>();
             foreach (var k in keys)
             {
-                var values = rows
+                var values = metadataRows
                     .Select(r => r.ContainsKey(k) ? r[k] : null)
                     .ToList();
-                bool hasMissing = values.Any(v => v == null);
+                bool hasMissing = values.Count == 0 || values.Any(v => v == null);
                 var nonNullValues = values.Where(v => v != null).ToList();
-                if (nonNullValues.Count == 0)
+                object? sample = nonNullValues.Count > 0
+                    ? nonNullValues[0]
+                    : prepared.Rows
+                        .Select(r => r.ContainsKey(k) ? r[k] : null)
+                        .FirstOrDefault(v => v != null);
+                if (sample == null)
                 {
                     continue;
                 }
-                var sample = nonNullValues[0];
+                var firstValue = nonNullValues[0];
                 int baseDim;
-                if (sample is string)
+                if (firstValue is string)
                 {
-                    var distinct = nonNullValues.Cast<string>().Distinct().ToList();
+                    var distinct = nonNullValues.Count > 0
+                        ? nonNullValues.Cast<string>().Distinct().ToList()
+                        : new List<string>();
                     var map = distinct
                         .Select((v, idx) => new { v, idx })
                         .ToDictionary(x => x.v, x => x.idx);
@@ -1379,9 +1429,6 @@ namespace HorseRacingML.ML
                     featureDims[k] = baseDim + (hasMissing ? 1 : 0);
                 }
             }
-            var mapPath = Path.Combine(AppContext.BaseDirectory, "string_maps.json");
-            File.WriteAllText(mapPath, JsonSerializer.Serialize(stringMaps));
-            // Ensure availability flag is included as a feature
             featureDims["HasLastWin"] = 1;
 
             featureDims["TimeOfDaySin"] = 1;
@@ -1420,15 +1467,11 @@ namespace HorseRacingML.ML
 
             int featureCount = featureDims.Values.Sum();
 
-            var raceGroups = rows
-               .GroupBy(r => Convert.ToInt32(r["RaceId"]))
-               .ToList();
-
             var races = new List<RaceExample>();
-            foreach (var group in raceGroups)
+            foreach (var preparedRace in prepared.Races)
             {
                 var runners = new List<RunnerExample>();
-                foreach (var row in group)
+                foreach (var row in preparedRace.Rows)
                 {
                     var features = new float[featureCount];
                     int offset = 0;
@@ -1441,41 +1484,40 @@ namespace HorseRacingML.ML
                         offset += dim;
                     }
                     float label = row.TryGetValue("FinishPos", out var f) && f != null && Convert.ToInt32(f) == 1 ? 1f : 0f;
-                    runners.Add(new RunnerExample(group.Key, features, label));
+                    runners.Add(new RunnerExample(preparedRace.RaceId, features, label));
                 }
-                races.Add(new RaceExample(group.Key, runners));
+                races.Add(new RaceExample(preparedRace.RaceId, runners));
             }
 
-            var allExamples = races.SelectMany(r => r.Runners).ToList();
+            var normalizationExamples = races
+                .Where(r => normalizationRaceIds.Contains(r.RaceId))
+                .SelectMany(r => r.Runners)
+                .ToList();
             var means = new float[featureCount];
             var stdDevs = new float[featureCount];
-            if (allExamples.Count > 0)
+            if (normalizationExamples.Count > 0)
             {
                 for (int j = 0; j < featureCount; j++)
                 {
                     double sum = 0;
-                    foreach (var example in allExamples)
+                    foreach (var example in normalizationExamples)
                     {
                         sum += example.Features[j];
                     }
-                    means[j] = (float)(sum / allExamples.Count);
+                    means[j] = (float)(sum / normalizationExamples.Count);
 
                     double variance = 0;
-                    foreach (var example in allExamples)
+                    foreach (var example in normalizationExamples)
                     {
                         double diff = example.Features[j] - means[j];
                         variance += diff * diff;
                     }
-                    stdDevs[j] = (float)Math.Sqrt(variance / allExamples.Count);
+                    stdDevs[j] = (float)Math.Sqrt(variance / normalizationExamples.Count);
                     if (stdDevs[j] == 0f)
                     {
                         stdDevs[j] = 1f;
                     }
                 }
-
-                var normParams = new NormalizationParameters { Mean = means, StdDev = stdDevs };
-                var normPath = Path.Combine(AppContext.BaseDirectory, "normalization.json");
-                File.WriteAllText(normPath, JsonSerializer.Serialize(normParams));
             }
             else
             {
@@ -1490,14 +1532,61 @@ namespace HorseRacingML.ML
                 Mean = means,
                 StdDev = stdDevs
             };
-
+            var mapPath = Path.Combine(AppContext.BaseDirectory, "string_maps.json");
+            File.WriteAllText(mapPath, JsonSerializer.Serialize(stringMaps));
+            var normPath = Path.Combine(AppContext.BaseDirectory, "normalization.json");
+            File.WriteAllText(normPath, JsonSerializer.Serialize(normalization));
             return new TrainingDataset(races, featureKeys, featureDims, stringMaps, normalization);
         }
-
+        public TrainingDataset LoadTrainingDataset()
+        {
+            var prepared = PrepareDataset();
+            var allRaceIds = prepared.Races
+                .Select(r => r.RaceId)
+                .ToHashSet();
+            return BuildTrainingDataset(prepared, prepared.Rows, allRaceIds);
+        }
         public (double TrainAccuracy, double TrainLoss, double ValidationAccuracy, double ValidationLoss, double TrainBrier, double ValidationBrier) Train(MLParameter param, int foldIndex, int foldCount)
         {
             var dataset = LoadTrainingDataset();
             return Train(param, foldIndex, foldCount, dataset);
+        }
+        public (double TrainAccuracy, double TrainLoss, double ValidationAccuracy, double ValidationLoss, double TrainBrier, double ValidationBrier) Train(MLParameter param, PreparedDataset dataset, int foldIndex, int foldCount)
+        {
+            if (dataset is null)
+                throw new ArgumentNullException(nameof(dataset));
+
+            int totalRaces = dataset.Races.Count;
+            if (foldCount <= 0)
+                throw new ArgumentOutOfRangeException(nameof(foldCount));
+            if (foldIndex < 0 || foldIndex >= foldCount)
+                throw new ArgumentOutOfRangeException(nameof(foldIndex));
+
+            int foldSize = totalRaces / foldCount;
+            int valStart = foldIndex * foldSize;
+            int valEnd = foldIndex == foldCount - 1 ? totalRaces : valStart + foldSize;
+
+            var trainRaceIds = dataset.Races
+                .Select((race, idx) => new { race, idx })
+                .Where(x => x.idx < valStart || x.idx >= valEnd)
+                .Select(x => x.race.RaceId)
+                .ToHashSet();
+
+            var trainRows = dataset.Races
+                .Where(r => trainRaceIds.Contains(r.RaceId))
+                .SelectMany(r => r.Rows)
+                .ToList();
+
+            if (trainRows.Count == 0)
+            {
+                trainRaceIds = dataset.Races
+                    .Select(r => r.RaceId)
+                    .ToHashSet();
+                trainRows = dataset.Rows.ToList();
+            }
+
+            var trainingDataset = BuildTrainingDataset(dataset, trainRows, trainRaceIds);
+            return Train(param, foldIndex, foldCount, trainingDataset);
         }
 
         public (double TrainAccuracy, double TrainLoss, double ValidationAccuracy, double ValidationLoss, double TrainBrier, double ValidationBrier) Train(MLParameter param, int foldIndex, int foldCount, TrainingDataset dataset)

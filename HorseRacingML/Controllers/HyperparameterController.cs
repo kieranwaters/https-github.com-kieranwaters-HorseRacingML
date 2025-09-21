@@ -32,13 +32,13 @@ namespace HorseRacingML.Controllers
                 await Task.Run(() =>
                 {
                     _scraper.Scrape(DateTime.Today, DateTime.Today);
-                    var dataset = _trainer.LoadTrainingDataset();
+                    var dataset = _trainer.PrepareDataset();
                     foreach (var model in batch.Parameters)
                     {
                         model.RunDate = DateTime.UtcNow;
                         for (int i = 0; i < model.Folds; i++)
                         {
-                            var result = _trainer.Train(model, i, model.Folds, dataset);
+                            var result = _trainer.Train(model, dataset, i, model.Folds);
                             var foldModel = new MLParameter
                             {
                                 RunDate = model.RunDate,
