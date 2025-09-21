@@ -1718,18 +1718,24 @@ namespace HorseRacingML.ML
             }
             for (int epoch = 0; epoch < param.Epochs; epoch++)
             {
-                var indices = Enumerable.Range(0, trainFeatures.Count)
-                                        .OrderBy(_ => rnd.Next())
-                                        .ToList();
-                for (int start = 0; start < indices.Count; start += param.BatchSize)
+                var indices = new int[trainFeatures.Count];
+                for (int i = 0; i < indices.Length; i++)
                 {
-                    var batchIdx = indices.Skip(start)
-                                          .Take(Math.Min(param.BatchSize, indices.Count - start))
-                                          .ToList();
-                    var batchXData = new float[batchIdx.Count, featureCount];
-                    for (int row = 0; row < batchIdx.Count; row++)
+                    indices[i] = i;
+                }
+                for (int i = indices.Length - 1; i > 0; i--)
+                {
+                    int j = rnd.Next(i + 1);
+                    (indices[i], indices[j]) = (indices[j], indices[i]);
+                }
+
+                for (int start = 0; start < indices.Length; start += param.BatchSize)
+                {
+                    int batchCount = Math.Min(param.BatchSize, indices.Length - start);
+                    var batchXData = new float[batchCount, featureCount];
+                    for (int row = 0; row < batchCount; row++)
                     {
-                        var source = trainFeatures[batchIdx[row]];
+                        var source = trainFeatures[indices[start + row]];
                         for (int col = 0; col < featureCount; col++)
                         {
                             batchXData[row, col] = source[col];
@@ -1737,10 +1743,10 @@ namespace HorseRacingML.ML
                     }
                     var batchX = np.array(batchXData);
 
-                    var batchYData = new float[batchIdx.Count, 1];
-                    for (int row = 0; row < batchIdx.Count; row++)
+                    var batchYData = new float[batchCount, 1];
+                    for (int row = 0; row < batchCount; row++)
                     {
-                        batchYData[row, 0] = trainLabels[batchIdx[row]];
+                        batchYData[row, 0] = trainLabels[indices[start + row]];
                     }
                     var batchY = np.array(batchYData);
                     sess.run(optimizer, new FeedItem(x, batchX), new FeedItem(y, batchY));
