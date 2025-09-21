@@ -393,17 +393,17 @@ namespace HorseRacingML.ML
                     return;
                 }
 
-                foreach (var row in rows)
+                foreach (var runnerRow in rows)
                 {
                     bool distanceKnown = false;
                     float beatenLengths = 0f;
-                    if (row.TryGetValue("DistanceBeatenLengths", out var lenObj) && lenObj != null)
+                    if (runnerRow.TryGetValue("DistanceBeatenLengths", out var lenObj) && lenObj != null)
                     {
                         beatenLengths = Convert.ToSingle(lenObj);
                         distanceKnown = true;
                     }
 
-                    if (row.TryGetValue("DistanceBeatenText", out var txtObj) && txtObj is string txt)
+                    if (runnerRow.TryGetValue("DistanceBeatenText", out var txtObj) && txtObj is string txt)
                     {
                         var parsed = ParseDistanceBeaten(txt);
                         if (parsed.HasValue)
@@ -413,8 +413,8 @@ namespace HorseRacingML.ML
                         }
                     }
 
-                    row["DistanceBeatenKnown"] = distanceKnown;
-                    row["DistanceBeatenLengths"] = beatenLengths;
+                    runnerRow["DistanceBeatenKnown"] = distanceKnown;
+                    runnerRow["DistanceBeatenLengths"] = beatenLengths;
 
 
                     var raceStat = ComputeRaceStats(rows);
