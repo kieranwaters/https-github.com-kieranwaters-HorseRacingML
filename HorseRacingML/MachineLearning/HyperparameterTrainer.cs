@@ -650,12 +650,9 @@ namespace HorseRacingML.ML
                         float rating = ratingMissing ? raceStat.AvgRating : Convert.ToSingle(ratingObj);
                         row["RatingMissing"] = ratingMissing;
                         row["RelativeDraw"] = runnerCount > 0 ? (float)draw / runnerCount : 0f;
+                        int saddlecloth = 0;
                         bool saddleclothMissing = !(row.TryGetValue("SaddleclothNumber", out var saddleclothObj) &&
-                                                     TryConvertToInt32(saddleclothObj, out var saddlecloth));
-                        if (saddleclothMissing)
-                        {
-                            saddlecloth = 0;
-                        }
+                                                     TryConvertToInt32(saddleclothObj, out saddlecloth));
                         row["SaddleclothMissing"] = saddleclothMissing;
                         row["SaddleclothRelative"] = !saddleclothMissing && runnerCount > 0 ? (float)saddlecloth / runnerCount : 0f;
                         row["SaddleclothDiffFromMean"] = !saddleclothMissing && raceStat.HasSaddleclothStats
