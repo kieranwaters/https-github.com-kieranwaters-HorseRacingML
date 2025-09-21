@@ -1649,7 +1649,8 @@ namespace HorseRacingML.ML
 
             Normalize(trainFeatures);
             Normalize(valFeatures);
-
+            var trainFeatureTensor = np.array(trainFeatures.ToArray(), dtype: tf.float32);
+            var trainLabelTensor = np.array(trainLabels.ToArray(), dtype: tf.float32).reshape(trainLabels.Count, 1);
             var graph = tf.Graph().as_default();
 
             var x = tf.placeholder(tf.float32, shape: new TensorShape(-1, featureCount), name: "x");
@@ -1738,27 +1739,29 @@ namespace HorseRacingML.ML
                     int j = rnd.Next(i + 1);
                     (indices[i], indices[j]) = (indices[j], indices[i]);
                 }
+                var fullBatchIdx = new int[param.BatchSize];
+                int[]? shortBatchIdx = null;
 
                 for (int start = 0; start < indices.Length; start += param.BatchSize)
                 {
                     int batchCount = Math.Min(param.BatchSize, indices.Length - start);
-                    var batchXData = new float[batchCount, featureCount];
-                    for (int row = 0; row < batchCount; row++)
+                    int[] batchIdx;
+                    if (batchCount == param.BatchSize)
                     {
-                        var source = trainFeatures[indices[start + row]];
-                        for (int col = 0; col < featureCount; col++)
+                        Array.Copy(indices, start, fullBatchIdx, 0, batchCount);
+                        batchIdx = fullBatchIdx;
+                    }
+                    else
+                    {
+                        if (shortBatchIdx == null || shortBatchIdx.Length != batchCount)
                         {
-                            batchXData[row, col] = source[col];
+                            shortBatchIdx = new int[batchCount];
                         }
+                        Array.Copy(indices, start, shortBatchIdx, 0, batchCount);
+                        batchIdx = shortBatchIdx;
                     }
-                    var batchX = np.array(batchXData);
-
-                    var batchYData = new float[batchCount, 1];
-                    for (int row = 0; row < batchCount; row++)
-                    {
-                        batchYData[row, 0] = trainLabels[indices[start + row]];
-                    }
-                    var batchY = np.array(batchYData);
+                    var batchX = trainFeatureTensor[batchIdx];
+                    var batchY = trainLabelTensor[batchIdx];
                     sess.run(optimizer, new FeedItem(x, batchX), new FeedItem(y, batchY));
                 }
                 var epochLoss = ComputeDatasetMetrics(trainFeatures, trainLabels, trainRaceIds, out var epochPreds);
