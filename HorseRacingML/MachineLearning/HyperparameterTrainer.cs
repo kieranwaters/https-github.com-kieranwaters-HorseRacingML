@@ -1376,9 +1376,9 @@ namespace HorseRacingML.ML
             return new PreparedDataset(raceGroups, rows);
         }
 
-        private sealed class FeatureMetadata
+        private sealed class DatasetFeatureMetadata
         {
-            public FeatureMetadata(
+            public DatasetFeatureMetadata(
                 List<string> featureKeys,
                 Dictionary<string, int> featureDimensions,
                 Dictionary<string, Dictionary<string, int>> stringMaps)
@@ -1395,7 +1395,7 @@ namespace HorseRacingML.ML
             public int FeatureCount { get; }
         }
 
-        private FeatureMetadata BuildFeatureMetadata(
+        private DatasetFeatureMetadata BuildFeatureMetadata(
             PreparedDataset prepared,
             List<Dictionary<string, object>> metadataRows)
         {
@@ -1522,7 +1522,7 @@ namespace HorseRacingML.ML
             featureDims["RatingSlope"] = 1;
             var featureKeys = featureDims.Keys.ToList();
 
-            return new FeatureMetadata(featureKeys, featureDims, stringMaps);
+            return new DatasetFeatureMetadata(featureKeys, featureDims, stringMaps);
         }
 
         private static List<RaceExample> EncodeRaces(
