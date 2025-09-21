@@ -2311,6 +2311,14 @@ private RaceStats ComputeRaceStats(List<Dictionary<string, object?>> rows)
 
             try
             {
+                if (param.BatchSize <= 0)
+                {
+                    throw new ArgumentOutOfRangeException(
+                        nameof(param.BatchSize),
+                        param.BatchSize,
+                        "Batch size must be greater than zero.");
+                }
+
                 for (int epoch = 0; epoch < param.Epochs; epoch++)
                 {
                     var indices = new int[trainFeatures.Count];
@@ -2323,29 +2331,18 @@ private RaceStats ComputeRaceStats(List<Dictionary<string, object?>> rows)
                         int j = rnd.Next(i + 1);
                         (indices[i], indices[j]) = (indices[j], indices[i]);
                     }
-                    var fullBatchIdx = new int[param.BatchSize];
-                    int[]? shortBatchIdx = null;
-
                     for (int start = 0; start < indices.Length; start += param.BatchSize)
                     {
                         int batchCount = Math.Min(param.BatchSize, indices.Length - start);
-                        int[] batchIdx;
-                        if (batchCount == param.BatchSize)
+                        if (batchCount <= 0)
                         {
-                            Array.Copy(indices, start, fullBatchIdx, 0, batchCount);
-                            batchIdx = fullBatchIdx;
+                            continue;
                         }
-                        else
-                        {
-                            if (shortBatchIdx == null || shortBatchIdx.Length != batchCount)
-                            {
-                                shortBatchIdx = new int[batchCount];
-                            }
-                            Array.Copy(indices, start, shortBatchIdx, 0, batchCount);
-                            batchIdx = shortBatchIdx;
-                        }
-                        var batchX = trainFeatureTensor[batchIdx];
-                        var batchY = trainLabelTensor[batchIdx];
+
+                        var batchIdx = indices[start..(start + batchCount)];
+                        var batchIndices = np.array(batchIdx, dtype: tf.int32);
+                        var batchX = np.take(trainFeatureTensor, batchIndices, axis: 0);
+                        var batchY = np.take(trainLabelTensor, batchIndices, axis: 0);
                         sess.run(optimizer, new FeedItem(x, batchX), new FeedItem(y, batchY));
                     }
 
