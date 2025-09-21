@@ -1475,11 +1475,11 @@ namespace HorseRacingML.ML
                             .DefaultIfEmpty(0f)
                             .Average();
 
-                        foreach (var row in rows)
+                        foreach (var raceRow in rows)
                         {
-                            row["RaceAvgSpeedLast5"] = raceAvgSpeed;
-                            row["RaceAvgWinRateLast5"] = raceAvgWinRate;
-                            TrimRunnerRow(row);
+                            raceRow["RaceAvgSpeedLast5"] = raceAvgSpeed;
+                            raceRow["RaceAvgWinRateLast5"] = raceAvgWinRate;
+                            TrimRunnerRow(raceRow);
                         }
                     }
                 }
