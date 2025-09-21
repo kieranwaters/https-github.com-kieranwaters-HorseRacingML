@@ -12,7 +12,6 @@ using System.Text;
 using Tensorflow;
 using Tensorflow.NumPy;
 using static HorseRacingML.ML.HyperparameterTrainer.TrainingDataset;
-using static System.Runtime.InteropServices.JavaScript.JSType;
 using static Tensorflow.Binding;
 using TensorShape = Tensorflow.Shape;
 using System.Data.SqlTypes;
@@ -279,36 +278,49 @@ namespace HorseRacingML.ML
                 result = 0;
                 return false;
 
-                static bool TryConvertFromBytes(ReadOnlySpan<byte> bytes, out int value)
+            }
+
+            private static bool TryConvertFromBytes(byte[]? bytes, out int value)
+            {
+                if (bytes is null)
                 {
-                    if (bytes.IsEmpty)
-                    {
-                        value = 0;
-                        return false;
-                    }
-
-                    string asString = Encoding.UTF8.GetString(bytes).Trim('\0', ' ', '\t', '\r', '\n');
-                    if (asString.Length > 0)
-                    {
-                        if (int.TryParse(asString, NumberStyles.Integer, CultureInfo.InvariantCulture, out value) ||
-                            int.TryParse(asString, NumberStyles.Integer, CultureInfo.CurrentCulture, out value))
-                        {
-                            return true;
-                        }
-                    }
-
-                    if (bytes.Length <= 4)
-                    {
-                        var padded = new byte[4];
-                        bytes.CopyTo(padded);
-                        value = BitConverter.ToInt32(padded, 0);
-                        return true;
-                    }
-
                     value = 0;
                     return false;
                 }
+
+                return TryConvertFromBytes(bytes.AsSpan(), out value);
             }
+
+            private static bool TryConvertFromBytes(ReadOnlySpan<byte> bytes, out int value)
+            {
+                if (bytes.IsEmpty)
+                {
+                    value = 0;
+                    return false;
+                }
+
+                string asString = Encoding.UTF8.GetString(bytes).Trim('\0', ' ', '\t', '\r', '\n');
+                if (asString.Length > 0)
+                {
+                    if (int.TryParse(asString, NumberStyles.Integer, CultureInfo.InvariantCulture, out value) ||
+                        int.TryParse(asString, NumberStyles.Integer, CultureInfo.CurrentCulture, out value))
+                    {
+                        return true;
+                    }
+                }
+
+                if (bytes.Length <= 4)
+                {
+                    var padded = new byte[4];
+                    bytes.CopyTo(padded);
+                    value = BitConverter.ToInt32(padded, 0);
+                    return true;
+                }
+
+                value = 0;
+                return false;
+            }
+
 
 
             public class PreparedRace
@@ -2377,9 +2389,17 @@ private RaceStats ComputeRaceStats(List<Dictionary<string, object?>> rows)
                         }
 
                         var batchIdx = indices[start..(start + batchCount)];
-                        var batchIndices = np.array(batchIdx, dtype: tf.int32);
-                        var batchX = np.take(trainFeatureTensor, batchIndices, axis: 0);
-                        var batchY = np.take(trainLabelTensor, batchIndices, axis: 0);
+                        var batchFeatures = new List<float[]>(batchCount);
+                        var batchLabels = new float[batchCount];
+                        for (int b = 0; b < batchCount; b++)
+                        {
+                            int dataIndex = batchIdx[b];
+                            batchFeatures.Add(trainFeatures[dataIndex]);
+                            batchLabels[b] = trainLabels[dataIndex];
+                        }
+
+                        var batchX = np.array(BuildFeatureMatrix(batchFeatures, featureCount), dtype: tf.float32);
+                        var batchY = np.array(BuildLabelMatrix(batchLabels), dtype: tf.float32);
                         sess.run(optimizer, new FeedItem(x, batchX), new FeedItem(y, batchY));
                     }
 
