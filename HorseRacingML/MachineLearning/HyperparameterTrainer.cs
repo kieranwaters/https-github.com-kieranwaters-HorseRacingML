@@ -1465,23 +1465,22 @@ namespace HorseRacingML.ML
                             }
 
                         }
-
-                        float raceAvgSpeed = rows
-                            .Select(r => r.ContainsKey("AvgSpeedLast5") && r["AvgSpeedLast5"] != null ? Convert.ToSingle(r["AvgSpeedLast5"]) : 0f)
-                            .DefaultIfEmpty(0f)
-                            .Average();
-                        float raceAvgWinRate = rows
-                            .Select(r => r.ContainsKey("WinRateLast5") && r["WinRateLast5"] != null ? Convert.ToSingle(r["WinRateLast5"]) : 0f)
-                            .DefaultIfEmpty(0f)
-                            .Average();
-
-                        foreach (var raceRow in rows)
-                        {
-                            raceRow["RaceAvgSpeedLast5"] = raceAvgSpeed;
-                            raceRow["RaceAvgWinRateLast5"] = raceAvgWinRate;
-                            TrimRunnerRow(raceRow);
-                        }
                     }
+                }
+                float raceAvgSpeed = rows
+               .Select(r => r.ContainsKey("AvgSpeedLast5") && r["AvgSpeedLast5"] != null ? Convert.ToSingle(r["AvgSpeedLast5"]) : 0f)
+               .DefaultIfEmpty(0f)
+               .Average();
+                float raceAvgWinRate = rows
+                    .Select(r => r.ContainsKey("WinRateLast5") && r["WinRateLast5"] != null ? Convert.ToSingle(r["WinRateLast5"]) : 0f)
+                    .DefaultIfEmpty(0f)
+                    .Average();
+
+                foreach (var raceRow in rows)
+                {
+                    raceRow["RaceAvgSpeedLast5"] = raceAvgSpeed;
+                    raceRow["RaceAvgWinRateLast5"] = raceAvgWinRate;
+                    TrimRunnerRow(raceRow);
                 }
             }
                  private static bool TryGetTimeOfDay(Dictionary<string, object?> row, out TimeSpan timeOfDay)
