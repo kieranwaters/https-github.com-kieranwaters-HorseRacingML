@@ -1684,37 +1684,47 @@ namespace HorseRacingML.ML
             sess.run(tf.global_variables_initializer());
             double ComputeDatasetMetrics(List<float[]> feats, List<float> labs, List<int> races, out float[] preds)
             {
-                preds = new float[feats.Count];
-                var grouped = races.Select((raceId, idx) => new { raceId, idx })
-                                   .GroupBy(x => x.raceId);
-                double totLoss = 0;
-                int cnt = 0;
-                foreach (var grp in grouped)
-                {
-                    var indices = grp.Select(g => g.idx).ToList();
-                    var batchXData = new float[indices.Count, featureCount];
-                    for (int row = 0; row < indices.Count; row++)
-                    {
-                        var source = feats[indices[row]];
-                        for (int col = 0; col < featureCount; col++)
-                        {
-                            batchXData[row, col] = source[col];
-                        }
-                    }
-                    var batchX = np.array(batchXData);
+                if (feats.Count != labs.Count || feats.Count != races.Count)
+                    throw new ArgumentException("Feature, label and race counts must match.");
 
-                    var batchYData = new float[indices.Count, 1];
-                    for (int row = 0; row < indices.Count; row++)
-                    {
-                        batchYData[row, 0] = labs[indices[row]];
-                    }
-                    var batchY = np.array(batchYData);
-                    totLoss += sess.run(loss, new FeedItem(x, batchX), new FeedItem(y, batchY)).ToArray<float>()[0];
-                    var p = sess.run(prediction, new FeedItem(x, batchX)).ToArray<float>();
-                    for (int j = 0; j < indices.Count; j++) preds[indices[j]] = p[j];
-                    cnt++;
+                if (feats.Count == 0)
+                {
+                    preds = Array.Empty<float>();
+                    return 0;
                 }
-                return cnt > 0 ? totLoss / cnt : 0;
+
+                preds = new float[feats.Count];
+                const int evalBatchSize = 8192;
+                double weightedLoss = 0;
+                int totalExamples = 0;
+
+                for (int start = 0; start < feats.Count; start += evalBatchSize)
+                {
+                    int count = Math.Min(evalBatchSize, feats.Count - start);
+
+                    var featureTensor = np.array(
+                        feats.GetRange(start, count)
+                             .Select(f => f.ToArray())
+                             .ToArray());
+
+                    var labelTensor = np.array(
+                        labs.GetRange(start, count)
+                            .Select(l => new[] { l })
+                            .ToArray());
+
+                    var results = sess.run(new[] { loss, prediction },
+                        new FeedItem(x, featureTensor),
+                        new FeedItem(y, labelTensor));
+
+                    var chunkLoss = results[0].ToArray<float>()[0];
+                    var chunkPreds = results[1].ToArray<float>();
+                    Array.Copy(chunkPreds, 0, preds, start, count);
+
+                    weightedLoss += chunkLoss * count;
+                    totalExamples += count;
+                }
+
+                return totalExamples > 0 ? weightedLoss / totalExamples : 0;
             }
             for (int epoch = 0; epoch < param.Epochs; epoch++)
             {
