@@ -1650,7 +1650,7 @@ namespace HorseRacingML.ML
             Normalize(trainFeatures);
             Normalize(valFeatures);
             var trainFeatureTensor = np.array(trainFeatures.ToArray(), dtype: tf.float32);
-            var trainLabelTensor = np.array(trainLabels.ToArray(), dtype: tf.float32).reshape(trainLabels.Count, 1);
+            var trainLabelTensor = np.array(trainLabels.Select(l => new[] { l }).ToArray(), dtype: tf.float32);
             var graph = tf.Graph().as_default();
 
             var x = tf.placeholder(tf.float32, shape: new TensorShape(-1, featureCount), name: "x");
