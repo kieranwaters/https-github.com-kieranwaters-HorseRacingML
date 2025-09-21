@@ -104,7 +104,7 @@ namespace HorseRacingML.ML
                     public int FeatureCount { get; }
                 }
             }
-            private static int GetRequiredInt32(Dictionary<string, object?> row, string key)
+            internal static int GetRequiredInt32(Dictionary<string, object?> row, string key)
             {
                 if (!row.TryGetValue(key, out var value) || value is null)
                 {
@@ -126,7 +126,7 @@ namespace HorseRacingML.ML
                 throw new FormatException($"Column '{key}' with value '{displayValue}' of type '{typeName}' could not be converted to Int32.");
             }
 
-            private static bool TryConvertToInt32(object? value, out int result)
+            internal static bool TryConvertToInt32(object? value, out int result)
             {
                 switch (value)
                 {
