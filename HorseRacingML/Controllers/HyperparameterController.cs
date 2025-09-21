@@ -31,7 +31,7 @@ namespace HorseRacingML.Controllers
                     Console.WriteLine($"[Hyperparameter] Starting custom run for {parameters.Count} parameter set(s).");
 
                     var dataset = _trainer.PrepareDataset();
-                    Console.WriteLine($"[Hyperparameter] Dataset prepared with {dataset.Races.Count} races and {dataset.FeatureCount} features.");
+                    Console.WriteLine($"[Hyperparameter] Dataset prepared with {dataset.Races.Count} races and {dataset.Rows.Count} runner rows.");
 
                     int modelIndex = 0;
                     foreach (var model in parameters)
