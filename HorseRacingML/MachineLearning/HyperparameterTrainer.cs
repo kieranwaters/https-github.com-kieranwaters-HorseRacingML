@@ -15,6 +15,7 @@ using static HorseRacingML.ML.HyperparameterTrainer.TrainingDataset;
 using static System.Runtime.InteropServices.JavaScript.JSType;
 using static Tensorflow.Binding;
 using TensorShape = Tensorflow.Shape;
+using System.Data.SqlTypes;
 
 namespace HorseRacingML.ML
 {
@@ -190,6 +191,41 @@ namespace HorseRacingML.ML
                     case float fl when fl >= int.MinValue && fl <= int.MaxValue:
                         result = (int)fl;
                         return true;
+                    case SqlInt32 sqlInt when !sqlInt.IsNull:
+                        result = sqlInt.Value;
+                        return true;
+                    case SqlInt16 sqlShort when !sqlShort.IsNull:
+                        result = sqlShort.Value;
+                        return true;
+                    case SqlInt64 sqlLong when !sqlLong.IsNull && sqlLong.Value >= int.MinValue && sqlLong.Value <= int.MaxValue:
+                        result = (int)sqlLong.Value;
+                        return true;
+                    case SqlDecimal sqlDecimal when !sqlDecimal.IsNull && sqlDecimal.Value >= int.MinValue && sqlDecimal.Value <= int.MaxValue:
+                        result = decimal.ToInt32(sqlDecimal.Value);
+                        return true;
+                    case SqlDouble sqlDouble when !sqlDouble.IsNull && sqlDouble.Value >= int.MinValue && sqlDouble.Value <= int.MaxValue:
+                        result = (int)sqlDouble.Value;
+                        return true;
+                    case SqlSingle sqlSingle when !sqlSingle.IsNull && sqlSingle.Value >= int.MinValue && sqlSingle.Value <= int.MaxValue:
+                        result = (int)sqlSingle.Value;
+                        return true;
+                    case SqlMoney sqlMoney when !sqlMoney.IsNull && sqlMoney.Value >= int.MinValue && sqlMoney.Value <= int.MaxValue:
+                        result = (int)sqlMoney.Value;
+                        return true;
+                    case SqlByte sqlByte when !sqlByte.IsNull:
+                        result = sqlByte.Value;
+                        return true;
+                    case SqlBoolean sqlBool when !sqlBool.IsNull:
+                        result = sqlBool.Value ? 1 : 0;
+                        return true;
+                    case SqlString sqlString when !sqlString.IsNull:
+                        return TryConvertToInt32(sqlString.Value, out result);
+                    case SqlChars sqlChars when !sqlChars.IsNull:
+                        return TryConvertToInt32(sqlChars.Value is null ? null : new string(sqlChars.Value), out result);
+                    case SqlBinary sqlBinary when !sqlBinary.IsNull:
+                        return TryConvertFromBytes(sqlBinary.Value, out result);
+                    case SqlBytes sqlBytes when !sqlBytes.IsNull:
+                        return TryConvertFromBytes(sqlBytes.Value, out result);
                     case string str:
                         if (int.TryParse(str, NumberStyles.Integer, CultureInfo.InvariantCulture, out result))
                         {
@@ -210,21 +246,20 @@ namespace HorseRacingML.ML
                                 return true;
                             }
 
-                            var unicodeBytes = Encoding.Unicode.GetBytes(trimmed);
-                            if (TryConvertByteArray(unicodeBytes, out result))
+                            if (TryConvertFromBytes(Encoding.Unicode.GetBytes(trimmed), out result))
                             {
                                 return true;
                             }
                         }
                         break;
                     case byte[] bytes:
-                        if (TryConvertByteArray(bytes, out result))
+                        if (TryConvertFromBytes(bytes, out result))
                         {
                             return true;
                         }
                         break;
                     case ReadOnlyMemory<byte> memory:
-                        if (TryConvertByteArray(memory.ToArray(), out result))
+                        if (TryConvertFromBytes(memory.Span, out result))
                         {
                             return true;
                         }
@@ -243,37 +278,39 @@ namespace HorseRacingML.ML
 
                 result = 0;
                 return false;
-            }
 
-            private static bool TryConvertByteArray(byte[] bytes, out int result)
-            {
-                if (bytes is null || bytes.Length == 0)
+                static bool TryConvertFromBytes(ReadOnlySpan<byte> bytes, out int value)
                 {
-                    result = 0;
-                    return false;
-                }
-
-                string asString = Encoding.UTF8.GetString(bytes).Trim('\0', ' ', '\t', '\r', '\n');
-                if (asString.Length > 0)
-                {
-                    if (int.TryParse(asString, NumberStyles.Integer, CultureInfo.InvariantCulture, out result) ||
-                        int.TryParse(asString, NumberStyles.Integer, CultureInfo.CurrentCulture, out result))
+                    if (bytes.IsEmpty)
                     {
+                        value = 0;
+                        return false;
+                    }
+
+                    string asString = Encoding.UTF8.GetString(bytes).Trim('\0', ' ', '\t', '\r', '\n');
+                    if (asString.Length > 0)
+                    {
+                        if (int.TryParse(asString, NumberStyles.Integer, CultureInfo.InvariantCulture, out value) ||
+                            int.TryParse(asString, NumberStyles.Integer, CultureInfo.CurrentCulture, out value))
+                        {
+                            return true;
+                        }
+                    }
+
+                    if (bytes.Length <= 4)
+                    {
+                        var padded = new byte[4];
+                        bytes.CopyTo(padded);
+                        value = BitConverter.ToInt32(padded, 0);
                         return true;
                     }
-                }
 
-                if (bytes.Length <= 4)
-                {
-                    var padded = new byte[4];
-                    Array.Copy(bytes, padded, bytes.Length);
-                    result = BitConverter.ToInt32(padded, 0);
-                    return true;
+                    value = 0;
+                    return false;
                 }
-
-                result = 0;
-                return false;
             }
+
+
             public class PreparedRace
             {
                 public PreparedRace(int raceId, List<Dictionary<string, object?>> rows)
