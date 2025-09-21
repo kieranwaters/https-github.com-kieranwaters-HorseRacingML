@@ -60,6 +60,47 @@ namespace HorseRacingML.ML
 
                 public List<PreparedRace> Races { get; }
                 public List<Dictionary<string, object>> Rows { get; }
+                private readonly Dictionary<(int FoldCount, int FoldIndex), EncodingCacheEntry> _encodingCache = new();
+
+                internal bool TryGetEncodingCache(int foldIndex, int foldCount, out EncodingCacheEntry? entry)
+                {
+                    return _encodingCache.TryGetValue((foldCount, foldIndex), out entry);
+                }
+
+                internal EncodingCacheEntry SetEncodingCache(
+                    int foldIndex,
+                    int foldCount,
+                    List<RaceExample> races,
+                    List<string> featureKeys,
+                    Dictionary<string, int> featureDimensions,
+                    Dictionary<string, Dictionary<string, int>> stringMaps)
+                {
+                    var entry = new EncodingCacheEntry(races, featureKeys, featureDimensions, stringMaps);
+                    _encodingCache[(foldCount, foldIndex)] = entry;
+                    return entry;
+                }
+
+                internal sealed class EncodingCacheEntry
+                {
+                    public EncodingCacheEntry(
+                        List<RaceExample> races,
+                        List<string> featureKeys,
+                        Dictionary<string, int> featureDimensions,
+                        Dictionary<string, Dictionary<string, int>> stringMaps)
+                    {
+                        Races = races;
+                        FeatureKeys = featureKeys;
+                        FeatureDimensions = featureDimensions;
+                        StringMaps = stringMaps;
+                        FeatureCount = featureDimensions.Values.Sum();
+                    }
+
+                    public List<RaceExample> Races { get; }
+                    public List<string> FeatureKeys { get; }
+                    public Dictionary<string, int> FeatureDimensions { get; }
+                    public Dictionary<string, Dictionary<string, int>> StringMaps { get; }
+                    public int FeatureCount { get; }
+                }
             }
 
             public class PreparedRace
@@ -1335,17 +1376,33 @@ namespace HorseRacingML.ML
             return new PreparedDataset(raceGroups, rows);
         }
 
-        private TrainingDataset BuildTrainingDataset(
+        private sealed class FeatureMetadata
+        {
+            public FeatureMetadata(
+                List<string> featureKeys,
+                Dictionary<string, int> featureDimensions,
+                Dictionary<string, Dictionary<string, int>> stringMaps)
+            {
+                FeatureKeys = featureKeys;
+                FeatureDimensions = featureDimensions;
+                StringMaps = stringMaps;
+                FeatureCount = featureDimensions.Values.Sum();
+            }
+
+            public List<string> FeatureKeys { get; }
+            public Dictionary<string, int> FeatureDimensions { get; }
+            public Dictionary<string, Dictionary<string, int>> StringMaps { get; }
+            public int FeatureCount { get; }
+        }
+
+        private FeatureMetadata BuildFeatureMetadata(
             PreparedDataset prepared,
-            List<Dictionary<string, object>> metadataRows,
-            HashSet<int> normalizationRaceIds)
+            List<Dictionary<string, object>> metadataRows)
         {
             if (prepared is null)
                 throw new ArgumentNullException(nameof(prepared));
             if (metadataRows is null)
                 throw new ArgumentNullException(nameof(metadataRows));
-            if (normalizationRaceIds is null)
-                throw new ArgumentNullException(nameof(normalizationRaceIds));
 
             var keys = prepared.Rows
                 .SelectMany(r => r.Keys)
@@ -1402,7 +1459,7 @@ namespace HorseRacingML.ML
                 {
                     continue;
                 }
-                var firstValue = nonNullValues[0];
+                var firstValue = nonNullValues.Count > 0 ? nonNullValues[0]! : sample;
                 int baseDim;
                 if (firstValue is string)
                 {
@@ -1465,29 +1522,69 @@ namespace HorseRacingML.ML
             featureDims["RatingSlope"] = 1;
             var featureKeys = featureDims.Keys.ToList();
 
-            int featureCount = featureDims.Values.Sum();
+            return new FeatureMetadata(featureKeys, featureDims, stringMaps);
+        }
 
-            var races = new List<RaceExample>();
-            foreach (var preparedRace in prepared.Races)
+        private static List<RaceExample> EncodeRaces(
+            IEnumerable<PreparedRace> races,
+            List<string> featureKeys,
+            Dictionary<string, int> featureDimensions,
+            Dictionary<string, Dictionary<string, int>> stringMaps)
+        {
+            if (races is null)
+                throw new ArgumentNullException(nameof(races));
+            if (featureKeys is null)
+                throw new ArgumentNullException(nameof(featureKeys));
+            if (featureDimensions is null)
+                throw new ArgumentNullException(nameof(featureDimensions));
+            if (stringMaps is null)
+                throw new ArgumentNullException(nameof(stringMaps));
+
+            int featureCount = featureDimensions.Values.Sum();
+            var result = new List<RaceExample>();
+            foreach (var preparedRace in races)
             {
-                var runners = new List<RunnerExample>();
-                foreach (var row in preparedRace.Rows)
+                var runners = new List<RunnerExample>(preparedRace.Rows.Count);
+                foreach (var preparedRace in prepared.Races)
                 {
-                    var features = new float[featureCount];
-                    int offset = 0;
-                    foreach (var key in featureKeys)
+                    var runners = new List<RunnerExample>();
+                    foreach (var row in preparedRace.Rows)
                     {
-                        int dim = featureDims[key];
-                        row.TryGetValue(key, out var value);
-                        var vec = EncodeFeature(key, value, dim, stringMaps);
-                        Array.Copy(vec, 0, features, offset, dim);
-                        offset += dim;
+                        var features = new float[featureCount];
+                        int offset = 0;
+                        foreach (var key in featureKeys)
+                        {
+                            int dim = featureDimensions[key];
+                            row.TryGetValue(key, out var value);
+                            var vec = EncodeFeature(key, value, dim, stringMaps);
+                            Array.Copy(vec, 0, features, offset, dim);
+                            offset += dim;
+                        }
+                        float label = row.TryGetValue("FinishPos", out var f) && f != null && Convert.ToInt32(f) == 1 ? 1f : 0f;
+                        runners.Add(new RunnerExample(preparedRace.RaceId, features, label));
                     }
-                    float label = row.TryGetValue("FinishPos", out var f) && f != null && Convert.ToInt32(f) == 1 ? 1f : 0f;
-                    runners.Add(new RunnerExample(preparedRace.RaceId, features, label));
+                    result.Add(new RaceExample(preparedRace.RaceId, runners));
                 }
-                races.Add(new RaceExample(preparedRace.RaceId, runners));
+
+                return result;
             }
+        }
+
+        private TrainingDataset BuildTrainingDataset(
+            PreparedDataset prepared,
+            List<Dictionary<string, object>> metadataRows,
+            HashSet<int> normalizationRaceIds)
+        {
+            if (prepared is null)
+                throw new ArgumentNullException(nameof(prepared));
+            if (metadataRows is null)
+                throw new ArgumentNullException(nameof(metadataRows));
+            if (normalizationRaceIds is null)
+                throw new ArgumentNullException(nameof(normalizationRaceIds));
+
+            var metadata = BuildFeatureMetadata(prepared, metadataRows);
+            int featureCount = metadata.FeatureCount;
+            var races = EncodeRaces(prepared.Races, metadata.FeatureKeys, metadata.FeatureDimensions, metadata.StringMaps);
 
             var normalizationExamples = races
                 .Where(r => normalizationRaceIds.Contains(r.RaceId))
@@ -1533,10 +1630,10 @@ namespace HorseRacingML.ML
                 StdDev = stdDevs
             };
             var mapPath = Path.Combine(AppContext.BaseDirectory, "string_maps.json");
-            File.WriteAllText(mapPath, JsonSerializer.Serialize(stringMaps));
+            File.WriteAllText(mapPath, JsonSerializer.Serialize(metadata.StringMaps));
             var normPath = Path.Combine(AppContext.BaseDirectory, "normalization.json");
             File.WriteAllText(normPath, JsonSerializer.Serialize(normalization));
-            return new TrainingDataset(races, featureKeys, featureDims, stringMaps, normalization);
+            return new TrainingDataset(races, metadata.FeatureKeys, metadata.FeatureDimensions, metadata.StringMaps, normalization);
         }
         public TrainingDataset LoadTrainingDataset()
         {
@@ -1585,11 +1682,32 @@ namespace HorseRacingML.ML
                 trainRows = dataset.Rows.ToList();
             }
 
-            var trainingDataset = BuildTrainingDataset(dataset, trainRows, trainRaceIds);
+            var metadataRows = trainRows.Count == 0 ? dataset.Rows : trainRows;
+            if (!dataset.TryGetEncodingCache(foldIndex, foldCount, out var cacheEntry))
+            {
+                var metadata = BuildFeatureMetadata(dataset, metadataRows);
+                var races = EncodeRaces(dataset.Races, metadata.FeatureKeys, metadata.FeatureDimensions, metadata.StringMaps);
+                cacheEntry = dataset.SetEncodingCache(foldIndex, foldCount, races, metadata.FeatureKeys, metadata.FeatureDimensions, metadata.StringMaps);
+                var mapPath = Path.Combine(AppContext.BaseDirectory, "string_maps.json");
+                File.WriteAllText(mapPath, JsonSerializer.Serialize(cacheEntry.StringMaps));
+            }
+
+            var normalization = new NormalizationParameters
+            {
+                Mean = new float[cacheEntry.FeatureCount],
+                StdDev = new float[cacheEntry.FeatureCount]
+            };
+
+            var trainingDataset = new TrainingDataset(
+                cacheEntry.Races,
+                cacheEntry.FeatureKeys,
+                cacheEntry.FeatureDimensions,
+                cacheEntry.StringMaps,
+                normalization);
             return Train(param, foldIndex, foldCount, trainingDataset);
         }
 
-        public (double TrainAccuracy, double TrainLoss, double ValidationAccuracy, double ValidationLoss, double TrainBrier, double ValidationBrier) Train(MLParameter param, int foldIndex, int foldCount, TrainingDataset dataset)
+            public (double TrainAccuracy, double TrainLoss, double ValidationAccuracy, double ValidationLoss, double TrainBrier, double ValidationBrier) Train(MLParameter param, int foldIndex, int foldCount, TrainingDataset dataset)
         {
             if (dataset is null)
                 throw new ArgumentNullException(nameof(dataset));
@@ -1625,18 +1743,73 @@ namespace HorseRacingML.ML
             }
 
             int featureCount = dataset.FeatureCount;
-            var trainFeatures = trainExamples.Select(r => (float[])r.Features.Clone()).ToList();
-            var trainLabels = trainExamples.Select(r => r.Label).ToList();
-            var trainRaceIds = trainExamples.Select(r => r.RaceId).ToList();
+            var trainFeatures = trainExamples.Select(r => r.Features).ToList();
+            var trainLabels = trainExamples.Select(r => r.Label).ToArray();
+            var trainRaceIds = trainExamples.Select(r => r.RaceId).ToArray();
 
-            var valFeatures = valExamples.Select(r => (float[])r.Features.Clone()).ToList();
-            var valLabels = valExamples.Select(r => r.Label).ToList();
-            var valRaceIds = valExamples.Select(r => r.RaceId).ToList();
+            var valFeatures = valExamples.Select(r => r.Features).ToList();
+            var valLabels = valExamples.Select(r => r.Label).ToArray();
+            var valRaceIds = valExamples.Select(r => r.RaceId).ToArray();
 
             var means = dataset.Normalization.Mean;
-            var stdDevs = dataset.Normalization.StdDev;
+            if (means.Length != featureCount)
+            {
+                means = new float[featureCount];
+                dataset.Normalization.Mean = means;
+            }
+            else
+            {
+                Array.Clear(means, 0, featureCount);
+            }
 
-            void Normalize(List<float[]> data)
+            var stdDevs = dataset.Normalization.StdDev;
+            if (stdDevs.Length != featureCount)
+            {
+                stdDevs = new float[featureCount];
+                dataset.Normalization.StdDev = stdDevs;
+            }
+            else
+            {
+                Array.Clear(stdDevs, 0, featureCount);
+            }
+
+            if (trainFeatures.Count > 0)
+            {
+                for (int j = 0; j < featureCount; j++)
+                {
+                    double sum = 0;
+                    foreach (var feature in trainFeatures)
+                    {
+                        sum += feature[j];
+                    }
+                    means[j] = (float)(sum / trainFeatures.Count);
+                }
+
+                for (int j = 0; j < featureCount; j++)
+                {
+                    double variance = 0;
+                    foreach (var feature in trainFeatures)
+                    {
+                        double diff = feature[j] - means[j];
+                        variance += diff * diff;
+                    }
+                    stdDevs[j] = (float)Math.Sqrt(variance / trainFeatures.Count);
+                    if (stdDevs[j] == 0f)
+                    {
+                        stdDevs[j] = 1f;
+                    }
+                }
+            }
+            else
+            {
+                Array.Clear(means, 0, featureCount);
+                for (int j = 0; j < featureCount; j++)
+                {
+                    stdDevs[j] = 1f;
+                }
+            }
+
+            void Normalize(IList<float[]> data)
             {
                 foreach (var arr in data)
                 {
@@ -1649,8 +1822,35 @@ namespace HorseRacingML.ML
 
             Normalize(trainFeatures);
             Normalize(valFeatures);
-            var trainFeatureTensor = np.array(trainFeatures.ToArray(), dtype: tf.float32);
-            var trainLabelTensor = np.array(trainLabels.Select(l => new[] { l }).ToArray(), dtype: tf.float32);
+
+            static float[,] BuildFeatureMatrix(List<float[]> source, int featureCount)
+            {
+                var matrix = new float[source.Count, featureCount];
+                for (int i = 0; i < source.Count; i++)
+                {
+                    var row = source[i];
+                    for (int j = 0; j < featureCount; j++)
+                    {
+                        matrix[i, j] = row[j];
+                    }
+                }
+                return matrix;
+            }
+
+            static float[,] BuildLabelMatrix(float[] labels)
+            {
+                var matrix = new float[labels.Length, 1];
+                for (int i = 0; i < labels.Length; i++)
+                {
+                    matrix[i, 0] = labels[i];
+                }
+                return matrix;
+            }
+
+            var trainFeatureTensor = np.array(BuildFeatureMatrix(trainFeatures, featureCount), dtype: tf.float32);
+            var trainLabelTensor = np.array(BuildLabelMatrix(trainLabels), dtype: tf.float32);
+            var valFeatureTensor = np.array(BuildFeatureMatrix(valFeatures, featureCount), dtype: tf.float32);
+            var valLabelTensor = np.array(BuildLabelMatrix(valLabels), dtype: tf.float32);
             var graph = tf.Graph().as_default();
 
             var x = tf.placeholder(tf.float32, shape: new TensorShape(-1, featureCount), name: "x");
@@ -1683,99 +1883,139 @@ namespace HorseRacingML.ML
             var rnd = new Random();
             using var sess = tf.Session(graph);
             sess.run(tf.global_variables_initializer());
-            double ComputeDatasetMetrics(List<float[]> feats, List<float> labs, List<int> races, out float[] preds)
-            {
-                if (feats.Count != labs.Count || feats.Count != races.Count)
-                    throw new ArgumentException("Feature, label and race counts must match.");
 
-                if (feats.Count == 0)
+            var normPath = Path.Combine(AppContext.BaseDirectory, "normalization.json");
+            File.WriteAllText(normPath, JsonSerializer.Serialize(dataset.Normalization));
+
+            var trainPreds = new float[trainLabels.Length];
+            var valPreds = new float[valLabels.Length];
+            var epochPredBuffer = new float[trainLabels.Length];
+
+            double ComputeDatasetMetrics(NDArray featureTensor, NDArray labelTensor, float[] preds, int count)
+            {
+                if (preds.Length != count)
+                    throw new ArgumentException("Prediction buffer size must match example count.", nameof(preds));
+
+                if (count == 0)
                 {
-                    preds = Array.Empty<float>();
                     return 0;
                 }
 
-                preds = new float[feats.Count];
                 const int evalBatchSize = 8192;
                 double weightedLoss = 0;
                 int totalExamples = 0;
 
-                for (int start = 0; start < feats.Count; start += evalBatchSize)
+                for (int start = 0; start < count; start += evalBatchSize)
                 {
-                    int count = Math.Min(evalBatchSize, feats.Count - start);
+                    int batchCount = Math.Min(evalBatchSize, count - start);
 
-                    var featureTensor = np.array(
-                        feats.GetRange(start, count)
-                             .Select(f => f.ToArray())
-                             .ToArray());
-
-                    var labelTensor = np.array(
-                        labs.GetRange(start, count)
-                            .Select(l => new[] { l })
-                            .ToArray());
+                    var featureSlice = featureTensor[new Slice(start, start + batchCount), Slice.All];
+                    var labelSlice = labelTensor[new Slice(start, start + batchCount), Slice.All];
 
                     var results = sess.run(new[] { loss, prediction },
-                        new FeedItem(x, featureTensor),
-                        new FeedItem(y, labelTensor));
+                        new FeedItem(x, featureSlice),
+                        new FeedItem(y, labelSlice));
 
                     var chunkLoss = results[0].ToArray<float>()[0];
                     var chunkPreds = results[1].ToArray<float>();
-                    Array.Copy(chunkPreds, 0, preds, start, count);
-
-                    weightedLoss += chunkLoss * count;
-                    totalExamples += count;
+                    Array.Copy(chunkPreds, 0, preds, start, batchCount);
+                    weightedLoss += chunkLoss * batchCount;
+                    totalExamples += batchCount;
                 }
 
                 return totalExamples > 0 ? weightedLoss / totalExamples : 0;
             }
-            for (int epoch = 0; epoch < param.Epochs; epoch++)
-            {
-                var indices = new int[trainFeatures.Count];
-                for (int i = 0; i < indices.Length; i++)
-                {
-                    indices[i] = i;
-                }
-                for (int i = indices.Length - 1; i > 0; i--)
-                {
-                    int j = rnd.Next(i + 1);
-                    (indices[i], indices[j]) = (indices[j], indices[i]);
-                }
-                var fullBatchIdx = new int[param.BatchSize];
-                int[]? shortBatchIdx = null;
 
-                for (int start = 0; start < indices.Length; start += param.BatchSize)
+            void Denormalize(IList<float[]> data)
+            {
+                foreach (var arr in data)
                 {
-                    int batchCount = Math.Min(param.BatchSize, indices.Length - start);
-                    int[] batchIdx;
-                    if (batchCount == param.BatchSize)
+                    for (int i = 0; i < featureCount; i++)
                     {
-                        Array.Copy(indices, start, fullBatchIdx, 0, batchCount);
-                        batchIdx = fullBatchIdx;
+                        arr[i] = arr[i] * stdDevs[i] + means[i];
                     }
-                    else
-                    {
-                        if (shortBatchIdx == null || shortBatchIdx.Length != batchCount)
-                        {
-                            shortBatchIdx = new int[batchCount];
-                        }
-                        Array.Copy(indices, start, shortBatchIdx, 0, batchCount);
-                        batchIdx = shortBatchIdx;
-                    }
-                    var batchX = trainFeatureTensor[batchIdx];
-                    var batchY = trainLabelTensor[batchIdx];
-                    sess.run(optimizer, new FeedItem(x, batchX), new FeedItem(y, batchY));
                 }
-                var epochLoss = ComputeDatasetMetrics(trainFeatures, trainLabels, trainRaceIds, out var epochPreds);
-                var epochAcc = ComputeWinnerAccuracy(trainRaceIds, epochPreds, trainLabels);
-                Console.WriteLine($"Epoch {epoch + 1}/{param.Epochs} - loss: {epochLoss:F4} - winner acc: {epochAcc:F4}");
             }
 
-            var trainLoss = ComputeDatasetMetrics(trainFeatures, trainLabels, trainRaceIds, out var trainPreds);
-            var valLoss = ComputeDatasetMetrics(valFeatures, valLabels, valRaceIds, out var valPreds);
-            double trainBrier = trainPreds.Zip(trainLabels, (p, l) => Math.Pow(p - l, 2)).Average();
-            double valBrier = valPreds.Zip(valLabels, (p, l) => Math.Pow(p - l, 2)).Average();
+            double ComputeBrier(float[] preds, float[] labels)
+            {
+                if (preds.Length == 0)
+                    return 0;
 
-            double trainAcc = ComputeWinnerAccuracy(trainRaceIds, trainPreds, trainLabels);
-            double valAcc = ComputeWinnerAccuracy(valRaceIds, valPreds, valLabels);
+                double sum = 0;
+                for (int i = 0; i < preds.Length; i++)
+                {
+                    double diff = preds[i] - labels[i];
+                    sum += diff * diff;
+                }
+                return sum / preds.Length;
+            }
+
+            double trainLoss = 0;
+            double valLoss = 0;
+            double trainBrier = 0;
+            double valBrier = 0;
+            double trainAcc = 0;
+            double valAcc = 0;
+
+            try
+            {
+                for (int epoch = 0; epoch < param.Epochs; epoch++)
+                {
+                    var indices = new int[trainFeatures.Count];
+                    for (int i = 0; i < indices.Length; i++)
+                    {
+                        indices[i] = i;
+                    }
+                    for (int i = indices.Length - 1; i > 0; i--)
+                    {
+                        int j = rnd.Next(i + 1);
+                        (indices[i], indices[j]) = (indices[j], indices[i]);
+                    }
+                    var fullBatchIdx = new int[param.BatchSize];
+                    int[]? shortBatchIdx = null;
+
+                    for (int start = 0; start < indices.Length; start += param.BatchSize)
+                    {
+                        int batchCount = Math.Min(param.BatchSize, indices.Length - start);
+                        int[] batchIdx;
+                        if (batchCount == param.BatchSize)
+                        {
+                            Array.Copy(indices, start, fullBatchIdx, 0, batchCount);
+                            batchIdx = fullBatchIdx;
+                        }
+                        else
+                        {
+                            if (shortBatchIdx == null || shortBatchIdx.Length != batchCount)
+                            {
+                                shortBatchIdx = new int[batchCount];
+                            }
+                            Array.Copy(indices, start, shortBatchIdx, 0, batchCount);
+                            batchIdx = shortBatchIdx;
+                        }
+                        var batchX = trainFeatureTensor[batchIdx];
+                        var batchY = trainLabelTensor[batchIdx];
+                        sess.run(optimizer, new FeedItem(x, batchX), new FeedItem(y, batchY));
+                    }
+
+                    var epochLoss = ComputeDatasetMetrics(trainFeatureTensor, trainLabelTensor, epochPredBuffer, trainLabels.Length);
+                    var epochAcc = trainLabels.Length > 0 ? ComputeWinnerAccuracy(trainRaceIds, epochPredBuffer, trainLabels) : 0;
+                    Console.WriteLine($"Epoch {epoch + 1}/{param.Epochs} - loss: {epochLoss:F4} - winner acc: {epochAcc:F4}");
+                }
+
+                trainLoss = ComputeDatasetMetrics(trainFeatureTensor, trainLabelTensor, trainPreds, trainLabels.Length);
+                valLoss = ComputeDatasetMetrics(valFeatureTensor, valLabelTensor, valPreds, valLabels.Length);
+                trainBrier = ComputeBrier(trainPreds, trainLabels);
+                valBrier = ComputeBrier(valPreds, valLabels);
+
+                trainAcc = trainPreds.Length > 0 ? ComputeWinnerAccuracy(trainRaceIds, trainPreds, trainLabels) : 0;
+                valAcc = valPreds.Length > 0 ? ComputeWinnerAccuracy(valRaceIds, valPreds, valLabels) : 0;
+            }
+            finally
+            {
+                Denormalize(trainFeatures);
+                Denormalize(valFeatures);
+            }
             var hiddenLayers = new List<LayerWeights>();
             foreach (var (wVar, bVar) in hiddenWeightVars.Zip(hiddenBiasVars, (wVar, bVar) => (wVar, bVar)))
             {
