@@ -1188,10 +1188,6 @@ namespace HorseRacingML.ML
         private float SmoothedWinRate(int wins, int starts)
             => (wins + _winRateAlpha) / (starts + _winRateBeta);
 
-        private static object? NormalizeDbValue(object? value)
-        {
-            return value == null || value is DBNull ? null : value;
-        }
 
         private static object? NormalizeDbValue(object? value)
         {
