@@ -1053,7 +1053,7 @@ namespace HorseRacingML.ML
                 return false;
             }
 
-            private static bool TryReadTimeValue(Dictionary<string, object?> row, string key, out TimeSpan time)
+            public static bool TryReadTimeValue(Dictionary<string, object?> row, string key, out TimeSpan time)
             {
                 if (!row.TryGetValue(key, out var value) || value is null)
                 {
@@ -1421,51 +1421,6 @@ namespace HorseRacingML.ML
                 maxSaddle,
                 weightValues.Count > 0);
         }
-
-        private RaceStats ComputeRaceStats(List<Dictionary<string, object?>> rows)
-        {
-            int cnt = rows.Count;
-            var drawValues = rows.Where(r => r["Draw"] != null).Select(r => Convert.ToSingle(r["Draw"])).ToList();
-            float avgDraw = drawValues.Count > 0 ? drawValues.Average() : 0f;
-            var weightValues = rows.Where(r => r["WeightLbs"] != null).Select(r => Convert.ToSingle(r["WeightLbs"])).ToList();
-            float avgWeight = weightValues.Count > 0 ? weightValues.Average() : 0f;
-            float minWeight = weightValues.Count > 0 ? weightValues.Min() : 0f;
-            float maxWeight = weightValues.Count > 0 ? weightValues.Max() : 0f;
-            var saddleclothValues = rows.Where(r => r.TryGetValue("SaddleclothNumber", out var scObj) && scObj != null).Select(r => Convert.ToSingle(r["SaddleclothNumber"])).ToList();
-            float avgSaddlecloth = saddleclothValues.Count > 0 ? saddleclothValues.Average() : 0f;
-            float minSaddlecloth = saddleclothValues.Count > 0 ? saddleclothValues.Min() : 0f;
-            float maxSaddlecloth = saddleclothValues.Count > 0 ? saddleclothValues.Max() : 0f;
-            float avgAge = rows.Where(r => r["Age"] != null).Select(r => Convert.ToSingle(r["Age"])).DefaultIfEmpty(0f).Average();
-            var ratingValues = rows.Where(r => r.TryGetValue("OfficialRating", out var orObj) && orObj != null).Select(r => Convert.ToSingle(r["OfficialRating"])).ToList();
-            float avgRating = ratingValues.DefaultIfEmpty(0f).Average();
-            float stdRating = 0f;
-            if (ratingValues.Count > 0)
-            {
-                float variance = ratingValues.Select(r => (r - avgRating) * (r - avgRating)).Average();
-                stdRating = (float)Math.Sqrt(variance);
-            }
-            float purse = rows.Select(r => r.TryGetValue("Purse", out var pObj) && pObj != null ? Convert.ToSingle(pObj) : 0f).FirstOrDefault();
-            float avgSaddle = saddleclothValues.Count > 0 ? saddleclothValues.Average() : 0f;
-            float minSaddle = saddleclothValues.Count > 0 ? saddleclothValues.Min() : 0f;
-            float maxSaddle = saddleclothValues.Count > 0 ? saddleclothValues.Max() : 0f;
-
-            return new RaceStats(
-                cnt,
-                avgDraw,
-                avgWeight,
-                minWeight,
-                maxWeight,
-                avgAge,
-                avgRating,
-                stdRating,
-                purse,
-                saddleclothValues.Count > 0,
-                avgSaddle,
-                minSaddle,
-                maxSaddle,
-                weightValues.Count > 0);
-        }
-
         private readonly record struct RaceStats(
                        int RunnerCount,
                        float AvgDraw,

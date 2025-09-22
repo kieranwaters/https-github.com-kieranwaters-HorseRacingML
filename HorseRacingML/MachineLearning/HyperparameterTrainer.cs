@@ -390,6 +390,7 @@ namespace HorseRacingML.ML
             double valBrier = 0;
             double trainAcc = 0;
             double valAcc = 0;
+            HyperparameterStarted(param, trainLabels.Length, valLabels.Length, featureCount);
 
             try
             {
@@ -449,6 +450,11 @@ namespace HorseRacingML.ML
                 trainAcc = trainPreds.Length > 0 ? ComputeWinnerAccuracy(trainRaceIds, trainPreds, trainLabels) : 0;
                 valAcc = valPreds.Length > 0 ? ComputeWinnerAccuracy(valRaceIds, valPreds, valLabels) : 0;
             }
+            catch (Exception ex)
+            {
+                HyperparameterFailed(param, ex);
+                throw;
+            }
             finally
             {
                 Denormalize(trainFeatures);
@@ -501,7 +507,7 @@ namespace HorseRacingML.ML
                 // Failing to persist weights shouldn't abort training; simply swallow
                 // any IO issues so training metrics are still returned.
             }
-            Console.WriteLine($"Training complete - train brier: {trainBrier:F4} - val brier: {valBrier:F4}");
+            HyperparameterCompleted(param, trainAcc, valAcc, trainLoss, valLoss, trainBrier, valBrier);
             return (trainAcc, trainLoss, valAcc, valLoss, trainBrier, valBrier);
             static float[][] ToJagged2D(NDArray array)
             {
@@ -522,6 +528,48 @@ namespace HorseRacingML.ML
                 return result;
             }
         }
-    
+        private static void HyperparameterStarted(MLParameter param, int trainExampleCount, int validationExampleCount, int featureCount)
+        {
+            Console.WriteLine(
+                "[Hyperparameter] Training started | layers: {0}, units: {1}, dropout: {2}, lr: {3}, epochs: {4}, batch: {5}, train examples: {6}, val examples: {7}, features: {8}",
+                param.Layers,
+                param.Units,
+                param.Dropout,
+                param.LearningRate,
+                param.Epochs,
+                param.BatchSize,
+                trainExampleCount,
+                validationExampleCount,
+                featureCount);
+        }
+
+        private static void HyperparameterCompleted(MLParameter param, double trainAccuracy, double validationAccuracy, double trainLoss, double validationLoss, double trainBrier, double validationBrier)
+        {
+            Console.WriteLine(
+                "[Hyperparameter] Training complete | layers: {0}, units: {1}, epochs: {2}, train acc: {3:F4}, val acc: {4:F4}, train loss: {5:F4}, val loss: {6:F4}, train brier: {7:F4}, val brier: {8:F4}",
+                param.Layers,
+                param.Units,
+                param.Epochs,
+                trainAccuracy,
+                validationAccuracy,
+                trainLoss,
+                validationLoss,
+                trainBrier,
+                validationBrier);
+        }
+
+        private static void HyperparameterFailed(MLParameter param, Exception exception)
+        {
+            Console.Error.WriteLine(
+                "[Hyperparameter] Training failed | layers: {0}, units: {1}, dropout: {2}, lr: {3}, epochs: {4}, batch: {5}. Error: {6}",
+                param.Layers,
+                param.Units,
+                param.Dropout,
+                param.LearningRate,
+                param.Epochs,
+                param.BatchSize,
+                exception);
+        }
+
     }
 }
