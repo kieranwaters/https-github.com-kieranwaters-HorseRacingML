@@ -1195,13 +1195,16 @@ namespace HorseRacingML.ML
                                 row["TrainerWinRateRecentDays"] = _trainer.SmoothedWinRate(tRecent.Count(r => r.win), tRecent.Count);
                                 row["TrainerWinRate"] = _trainer.SmoothedWinRate(trainerStat.Wins, trainerStat.Starts);
 
-                                trainerStat.Starts++;
-                                bool tWin = finish.HasValue && finish.Value == 1;
-                                if (tWin) trainerStat.Wins++;
-                                trainerStat.Recent.Enqueue((date, tWin));
-                                while (trainerStat.Recent.Count > TrainerJockeyRecentStarts)
-                                    trainerStat.Recent.Dequeue();
-                                _trainerStats[trainerId.Value] = trainerStat;
+                                if (updateState)
+                                {
+                                    trainerStat.Starts++;
+                                    bool tWin = finish.HasValue && finish.Value == 1;
+                                    if (tWin) trainerStat.Wins++;
+                                    trainerStat.Recent.Enqueue((date, tWin));
+                                    while (trainerStat.Recent.Count > TrainerJockeyRecentStarts)
+                                        trainerStat.Recent.Dequeue();
+                                    _trainerStats[trainerId.Value] = trainerStat;
+                                }
                             }
                             else
                             {
@@ -1274,13 +1277,16 @@ namespace HorseRacingML.ML
                                 row["JockeyWinRateRecentDays"] = _trainer.SmoothedWinRate(jRecent.Count(r => r.win), jRecent.Count);
                                 row["JockeyWinRate"] = _trainer.SmoothedWinRate(jockeyStat.Wins, jockeyStat.Starts);
 
-                                jockeyStat.Starts++;
-                                bool jWin = finish.HasValue && finish.Value == 1;
-                                if (jWin) jockeyStat.Wins++;
-                                jockeyStat.Recent.Enqueue((date, jWin));
-                                while (jockeyStat.Recent.Count > TrainerJockeyRecentStarts)
-                                    jockeyStat.Recent.Dequeue();
-                                _jockeyStats[jockeyId.Value] = jockeyStat;
+                                if (updateState)
+                                {
+                                    jockeyStat.Starts++;
+                                    bool jWin = finish.HasValue && finish.Value == 1;
+                                    if (jWin) jockeyStat.Wins++;
+                                    jockeyStat.Recent.Enqueue((date, jWin));
+                                    while (jockeyStat.Recent.Count > TrainerJockeyRecentStarts)
+                                        jockeyStat.Recent.Dequeue();
+                                    _jockeyStats[jockeyId.Value] = jockeyStat;
+                                }
                             }
                             else
                             {
