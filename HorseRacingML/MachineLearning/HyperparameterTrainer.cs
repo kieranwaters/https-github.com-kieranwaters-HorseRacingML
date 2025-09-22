@@ -4,17 +4,18 @@ using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 using System;
 using System.Collections.Generic;
+using System.Data.SqlTypes;
 using System.Globalization;
 using System.IO;
 using System.Linq;
-using System.Text.Json;
 using System.Text;
+using System.Text.Json;
 using Tensorflow;
 using Tensorflow.NumPy;
 using static HorseRacingML.ML.HyperparameterTrainer.TrainingDataset;
+using static HorseRacingML.ML.HyperparameterTrainer.TrainingDataset.PreparedDataset;
 using static Tensorflow.Binding;
 using TensorShape = Tensorflow.Shape;
-using System.Data.SqlTypes;
 
 namespace HorseRacingML.ML
 {
@@ -39,71 +40,33 @@ namespace HorseRacingML.ML
         public class TrainingDataset
         {
             public TrainingDataset(
-                List<RaceExample> races,
+                List<RaceExample> trainingRaces,
+                List<RaceExample> validationRaces,
                 List<string> featureKeys,
                 Dictionary<string, int> featureDimensions,
                 Dictionary<string, Dictionary<string, int>> stringMaps,
                 NormalizationParameters normalization)
             {
-                Races = races;
-                FeatureKeys = featureKeys;
-                FeatureDimensions = featureDimensions;
-                StringMaps = stringMaps;
-                Normalization = normalization;
+                TrainingRaces = trainingRaces ?? throw new ArgumentNullException(nameof(trainingRaces));
+                ValidationRaces = validationRaces ?? throw new ArgumentNullException(nameof(validationRaces));
+                Races = TrainingRaces.Concat(ValidationRaces).ToList();
+                FeatureKeys = featureKeys ?? throw new ArgumentNullException(nameof(featureKeys));
+                FeatureDimensions = featureDimensions ?? throw new ArgumentNullException(nameof(featureDimensions));
+                StringMaps = stringMaps ?? throw new ArgumentNullException(nameof(stringMaps));
+                Normalization = normalization ?? throw new ArgumentNullException(nameof(normalization));
                 FeatureCount = featureDimensions.Values.Sum();
             }
             public class PreparedDataset
             {
                 public PreparedDataset(List<PreparedRace> races)
                 {
-                    Races = races;
+                    Races = races ?? throw new ArgumentNullException(nameof(races));
                 }
 
                 public List<PreparedRace> Races { get; }
                 public IEnumerable<Dictionary<string, object?>> Rows => Races.SelectMany(r => r.Rows);
                 public int RowCount => Races.Sum(r => r.Rows.Count);
-                private readonly Dictionary<(int FoldCount, int FoldIndex), EncodingCacheEntry> _encodingCache = new();
-
-                internal bool TryGetEncodingCache(int foldIndex, int foldCount, out EncodingCacheEntry? entry)
-                {
-                    return _encodingCache.TryGetValue((foldCount, foldIndex), out entry);
-                }
-
-                internal EncodingCacheEntry SetEncodingCache(
-                    int foldIndex,
-                    int foldCount,
-                    List<RaceExample> races,
-                    List<string> featureKeys,
-                    Dictionary<string, int> featureDimensions,
-                    Dictionary<string, Dictionary<string, int>> stringMaps)
-                {
-                    var entry = new EncodingCacheEntry(races, featureKeys, featureDimensions, stringMaps);
-                    _encodingCache[(foldCount, foldIndex)] = entry;
-                    return entry;
-                }
-
-                internal sealed class EncodingCacheEntry
-                {
-                    public EncodingCacheEntry(
-                        List<RaceExample> races,
-                        List<string> featureKeys,
-                        Dictionary<string, int> featureDimensions,
-                        Dictionary<string, Dictionary<string, int>> stringMaps)
-                    {
-                        Races = races;
-                        FeatureKeys = featureKeys;
-                        FeatureDimensions = featureDimensions;
-                        StringMaps = stringMaps;
-                        FeatureCount = featureDimensions.Values.Sum();
-                    }
-
-                    public List<RaceExample> Races { get; }
-                    public List<string> FeatureKeys { get; }
-                    public Dictionary<string, int> FeatureDimensions { get; }
-                    public Dictionary<string, Dictionary<string, int>> StringMaps { get; }
-                    public int FeatureCount { get; }
-                }
-            }
+                
             internal static bool TryGetRequiredInt32(Dictionary<string, object?> row, string key, out int result)
             {
                 if (row.TryGetValue(key, out var value) &&
@@ -335,7 +298,9 @@ namespace HorseRacingML.ML
                 public List<Dictionary<string, object?>> Rows { get; }
             }
             public List<RaceExample> Races { get; }
-            public List<string> FeatureKeys { get; }
+                public List<RaceExample> TrainingRaces { get; }
+                public List<RaceExample> ValidationRaces { get; }
+                public List<string> FeatureKeys { get; }
             public Dictionary<string, int> FeatureDimensions { get; }
             public Dictionary<string, Dictionary<string, int>> StringMaps { get; }
             public NormalizationParameters Normalization { get; }
@@ -601,14 +566,14 @@ namespace HorseRacingML.ML
                 _trainer = trainer ?? throw new ArgumentNullException(nameof(trainer));
             }
 
-            public void ProcessRace(List<Dictionary<string, object?>> rows)
-            {
-                if (rows is null)
+                public void ProcessRace(List<Dictionary<string, object?>> rows, bool includeRace, bool updateState)
                 {
-                    throw new ArgumentNullException(nameof(rows));
-                }
-                if (rows.Count == 0)
-                {
+                    if (rows is null)
+                    {
+                        throw new ArgumentNullException(nameof(rows));
+                    }
+                    if (rows.Count == 0 || (!includeRace && !updateState))
+                    {
                     return;
                 }
                 rows.RemoveAll(row =>
@@ -626,8 +591,8 @@ namespace HorseRacingML.ML
                     return false;
                 });
 
-                if (rows.Count == 0)
-                {
+                    if (rows.Count == 0 || (!includeRace && !updateState))
+                    {
                     return;
                 }
                 foreach (var runnerRow in rows)
@@ -1327,210 +1292,215 @@ namespace HorseRacingML.ML
                                 row["TrainerJockeySurfaceWinRate"] = 0f;
                                 row["TrainerJockeyCourseWinRate"] = 0f;
                             }
-                            // Compute normalized finish
-                            float normFinish = (finish.HasValue && runnerCount > 1)
-                                ? (runnerCount - finish.Value) / (float)(runnerCount - 1)
+                                if (updateState)
+                                {
+                                    // Compute normalized finish
+                                    float normFinish = (finish.HasValue && runnerCount > 1)
+                                    ? (runnerCount - finish.Value) / (float)(runnerCount - 1)
                                 : 0f;
-                            history.Add(new HistoryEntry(
-                                date,
-                                normFinish,
-                                finish,
-                                going,
-                                surface,
-                                courseId,
-                                bucket,
-                                classVal,
-                                runnerSpeed,
-                                speedDiff,
-                                age,
-                                finish.HasValue && finish.Value == 1,
-                                rating,
-                                weight));
-                            horseClassStat.starts++;
-                            horseClassStat.sumNorm += normFinish;
-                            if (finish.HasValue && finish.Value == 1) horseClassStat.wins++;
-                            horseClassStat.lastNorm = normFinish;
-                            _horseClassStats[horseClassKey] = horseClassStat;
+                                    history.Add(new HistoryEntry(
+                                        date,
+                                        normFinish,
+                                        finish,
+                                        going,
+                                        surface,
+                                        courseId,
+                                        bucket,
+                                        classVal,
+                                        runnerSpeed,
+                                        speedDiff,
+                                        age,
+                                        finish.HasValue && finish.Value == 1,
+                                        rating,
+                                        weight));
+                                    horseClassStat.starts++;
+                                    horseClassStat.sumNorm += normFinish;
+                                    if (finish.HasValue && finish.Value == 1) horseClassStat.wins++;
+                                    horseClassStat.lastNorm = normFinish;
+                                    _horseClassStats[horseClassKey] = horseClassStat;
 
-                            if (hasTrainerClass)
-                            {
-                                trainerClassStat.starts++;
-                                trainerClassStat.sumNorm += normFinish;
-                                if (finish.HasValue && finish.Value == 1) trainerClassStat.wins++;
-                                trainerClassStat.lastNorm = normFinish;
-                                _trainerClassStats[trainerClassKey] = trainerClassStat;
-                            }
+                                    if (hasTrainerClass)
+                                    {
+                                        trainerClassStat.starts++;
+                                        trainerClassStat.sumNorm += normFinish;
+                                        if (finish.HasValue && finish.Value == 1) trainerClassStat.wins++;
+                                        trainerClassStat.lastNorm = normFinish;
+                                        _trainerClassStats[trainerClassKey] = trainerClassStat;
+                                    }
 
-                            if (hasJockeyClass)
-                            {
-                                jockeyClassStat.starts++;
-                                jockeyClassStat.sumNorm += normFinish;
-                                if (finish.HasValue && finish.Value == 1) jockeyClassStat.wins++;
-                                jockeyClassStat.lastNorm = normFinish;
-                                _jockeyClassStats[jockeyClassKey] = jockeyClassStat;
-                            }
-                            if (history.Count > HistoryLength)
-                                history.RemoveAt(0);
-                            sStats.starts++;
-                            sStats.sumNorm += normFinish;
-                            if (finish.HasValue && finish.Value == 1) sStats.wins++;
-                            sStats.lastNorm = normFinish;
-                            sDict[surface] = sStats;
-                            // Update going stats after race
-                            gStats.starts++;
-                            gStats.sumNorm += normFinish;
-                            if (finish.HasValue && finish.Value == 1) gStats.wins++;
-                            gStats.lastNorm = normFinish;
-                            gDict[going] = gStats;
+                                    if (hasJockeyClass)
+                                    {
+                                        jockeyClassStat.starts++;
+                                        jockeyClassStat.sumNorm += normFinish;
+                                        if (finish.HasValue && finish.Value == 1) jockeyClassStat.wins++;
+                                        jockeyClassStat.lastNorm = normFinish;
+                                        _jockeyClassStats[jockeyClassKey] = jockeyClassStat;
+                                    }
+                                    if (history.Count > HistoryLength)
+                                        history.RemoveAt(0);
+                                    sStats.starts++;
+                                    sStats.sumNorm += normFinish;
+                                    if (finish.HasValue && finish.Value == 1) sStats.wins++;
+                                    sStats.lastNorm = normFinish;
+                                    sDict[surface] = sStats;
+                                    // Update going stats after race
+                                    gStats.starts++;
+                                    gStats.sumNorm += normFinish;
+                                    if (finish.HasValue && finish.Value == 1) gStats.wins++;
+                                    gStats.lastNorm = normFinish;
+                                    gDict[going] = gStats;
 
-                            gcStats.starts++;
-                            gcStats.sumNorm += normFinish;
-                            if (finish.HasValue && finish.Value == 1) gcStats.wins++;
-                            gcStats.lastNorm = normFinish;
-                            gcDict[gcKey] = gcStats;
-                            cStats.starts++;
-                            cStats.sumNorm += normFinish;
-                            if (finish.HasValue && finish.Value == 1) cStats.wins++;
-                            cStats.lastNorm = normFinish;
-                            cDict[courseId] = cStats;
-                            aStats.starts++;
-                            aStats.sumNorm += normFinish;
-                            if (finish.HasValue && finish.Value == 1) aStats.wins++;
-                            aStats.lastNorm = normFinish;
-                            aDict[ageRes] = aStats;
+                                    gcStats.starts++;
+                                    gcStats.sumNorm += normFinish;
+                                    if (finish.HasValue && finish.Value == 1) gcStats.wins++;
+                                    gcStats.lastNorm = normFinish;
+                                    gcDict[gcKey] = gcStats;
+                                    cStats.starts++;
+                                    cStats.sumNorm += normFinish;
+                                    if (finish.HasValue && finish.Value == 1) cStats.wins++;
+                                    cStats.lastNorm = normFinish;
+                                    cDict[courseId] = cStats;
+                                    aStats.starts++;
+                                    aStats.sumNorm += normFinish;
+                                    if (finish.HasValue && finish.Value == 1) aStats.wins++;
+                                    aStats.lastNorm = normFinish;
+                                    aDict[ageRes] = aStats;
 
-                            dStats.starts++;
-                            dStats.sumNorm += normFinish;
-                            if (finish.HasValue && finish.Value == 1) dStats.wins++;
-                            dStats.lastNorm = normFinish;
-                            dDict[bucket] = dStats;
-                            var updateKey = (horseId, going, bucket);
-                            _goingDistanceStats.TryGetValue(updateKey, out var updateStats);
-                            updateStats.starts++;
-                            updateStats.sumNorm += normFinish;
-                            if (finish.HasValue && finish.Value == 1) updateStats.wins++;
-                            updateStats.lastNorm = normFinish;
-                            _goingDistanceStats[updateKey] = updateStats;
-                            drawStat.starts++;
-                            if (finish.HasValue && finish.Value == 1) drawStat.wins++;
-                            _drawStats[drawKey] = drawStat;
-                            baseStat.starts++;
-                            if (finish.HasValue && finish.Value == 1) baseStat.wins++;
-                            _drawBaselineStats[baseKey] = baseStat;
-                            allDist.sum += distanceYards;
-                            allDist.count++;
-                            _horseDistanceAll[horseId] = allDist;
-                            _horseLastDistance[horseId] = distanceYards;
-                            if (finish.HasValue && finish.Value == 1)
-                            {
-                                winDist.sum += distanceYards;
-                                winDist.count++;
-                            }
-                            _horseDistanceWins[horseId] = winDist;
-                            if (trainerId.HasValue)
-                            {
-                                if (!_trainerSurfaceStats.TryGetValue(trainerId.Value, out var tsDict)) tsDict = new();
-                                if (!tsDict.TryGetValue(surface, out var tsStats)) tsStats = (0, 0, 0f, 0f);
-                                tsStats.starts++; tsStats.sumNorm += normFinish;
-                                if (finish.HasValue && finish.Value == 1) tsStats.wins++;
-                                tsStats.lastNorm = normFinish;
-                                tsDict[surface] = tsStats;
+                                    dStats.starts++;
+                                    dStats.sumNorm += normFinish;
+                                    if (finish.HasValue && finish.Value == 1) dStats.wins++;
+                                    dStats.lastNorm = normFinish;
+                                    dDict[bucket] = dStats;
+                                    var updateKey = (horseId, going, bucket);
+                                    _goingDistanceStats.TryGetValue(updateKey, out var updateStats);
+                                    updateStats.starts++;
+                                    updateStats.sumNorm += normFinish;
+                                    if (finish.HasValue && finish.Value == 1) updateStats.wins++;
+                                    updateStats.lastNorm = normFinish;
+                                    _goingDistanceStats[updateKey] = updateStats;
+                                    drawStat.starts++;
+                                    if (finish.HasValue && finish.Value == 1) drawStat.wins++;
+                                    _drawStats[drawKey] = drawStat;
+                                    baseStat.starts++;
+                                    if (finish.HasValue && finish.Value == 1) baseStat.wins++;
+                                    _drawBaselineStats[baseKey] = baseStat;
+                                    allDist.sum += distanceYards;
+                                    allDist.count++;
+                                    _horseDistanceAll[horseId] = allDist;
+                                    _horseLastDistance[horseId] = distanceYards;
+                                    if (finish.HasValue && finish.Value == 1)
+                                    {
+                                        winDist.sum += distanceYards;
+                                        winDist.count++;
+                                    }
+                                    _horseDistanceWins[horseId] = winDist;
+                                    if (trainerId.HasValue)
+                                    {
+                                        if (!_trainerSurfaceStats.TryGetValue(trainerId.Value, out var tsDict)) tsDict = new();
+                                        if (!tsDict.TryGetValue(surface, out var tsStats)) tsStats = (0, 0, 0f, 0f);
+                                        tsStats.starts++; tsStats.sumNorm += normFinish;
+                                        if (finish.HasValue && finish.Value == 1) tsStats.wins++;
+                                        tsStats.lastNorm = normFinish;
+                                        tsDict[surface] = tsStats;
 
-                                if (!_trainerGoingStats.TryGetValue(trainerId.Value, out var tgDict)) tgDict = new();
-                                if (!tgDict.TryGetValue(going, out var tgStats)) tgStats = (0, 0, 0f, 0f);
-                                tgStats.starts++; tgStats.sumNorm += normFinish;
-                                if (finish.HasValue && finish.Value == 1) tgStats.wins++;
-                                tgStats.lastNorm = normFinish;
-                                tgDict[going] = tgStats;
+                                        if (!_trainerGoingStats.TryGetValue(trainerId.Value, out var tgDict)) tgDict = new();
+                                        if (!tgDict.TryGetValue(going, out var tgStats)) tgStats = (0, 0, 0f, 0f);
+                                        tgStats.starts++; tgStats.sumNorm += normFinish;
+                                        if (finish.HasValue && finish.Value == 1) tgStats.wins++;
+                                        tgStats.lastNorm = normFinish;
+                                        tgDict[going] = tgStats;
 
-                                if (!_trainerDistanceStats.TryGetValue(trainerId.Value, out var tdDict)) tdDict = new();
-                                if (!tdDict.TryGetValue(bucket, out var tdStats)) tdStats = (0, 0, 0f, 0f);
-                                tdStats.starts++; tdStats.sumNorm += normFinish;
-                                if (finish.HasValue && finish.Value == 1) tdStats.wins++;
-                                tdStats.lastNorm = normFinish;
-                                tdDict[bucket] = tdStats;
-                                var tcKey = (trainerId.Value, courseId);
-                                _trainerCourseStats.TryGetValue(tcKey, out var tcStat);
-                                tcStat.starts++;
-                                if (finish.HasValue && finish.Value == 1) tcStat.wins++;
-                                _trainerCourseStats[tcKey] = tcStat;
-                            }
-                            if (jockeyId.HasValue)
-                            {
-                                if (!_jockeySurfaceStats.TryGetValue(jockeyId.Value, out var jsDict)) jsDict = new();
-                                if (!jsDict.TryGetValue(surface, out var jsStats)) jsStats = (0, 0, 0f, 0f);
-                                jsStats.starts++; jsStats.sumNorm += normFinish;
-                                if (finish.HasValue && finish.Value == 1) jsStats.wins++;
-                                jsStats.lastNorm = normFinish;
-                                jsDict[surface] = jsStats;
+                                        if (!_trainerDistanceStats.TryGetValue(trainerId.Value, out var tdDict)) tdDict = new();
+                                        if (!tdDict.TryGetValue(bucket, out var tdStats)) tdStats = (0, 0, 0f, 0f);
+                                        tdStats.starts++; tdStats.sumNorm += normFinish;
+                                        if (finish.HasValue && finish.Value == 1) tdStats.wins++;
+                                        tdStats.lastNorm = normFinish;
+                                        tdDict[bucket] = tdStats;
+                                        var tcKey = (trainerId.Value, courseId);
+                                        _trainerCourseStats.TryGetValue(tcKey, out var tcStat);
+                                        tcStat.starts++;
+                                        if (finish.HasValue && finish.Value == 1) tcStat.wins++;
+                                        _trainerCourseStats[tcKey] = tcStat;
+                                    }
+                                    if (jockeyId.HasValue)
+                                    {
+                                        if (!_jockeySurfaceStats.TryGetValue(jockeyId.Value, out var jsDict)) jsDict = new();
+                                        if (!jsDict.TryGetValue(surface, out var jsStats)) jsStats = (0, 0, 0f, 0f);
+                                        jsStats.starts++; jsStats.sumNorm += normFinish;
+                                        if (finish.HasValue && finish.Value == 1) jsStats.wins++;
+                                        jsStats.lastNorm = normFinish;
+                                        jsDict[surface] = jsStats;
 
-                                if (!_jockeyGoingStats.TryGetValue(jockeyId.Value, out var jgDict)) jgDict = new();
-                                if (!jgDict.TryGetValue(going, out var jgStats)) jgStats = (0, 0, 0f, 0f);
-                                jgStats.starts++; jgStats.sumNorm += normFinish;
-                                if (finish.HasValue && finish.Value == 1) jgStats.wins++;
-                                jgStats.lastNorm = normFinish;
-                                jgDict[going] = jgStats;
+                                        if (!_jockeyGoingStats.TryGetValue(jockeyId.Value, out var jgDict)) jgDict = new();
+                                        if (!jgDict.TryGetValue(going, out var jgStats)) jgStats = (0, 0, 0f, 0f);
+                                        jgStats.starts++; jgStats.sumNorm += normFinish;
+                                        if (finish.HasValue && finish.Value == 1) jgStats.wins++;
+                                        jgStats.lastNorm = normFinish;
+                                        jgDict[going] = jgStats;
 
-                                if (!_jockeyDistanceStats.TryGetValue(jockeyId.Value, out var jdDict)) jdDict = new();
-                                if (!jdDict.TryGetValue(bucket, out var jdStats)) jdStats = (0, 0, 0f, 0f);
-                                jdStats.starts++; jdStats.sumNorm += normFinish;
-                                if (finish.HasValue && finish.Value == 1) jdStats.wins++;
-                                jdStats.lastNorm = normFinish;
-                                jdDict[bucket] = jdStats;
-                                var jockeyGoingDistanceKey = (jockeyId.Value, going, bucket);
-                                _jockeyGoingDistanceStats.TryGetValue(jockeyGoingDistanceKey, out var jockeyGoingDistanceStat);
-                                jockeyGoingDistanceStat.starts++;
-                                jockeyGoingDistanceStat.sumNorm += normFinish;
-                                if (finish.HasValue && finish.Value == 1) jockeyGoingDistanceStat.wins++;
-                                jockeyGoingDistanceStat.lastNorm = normFinish;
-                                _jockeyGoingDistanceStats[jockeyGoingDistanceKey] = jockeyGoingDistanceStat;
-                                var jcKey = (jockeyId.Value, courseId);
-                                if (!_jockeyCourseStats.TryGetValue(jcKey, out var jcStat))
-                                {
-                                    jcStat = (0, 0);
+                                        if (!_jockeyDistanceStats.TryGetValue(jockeyId.Value, out var jdDict)) jdDict = new();
+                                        if (!jdDict.TryGetValue(bucket, out var jdStats)) jdStats = (0, 0, 0f, 0f);
+                                        jdStats.starts++; jdStats.sumNorm += normFinish;
+                                        if (finish.HasValue && finish.Value == 1) jdStats.wins++;
+                                        jdStats.lastNorm = normFinish;
+                                        jdDict[bucket] = jdStats;
+                                        var jockeyGoingDistanceKey = (jockeyId.Value, going, bucket);
+                                        _jockeyGoingDistanceStats.TryGetValue(jockeyGoingDistanceKey, out var jockeyGoingDistanceStat);
+                                        jockeyGoingDistanceStat.starts++;
+                                        jockeyGoingDistanceStat.sumNorm += normFinish;
+                                        if (finish.HasValue && finish.Value == 1) jockeyGoingDistanceStat.wins++;
+                                        jockeyGoingDistanceStat.lastNorm = normFinish;
+                                        _jockeyGoingDistanceStats[jockeyGoingDistanceKey] = jockeyGoingDistanceStat;
+                                        var jcKey = (jockeyId.Value, courseId);
+                                        if (!_jockeyCourseStats.TryGetValue(jcKey, out var jcStat))
+                                        {
+                                            jcStat = (0, 0);
+                                        }
+                                        jcStat.starts++;
+                                        if (finish.HasValue && finish.Value == 1)
+                                        {
+                                            jcStat.wins++;
+                                        }
+                                        _jockeyCourseStats[jcKey] = jcStat;
+                                    }
+                                    if (trainerId.HasValue && jockeyId.HasValue)
+                                    {
+                                        var pairKey = (trainerId.Value, jockeyId.Value);
+                                        _trainerJockeyStats.TryGetValue(pairKey, out var pairStat);
+                                        pairStat.starts++;
+                                        if (finish.HasValue && finish.Value == 1)
+                                        {
+                                            pairStat.wins++;
+                                        }
+                                        _trainerJockeyStats[pairKey] = pairStat;
+                                        var pairSurfaceKey = (trainerId.Value, jockeyId.Value, surface);
+                                        _trainerJockeySurfaceStats.TryGetValue(pairSurfaceKey, out var pairSurfaceStat);
+                                        pairSurfaceStat.starts++;
+                                        if (finish.HasValue && finish.Value == 1) pairSurfaceStat.wins++;
+                                        _trainerJockeySurfaceStats[pairSurfaceKey] = pairSurfaceStat;
+                                    }
                                 }
-                                jcStat.starts++;
-                                if (finish.HasValue && finish.Value == 1)
-                                {
-                                    jcStat.wins++;
-                                }
-                                _jockeyCourseStats[jcKey] = jcStat;
-                            }
-                            if (trainerId.HasValue && jockeyId.HasValue)
-                            {
-                                var pairKey = (trainerId.Value, jockeyId.Value);
-                                _trainerJockeyStats.TryGetValue(pairKey, out var pairStat);
-                                pairStat.starts++;
-                                if (finish.HasValue && finish.Value == 1)
-                                {
-                                    pairStat.wins++;
-                                }
-                                _trainerJockeyStats[pairKey] = pairStat;
-                                var pairSurfaceKey = (trainerId.Value, jockeyId.Value, surface);
-                                _trainerJockeySurfaceStats.TryGetValue(pairSurfaceKey, out var pairSurfaceStat);
-                                pairSurfaceStat.starts++;
-                                if (finish.HasValue && finish.Value == 1) pairSurfaceStat.wins++;
-                                _trainerJockeySurfaceStats[pairSurfaceKey] = pairSurfaceStat;
-                            }
-
                         }
                     }
                 }
-                float raceAvgSpeed = rows
-               .Select(r => r.ContainsKey("AvgSpeedLast5") && r["AvgSpeedLast5"] != null ? Convert.ToSingle(r["AvgSpeedLast5"]) : 0f)
-               .DefaultIfEmpty(0f)
-               .Average();
-                float raceAvgWinRate = rows
-                    .Select(r => r.ContainsKey("WinRateLast5") && r["WinRateLast5"] != null ? Convert.ToSingle(r["WinRateLast5"]) : 0f)
-                    .DefaultIfEmpty(0f)
-                    .Average();
+                    if (includeRace)
+                    {
+                        float raceAvgSpeed = rows
+                                                .Select(r => r.ContainsKey("AvgSpeedLast5") && r["AvgSpeedLast5"] != null ? Convert.ToSingle(r["AvgSpeedLast5"]) : 0f)
+                                                .DefaultIfEmpty(0f)
+                                                .Average();
+                        float raceAvgWinRate = rows
+                            .Select(r => r.ContainsKey("WinRateLast5") && r["WinRateLast5"] != null ? Convert.ToSingle(r["WinRateLast5"]) : 0f)
+                            .DefaultIfEmpty(0f)
+                            .Average();
 
-                foreach (var raceRow in rows)
-                {
-                    raceRow["RaceAvgSpeedLast5"] = raceAvgSpeed;
-                    raceRow["RaceAvgWinRateLast5"] = raceAvgWinRate;
-                    TrimRunnerRow(raceRow);
-                }
+                        foreach (var raceRow in rows)
+                        {
+                            raceRow["RaceAvgSpeedLast5"] = raceAvgSpeed;
+                            raceRow["RaceAvgWinRateLast5"] = raceAvgWinRate;
+                            TrimRunnerRow(raceRow);
+                        }
+                    }
             }
                  private static bool TryGetTimeOfDay(Dictionary<string, object?> row, out TimeSpan timeOfDay)
             {
@@ -1647,8 +1617,10 @@ private RaceStats ComputeRaceStats(List<Dictionary<string, object?>> rows)
                        float MaxSaddlecloth,
                        bool HasWeightStats);
         }
-        public PreparedDataset PrepareDataset()
-        {
+            public PreparedDataset PrepareDataset(
+                ISet<int>? includeRaceIds = null,
+                ISet<int>? stateRaceWhitelist = null)
+            {
             using var conn = new SqlConnection(_connectionString);
             conn.Open();
 
@@ -1710,8 +1682,10 @@ private RaceStats ComputeRaceStats(List<Dictionary<string, object?>> rows)
             var rnd = new Random();
             var currentRows = new List<Dictionary<string, object?>>();
             int? currentRaceId = null;
+                bool ShouldInclude(int raceId) => includeRaceIds is null || includeRaceIds.Contains(raceId);
+                bool ShouldUpdate(int raceId) => stateRaceWhitelist is null || stateRaceWhitelist.Contains(raceId);
 
-            foreach (var record in conn.Query(sql, commandTimeout: 6000, buffered: false))
+                foreach (var record in conn.Query(sql, commandTimeout: 6000, buffered: false))
             {
                 var source = (IDictionary<string, object?>)record;
                 var row = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
@@ -1728,9 +1702,18 @@ private RaceStats ComputeRaceStats(List<Dictionary<string, object?>> rows)
                 if (currentRaceId.HasValue && raceId != currentRaceId.Value)
                 {
                     Shuffle(currentRows, rnd);
-                    featureState.ProcessRace(currentRows);
-                    races.Add(new PreparedRace(currentRaceId.Value, currentRows));
-                    currentRows = new List<Dictionary<string, object?>>();
+                        int previousRaceId = currentRaceId.Value;
+                        bool include = ShouldInclude(previousRaceId);
+                        bool update = ShouldUpdate(previousRaceId);
+                        if (include || update)
+                        {
+                            featureState.ProcessRace(currentRows, include, update);
+                            if (include)
+                            {
+                                races.Add(new PreparedRace(previousRaceId, currentRows));
+                            }
+                        }
+                        currentRows = new List<Dictionary<string, object?>>();
                 }
 
                 currentRows.Add(row);
@@ -1740,14 +1723,52 @@ private RaceStats ComputeRaceStats(List<Dictionary<string, object?>> rows)
             if (currentRaceId.HasValue && currentRows.Count > 0)
             {
                 Shuffle(currentRows, rnd);
-                featureState.ProcessRace(currentRows);
-                races.Add(new PreparedRace(currentRaceId.Value, currentRows));
-            }
+                    int finalRaceId = currentRaceId.Value;
+                    bool include = ShouldInclude(finalRaceId);
+                    bool update = ShouldUpdate(finalRaceId);
+                    if (include || update)
+                    {
+                        featureState.ProcessRace(currentRows, include, update);
+                        if (include)
+                        {
+                            races.Add(new PreparedRace(finalRaceId, currentRows));
+                        }
+                    }
+                }
 
             return new PreparedDataset(races);
         }
+            private TrainingDataset BuildTrainingDataset(
+            PreparedDataset trainingPrepared,
+            PreparedDataset validationPrepared)
+            {
+                if (trainingPrepared is null)
+                    throw new ArgumentNullException(nameof(trainingPrepared));
+                if (validationPrepared is null)
+                    throw new ArgumentNullException(nameof(validationPrepared));
 
-        private static float[] EncodeNumeric(object value, int dim)
+                var metadataSource = trainingPrepared.RowCount > 0 ? trainingPrepared : validationPrepared;
+                var metadataRows = trainingPrepared.RowCount > 0
+                    ? trainingPrepared.Rows.ToList()
+                    : metadataSource.Rows.ToList();
+
+                var metadata = BuildFeatureMetadata(metadataSource, metadataRows);
+                int featureCount = metadata.FeatureCount;
+                var trainRaces = EncodeRaces(trainingPrepared.Races, metadata.FeatureKeys, metadata.FeatureDimensions, metadata.StringMaps);
+                var validationRaces = EncodeRaces(validationPrepared.Races, metadata.FeatureKeys, metadata.FeatureDimensions, metadata.StringMaps);
+
+                var normalization = new NormalizationParameters
+                {
+                    Mean = new float[featureCount],
+                    StdDev = new float[featureCount]
+                };
+
+                var mapPath = Path.Combine(AppContext.BaseDirectory, "string_maps.json");
+                File.WriteAllText(mapPath, JsonSerializer.Serialize(metadata.StringMaps));
+
+                return new TrainingDataset(trainRaces, validationRaces, metadata.FeatureKeys, metadata.FeatureDimensions, metadata.StringMaps, normalization);
+            }
+            private static float[] EncodeNumeric(object value, int dim)
         {
             float f = Convert.ToSingle(value);
             if (Math.Abs(f) > 1_000_000f)
@@ -1969,144 +1990,65 @@ private RaceStats ComputeRaceStats(List<Dictionary<string, object?>> rows)
 
             return result;
         }
-
-        private TrainingDataset BuildTrainingDataset(
-            PreparedDataset prepared,
-            List<Dictionary<string, object?>> metadataRows,
-            HashSet<int> normalizationRaceIds)
-        {
-            if (prepared is null)
-                throw new ArgumentNullException(nameof(prepared));
-            if (metadataRows is null)
-                throw new ArgumentNullException(nameof(metadataRows));
-            if (normalizationRaceIds is null)
-                throw new ArgumentNullException(nameof(normalizationRaceIds));
-
-            var metadata = BuildFeatureMetadata(prepared, metadataRows);
-            int featureCount = metadata.FeatureCount;
-            var races = EncodeRaces(prepared.Races, metadata.FeatureKeys, metadata.FeatureDimensions, metadata.StringMaps);
-
-            var normalizationExamples = races
-                .Where(r => normalizationRaceIds.Contains(r.RaceId))
-                .SelectMany(r => r.Runners)
-                .ToList();
-            var means = new float[featureCount];
-            var stdDevs = new float[featureCount];
-            if (normalizationExamples.Count > 0)
+            public TrainingDataset LoadTrainingDataset()
             {
-                for (int j = 0; j < featureCount; j++)
-                {
-                    double sum = 0;
-                    foreach (var example in normalizationExamples)
-                    {
-                        sum += example.Features[j];
-                    }
-                    means[j] = (float)(sum / normalizationExamples.Count);
-
-                    double variance = 0;
-                    foreach (var example in normalizationExamples)
-                    {
-                        double diff = example.Features[j] - means[j];
-                        variance += diff * diff;
-                    }
-                    stdDevs[j] = (float)Math.Sqrt(variance / normalizationExamples.Count);
-                    if (stdDevs[j] == 0f)
-                    {
-                        stdDevs[j] = 1f;
-                    }
-                }
+                var prepared = PrepareDataset();
+                var emptyValidation = new PreparedDataset(new List<PreparedRace>());
+                return BuildTrainingDataset(prepared, emptyValidation);
             }
-            else
+            public (double TrainAccuracy, double TrainLoss, double ValidationAccuracy, double ValidationLoss, double TrainBrier, double ValidationBrier) Train(MLParameter param, int foldIndex, int foldCount)
             {
-                for (int j = 0; j < featureCount; j++)
-                {
-                    stdDevs[j] = 1f;
-                }
+                var dataset = LoadTrainingDataset();
+                return Train(param, foldIndex, foldCount, dataset);
             }
-
-            var normalization = new NormalizationParameters
+            public (double TrainAccuracy, double TrainLoss, double ValidationAccuracy, double ValidationLoss, double TrainBrier, double ValidationBrier) Train(MLParameter param, PreparedDataset dataset, int foldIndex, int foldCount)
             {
-                Mean = means,
-                StdDev = stdDevs
-            };
-            var mapPath = Path.Combine(AppContext.BaseDirectory, "string_maps.json");
-            File.WriteAllText(mapPath, JsonSerializer.Serialize(metadata.StringMaps));
-            var normPath = Path.Combine(AppContext.BaseDirectory, "normalization.json");
-            File.WriteAllText(normPath, JsonSerializer.Serialize(normalization));
-            return new TrainingDataset(races, metadata.FeatureKeys, metadata.FeatureDimensions, metadata.StringMaps, normalization);
-        }
-        public TrainingDataset LoadTrainingDataset()
-        {
-            var prepared = PrepareDataset();
-            var allRaceIds = prepared.Races
-                .Select(r => r.RaceId)
-                .ToHashSet();
-    return BuildTrainingDataset(prepared, prepared.Rows.ToList(), allRaceIds);
-}
-        public (double TrainAccuracy, double TrainLoss, double ValidationAccuracy, double ValidationLoss, double TrainBrier, double ValidationBrier) Train(MLParameter param, int foldIndex, int foldCount)
-        {
-            var dataset = LoadTrainingDataset();
-            return Train(param, foldIndex, foldCount, dataset);
-        }
-        public (double TrainAccuracy, double TrainLoss, double ValidationAccuracy, double ValidationLoss, double TrainBrier, double ValidationBrier) Train(MLParameter param, PreparedDataset dataset, int foldIndex, int foldCount)
-        {
-            if (dataset is null)
-                throw new ArgumentNullException(nameof(dataset));
+                if (dataset is null)
+                    throw new ArgumentNullException(nameof(dataset));
 
-            int totalRaces = dataset.Races.Count;
-            if (foldCount <= 0)
-                throw new ArgumentOutOfRangeException(nameof(foldCount));
-            if (foldIndex < 0 || foldIndex >= foldCount)
-                throw new ArgumentOutOfRangeException(nameof(foldIndex));
+                int totalRaces = dataset.Races.Count;
+                if (foldCount <= 0)
+                    throw new ArgumentOutOfRangeException(nameof(foldCount));
+                if (foldIndex < 0 || foldIndex >= foldCount)
+                    throw new ArgumentOutOfRangeException(nameof(foldIndex));
 
-            int foldSize = totalRaces / foldCount;
-            int valStart = foldIndex * foldSize;
-            int valEnd = foldIndex == foldCount - 1 ? totalRaces : valStart + foldSize;
+                int foldSize = totalRaces / foldCount;
+                int valStart = foldIndex * foldSize;
+                int valEnd = foldIndex == foldCount - 1 ? totalRaces : valStart + foldSize;
 
-            var trainRaceIds = dataset.Races
-                .Select((race, idx) => new { race, idx })
-                .Where(x => x.idx < valStart || x.idx >= valEnd)
-                .Select(x => x.race.RaceId)
-                .ToHashSet();
+                var trainRaceIds = dataset.Races
+                    .Select((race, idx) => new { race, idx })
+                    .Where(x => x.idx < valStart || x.idx >= valEnd)
+                    .Select(x => x.race.RaceId)
+                    .ToHashSet();
 
-            var trainRows = dataset.Races
-                .Where(r => trainRaceIds.Contains(r.RaceId))
-                .SelectMany(r => r.Rows)
-                .ToList();
+                if (trainRaceIds.Count == 0)
+                {
+                    trainRaceIds = dataset.Races
+                        .Select(r => r.RaceId)
+                        .ToHashSet();
+                }
 
-            if (trainRows.Count == 0)
-            {
-                trainRaceIds = dataset.Races
+                var validationRaceIds = dataset.Races
+                    .Skip(valStart)
+                    .Take(valEnd - valStart)
                     .Select(r => r.RaceId)
                     .ToHashSet();
-                trainRows = dataset.Rows.ToList();
-            }
 
-    var metadataRows = trainRows.Count == 0 ? dataset.Rows.ToList() : trainRows;
-    if (!dataset.TryGetEncodingCache(foldIndex, foldCount, out var cacheEntry))
-            {
-                var metadata = BuildFeatureMetadata(dataset, metadataRows);
-                var races = EncodeRaces(dataset.Races, metadata.FeatureKeys, metadata.FeatureDimensions, metadata.StringMaps);
-                cacheEntry = dataset.SetEncodingCache(foldIndex, foldCount, races, metadata.FeatureKeys, metadata.FeatureDimensions, metadata.StringMaps);
-                var mapPath = Path.Combine(AppContext.BaseDirectory, "string_maps.json");
-                File.WriteAllText(mapPath, JsonSerializer.Serialize(cacheEntry.StringMaps));
-            }
+                var trainingPrepared = PrepareDataset(trainRaceIds, trainRaceIds);
+                PreparedDataset validationPrepared;
+                if (validationRaceIds.Count > 0)
+                {
+                    validationPrepared = PrepareDataset(validationRaceIds, trainRaceIds);
+                }
+                else
+                {
+                    validationPrepared = new PreparedDataset(new List<PreparedRace>());
+                }
 
-            var normalization = new NormalizationParameters
-            {
-                Mean = new float[cacheEntry.FeatureCount],
-                StdDev = new float[cacheEntry.FeatureCount]
-            };
-
-            var trainingDataset = new TrainingDataset(
-                cacheEntry.Races,
-                cacheEntry.FeatureKeys,
-                cacheEntry.FeatureDimensions,
-                cacheEntry.StringMaps,
-                normalization);
-            return Train(param, foldIndex, foldCount, trainingDataset);
-        }
-
+                var trainingDataset = BuildTrainingDataset(trainingPrepared, validationPrepared);
+                return Train(param, foldIndex, foldCount, trainingDataset);
+            }        
             public (double TrainAccuracy, double TrainLoss, double ValidationAccuracy, double ValidationLoss, double TrainBrier, double ValidationBrier) Train(MLParameter param, int foldIndex, int foldCount, TrainingDataset dataset)
         {
             if (dataset is null)
@@ -2118,31 +2060,17 @@ private RaceStats ComputeRaceStats(List<Dictionary<string, object?>> rows)
                 try { tf.config.experimental.set_memory_growth(gpus[0], true); } catch { }
             }
 
-            int totalRaces = dataset.Races.Count;
-            int foldSize = totalRaces / foldCount;
-            int valStart = foldIndex * foldSize;
-            int valEnd = foldIndex == foldCount - 1 ? totalRaces : valStart + foldSize;
-            var valRaceSet = dataset.Races
-                .Skip(valStart)
-                .Take(valEnd - valStart)
-                .Select(r => r.RaceId)
-                .ToHashSet();
+                _ = foldIndex;
+                _ = foldCount;
 
-            var trainExamples = new List<RunnerExample>();
-            var valExamples = new List<RunnerExample>();
-            foreach (var race in dataset.Races)
-            {
-                if (valRaceSet.Contains(race.RaceId))
-                {
-                    valExamples.AddRange(race.Runners);
-                }
-                else
-                {
-                    trainExamples.AddRange(race.Runners);
-                }
-            }
+                var trainExamples = dataset.TrainingRaces
+                    .SelectMany(r => r.Runners)
+                    .ToList();
+                var valExamples = dataset.ValidationRaces
+                    .SelectMany(r => r.Runners)
+                    .ToList();
 
-            int featureCount = dataset.FeatureCount;
+                int featureCount = dataset.FeatureCount;
             var trainFeatures = trainExamples.Select(r => r.Features).ToList();
             var trainLabels = trainExamples.Select(r => r.Label).ToArray();
             var trainRaceIds = trainExamples.Select(r => r.RaceId).ToArray();
