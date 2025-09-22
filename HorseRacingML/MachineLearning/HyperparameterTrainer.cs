@@ -12,8 +12,8 @@ using System.Text;
 using System.Text.Json;
 using Tensorflow;
 using Tensorflow.NumPy;
-using static HorseRacingML.ML.HyperparameterTrainer.TrainingDataset;
-using static HorseRacingML.ML.HyperparameterTrainer.TrainingDataset.PreparedDataset;
+using PreparedDataset = HorseRacingML.ML.HyperparameterTrainer.TrainingDataset.PreparedDataset;
+using PreparedRace = HorseRacingML.ML.HyperparameterTrainer.TrainingDataset.PreparedDataset.PreparedRace;
 using static Tensorflow.Binding;
 using TensorShape = Tensorflow.Shape;
 
@@ -578,12 +578,12 @@ namespace HorseRacingML.ML
                 }
                 rows.RemoveAll(row =>
                 {
-                    if (!TryGetRequiredInt32(row, "HorseId", out _))
+                    if (!PreparedDataset.TryGetRequiredInt32(row, "HorseId", out _))
                     {
                         return true;
                     }
 
-                    if (!TryGetRequiredInt32(row, "RaceId", out _))
+                    if (!PreparedDataset.TryGetRequiredInt32(row, "RaceId", out _))
                     {
                         return true;
                     }
@@ -623,8 +623,8 @@ namespace HorseRacingML.ML
 
                     foreach (var row in rows)
                     {
-                        int horseId = GetRequiredInt32(row, "HorseId");
-                        DateTime date = (DateTime)row["RaceDate"];
+                            int horseId = PreparedDataset.GetRequiredInt32(row, "HorseId");
+                            DateTime date = (DateTime)row["RaceDate"];
                         if (TryGetTimeOfDay(row, out var timeOfDay))
                         {
                             float minutes = (float)timeOfDay.TotalMinutes;
@@ -659,26 +659,26 @@ namespace HorseRacingML.ML
                             row.Remove("ScheduledOff");
                             row.Remove("RaceDate");
                             short? finish = row["FinishPos"] != null ? (short?)Convert.ToInt16(row["FinishPos"]) : null;
-                            int raceId = GetRequiredInt32(row, "RaceId");
-                            int runnerCount = row.TryGetValue("RunnerCount", out var runnerCountObj) &&
-                                                TryConvertToInt32(runnerCountObj, out var runnerValue)
-                                ? runnerValue
+                                int raceId = PreparedDataset.GetRequiredInt32(row, "RaceId");
+                                int runnerCount = row.TryGetValue("RunnerCount", out var runnerCountObj) &&
+                                                    PreparedDataset.TryConvertToInt32(runnerCountObj, out var runnerValue)
+                                    ? runnerValue
                                 : raceStat.RunnerCount;
                             int? trainerId = row.TryGetValue("TrainerId", out var tObj) &&
-                                              TryConvertToInt32(tObj, out var trainerValue)
+                                              PreparedDataset.TryConvertToInt32(tObj, out var trainerValue)
                                 ? trainerValue
                                 : (int?)null;
-                            int? jockeyId = row.TryGetValue("JockeyId", out var jObj) &&
-                                             TryConvertToInt32(jObj, out var jockeyValue)
-                                ? jockeyValue
+                                int? jockeyId = row.TryGetValue("JockeyId", out var jObj) &&
+                                                 PreparedDataset.TryConvertToInt32(jObj, out var jockeyValue)
+                                    ? jockeyValue
                                 : (int?)null;
 
                             bool drawMissing = row["Draw"] == null;
                             int draw = 0;
                             if (!drawMissing)
                             {
-                                if (!TryConvertToInt32(row["Draw"], out draw))
-                                {
+                                    if (!PreparedDataset.TryConvertToInt32(row["Draw"], out draw))
+                                    {
                                     drawMissing = true;
                                 }
                             }
@@ -695,8 +695,8 @@ namespace HorseRacingML.ML
                             row["RatingMissing"] = ratingMissing;
                             row["RelativeDraw"] = runnerCount > 0 ? (float)draw / runnerCount : 0f;
                             int saddlecloth = 0;
-                            bool saddleclothMissing = !(row.TryGetValue("SaddleclothNumber", out var saddleclothObj) &&
-                                                         TryConvertToInt32(saddleclothObj, out saddlecloth));
+                                bool saddleclothMissing = !(row.TryGetValue("SaddleclothNumber", out var saddleclothObj) &&
+                                                             PreparedDataset.TryConvertToInt32(saddleclothObj, out saddlecloth));
                             row["SaddleclothMissing"] = saddleclothMissing;
                             row["SaddleclothRelative"] = !saddleclothMissing && runnerCount > 0 ? (float)saddlecloth / runnerCount : 0f;
                             row["SaddleclothDiffFromMean"] = !saddleclothMissing && raceStat.HasSaddleclothStats
@@ -709,12 +709,12 @@ namespace HorseRacingML.ML
                             row["RatingDiffFromField"] = rating - raceStat.AvgRating;
                             row["FieldRatingStdDev"] = raceStat.StdRating;
                             row["PurseLevel"] = raceStat.TotalPurse;
-                            int age = row.TryGetValue("Age", out var ageObj) && TryConvertToInt32(ageObj, out var ageValue)
-                                ? ageValue
-                                : 0;
-                            row["AgeRelative"] = age - raceStat.AvgAge;
-                            int classVal = row.TryGetValue("Class", out var classObj) && TryConvertToInt32(classObj, out var classValue)
-                                ? classValue
+                                int age = row.TryGetValue("Age", out var ageObj) && PreparedDataset.TryConvertToInt32(ageObj, out var ageValue)
+                                    ? ageValue
+                                    : 0;
+                                row["AgeRelative"] = age - raceStat.AvgAge;
+                                int classVal = row.TryGetValue("Class", out var classObj) && PreparedDataset.TryConvertToInt32(classObj, out var classValue)
+                                    ? classValue
                                 : 0;
                             var horseClassKey = (horseId, classVal);
                             if (!_horseClassStats.TryGetValue(horseClassKey, out var horseClassStat))
@@ -957,9 +957,9 @@ namespace HorseRacingML.ML
                             row["SurfaceWinRate"] = _trainer.SmoothedWinRate(sStats.wins, sStats.starts);
                             row["SurfaceAvgNorm"] = sStats.starts > 0 ? sStats.sumNorm / sStats.starts : 0f;
                             row["LastSurfaceNormPos"] = sStats.lastNorm;
-                            // Going + Course preference
-                            int courseId = row.TryGetValue("CourseId", out var courseObj) && TryConvertToInt32(courseObj, out var courseIdValue)
-                                ? courseIdValue
+                                // Going + Course preference
+                                int courseId = row.TryGetValue("CourseId", out var courseObj) && PreparedDataset.TryConvertToInt32(courseObj, out var courseIdValue)
+                                    ? courseIdValue
                                 : 0;
                             if (!_courseStats.TryGetValue(horseId, out var cDict))
                             {
@@ -993,12 +993,12 @@ namespace HorseRacingML.ML
                             row["AgeRestrictionWinRate"] = _trainer.SmoothedWinRate(aStats.wins, aStats.starts);
                             row["LastAgeRestrictionNormPos"] = aStats.lastNorm;
 
-                            // Distance specialization
-                            int distanceYards = row.TryGetValue("DistanceYards", out var distanceObj) && TryConvertToInt32(distanceObj, out var distanceValue)
-                                ? distanceValue
-                                : 0;
-                            int? winningMs = row.TryGetValue("WinningTimeMs", out var winningObj) && TryConvertToInt32(winningObj, out var winningValue)
-                                ? winningValue
+                                // Distance specialization
+                                int distanceYards = row.TryGetValue("DistanceYards", out var distanceObj) && PreparedDataset.TryConvertToInt32(distanceObj, out var distanceValue)
+                                                ? distanceValue
+                                                : 0;
+                                int? winningMs = row.TryGetValue("WinningTimeMs", out var winningObj) && PreparedDataset.TryConvertToInt32(winningObj, out var winningValue)
+                                    ? winningValue
                                 : (int?)null;
                             bool speedMissing = !(winningMs.HasValue && winningMs.Value > 0);
                             float raceSpeed = speedMissing
@@ -1624,8 +1624,8 @@ private RaceStats ComputeRaceStats(List<Dictionary<string, object?>> rows)
             using var conn = new SqlConnection(_connectionString);
             conn.Open();
 
-            var raceColumns = LoadColumnNames(conn, "Race");
-            string scheduledOffColumn = raceColumns.Contains("ScheduledOff")
+                var raceColumns = PreparedDataset.LoadColumnNames(conn, "Race");
+                string scheduledOffColumn = raceColumns.Contains("ScheduledOff")
                 ? "r.ScheduledOff AS ScheduledOff"
                 : "CAST(NULL AS time(0)) AS ScheduledOff";
             string actualOffColumn = raceColumns.Contains("ActualOff")
@@ -1694,8 +1694,8 @@ private RaceStats ComputeRaceStats(List<Dictionary<string, object?>> rows)
                     row[kvp.Key] = NormalizeDbValue(kvp.Value);
                 }
 
-                if (!TryGetRequiredInt32(row, "RaceId", out var raceId))
-                {
+                    if (!PreparedDataset.TryGetRequiredInt32(row, "RaceId", out var raceId))
+                    {
                     continue;
                 }
 
@@ -1979,8 +1979,8 @@ private RaceStats ComputeRaceStats(List<Dictionary<string, object?>> rows)
                         offset += dim;
                     }
 
-                    float label = row.TryGetValue("FinishPos", out var f) && TryConvertToInt32(f, out var finishPos) && finishPos == 1
-                        ? 1f
+                        float label = row.TryGetValue("FinishPos", out var f) && PreparedDataset.TryConvertToInt32(f, out var finishPos) && finishPos == 1
+                            ? 1f
                         : 0f;
                     runners.Add(new RunnerExample(preparedRace.RaceId, features, label));
                 }
@@ -2001,7 +2001,7 @@ private RaceStats ComputeRaceStats(List<Dictionary<string, object?>> rows)
                 var dataset = LoadTrainingDataset();
                 return Train(param, foldIndex, foldCount, dataset);
             }
-            public (double TrainAccuracy, double TrainLoss, double ValidationAccuracy, double ValidationLoss, double TrainBrier, double ValidationBrier) Train(MLParameter param, PreparedDataset dataset, int foldIndex, int foldCount)
+            public (double TrainAccuracy, double TrainLoss, double ValidationAccuracy, double ValidationLoss, double TrainBrier, double ValidationBrier) Train(MLParameter param, TrainingDataset.PreparedDataset dataset, int foldIndex, int foldCount)
             {
                 if (dataset is null)
                     throw new ArgumentNullException(nameof(dataset));
@@ -2036,14 +2036,14 @@ private RaceStats ComputeRaceStats(List<Dictionary<string, object?>> rows)
                     .ToHashSet();
 
                 var trainingPrepared = PrepareDataset(trainRaceIds, trainRaceIds);
-                PreparedDataset validationPrepared;
+                TrainingDataset.PreparedDataset validationPrepared;
                 if (validationRaceIds.Count > 0)
                 {
                     validationPrepared = PrepareDataset(validationRaceIds, trainRaceIds);
                 }
                 else
                 {
-                    validationPrepared = new PreparedDataset(new List<PreparedRace>());
+                    validationPrepared = new TrainingDataset.PreparedDataset(new List<TrainingDataset.PreparedDataset.PreparedRace>());
                 }
 
                 var trainingDataset = BuildTrainingDataset(trainingPrepared, validationPrepared);
