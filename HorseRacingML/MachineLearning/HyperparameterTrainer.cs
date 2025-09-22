@@ -49,13 +49,267 @@ namespace HorseRacingML.ML
             {
                 TrainingRaces = trainingRaces ?? throw new ArgumentNullException(nameof(trainingRaces));
                 ValidationRaces = validationRaces ?? throw new ArgumentNullException(nameof(validationRaces));
-                Races = TrainingRaces.Concat(ValidationRaces).ToList();
                 FeatureKeys = featureKeys ?? throw new ArgumentNullException(nameof(featureKeys));
                 FeatureDimensions = featureDimensions ?? throw new ArgumentNullException(nameof(featureDimensions));
                 StringMaps = stringMaps ?? throw new ArgumentNullException(nameof(stringMaps));
                 Normalization = normalization ?? throw new ArgumentNullException(nameof(normalization));
+
+                Races = TrainingRaces.Concat(ValidationRaces).ToList();
                 FeatureCount = featureDimensions.Values.Sum();
             }
+
+            public List<RaceExample> TrainingRaces { get; }
+            public List<RaceExample> ValidationRaces { get; }
+            public List<RaceExample> Races { get; }
+            public List<string> FeatureKeys { get; }
+            public Dictionary<string, int> FeatureDimensions { get; }
+            public Dictionary<string, Dictionary<string, int>> StringMaps { get; }
+            public NormalizationParameters Normalization { get; }
+            public int FeatureCount { get; }
+
+            public class PreparedDataset
+            {
+                public PreparedDataset(List<PreparedRace> races)
+                {
+                    Races = races ?? throw new ArgumentNullException(nameof(races));
+                }
+
+                public List<PreparedRace> Races { get; }
+                public IEnumerable<Dictionary<string, object?>> Rows => Races.SelectMany(r => r.Rows);
+                public int RowCount => Races.Sum(r => r.Rows.Count);
+
+                internal static bool TryGetRequiredInt32(Dictionary<string, object?> row, string key, out int result)
+                {
+                    if (row.TryGetValue(key, out var value) &&
+                        value is not null &&
+                        TryConvertToInt32(value, out result))
+                    {
+                        return true;
+                    }
+
+                    result = 0;
+                    return false;
+                }
+
+                public static HashSet<string> LoadColumnNames(SqlConnection conn, string tableName)
+                {
+                    if (conn is null)
+                        throw new ArgumentNullException(nameof(conn));
+                    if (string.IsNullOrWhiteSpace(tableName))
+                        throw new ArgumentException("Table name must be provided.", nameof(tableName));
+
+                    var columns = conn.Query<string>(
+                        @"SELECT COLUMN_NAME
+                  FROM INFORMATION_SCHEMA.COLUMNS
+                  WHERE TABLE_NAME = @TableName",
+                        new { TableName = tableName });
+
+                    return new HashSet<string>(columns, StringComparer.OrdinalIgnoreCase);
+                }
+
+                internal static int GetRequiredInt32(Dictionary<string, object?> row, string key)
+                {
+                    if (!row.TryGetValue(key, out var value) || value is null)
+                    {
+                        throw new InvalidOperationException($"Missing required column '{key}'.");
+                    }
+
+                    if (TryConvertToInt32(value, out var result))
+                    {
+                        return result;
+                    }
+
+                    string typeName = value.GetType().FullName ?? value.GetType().Name;
+                    string displayValue = value switch
+                    {
+                        byte[] bytes => $"0x{BitConverter.ToString(bytes).Replace("-", string.Empty)}",
+                        _ => value.ToString() ?? string.Empty
+                    };
+
+                    throw new FormatException($"Column '{key}' with value '{displayValue}' of type '{typeName}' could not be converted to Int32.");
+                }
+
+                internal static bool TryConvertToInt32(object? value, out int result)
+                {
+                    switch (value)
+                    {
+                        case null:
+                            result = 0;
+                            return false;
+                        case int i:
+                            result = i;
+                            return true;
+                        case long l when l >= int.MinValue && l <= int.MaxValue:
+                            result = (int)l;
+                            return true;
+                        case short s:
+                            result = s;
+                            return true;
+                        case sbyte sb:
+                            result = sb;
+                            return true;
+                        case byte b:
+                            result = b;
+                            return true;
+                        case ushort us when us <= int.MaxValue:
+                            result = us;
+                            return true;
+                        case uint ui when ui <= int.MaxValue:
+                            result = (int)ui;
+                            return true;
+                        case decimal dec when dec >= int.MinValue && dec <= int.MaxValue:
+                            result = (int)dec;
+                            return true;
+                        case double dbl when dbl >= int.MinValue && dbl <= int.MaxValue:
+                            result = (int)dbl;
+                            return true;
+                        case float fl when fl >= int.MinValue && fl <= int.MaxValue:
+                            result = (int)fl;
+                            return true;
+                        case SqlInt32 sqlInt when !sqlInt.IsNull:
+                            result = sqlInt.Value;
+                            return true;
+                        case SqlInt16 sqlShort when !sqlShort.IsNull:
+                            result = sqlShort.Value;
+                            return true;
+                        case SqlInt64 sqlLong when !sqlLong.IsNull && sqlLong.Value >= int.MinValue && sqlLong.Value <= int.MaxValue:
+                            result = (int)sqlLong.Value;
+                            return true;
+                        case SqlDecimal sqlDecimal when !sqlDecimal.IsNull && sqlDecimal.Value >= int.MinValue && sqlDecimal.Value <= int.MaxValue:
+                            result = decimal.ToInt32(sqlDecimal.Value);
+                            return true;
+                        case SqlDouble sqlDouble when !sqlDouble.IsNull && sqlDouble.Value >= int.MinValue && sqlDouble.Value <= int.MaxValue:
+                            result = (int)sqlDouble.Value;
+                            return true;
+                        case SqlSingle sqlSingle when !sqlSingle.IsNull && sqlSingle.Value >= int.MinValue && sqlSingle.Value <= int.MaxValue:
+                            result = (int)sqlSingle.Value;
+                            return true;
+                        case SqlMoney sqlMoney when !sqlMoney.IsNull && sqlMoney.Value >= int.MinValue && sqlMoney.Value <= int.MaxValue:
+                            result = (int)sqlMoney.Value;
+                            return true;
+                        case SqlByte sqlByte when !sqlByte.IsNull:
+                            result = sqlByte.Value;
+                            return true;
+                        case SqlBoolean sqlBool when !sqlBool.IsNull:
+                            result = sqlBool.Value ? 1 : 0;
+                            return true;
+                        case SqlString sqlString when !sqlString.IsNull:
+                            return TryConvertToInt32(sqlString.Value, out result);
+                        case SqlChars sqlChars when !sqlChars.IsNull:
+                            return TryConvertToInt32(sqlChars.Value is null ? null : new string(sqlChars.Value), out result);
+                        case SqlBinary sqlBinary when !sqlBinary.IsNull:
+                            return TryConvertFromBytes(sqlBinary.Value, out result);
+                        case SqlBytes sqlBytes when !sqlBytes.IsNull:
+                            return TryConvertFromBytes(sqlBytes.Value, out result);
+                        case string str:
+                            if (int.TryParse(str, NumberStyles.Integer, CultureInfo.InvariantCulture, out result))
+                            {
+                                return true;
+                            }
+                            if (int.TryParse(str, NumberStyles.Integer, CultureInfo.CurrentCulture, out result))
+                            {
+                                return true;
+                            }
+
+                            string trimmed = str.Trim();
+                            if (trimmed.Length > 0)
+                            {
+                                var filtered = new string(trimmed.Where(c => char.IsDigit(c) || c == '-' || c == '+').ToArray());
+                                if (!string.IsNullOrWhiteSpace(filtered) &&
+                                    int.TryParse(filtered, NumberStyles.Integer, CultureInfo.InvariantCulture, out result))
+                                {
+                                    return true;
+                                }
+
+                                if (TryConvertFromBytes(Encoding.Unicode.GetBytes(trimmed), out result))
+                                {
+                                    return true;
+                                }
+                            }
+                            break;
+                        case byte[] bytes:
+                            if (TryConvertFromBytes(bytes, out result))
+                            {
+                                return true;
+                            }
+                            break;
+                        case ReadOnlyMemory<byte> memory:
+                            if (TryConvertFromBytes(memory.Span, out result))
+                            {
+                                return true;
+                            }
+                            break;
+                        case IConvertible convertible:
+                            try
+                            {
+                                result = convertible.ToInt32(CultureInfo.InvariantCulture);
+                                return true;
+                            }
+                            catch
+                            {
+                                break;
+                            }
+                    }
+
+                    result = 0;
+                    return false;
+                }
+
+                private static bool TryConvertFromBytes(byte[]? bytes, out int value)
+                {
+                    if (bytes is null)
+                    {
+                        value = 0;
+                        return false;
+                    }
+
+                    return TryConvertFromBytes(bytes.AsSpan(), out value);
+                }
+
+                private static bool TryConvertFromBytes(ReadOnlySpan<byte> bytes, out int value)
+                {
+                    if (bytes.IsEmpty)
+                    {
+                        value = 0;
+                        return false;
+                    }
+
+                    string asString = Encoding.UTF8.GetString(bytes).Trim('\0', ' ', '\t', '\r', '\n');
+                    if (asString.Length > 0)
+                    {
+                        if (int.TryParse(asString, NumberStyles.Integer, CultureInfo.InvariantCulture, out value) ||
+                            int.TryParse(asString, NumberStyles.Integer, CultureInfo.CurrentCulture, out value))
+                        {
+                            return true;
+                        }
+                    }
+
+                    if (bytes.Length <= 4)
+                    {
+                        var padded = new byte[4];
+                        bytes.CopyTo(padded);
+                        value = BitConverter.ToInt32(padded, 0);
+                        return true;
+                    }
+
+                    value = 0;
+                    return false;
+                }
+
+                public class PreparedRace
+                {
+                    public PreparedRace(int raceId, List<Dictionary<string, object?>> rows)
+                    {
+                        RaceId = raceId;
+                        Rows = rows;
+                    }
+
+                    public int RaceId { get; }
+                    public List<Dictionary<string, object?>> Rows { get; }
+                }
+            }
+        }
+        
             public class PreparedDataset
             {
                 public PreparedDataset(List<PreparedRace> races)
