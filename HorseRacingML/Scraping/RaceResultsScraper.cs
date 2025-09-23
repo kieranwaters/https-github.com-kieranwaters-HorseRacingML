@@ -283,7 +283,46 @@ namespace HorseRacingML.Scraping
 
             Task.WaitAll(tasks.ToArray());
         }
+        public void ScrapeFromTodayBackwards()
+        {
+            ResetEstimateSession();
+            var minDate = new DateTime(2000, 1, 1);
+            var today = DateTime.Today;
+            var latestExisting = _repo.GetLatestRaceDate();
+            if (latestExisting > today)
+            {
+                latestExisting = today;
+            }
+            if (latestExisting < minDate)
+            {
+                latestExisting = minDate.AddDays(-1);
+            }
 
+            var currentEnd = today;
+            while (currentEnd > latestExisting && currentEnd >= minDate)
+            {
+                var start = currentEnd.AddDays(-(MaxParallelDrivers - 1));
+                if (start < minDate)
+                {
+                    start = minDate;
+                }
+                if (start <= latestExisting)
+                {
+                    start = latestExisting.AddDays(1);
+                }
+                if (start > currentEnd)
+                {
+                    break;
+                }
+
+                _status.Update($"Scraping {start:yyyy-MM-dd} to {currentEnd:yyyy-MM-dd}");
+                Scrape(start, currentEnd);
+
+                currentEnd = start.AddDays(-1);
+            }
+
+            _status.Update("Scraping finished.");
+        }
         private static string ExtractFavouriteTag(string frac) { if (string.IsNullOrWhiteSpace(frac)) return null; frac = frac.ToUpperInvariant(); if (frac.Contains("JF")) return "JF"; if (frac.Contains("CF")) return "CF"; if (frac.EndsWith("F")) return "F"; return null; } // F/JF/CF
 
         private static decimal? ParseBeatenLengths(string s) { if (string.IsNullOrWhiteSpace(s)) return null; s = s.Trim().ToLowerInvariant(); if (s == "nk" || s == "neck") return 0.3m; if (s == "hd" || s == "head") return 0.2m; if (s == "shd" || s == "short head" || s == "shorthead" || s == "s.h" || s == "sh") return 0.1m; if (s == "nse" || s == "nose") return 0.05m; s = s.Replace("¾", ".75").Replace("½", ".5").Replace("¼", ".25"); if (decimal.TryParse(s, NumberStyles.Any, CultureInfo.InvariantCulture, out var v)) return v; return null; } // adds s.h/sh/nse/nose/neck/head

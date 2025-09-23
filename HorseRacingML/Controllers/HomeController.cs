@@ -78,7 +78,7 @@ namespace HorseRacingML.Controllers
             {
                 try
                 {
-                    scraper.ScrapeFromEarliest();
+                    scraper.ScrapeFromTodayBackwards();
                     _status.Update($"Scraping completed at {DateTime.Now:G}");
                 }
                 catch (Exception ex)
