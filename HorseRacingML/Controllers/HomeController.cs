@@ -5,6 +5,7 @@ using HorseRacingML.Services;
 using Microsoft.AspNetCore.Mvc;
 using System.Diagnostics;
 using System.Threading.Tasks;
+using HorseRacingML.ML;
 using System.Globalization;
 using System.Linq;
 
@@ -33,11 +34,13 @@ namespace HorseRacingML.Controllers
             };
             return View(model);
         }
-        public async Task<IActionResult> AutomateBets([FromServices] BetfairNavigationService betfair)
+        public async Task<IActionResult> AutomateBets(
+            [FromServices] BetfairNavigationService betfair,
+            [FromServices] HyperparameterTrainer trainer)
         {
             await betfair.LoginAsync();
             await betfair.OpenHorseRaceMeetingsInNewTabsAsync();
-            var recommendations = betfair.ScrapeOpenRaceTabs(_repository);
+            var recommendations = betfair.ScrapeOpenRaceTabs(_repository, trainer);
             if (recommendations.Count > 0)
             {
                 var best = recommendations

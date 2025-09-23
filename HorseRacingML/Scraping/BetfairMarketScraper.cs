@@ -10,20 +10,24 @@ using HorseRacingML.Models;
 using System.Collections.Generic;
 using HorseRacingML.ML;
 using System.IO;
+using PreparedDataset = HorseRacingML.ML.HyperparameterTrainer.TrainingDataset.PreparedDataset;
+using PreparedRace = HorseRacingML.ML.HyperparameterTrainer.TrainingDataset.PreparedDataset.PreparedRace;
 
 namespace HorseRacingML.Scraping
 {
     public class BetfairMarketScraper
     {
         private readonly RacingRepository _repo;
+        private readonly HyperparameterTrainer _trainer;
         private readonly object _repoLock = new();
         private readonly decimal _bankroll;
         private readonly decimal? _maxKellyFraction;
         private decimal _availableBankroll;
         private int _betSlipSelectionsFilled;
-        public BetfairMarketScraper(RacingRepository repo, decimal bankroll, decimal? maxKellyFraction = null)
+        public BetfairMarketScraper(RacingRepository repo, HyperparameterTrainer trainer, decimal bankroll, decimal? maxKellyFraction = null)
         {
-            _repo = repo;
+            _repo = repo ?? throw new ArgumentNullException(nameof(repo));
+            _trainer = trainer ?? throw new ArgumentNullException(nameof(trainer));
             _bankroll = bankroll;
             _availableBankroll = bankroll;
             _maxKellyFraction = maxKellyFraction;
@@ -124,6 +128,7 @@ namespace HorseRacingML.Scraping
                     continue;
                 }
                 Console.WriteLine($"\tFound {rows.Count} runners for market {marketId}");
+                var featureLookup = LoadFeatureLookup(parsedRaceDate, title, venueName);
                 var flows = new List<RunnerFlow>();
                 var runnerEntries = new List<(IWebElement Row, RunnerFlow Flow)>();
                 foreach (var row in rows)
@@ -181,6 +186,47 @@ namespace HorseRacingML.Scraping
                         LayPrice2 = ParseDecimal(Get("lay2")),
                         LayPrice3 = ParseDecimal(Get("lay3"))
                     };
+                    var matchedFeatures = featureLookup.FindByHorse(flow.HorseName)
+                        ?? featureLookup.FindBySaddlecloth(flow.ClothNumber);
+                    var featureVector = matchedFeatures != null
+                        ? new Dictionary<string, object?>(matchedFeatures, StringComparer.OrdinalIgnoreCase)
+                        : new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+
+                    if (rows.Count > 0)
+                    {
+                        featureVector["RunnerCount"] = rows.Count;
+                    }
+
+                    if (flow.BackPrice1.HasValue)
+                    {
+                        featureVector["BackPrice1"] = flow.BackPrice1.Value;
+                    }
+                    if (flow.BackPrice2.HasValue)
+                    {
+                        featureVector["BackPrice2"] = flow.BackPrice2.Value;
+                    }
+                    if (flow.BackPrice3.HasValue)
+                    {
+                        featureVector["BackPrice3"] = flow.BackPrice3.Value;
+                    }
+                    if (flow.LayPrice1.HasValue)
+                    {
+                        featureVector["LayPrice1"] = flow.LayPrice1.Value;
+                    }
+                    if (flow.LayPrice2.HasValue)
+                    {
+                        featureVector["LayPrice2"] = flow.LayPrice2.Value;
+                    }
+                    if (flow.LayPrice3.HasValue)
+                    {
+                        featureVector["LayPrice3"] = flow.LayPrice3.Value;
+                    }
+
+                    if (featureVector.Count > 0)
+                    {
+                        flow.FeatureValues = featureVector;
+                    }
+
                     try
                     {
                         var probability = aiCalculator.CalculateOdds(flow);
@@ -254,6 +300,131 @@ namespace HorseRacingML.Scraping
                 .ThenByDescending(r => r.KellyFraction)
                 .ToList();
         }
+        private FeatureLookup LoadFeatureLookup(DateTime? raceDate, string? raceTitle, string? venueName)
+        {
+            if (!raceDate.HasValue)
+            {
+                return FeatureLookup.Empty;
+            }
+
+            int? raceId;
+            try
+            {
+                raceId = _repo.FindRaceId(raceDate.Value, raceTitle, venueName);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"\tUnable to resolve race details for feature lookup: {ex.Message}");
+                return FeatureLookup.Empty;
+            }
+
+            if (!raceId.HasValue)
+            {
+                return FeatureLookup.Empty;
+            }
+
+            try
+            {
+                var include = new HashSet<int> { raceId.Value };
+                var prepared = _trainer.PrepareDataset(include, null, includeIdentifiers: true);
+                var race = prepared.Races.FirstOrDefault(r => r.RaceId == raceId.Value);
+                if (race == null)
+                {
+                    return FeatureLookup.Empty;
+                }
+
+                return FeatureLookup.FromPreparedRace(race);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"\tFailed to build feature vector for race {raceId.Value}: {ex.Message}");
+                return FeatureLookup.Empty;
+            }
+        }
+
+        private static string NormalizeName(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            var normalized = Regex.Replace(value.Trim().ToLowerInvariant(), "[^a-z0-9]+", " ");
+            normalized = Regex.Replace(normalized, "\\s+", " ").Trim();
+            return normalized;
+        }
+
+        private sealed class FeatureLookup
+        {
+            private readonly Dictionary<string, Dictionary<string, object?>> _byHorse;
+            private readonly Dictionary<int, Dictionary<string, object?>> _bySaddlecloth;
+
+            private FeatureLookup(
+                Dictionary<string, Dictionary<string, object?>> byHorse,
+                Dictionary<int, Dictionary<string, object?>> bySaddlecloth)
+            {
+                _byHorse = byHorse;
+                _bySaddlecloth = bySaddlecloth;
+            }
+
+            public static FeatureLookup Empty { get; } = new FeatureLookup(
+                new Dictionary<string, Dictionary<string, object?>>(StringComparer.OrdinalIgnoreCase),
+                new Dictionary<int, Dictionary<string, object?>>());
+
+            public static FeatureLookup FromPreparedRace(PreparedRace race)
+            {
+                var byHorse = new Dictionary<string, Dictionary<string, object?>>(StringComparer.OrdinalIgnoreCase);
+                var byCloth = new Dictionary<int, Dictionary<string, object?>>();
+
+                foreach (var row in race.Rows)
+                {
+                    var copy = new Dictionary<string, object?>(row, StringComparer.OrdinalIgnoreCase);
+
+                    if (row.TryGetValue("HorseName", out var horseObj) && horseObj is string horse && !string.IsNullOrWhiteSpace(horse))
+                    {
+                        var normalized = NormalizeName(horse);
+                        if (!string.IsNullOrEmpty(normalized) && !byHorse.ContainsKey(normalized))
+                        {
+                            byHorse[normalized] = copy;
+                        }
+                    }
+
+                    if (PreparedDataset.TryGetRequiredInt32(row, "SaddleclothNumber", out var saddlecloth))
+                    {
+                        byCloth[saddlecloth] = copy;
+                    }
+                }
+
+                return new FeatureLookup(byHorse, byCloth);
+            }
+
+            public Dictionary<string, object?>? FindByHorse(string? horseName)
+            {
+                if (string.IsNullOrWhiteSpace(horseName))
+                {
+                    return null;
+                }
+
+                var normalized = NormalizeName(horseName);
+                if (string.IsNullOrEmpty(normalized))
+                {
+                    return null;
+                }
+
+                return _byHorse.TryGetValue(normalized, out var features) ? features : null;
+            }
+
+            public Dictionary<string, object?>? FindBySaddlecloth(byte? clothNumber)
+            {
+                if (!clothNumber.HasValue)
+                {
+                    return null;
+                }
+
+                return _bySaddlecloth.TryGetValue(clothNumber.Value, out var features) ? features : null;
+            }
+        }
+
         private IEnumerable<BetRecommendation> CreateRecommendations(
             IEnumerable<RunnerFlow> flows,
             string marketId,

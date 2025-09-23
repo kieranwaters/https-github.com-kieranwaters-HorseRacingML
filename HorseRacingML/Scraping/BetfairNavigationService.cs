@@ -1,15 +1,16 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Threading.Tasks;
+﻿using HorseRacingML.Data;
+using HorseRacingML.ML;
+using HorseRacingML.Models;
 using Microsoft.Extensions.Configuration;
 using OpenQA.Selenium;
 using OpenQA.Selenium.Chrome;
 using OpenQA.Selenium.Support.UI;
 using SeleniumExtras.WaitHelpers;
-using HorseRacingML.Data;
-using HorseRacingML.Models;
+using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 
 namespace HorseRacingML.Scraping;
 
@@ -43,10 +44,10 @@ public class BetfairNavigationService : IDisposable
     }
 
     public IWebDriver Driver => _driver;
-    public IReadOnlyList<BetRecommendation> ScrapeOpenRaceTabs(RacingRepository repo)
+    public IReadOnlyList<BetRecommendation> ScrapeOpenRaceTabs(RacingRepository repo, HyperparameterTrainer trainer)
     {
         var bankroll = GetEffectiveBankroll();
-        var scraper = new BetfairMarketScraper(repo, bankroll, _maxKellyFraction);
+        var scraper = new BetfairMarketScraper(repo, trainer, bankroll, _maxKellyFraction);
         return scraper.ScrapeOpenRaceTabs(_driver);
     }
     private decimal GetEffectiveBankroll()

@@ -36,7 +36,66 @@ namespace HorseRacingML.ML
             public float Bias { get; set; }
             public float[] Weights { get; set; } = Array.Empty<float>();
         }
+        private Dictionary<string, object?> BuildRawFeatureMap(RunnerFlow flow)
+        {
+            var raw = flow.FeatureValues != null
+                ? new Dictionary<string, object?>(flow.FeatureValues, StringComparer.OrdinalIgnoreCase)
+                : new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
 
+            if (_metadata == null)
+            {
+                return raw;
+            }
+
+            void EnsureFeature(string key, object? value)
+            {
+                if (!_metadata.FeatureDimensions.ContainsKey(key))
+                {
+                    return;
+                }
+
+                if (!raw.ContainsKey(key))
+                {
+                    raw[key] = value;
+                }
+            }
+
+            EnsureFeature("Draw", flow.Draw.HasValue ? (int)flow.Draw.Value : 0);
+            EnsureFeature("DrawMissing", !flow.Draw.HasValue);
+            EnsureFeature("SaddleclothMissing", !flow.ClothNumber.HasValue);
+
+            if (flow.BackPrice1.HasValue)
+            {
+                EnsureFeature("BackPrice1", flow.BackPrice1.Value);
+            }
+
+            if (flow.BackPrice2.HasValue)
+            {
+                EnsureFeature("BackPrice2", flow.BackPrice2.Value);
+            }
+
+            if (flow.BackPrice3.HasValue)
+            {
+                EnsureFeature("BackPrice3", flow.BackPrice3.Value);
+            }
+
+            if (flow.LayPrice1.HasValue)
+            {
+                EnsureFeature("LayPrice1", flow.LayPrice1.Value);
+            }
+
+            if (flow.LayPrice2.HasValue)
+            {
+                EnsureFeature("LayPrice2", flow.LayPrice2.Value);
+            }
+
+            if (flow.LayPrice3.HasValue)
+            {
+                EnsureFeature("LayPrice3", flow.LayPrice3.Value);
+            }
+
+            return raw;
+        }
         public AIOddsCalculator(string path)
         {
             _legacyWeights = Array.Empty<double>();
@@ -173,47 +232,6 @@ namespace HorseRacingML.ML
 
             probability = prob;
             return true;
-        }
-
-        private Dictionary<string, object?> BuildRawFeatureMap(RunnerFlow flow)
-        {
-            var raw = new Dictionary<string, object?>();
-            if (_metadata == null)
-            {
-                return raw;
-            }
-
-            if (_metadata.FeatureDimensions.ContainsKey("Draw"))
-            {
-                raw["Draw"] = flow.Draw.HasValue ? (int)flow.Draw.Value : 0;
-            }
-
-            if (_metadata.FeatureDimensions.ContainsKey("DrawMissing"))
-            {
-                raw["DrawMissing"] = !flow.Draw.HasValue;
-            }
-
-            if (_metadata.FeatureDimensions.ContainsKey("SaddleclothMissing"))
-            {
-                raw["SaddleclothMissing"] = !flow.ClothNumber.HasValue;
-            }
-
-            if (_metadata.FeatureDimensions.ContainsKey("SaddleclothRelative") && flow.ClothNumber.HasValue)
-            {
-                raw["SaddleclothRelative"] = (float)flow.ClothNumber.Value;
-            }
-
-            if (_metadata.FeatureDimensions.ContainsKey("BackPrice1") && flow.BackPrice1.HasValue)
-            {
-                raw["BackPrice1"] = (double)flow.BackPrice1.Value;
-            }
-
-            if (_metadata.FeatureDimensions.ContainsKey("LayPrice1") && flow.LayPrice1.HasValue)
-            {
-                raw["LayPrice1"] = (double)flow.LayPrice1.Value;
-            }
-
-            return raw;
         }
 
         private double[]? EncodeFeatures(Dictionary<string, object?> raw)

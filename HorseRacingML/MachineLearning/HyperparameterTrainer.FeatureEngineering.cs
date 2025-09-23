@@ -51,6 +51,7 @@ namespace HorseRacingML.ML
         private sealed class FeatureEngineeringState
         {
             private readonly HyperparameterTrainer _trainer;
+            private readonly ISet<string>? _identifierKeys;
             private readonly Dictionary<int, List<HistoryEntry>> _horseHistory = new();
             private readonly Dictionary<int, RollingStat> _trainerStats = new();
             private readonly Dictionary<int, RollingStat> _jockeyStats = new();
@@ -81,9 +82,10 @@ namespace HorseRacingML.ML
             private readonly Dictionary<int, Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>> _jockeyDistanceStats = new();
             private readonly Dictionary<(int jockeyId, string going, string bucket), (int starts, int wins, float sumNorm, float lastNorm)> _jockeyGoingDistanceStats = new();
 
-            public FeatureEngineeringState(HyperparameterTrainer trainer)
+            public FeatureEngineeringState(HyperparameterTrainer trainer, ISet<string>? identifierKeys = null)
             {
                 _trainer = trainer ?? throw new ArgumentNullException(nameof(trainer));
+                _identifierKeys = identifierKeys;
             }
 
             public void ProcessRace(List<Dictionary<string, object?>> rows, bool includeRace, bool updateState)
@@ -1024,7 +1026,7 @@ namespace HorseRacingML.ML
                     {
                         raceRow["RaceAvgSpeedLast5"] = raceAvgSpeed;
                         raceRow["RaceAvgWinRateLast5"] = raceAvgWinRate;
-                        TrimRunnerRow(raceRow);
+                        TrimRunnerRow(raceRow, _identifierKeys);
                     }
                 }
             }
@@ -1242,20 +1244,26 @@ namespace HorseRacingML.ML
 
 
 
-        private static void TrimRunnerRow(Dictionary<string, object?> row)
+        private static void TrimRunnerRow(Dictionary<string, object?> row, ISet<string>? preserveKeys = null)
         {
             if (row is null)
                 throw new ArgumentNullException(nameof(row));
 
             foreach (var key in NonTrainingKeys)
             {
+                if (preserveKeys != null && preserveKeys.Contains(key))
+                {
+                    continue;
+                }
+
                 row.Remove(key);
             }
         }
 
         public PreparedDataset PrepareDataset(
                 ISet<int>? includeRaceIds = null,
-                ISet<int>? stateRaceWhitelist = null)
+                ISet<int>? stateRaceWhitelist = null,
+                bool includeIdentifiers = false)
         {
             using var conn = new SqlConnection(_connectionString);
             conn.Open();
@@ -1313,7 +1321,23 @@ namespace HorseRacingML.ML
                             LEFT JOIN Jockey j ON rr.JockeyId = j.JockeyId
                             ORDER BY r.RaceDate, r.RaceId, rr.RunnerResultId";
 
-            var featureState = new FeatureEngineeringState(this);
+            ISet<string>? identifierKeys = null;
+            if (includeIdentifiers)
+            {
+                identifierKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    "HorseName",
+                    "HorseId",
+                    "TrainerName",
+                    "TrainerId",
+                    "JockeyName",
+                    "JockeyId",
+                    "SaddleclothNumber",
+                    "Draw"
+                };
+            }
+
+            var featureState = new FeatureEngineeringState(this, identifierKeys);
             var races = new List<PreparedRace>();
             var rnd = new Random();
             var currentRows = new List<Dictionary<string, object?>>();

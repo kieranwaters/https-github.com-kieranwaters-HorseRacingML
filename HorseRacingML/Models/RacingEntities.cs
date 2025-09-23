@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 
 namespace HorseRacingML.Models
 {
@@ -109,5 +110,7 @@ namespace HorseRacingML.Models
         public decimal? LayPrice2 { get; set; }
         public decimal? LayPrice3 { get; set; }
         public double? AiOdds { get; set; }
+        public Dictionary<string, object?>? FeatureValues { get; set; }
     }
+
 }
