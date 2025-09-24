@@ -96,65 +96,67 @@ namespace HorseRacingML.ML
             return new TrainingDataset(trainRaces, validationRaces, metadata.FeatureKeys, metadata.FeatureDimensions, metadata.StringMaps, normalization);
         }
         public TrainingDataset LoadTrainingDataset()
+        {
+            var prepared = PrepareDataset();
+            var emptyValidation = new PreparedDataset(new List<PreparedRace>());
+            return BuildTrainingDataset(prepared, emptyValidation);
+        }
+
+        public (double TrainAccuracy, double TrainLoss, double ValidationAccuracy, double ValidationLoss, double TrainBrier, double ValidationBrier) Train(MLParameter param, int foldIndex, int foldCount, bool persistWeights = true)
+        {
+            var dataset = LoadTrainingDataset();
+            return Train(param, foldIndex, foldCount, dataset, persistWeights);
+        }
+
+        public (double TrainAccuracy, double TrainLoss, double ValidationAccuracy, double ValidationLoss, double TrainBrier, double ValidationBrier) Train(MLParameter param, TrainingDataset.PreparedDataset dataset, int foldIndex, int foldCount, bool persistWeights = true)
+        {
+            if (dataset is null)
+                throw new ArgumentNullException(nameof(dataset));
+
+            int totalRaces = dataset.Races.Count;
+            if (foldCount <= 0)
+                throw new ArgumentOutOfRangeException(nameof(foldCount));
+            if (foldIndex < 0 || foldIndex >= foldCount)
+                throw new ArgumentOutOfRangeException(nameof(foldIndex));
+
+            int foldSize = totalRaces / foldCount;
+            int valStart = foldIndex * foldSize;
+            int valEnd = foldIndex == foldCount - 1 ? totalRaces : valStart + foldSize;
+
+            var trainRaceIds = dataset.Races
+                .Select((race, idx) => new { race, idx })
+                .Where(x => x.idx < valStart || x.idx >= valEnd)
+                .Select(x => x.race.RaceId)
+                .ToHashSet();
+
+            if (trainRaceIds.Count == 0)
             {
-                var prepared = PrepareDataset();
-                var emptyValidation = new PreparedDataset(new List<PreparedRace>());
-                return BuildTrainingDataset(prepared, emptyValidation);
-            }
-            public (double TrainAccuracy, double TrainLoss, double ValidationAccuracy, double ValidationLoss, double TrainBrier, double ValidationBrier) Train(MLParameter param, int foldIndex, int foldCount)
-            {
-                var dataset = LoadTrainingDataset();
-                return Train(param, foldIndex, foldCount, dataset);
-            }
-            public (double TrainAccuracy, double TrainLoss, double ValidationAccuracy, double ValidationLoss, double TrainBrier, double ValidationBrier) Train(MLParameter param, TrainingDataset.PreparedDataset dataset, int foldIndex, int foldCount)
-            {
-                if (dataset is null)
-                    throw new ArgumentNullException(nameof(dataset));
-
-                int totalRaces = dataset.Races.Count;
-                if (foldCount <= 0)
-                    throw new ArgumentOutOfRangeException(nameof(foldCount));
-                if (foldIndex < 0 || foldIndex >= foldCount)
-                    throw new ArgumentOutOfRangeException(nameof(foldIndex));
-
-                int foldSize = totalRaces / foldCount;
-                int valStart = foldIndex * foldSize;
-                int valEnd = foldIndex == foldCount - 1 ? totalRaces : valStart + foldSize;
-
-                var trainRaceIds = dataset.Races
-                    .Select((race, idx) => new { race, idx })
-                    .Where(x => x.idx < valStart || x.idx >= valEnd)
-                    .Select(x => x.race.RaceId)
-                    .ToHashSet();
-
-                if (trainRaceIds.Count == 0)
-                {
-                    trainRaceIds = dataset.Races
-                        .Select(r => r.RaceId)
-                        .ToHashSet();
-                }
-
-                var validationRaceIds = dataset.Races
-                    .Skip(valStart)
-                    .Take(valEnd - valStart)
+                trainRaceIds = dataset.Races
                     .Select(r => r.RaceId)
                     .ToHashSet();
+            }
 
-                var trainingPrepared = PrepareDataset(trainRaceIds, trainRaceIds);
-                TrainingDataset.PreparedDataset validationPrepared;
-                if (validationRaceIds.Count > 0)
-                {
-                    validationPrepared = PrepareDataset(validationRaceIds, trainRaceIds);
-                }
-                else
-                {
-                    validationPrepared = new TrainingDataset.PreparedDataset(new List<TrainingDataset.PreparedDataset.PreparedRace>());
-                }
+            var validationRaceIds = dataset.Races
+                .Skip(valStart)
+                .Take(valEnd - valStart)
+                .Select(r => r.RaceId)
+                .ToHashSet();
 
-                var trainingDataset = BuildTrainingDataset(trainingPrepared, validationPrepared);
-                return Train(param, foldIndex, foldCount, trainingDataset);
-            }        
-            public (double TrainAccuracy, double TrainLoss, double ValidationAccuracy, double ValidationLoss, double TrainBrier, double ValidationBrier) Train(MLParameter param, int foldIndex, int foldCount, TrainingDataset dataset)
+            var trainingPrepared = PrepareDataset(trainRaceIds, trainRaceIds);
+            TrainingDataset.PreparedDataset validationPrepared;
+            if (validationRaceIds.Count > 0)
+            {
+                validationPrepared = PrepareDataset(validationRaceIds, trainRaceIds);
+            }
+            else
+            {
+                validationPrepared = new TrainingDataset.PreparedDataset(new List<TrainingDataset.PreparedDataset.PreparedRace>());
+            }
+
+            var trainingDataset = BuildTrainingDataset(trainingPrepared, validationPrepared);
+            return Train(param, foldIndex, foldCount, trainingDataset, persistWeights);
+        }
+        public (double TrainAccuracy, double TrainLoss, double ValidationAccuracy, double ValidationLoss, double TrainBrier, double ValidationBrier) Train(MLParameter param, int foldIndex, int foldCount, TrainingDataset dataset, bool persistWeights = true)
         {
             if (dataset is null)
                 throw new ArgumentNullException(nameof(dataset));
@@ -496,16 +498,19 @@ namespace HorseRacingML.ML
                 }
             };
 
-            var weightPath = Path.Combine(AppContext.BaseDirectory, "aiweights.json");
-            try
+            if (persistWeights)
             {
-                var options = new JsonSerializerOptions { WriteIndented = true };
-                File.WriteAllText(weightPath, JsonSerializer.Serialize(model, options));
-            }
-            catch
-            {
-                // Failing to persist weights shouldn't abort training; simply swallow
-                // any IO issues so training metrics are still returned.
+                var weightPath = Path.Combine(AppContext.BaseDirectory, "aiweights.json");
+                try
+                {
+                    var options = new JsonSerializerOptions { WriteIndented = true };
+                    File.WriteAllText(weightPath, JsonSerializer.Serialize(model, options));
+                }
+                catch
+                {
+                    // Failing to persist weights shouldn't abort training; simply swallow
+                    // any IO issues so training metrics are still returned.
+                }
             }
             HyperparameterCompleted(param, trainAcc, valAcc, trainLoss, valLoss, trainBrier, valBrier);
             return (trainAcc, trainLoss, valAcc, valLoss, trainBrier, valBrier);
