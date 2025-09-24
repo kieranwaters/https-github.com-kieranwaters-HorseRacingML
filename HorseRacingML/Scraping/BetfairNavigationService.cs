@@ -2,6 +2,7 @@
 using HorseRacingML.ML;
 using HorseRacingML.Models;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
 using OpenQA.Selenium;
 using OpenQA.Selenium.Chrome;
 using OpenQA.Selenium.Support.UI;
@@ -9,8 +10,10 @@ using SeleniumExtras.WaitHelpers;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using System.Xml.Linq;
 
 namespace HorseRacingML.Scraping;
 
@@ -42,7 +45,79 @@ public class BetfairNavigationService : IDisposable
             "--disable-dev-shm-usage");
         _driver = new ChromeDriver(options);
     }
+    public async Task OpenHorseRaceMeetingsInNewTabsAsync(int delayBetweenTabsMs = 0)
+    {
+        var wait = new WebDriverWait(_driver, TimeSpan.FromSeconds(30));
+        var js = (IJavaScriptExecutor)_driver;
 
+        wait.Until(d => d.FindElements(By.CssSelector(".race-information__title, a[href*='/horse-racing/market/']")).Count > 0);
+
+        long previousHeight = -1;
+        for (var i = 0; i < 20; i++)
+        {
+            var heightObject = js.ExecuteScript("return Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);");
+            var height = heightObject is long l ? l : Convert.ToInt64(heightObject);
+            if (height == previousHeight)
+            {
+                break;
+            }
+
+            previousHeight = height;
+            js.ExecuteScript("window.scrollTo(0, arguments[0]);", height);
+            await Task.Delay(250);
+        }
+        js.ExecuteScript("window.scrollTo(0, 0);");
+
+        var rawUrls = js.ExecuteScript(@"
+            const seen = new Set();
+            const urls = [];
+            const selectors = [
+                'a.race-information__title[href*=" / horse - racing / "]',
+                'a[href*="/horse-racing/market/"]'
+            ];
+        const elements = new Set();
+        selectors.forEach(sel => {
+            document.querySelectorAll(sel).forEach(el => elements.add(el));
+        });
+        elements.forEach(anchor => {
+            if (!anchor) { return; }
+            const container = anchor.closest('.race-information');
+            if (container && container.classList.contains('race-information__resulted'))
+            {
+                return;
+            }
+            const href = anchor.href;
+            if (!href || seen.has(href))
+            {
+                return;
+            }
+            seen.add(href);
+            urls.push(href);
+        });
+        return urls;
+        ");
+
+        var urls = new List<string>();
+        if (rawUrls is IReadOnlyCollection<object> collection)
+        {
+            foreach (var item in collection)
+            {
+                if (item is string href && !string.IsNullOrWhiteSpace(href))
+                {
+                    urls.Add(href);
+                }
+            }
+        }
+
+        foreach (var url in urls)
+        {
+            js.ExecuteScript("window.open(arguments[0], '_blank');", url);
+            if (delayBetweenTabsMs > 0)
+            {
+                await Task.Delay(delayBetweenTabsMs);
+            }
+        }
+    }
     public IWebDriver Driver => _driver;
     public IReadOnlyList<BetRecommendation> ScrapeOpenRaceTabs(RacingRepository repo, HyperparameterTrainer trainer)
     {
@@ -210,34 +285,6 @@ public class BetfairNavigationService : IDisposable
     ((IJavaScriptExecutor)_driver).ExecuteScript("arguments[0].scrollIntoView({block:'center'});", horse); // bring into view
         try { wait.Until(ExpectedConditions.ElementToBeClickable(horse)); horse.Click(); } catch (Exception) { ((IJavaScriptExecutor)_driver).ExecuteScript("arguments[0].click();", horse); } // click with JS fallback
         wait.Until(d => d.Url.Contains("horse-racing", StringComparison.OrdinalIgnoreCase) || d.Url.Contains("horse-racing-betting-7", StringComparison.OrdinalIgnoreCase)); // ensure navigation happened
-    }
-
-
-    public async Task OpenHorseRaceMeetingsInNewTabsAsync(int delayBetweenTabsMs = 0)
-    {
-        var wait = new WebDriverWait(_driver, TimeSpan.FromSeconds(10));
-        wait.Until(d => d.FindElements(By.CssSelector("a[href*='/horse-racing/']")).Count > 0);
-
-        var links = _driver.FindElements(By.CssSelector("a[href*='/horse-racing/']"));
-        var urls = new HashSet<string>();
-        foreach (var link in links)
-        {
-            var href = link.GetAttribute("href");
-            if (!string.IsNullOrEmpty(href))
-            {
-                urls.Add(href);
-            }
-        }
-
-        foreach (var url in urls)
-        {
-            ((IJavaScriptExecutor)_driver).ExecuteScript("window.open(arguments[0], '_blank');", url);
-            if (delayBetweenTabsMs > 0)
-            {
-                await Task.Delay(delayBetweenTabsMs);
-            }
-        }
-        await Task.CompletedTask;
     }
     public void Dispose()
     {
