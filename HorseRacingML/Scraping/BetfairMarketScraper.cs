@@ -245,17 +245,55 @@ namespace HorseRacingML.Scraping
                         flow.AiOdds = null;
                         Console.Error.WriteLine($"\tFailed to calculate AI odds for selection {selectionId ?? "unknown"} in market {marketId}: {ex.Message}");
                     }
+                    var identifier = !string.IsNullOrWhiteSpace(flow.HorseName)
+                        ? flow.HorseName!
+                        : (flow.SelectionId ?? "unknown");
+                    var aiText = flow.AiOdds.HasValue
+                        ? flow.AiOdds.Value.ToString("0.####", CultureInfo.InvariantCulture)
+                        : "null";
+                    var backText = flow.BackPrice1.HasValue
+                        ? flow.BackPrice1.Value.ToString("0.##", CultureInfo.InvariantCulture)
+                        : "null";
+                    Console.WriteLine($"\tRunner snapshot {identifier}: back1={backText}, aiProbabilityRaw={aiText}");
+                    if (!flow.AiOdds.HasValue)
+                    {
+                        Console.WriteLine($"\t\tAI probability missing for {identifier}; downstream filters will treat this runner as zero edge.");
+                    }
+                    if (!flow.BackPrice1.HasValue)
+                    {
+                        Console.WriteLine($"\t\tNo back price available for {identifier}; cannot compare against market probability.");
+                    }
+
 
                     flows.Add(flow);
                     runnerEntries.Add((row, flow));
                 }
-
+                var validAiBefore = flows
+                    .Where(f => f.AiOdds.HasValue && double.IsFinite(f.AiOdds.Value) && f.AiOdds.Value >= 0)
+                    .Select(f => f.AiOdds!.Value)
+                    .ToList();
+                var missingAiCount = flows.Count - validAiBefore.Count;
+                if (validAiBefore.Count == 0)
+                {
+                    Console.WriteLine($"\tAll {flows.Count} runner(s) in market {marketId} are missing AI probabilities before normalization.");
+                }
+                else
+                {
+                    var sumProb = validAiBefore.Sum();
+                    var minProb = validAiBefore.Min();
+                    var maxProb = validAiBefore.Max();
+                    Console.WriteLine($"\tAI probability summary before normalization for market {marketId}: valid={validAiBefore.Count}, missing={missingAiCount}, sum={sumProb.ToString("0.####", CultureInfo.InvariantCulture)}, min={minProb.ToString("0.####", CultureInfo.InvariantCulture)}, max={maxProb.ToString("0.####", CultureInfo.InvariantCulture)}");
+                }
                 NormalizeAiOdds(flows);
                 var raceRecommendations = CreateRecommendations(flows, marketId, title, venueName, parsedRaceDate)
                     .OrderByDescending(r => r.Differential)
                     .ThenByDescending(r => r.KellyFraction)
                     .ToList();
-
+                Console.WriteLine($"\t{raceRecommendations.Count} runner(s) passed value filters for market {marketId}.");
+                if (raceRecommendations.Count > 1)
+                {
+                    Console.WriteLine("\t\tMultiple runners qualified in the same market; sequential Kelly stakes will size each independently in tab order.");
+                }
                 if (raceRecommendations.Count > 0)
                 {
                     var bankrollBeforeClicks = _availableBankroll;
@@ -299,6 +337,83 @@ namespace HorseRacingML.Scraping
                 .OrderByDescending(r => r.Differential)
                 .ThenByDescending(r => r.KellyFraction)
                 .ToList();
+        }
+        private IEnumerable<BetRecommendation> CreateRecommendations(
+            IEnumerable<RunnerFlow> flows,
+            string marketId,
+            string? raceTitle,
+            string? venueName,
+            DateTime? raceDate)
+        {
+            if (_availableBankroll <= 0m)
+            {
+                return Enumerable.Empty<BetRecommendation>();
+            }
+
+            var recommendations = new List<BetRecommendation>();
+
+            foreach (var flow in flows)
+            {
+                var identifier = !string.IsNullOrWhiteSpace(flow.HorseName)
+                    ? flow.HorseName!
+                    : (flow.SelectionId ?? "unknown");
+
+                if (!flow.AiOdds.HasValue || !double.IsFinite(flow.AiOdds.Value) || flow.AiOdds.Value <= 0)
+                {
+                    Console.WriteLine($"\tSkipping {identifier}: AI probability unavailable or non-positive.");
+                    continue;
+                }
+
+                if (!flow.BackPrice1.HasValue || flow.BackPrice1.Value <= 1m)
+                {
+                    var backText = flow.BackPrice1.HasValue
+                        ? flow.BackPrice1.Value.ToString("0.##", CultureInfo.InvariantCulture)
+                        : "null";
+                    Console.WriteLine($"\tSkipping {identifier}: back price {backText} is not usable for value comparison.");
+                    continue;
+                }
+
+                var decimalOdds = flow.BackPrice1.Value;
+                var aiProbability = flow.AiOdds.Value;
+                var marketProbability = 1.0 / (double)decimalOdds;
+                var differential = aiProbability - marketProbability;
+
+                Console.WriteLine($"\tRunner {identifier}: decimalOdds={decimalOdds.ToString("0.##", CultureInfo.InvariantCulture)}, aiProb={aiProbability.ToString("0.####", CultureInfo.InvariantCulture)}, marketProb={marketProbability.ToString("0.####", CultureInfo.InvariantCulture)}, diff={differential.ToString("0.####", CultureInfo.InvariantCulture)}");
+
+                if (differential <= 0)
+                {
+                    Console.WriteLine($"\t\tRejected {identifier}: differential {differential.ToString("0.####", CultureInfo.InvariantCulture)} is not positive after ignoring exchange commission.");
+                    continue;
+                }
+
+                var kellyFraction = CalculateKellyFraction(aiProbability, (double)decimalOdds);
+                if (kellyFraction <= 0)
+                {
+                    Console.WriteLine($"\t\tRejected {identifier}: Kelly fraction {kellyFraction.ToString("0.####", CultureInfo.InvariantCulture)} is non-positive.");
+                    continue;
+                }
+
+                Console.WriteLine($"\t\tAccepted {identifier}: Kelly fraction {kellyFraction.ToString("0.####", CultureInfo.InvariantCulture)} (commission not yet deducted).");
+
+                recommendations.Add(new BetRecommendation
+                {
+                    MarketId = marketId,
+                    SelectionId = flow.SelectionId,
+                    HorseName = flow.HorseName,
+                    RaceTitle = raceTitle,
+                    VenueName = venueName,
+                    RaceDate = raceDate,
+                    DecimalOdds = decimalOdds,
+                    AiDecimalOdds = CalculateAiDecimalOdds(aiProbability),
+                    AiProbability = aiProbability,
+                    MarketProbability = marketProbability,
+                    Differential = differential,
+                    KellyFraction = kellyFraction,
+                    Stake = 0m
+                });
+            }
+
+            return recommendations;
         }
         private FeatureLookup LoadFeatureLookup(DateTime? raceDate, string? raceTitle, string? venueName)
         {
@@ -425,68 +540,6 @@ namespace HorseRacingML.Scraping
             }
         }
 
-        private IEnumerable<BetRecommendation> CreateRecommendations(
-            IEnumerable<RunnerFlow> flows,
-            string marketId,
-            string? raceTitle,
-            string? venueName,
-            DateTime? raceDate)
-        {
-            if (_availableBankroll <= 0m)
-            {
-                return Enumerable.Empty<BetRecommendation>();
-            }
-
-            var recommendations = new List<BetRecommendation>();
-
-            foreach (var flow in flows)
-            {
-                if (!flow.AiOdds.HasValue || !double.IsFinite(flow.AiOdds.Value) || flow.AiOdds.Value <= 0)
-                {
-                    continue;
-                }
-
-                if (!flow.BackPrice1.HasValue || flow.BackPrice1.Value <= 1m)
-                {
-                    continue;
-                }
-
-                var decimalOdds = flow.BackPrice1.Value;
-                var aiProbability = flow.AiOdds.Value;
-                var marketProbability = 1.0 / (double)decimalOdds;
-                var differential = aiProbability - marketProbability;
-
-                if (differential <= 0)
-                {
-                    continue;
-                }
-
-                var kellyFraction = CalculateKellyFraction(aiProbability, (double)decimalOdds);
-                if (kellyFraction <= 0)
-                {
-                    continue;
-                }
-
-                recommendations.Add(new BetRecommendation
-                {
-                    MarketId = marketId,
-                    SelectionId = flow.SelectionId,
-                    HorseName = flow.HorseName,
-                    RaceTitle = raceTitle,
-                    VenueName = venueName,
-                    RaceDate = raceDate,
-                    DecimalOdds = decimalOdds,
-                    AiDecimalOdds = CalculateAiDecimalOdds(aiProbability),
-                    AiProbability = aiProbability,
-                    MarketProbability = marketProbability,
-                    Differential = differential,
-                    KellyFraction = kellyFraction,
-                    Stake = 0m
-                });
-            }
-
-            return recommendations;
-        }
         private IReadOnlyList<BetRecommendation> ExecuteBackAllClicks(
             IWebDriver driver,
             IReadOnlyList<(IWebElement Row, RunnerFlow Flow)> runnerEntries,
@@ -501,23 +554,30 @@ namespace HorseRacingML.Scraping
 
             foreach (var recommendation in recommendations)
             {
+                var identifier = recommendation.HorseName ?? recommendation.SelectionId ?? "unknown";
+
                 if (recommendation.Differential <= 0)
                 {
+                    Console.WriteLine($"\tSkipping {identifier}: differential {recommendation.Differential.ToString("0.####", CultureInfo.InvariantCulture)} <= 0.");
                     continue;
                 }
                 if (_availableBankroll <= 0m)
                 {
+                    Console.WriteLine($"\tBankroll exhausted before sizing stake for {identifier}.");
                     break;
                 }
 
                 if (recommendation.KellyFraction <= 0m)
                 {
+                    Console.WriteLine($"\tSkipping {identifier}: Kelly fraction {recommendation.KellyFraction.ToString("0.####", CultureInfo.InvariantCulture)} <= 0.");
                     continue;
                 }
 
+                Console.WriteLine($"\tSizing stake for {identifier}: bankroll {_availableBankroll.ToString("0.##", CultureInfo.InvariantCulture)}, Kelly {recommendation.KellyFraction.ToString("0.####", CultureInfo.InvariantCulture)}");
                 var stake = CalculateSequentialStake(_availableBankroll, recommendation.KellyFraction);
                 if (stake <= 0m)
                 {
+                    Console.WriteLine($"\t\tSequential Kelly returned zero stake for {identifier}; check rounding or Kelly cap constraints.");
                     continue;
                 }
                 var match = runnerEntries.FirstOrDefault(entry =>
@@ -543,7 +603,13 @@ namespace HorseRacingML.Scraping
                         _availableBankroll = 0m;
                     }
 
+                    Console.WriteLine($"\t\tStake {stake.ToString("0.##", CultureInfo.InvariantCulture)} accepted for {identifier}; bankroll now {_availableBankroll.ToString("0.##", CultureInfo.InvariantCulture)}");
+
                     Thread.Sleep(TimeSpan.FromMilliseconds(400));
+                }
+                else
+                {
+                    Console.WriteLine($"\t\tBack-All click failed or was skipped for {identifier}; bankroll remains {_availableBankroll.ToString("0.##", CultureInfo.InvariantCulture)}");
                 }
             }
             return clicked;
@@ -719,6 +785,8 @@ namespace HorseRacingML.Scraping
                 var recommendation = recommendations[i];
                 var stake = CalculateSequentialStake(remainingPot, recommendation.KellyFraction);
                 var input = available[i];
+                var identifier = recommendation.HorseName ?? recommendation.SelectionId ?? "unknown";
+                Console.WriteLine($"\tBet slip allocation for {identifier}: remaining pot {remainingPot.ToString("0.##", CultureInfo.InvariantCulture)}, stake {stake.ToString("0.##", CultureInfo.InvariantCulture)}");
                 try
                 {
                     SetStakeInputValue(js, input, stake);
@@ -733,6 +801,7 @@ namespace HorseRacingML.Scraping
                 {
                     remainingPot = 0m;
                 }
+                Console.WriteLine($"\t\tRemaining pot after allocation: {remainingPot.ToString("0.##", CultureInfo.InvariantCulture)}");
             }
 
             _betSlipSelectionsFilled += available.Count;
@@ -896,13 +965,24 @@ namespace HorseRacingML.Scraping
             var valid = flows
                 .Where(f => f.AiOdds.HasValue && double.IsFinite(f.AiOdds.Value) && f.AiOdds.Value >= 0)
                 .ToList();
+            var totalRunners = flows.Count;
+            var missingCount = totalRunners - valid.Count;
 
             if (valid.Count == 0)
             {
+                if (totalRunners > 0)
+                {
+                    Console.WriteLine($"\tNormalizeAiOdds: no valid AI probabilities across {totalRunners} runner(s); skipping normalization.");
+                }
                 return;
             }
 
             var sum = valid.Sum(f => f.AiOdds!.Value);
+            Console.WriteLine($"\tNormalizeAiOdds: normalizing {valid.Count} runner(s) (missing={missingCount}, raw sum={sum.ToString("0.####", CultureInfo.InvariantCulture)}).");
+            if (missingCount > 0)
+            {
+                Console.WriteLine($"\t\tMissing AI predictions detected for {missingCount} runner(s); surviving probabilities may be inflated relative to the full field.");
+            }
 
             if (sum <= double.Epsilon)
             {
@@ -911,6 +991,7 @@ namespace HorseRacingML.Scraping
                 {
                     flow.AiOdds = uniform;
                 }
+                Console.WriteLine($"\t\tRaw probabilities summed to ~0; distributing uniform probability {uniform.ToString("0.####", CultureInfo.InvariantCulture)} across valid runners.");
                 return;
             }
 
@@ -918,6 +999,9 @@ namespace HorseRacingML.Scraping
             {
                 flow.AiOdds = Math.Max(flow.AiOdds!.Value / sum, 0);
             }
+
+            var normalizedSum = valid.Sum(f => f.AiOdds!.Value);
+            Console.WriteLine($"\t\tNormalized probability sum: {normalizedSum.ToString("0.####", CultureInfo.InvariantCulture)}.");
         }
         private static decimal? ParsePercentage(string text)
         {

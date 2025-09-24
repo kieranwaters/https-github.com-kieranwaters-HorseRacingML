@@ -36,6 +36,45 @@ namespace HorseRacingML.ML
             public float Bias { get; set; }
             public float[] Weights { get; set; } = Array.Empty<float>();
         }
+        public AIOddsCalculator(string path)
+        {
+            _legacyWeights = Array.Empty<double>();
+            _legacyBias = 0d;
+            if (!File.Exists(path))
+            {
+                Console.Error.WriteLine($"[AI] Weight file not found at {path}; falling back to legacy logistic model.");
+                return;
+            }
+
+            var json = File.ReadAllText(path);
+            if (TryLoadTrainedModel(json))
+            {
+                _hasTrainedModel = true;
+                Console.WriteLine($"[AI] Loaded trained model with {_featureCount} features from {Path.GetFileName(path)}.");
+                return;
+            }
+
+            try
+            {
+                var data = JsonSerializer.Deserialize<WeightFile>(json);
+                _legacyWeights = data?.Weights?.Select(w => (double)w).ToArray() ?? Array.Empty<double>();
+                _legacyBias = data?.Bias ?? 0d;
+                if (_legacyWeights.Length == 0)
+                {
+                    Console.Error.WriteLine($"[AI] Legacy weight file {Path.GetFileName(path)} did not contain any usable coefficients; probabilities will default to zero.");
+                }
+                else
+                {
+                    Console.WriteLine($"[AI] Loaded legacy logistic weights ({_legacyWeights.Length}) from {Path.GetFileName(path)}.");
+                }
+            }
+            catch (JsonException)
+            {
+                _legacyWeights = Array.Empty<double>();
+                _legacyBias = 0d;
+                Console.Error.WriteLine($"[AI] Failed to parse weight file {Path.GetFileName(path)}; probabilities will default to zero.");
+            }
+        }
         private Dictionary<string, object?> BuildRawFeatureMap(RunnerFlow flow)
         {
             var raw = flow.FeatureValues != null
@@ -96,34 +135,7 @@ namespace HorseRacingML.ML
 
             return raw;
         }
-        public AIOddsCalculator(string path)
-        {
-            _legacyWeights = Array.Empty<double>();
-            _legacyBias = 0d;
-            if (!File.Exists(path))
-            {
-                return;
-            }
 
-            var json = File.ReadAllText(path);
-            if (TryLoadTrainedModel(json))
-            {
-                _hasTrainedModel = true;
-                return;
-            }
-
-            try
-            {
-                var data = JsonSerializer.Deserialize<WeightFile>(json);
-                _legacyWeights = data?.Weights?.Select(w => (double)w).ToArray() ?? Array.Empty<double>();
-                _legacyBias = data?.Bias ?? 0d;
-            }
-            catch (JsonException)
-            {
-                _legacyWeights = Array.Empty<double>();
-                _legacyBias = 0d;
-            }
-        }
 
         public double CalculateOdds(RunnerFlow flow)
         {
@@ -183,7 +195,6 @@ namespace HorseRacingML.ML
 
             return true;
         }
-
         private bool TryCalculateWithTrainedModel(RunnerFlow flow, out double probability)
         {
             probability = 0d;
@@ -203,12 +214,26 @@ namespace HorseRacingML.ML
             var normalized = new double[_featureCount];
             for (int i = 0; i < _featureCount; i++)
             {
-                var std = _std[i];
-                if (Math.Abs(std) < 1e-8)
+                var value = encoded[i];
+                if (!double.IsFinite(value))
                 {
-                    return false;
+                    value = 0d;
                 }
-                normalized[i] = (encoded[i] - _mean[i]) / std;
+
+                var std = _std[i];
+                if (!double.IsFinite(std) || Math.Abs(std) < 1e-8)
+                {
+                    normalized[i] = 0d;
+                    continue;
+                }
+
+                var mean = _mean[i];
+                if (!double.IsFinite(mean))
+                {
+                    mean = 0d;
+                }
+
+                normalized[i] = (value - mean) / std;
             }
 
             var activations = normalized;
@@ -233,7 +258,6 @@ namespace HorseRacingML.ML
             probability = prob;
             return true;
         }
-
         private double[]? EncodeFeatures(Dictionary<string, object?> raw)
         {
             if (_metadata == null)
