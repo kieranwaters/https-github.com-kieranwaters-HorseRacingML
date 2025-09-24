@@ -71,6 +71,27 @@ namespace HorseRacingML.Controllers
             return RedirectToAction("Index");
         }
         [HttpGet]
+        //public IActionResult ScrapeRaceResults([FromServices] RaceResultsScraper scraper)
+        //{
+        //    var startDate = new DateTime(2025, 9, 15);
+        //    var endDate = new DateTime(2025, 9, 21);
+
+        //    _status.Update($"Scraping results from {startDate:yyyy-MM-dd} to {endDate:yyyy-MM-dd} started at {DateTime.Now:G}");
+        //    Task.Run(() =>
+        //    {
+        //        try
+        //        {
+        //            scraper.Scrape(startDate, endDate);
+        //            _status.Update($"Scraping completed at {DateTime.Now:G}");
+        //        }
+        //        catch (Exception ex)
+        //        {
+        //            _status.Update($"Scraping failed: {ex.Message}");
+        //        }
+        //    });
+        //    TempData["Message"] = $"Scraping of race results from {startDate:dd/MM/yy} to {endDate:dd/MM/yy} has started.";
+        //    return RedirectToAction("Index");
+        //}
         public IActionResult ScrapeRaceResults([FromServices] RaceResultsScraper scraper)
         {
             _status.Update($"Scraping started at {DateTime.Now:G}");
