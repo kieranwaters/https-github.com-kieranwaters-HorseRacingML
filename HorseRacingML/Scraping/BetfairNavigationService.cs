@@ -374,7 +374,18 @@ namespace HorseRacingML.Scraping
                 d.Url.Contains("horse-racing", StringComparison.OrdinalIgnoreCase) ||
                 d.Url.Contains("horse-racing-betting-7", StringComparison.OrdinalIgnoreCase));
         }
-
+        public DayReportViewModel GenerateDayReport(RacingRepository repo, HyperparameterTrainer trainer)
+        {
+            var bankroll = GetEffectiveBankroll();
+            var scraper = new BetfairMarketScraper(repo, trainer, bankroll, _maxKellyFraction);
+            var races = scraper.ScrapeOpenRaceTabsForReport(_driver);
+            return new DayReportViewModel
+            {
+                GeneratedAt = DateTime.UtcNow,
+                Bankroll = bankroll,
+                Races = new List<RaceDayReport>(races)
+            };
+        }
         public async Task OpenHorseRaceMeetingsInNewTabsAsync(int delayBetweenTabsMs = 0)
         {
             var wait = new WebDriverWait(_driver, TimeSpan.FromSeconds(20)); wait.Until(d => ((IJavaScriptExecutor)d).ExecuteScript("return document.readyState").ToString() == "complete"); wait.Until(d => d.FindElements(By.CssSelector("a,button")).Count > 0); bool Is24HourTime(string s) { if (string.IsNullOrWhiteSpace(s)) return false; var t = s.Trim(); return DateTime.TryParseExact(t, new[] { "H:mm", "HH:mm" }, CultureInfo.InvariantCulture, DateTimeStyles.None, out _); } // filter by 24h times

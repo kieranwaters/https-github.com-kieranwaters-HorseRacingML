@@ -9,6 +9,7 @@ using HorseRacingML.Data;
 using HorseRacingML.Models;
 using System.Collections.Generic;
 using HorseRacingML.ML;
+using HorseRacingML.Services;
 using System.IO;
 using PreparedDataset = HorseRacingML.ML.HyperparameterTrainer.TrainingDataset.PreparedDataset;
 using PreparedRace = HorseRacingML.ML.HyperparameterTrainer.TrainingDataset.PreparedDataset.PreparedRace;
@@ -33,12 +34,13 @@ namespace HorseRacingML.Scraping
             _maxKellyFraction = maxKellyFraction;
             _betSlipSelectionsFilled = 0;
         }
-        public IReadOnlyList<BetRecommendation> ScrapeOpenRaceTabs(IWebDriver driver)
+        private BetfairScrapeResult ScrapeOpenRaceTabsInternal(IWebDriver driver, bool executeBets, bool captureReport)
         {
             var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10));
             var handles = driver.WindowHandles.ToList();
             var weightPath = Path.Combine(AppContext.BaseDirectory, "aiweights.json");
             var aiCalculator = new AIOddsCalculator(weightPath);
+            var result = new BetfairScrapeResult();
             var recommendations = new List<BetRecommendation>();
             foreach (var handle in handles)
             {
@@ -155,6 +157,40 @@ namespace HorseRacingML.Scraping
                         const textOrEmpty = el => el && el.textContent ? el.textContent.trim() : '';
                         const queryText = selector => selector ? textOrEmpty(row.querySelector(selector)) : '';
 
+                        const extractPriceText = raw => {
+                            if (!raw) {
+                                return '';
+                            }
+                            const text = raw.trim();
+                            if (!text) {
+                                return '';
+                            }
+                            if (/^[£€$]/.test(text)) {
+                                return '';
+                            }
+                            return text;
+                        };
+
+                        const extractPriceFromButton = raw => {
+                            if (!raw) {
+                                return '';
+                            }
+                            const text = raw.trim();
+                            if (!text) {
+                                return '';
+                            }
+                            const tokens = text.split(/\s+/);
+                            for (const token of tokens) {
+                                if (!token || /^[£€$]/.test(token)) {
+                                    continue;
+                                }
+                                if (/^[0-9]+(\.[0-9]+)?$/.test(token)) {
+                                    return token;
+                                }
+                            }
+                            return extractPriceText(text);
+                        };
+
                         const indexTokens = {
                             1: ['1', 'one'],
                             2: ['2', 'two'],
@@ -168,15 +204,15 @@ namespace HorseRacingML.Scraping
                                 const oursButtons = Array.from(cell.querySelectorAll('ours-price-button'));
                                 if (oursButtons.length >= index) {
                                     const button = oursButtons[index - 1];
-                                    const priceLabel = button.querySelector('button label:nth-of-type(2)');
+                                    const priceLabel = button.querySelector('button label:nth-of-type(1), button span:nth-of-type(1), .bet-button-price');
                                     if (priceLabel) {
-                                        const text = textOrEmpty(priceLabel);
+                                        const text = extractPriceText(textOrEmpty(priceLabel));
                                         if (text) {
                                             return text;
                                         }
                                     }
 
-                                    const fallbackButtonText = textOrEmpty(button.querySelector('button'));
+                                    const fallbackButtonText = extractPriceFromButton(textOrEmpty(button.querySelector('button')));
                                     if (fallbackButtonText) {
                                         return fallbackButtonText;
                                     }
@@ -187,15 +223,15 @@ namespace HorseRacingML.Scraping
                             const startIndex = type === 'lay' ? 3 : 0;
                             if (allButtons.length >= index + startIndex) {
                                 const button = allButtons[startIndex + index - 1];
-                                const priceLabel = button.querySelector('button label:nth-of-type(2)');
+                                const priceLabel = button.querySelector('button label:nth-of-type(1), button span:nth-of-type(1), .bet-button-price');
                                 if (priceLabel) {
-                                    const text = textOrEmpty(priceLabel);
+                                    const text = extractPriceText(textOrEmpty(priceLabel));
                                     if (text) {
                                         return text;
                                     }
                                 }
 
-                                const fallbackButtonText = textOrEmpty(button.querySelector('button'));
+                                const fallbackButtonText = extractPriceFromButton(textOrEmpty(button.querySelector('button')));
                                 if (fallbackButtonText) {
                                     return fallbackButtonText;
                                 }
@@ -256,8 +292,17 @@ namespace HorseRacingML.Scraping
 
                         const fallbackButtons = Array.from(row.querySelectorAll('bet-button'));
                         const fallbackPrices = fallbackButtons
-                            .map(btn => textOrEmpty(btn.querySelector('.bet-button-price') || btn))
-                            .filter(text => text);
+                             .map(btn => {
+                                const label = btn.querySelector('button label:nth-of-type(1), button span:nth-of-type(1), .bet-button-price');
+                                if (label) {
+                                    const priceText = extractPriceText(textOrEmpty(label));
+                                    if (priceText) {
+                                        return priceText;
+                                    }
+                                }
+                                const buttonText = btn.querySelector('button');
+                                return extractPriceFromButton(textOrEmpty(buttonText || btn));
+                            })
 
                         for (let i = 1; i <= 3; i++) {
                             const backKey = `back${i}`;
@@ -390,35 +435,64 @@ namespace HorseRacingML.Scraping
                     Console.WriteLine($"\tAI probability summary before normalization for market {marketId}: valid={validAiBefore.Count}, missing={missingAiCount}, sum={sumProb.ToString("0.####", CultureInfo.InvariantCulture)}, min={minProb.ToString("0.####", CultureInfo.InvariantCulture)}, max={maxProb.ToString("0.####", CultureInfo.InvariantCulture)}");
                 }
                 NormalizeAiOdds(flows);
+                if (captureReport)
+                {
+                    var report = BuildRaceReport(
+                        marketId,
+                        title,
+                        venueName,
+                        venueCountry,
+                        parsedRaceDate,
+                        offTime,
+                        string.IsNullOrWhiteSpace(raceDetailsText) ? null : raceDetailsText.Trim(),
+                        backBookPercentage,
+                        layBookPercentage,
+                        flows);
+                    result.Races.Add(report);
+                }
                 var raceRecommendations = CreateRecommendations(flows, marketId, title, venueName, parsedRaceDate)
                     .OrderByDescending(r => r.Differential)
                     .ThenByDescending(r => r.KellyFraction)
                     .ToList();
                 Console.WriteLine($"\t{raceRecommendations.Count} runner(s) passed value filters for market {marketId}.");
-                if (raceRecommendations.Count > 1)
+                if (!executeBets)
                 {
-                    Console.WriteLine("\t\tMultiple runners qualified in the same market; sequential Kelly stakes will size each independently in tab order.");
-                }
-                if (raceRecommendations.Count > 0)
-                {
-                    var bankrollBeforeClicks = _availableBankroll;
-                    var clickedRecommendations = ExecuteBackAllClicks(driver, runnerEntries, raceRecommendations);
-
-                    if (clickedRecommendations.Count > 0)
+                    if (raceRecommendations.Count > 0)
                     {
-                        var top = clickedRecommendations.First();
-                        Console.WriteLine($"\tKelly stake {top.Stake.ToString("0.##", CultureInfo.InvariantCulture)} on {top.HorseName ?? "unknown"} (diff {top.Differential.ToString("0.####", CultureInfo.InvariantCulture)})");
-                        recommendations.AddRange(clickedRecommendations);
-                        PopulateBetSlipStakes(driver, clickedRecommendations, bankrollBeforeClicks);
+                        Console.WriteLine("\tReport mode: positive expected value runner(s) identified; skipping bet execution.");
                     }
                     else
                     {
-                        Console.WriteLine("\tNo qualifying Back-All clicks were executed for this market");
+                        Console.WriteLine($"\tNo positive value opportunity identified for market {marketId}");
                     }
                 }
                 else
                 {
-                    Console.WriteLine($"\tNo positive value opportunity identified for market {marketId}");
+                    if (raceRecommendations.Count > 1)
+                    {
+                        Console.WriteLine("\t\tMultiple runners qualified in the same market; sequential Kelly stakes will size each independently in tab order.");
+                    }
+                    if (raceRecommendations.Count > 0)
+                    {
+                        var bankrollBeforeClicks = _availableBankroll;
+                        var clickedRecommendations = ExecuteBackAllClicks(driver, runnerEntries, raceRecommendations);
+
+                        if (clickedRecommendations.Count > 0)
+                        {
+                            var top = clickedRecommendations.First();
+                            Console.WriteLine($"\tKelly stake {top.Stake.ToString("0.##", CultureInfo.InvariantCulture)} on {top.HorseName ?? "unknown"} (diff {top.Differential.ToString("0.####", CultureInfo.InvariantCulture)})");
+                            recommendations.AddRange(clickedRecommendations);
+                            PopulateBetSlipStakes(driver, clickedRecommendations, bankrollBeforeClicks);
+                        }
+                        else
+                        {
+                            Console.WriteLine("\tNo qualifying Back-All clicks were executed for this market");
+                        }
+                    }
+                    else
+                    {
+                        Console.WriteLine($"\tNo positive value opportunity identified for market {marketId}");
+                    }
                 }
 
                 foreach (var flow in flows)
@@ -438,10 +512,108 @@ namespace HorseRacingML.Scraping
                     }
                 }
             }
-            return recommendations
+            result.Recommendations.AddRange(recommendations
                 .OrderByDescending(r => r.Differential)
-                .ThenByDescending(r => r.KellyFraction)
-                .ToList();
+                .ThenByDescending(r => r.KellyFraction));
+            return result;
+        }
+        private RaceDayReport BuildRaceReport(
+            string marketId,
+            string? raceTitle,
+            string? venueName,
+            string? venueCountry,
+            DateTime? raceDate,
+            TimeSpan? offTime,
+            string? raceDetails,
+            decimal? backBookPercentage,
+            decimal? layBookPercentage,
+            IEnumerable<RunnerFlow> flows)
+        {
+            var report = new RaceDayReport
+            {
+                MarketId = marketId,
+                RaceTitle = string.IsNullOrWhiteSpace(raceTitle) ? null : raceTitle.Trim(),
+                VenueName = string.IsNullOrWhiteSpace(venueName) ? null : venueName.Trim(),
+                VenueCountry = string.IsNullOrWhiteSpace(venueCountry) ? null : venueCountry.Trim(),
+                RaceDate = raceDate,
+                OffTime = offTime,
+                RaceDetails = string.IsNullOrWhiteSpace(raceDetails) ? null : raceDetails.Trim(),
+                BackBookPercentage = backBookPercentage,
+                LayBookPercentage = layBookPercentage
+            };
+
+            foreach (var flow in flows)
+            {
+                report.Runners.Add(CreateRunnerReport(flow));
+            }
+
+            return report;
+        }
+
+        private RunnerDayReport CreateRunnerReport(RunnerFlow flow)
+        {
+            var runner = new RunnerDayReport
+            {
+                SelectionId = flow.SelectionId,
+                ClothNumber = flow.ClothNumber,
+                Draw = flow.Draw,
+                HorseName = flow.HorseName,
+                JockeyName = flow.JockeyName,
+                FeatureValues = flow.FeatureValues != null
+                    ? new Dictionary<string, object?>(flow.FeatureValues, StringComparer.OrdinalIgnoreCase)
+                    : new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            };
+
+            if (flow.BackPrice1.HasValue && flow.BackPrice1.Value > 0m)
+            {
+                runner.MarketDecimalOdds = flow.BackPrice1.Value;
+                if (flow.BackPrice1.Value > 1m)
+                {
+                    runner.MarketProbability = 1.0 / (double)flow.BackPrice1.Value;
+                }
+            }
+
+            if (flow.AiOdds.HasValue && double.IsFinite(flow.AiOdds.Value) && flow.AiOdds.Value > 0)
+            {
+                runner.AiProbability = flow.AiOdds.Value;
+                runner.AiDecimalOdds = BettingMath.CalculateAiDecimalOdds(flow.AiOdds.Value);
+            }
+
+            if (runner.AiProbability.HasValue && runner.MarketProbability.HasValue)
+            {
+                runner.Differential = runner.AiProbability.Value - runner.MarketProbability.Value;
+            }
+
+            if (runner.AiProbability.HasValue && runner.MarketDecimalOdds.HasValue && runner.MarketDecimalOdds.Value > 1m)
+            {
+                var kelly = BettingMath.CalculateKellyFraction(
+                    runner.AiProbability.Value,
+                    (double)runner.MarketDecimalOdds.Value,
+                    _maxKellyFraction);
+                runner.KellyFraction = kelly;
+                if (kelly > 0m && _bankroll > 0m)
+                {
+                    runner.SuggestedStake = BettingMath.CalculateSequentialStake(_bankroll, kelly);
+                }
+            }
+
+            return runner;
+        }
+
+        private sealed class BetfairScrapeResult
+        {
+            public List<BetRecommendation> Recommendations { get; } = new();
+            public List<RaceDayReport> Races { get; } = new();
+        }
+
+        public IReadOnlyList<BetRecommendation> ScrapeOpenRaceTabs(IWebDriver driver)
+        {
+            return ScrapeOpenRaceTabsInternal(driver, executeBets: true, captureReport: false).Recommendations;
+        }
+
+        public IReadOnlyList<RaceDayReport> ScrapeOpenRaceTabsForReport(IWebDriver driver)
+        {
+            return ScrapeOpenRaceTabsInternal(driver, executeBets: false, captureReport: true).Races;
         }
         private IEnumerable<BetRecommendation> CreateRecommendations(
             IEnumerable<RunnerFlow> flows,

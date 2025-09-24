@@ -116,6 +116,16 @@ namespace HorseRacingML.Controllers
             ViewData["StatusMessage"] = _status.Message;
             return View();
         }
+        public async Task<IActionResult> DayReport(
+            [FromServices] BetfairNavigationService betfair,
+            [FromServices] HyperparameterTrainer trainer)
+        {
+            await betfair.LoginAsync();
+            await betfair.OpenHorseRaceMeetingsInNewTabsAsync();
+            var report = betfair.GenerateDayReport(_repository, trainer);
+            _status.Update($"Day report generated at {DateTime.Now:G}.");
+            return View(report);
+        }
 
         public IActionResult Privacy()
         {
