@@ -23,6 +23,9 @@ namespace HorseRacingML.Data
         private static readonly Regex BracketTextRegex =
             new Regex("\\s*\\([^\\)]*\\)|\\s*\\[[^\\]]*\\]", RegexOptions.Compiled);
         private const int GoingMaxLength = 30;
+        private static readonly object SchemaLock = new();
+        private static bool _raceScreenTableEnsured;
+        private static bool _runnerFlowTableEnsured;
         private IDbConnection OpenConnection()
         {
             const int maxAttempts = 3;
@@ -265,6 +268,7 @@ WHERE CAST(r.RaceDate AS date) = @RaceDate";
 INSERT INTO RaceScreen(MarketId, RaceDate, OffTime, Title, VenueName, VenueCountry, EventDateText, RaceDetails, BackBookPercentage, LayBookPercentage)
 VALUES(@MarketId, @RaceDate, @OffTime, @Title, @VenueName, @VenueCountry, @EventDateText, @RaceDetails, @BackBookPercentage, @LayBookPercentage);";
             using var conn = OpenConnection();
+            EnsureRaceScreenTableExists(conn);
             conn.Execute(sql, screen);
         }
 
@@ -274,6 +278,7 @@ VALUES(@MarketId, @RaceDate, @OffTime, @Title, @VenueName, @VenueCountry, @Event
 INSERT INTO RunnerFlow(MarketId, SelectionId, ClothNumber, Draw, HorseName, JockeyName, BackPrice1, BackPrice2, BackPrice3, LayPrice1, LayPrice2, LayPrice3, AiOdds)
 VALUES(@MarketId, @SelectionId, @ClothNumber, @Draw, @HorseName, @JockeyName, @BackPrice1, @BackPrice2, @BackPrice3, @LayPrice1, @LayPrice2, @LayPrice3, @AiOdds);";
             using var conn = OpenConnection();
+            EnsureRunnerFlowTableExists(conn);
             conn.Execute(sql, flow);
         }
         private static string? NormalizeGoing(string? going)
@@ -290,6 +295,73 @@ VALUES(@MarketId, @SelectionId, @ClothNumber, @Draw, @HorseName, @JockeyName, @B
             }
             return g;
         }
+        private static void EnsureRaceScreenTableExists(IDbConnection conn)
+        {
+            if (_raceScreenTableEnsured) return;
+
+            lock (SchemaLock)
+            {
+                if (_raceScreenTableEnsured) return;
+
+                const string sql = @"
+IF OBJECT_ID(N'dbo.RaceScreen', 'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.RaceScreen
+    (
+        RaceScreenId     BIGINT        IDENTITY(1,1) PRIMARY KEY,
+        MarketId         NVARCHAR(32)  NULL,
+        RaceDate         DATE          NULL,
+        OffTime          TIME(0)       NULL,
+        Title            NVARCHAR(512) NULL,
+        VenueName        NVARCHAR(256) NULL,
+        VenueCountry     NVARCHAR(128) NULL,
+        EventDateText    NVARCHAR(128) NULL,
+        RaceDetails      NVARCHAR(MAX) NULL,
+        BackBookPercentage DECIMAL(9,2) NULL,
+        LayBookPercentage  DECIMAL(9,2) NULL
+    );
+END";
+
+                conn.Execute(sql);
+                _raceScreenTableEnsured = true;
+            }
+        }
+
+        private static void EnsureRunnerFlowTableExists(IDbConnection conn)
+        {
+            if (_runnerFlowTableEnsured) return;
+
+            lock (SchemaLock)
+            {
+                if (_runnerFlowTableEnsured) return;
+
+                const string sql = @"
+IF OBJECT_ID(N'dbo.RunnerFlow', 'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.RunnerFlow
+    (
+        RunnerFlowId BIGINT        IDENTITY(1,1) PRIMARY KEY,
+        MarketId     NVARCHAR(32)  NULL,
+        SelectionId  NVARCHAR(32)  NULL,
+        ClothNumber  TINYINT       NULL,
+        Draw         TINYINT       NULL,
+        HorseName    NVARCHAR(256) NULL,
+        JockeyName   NVARCHAR(256) NULL,
+        BackPrice1   DECIMAL(9,2)  NULL,
+        BackPrice2   DECIMAL(9,2)  NULL,
+        BackPrice3   DECIMAL(9,2)  NULL,
+        LayPrice1    DECIMAL(9,2)  NULL,
+        LayPrice2    DECIMAL(9,2)  NULL,
+        LayPrice3    DECIMAL(9,2)  NULL,
+        AiOdds       FLOAT         NULL
+    );
+END";
+
+                conn.Execute(sql);
+                _runnerFlowTableEnsured = true;
+            }
+        }
+
         private static string RemoveBracketedText(string input)
             => string.IsNullOrWhiteSpace(input) ? input : BracketTextRegex.Replace(input, string.Empty).Trim();
 
