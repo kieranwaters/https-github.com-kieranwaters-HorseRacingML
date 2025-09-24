@@ -247,6 +247,10 @@ namespace HorseRacingML.Scraping
                             result[`back${i}`] = findPrice('back', i);
                             result[`lay${i}`] = findPrice('lay', i);
                         }
+const oursButtonPrice = findOursPriceButton(type, index);
+                            if (oursButtonPrice) {
+                                return oursButtonPrice;
+                            }
 
                         const fallbackButtons = Array.from(row.querySelectorAll('bet-button'));
                         const fallbackPrices = fallbackButtons
@@ -1228,7 +1232,42 @@ namespace HorseRacingML.Scraping
 
         private static decimal? ParseDecimal(string text)
         {
-            return decimal.TryParse(text, NumberStyles.Any, CultureInfo.InvariantCulture, out var v) ? v : (decimal?)null;
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return null;
+            }
+
+            var normalized = text
+                .Replace('\u00a0', ' ')
+                .Replace(",", string.Empty)
+                .Trim();
+
+            if (string.IsNullOrEmpty(normalized))
+            {
+                return null;
+            }
+
+            var priceMatch = Regex.Match(normalized, @"(?<![\d.])(\d+(?:\.\d+)?)(?![\d.])");
+            if (priceMatch.Success
+                && decimal.TryParse(priceMatch.Groups[1].Value, NumberStyles.Number, CultureInfo.InvariantCulture, out var decimalOdds))
+            {
+                return decimalOdds;
+            }
+
+            if (normalized.Contains('/'))
+            {
+                var slashParts = normalized.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                if (slashParts.Length == 2
+                    && int.TryParse(slashParts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var numerator)
+                    && int.TryParse(slashParts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var denominator)
+                    && denominator != 0)
+                {
+                    var fractional = (decimal)numerator / denominator;
+                    return fractional + 1m;
+                }
+            }
+
+            return null;
         }
 
         private static byte? TryParseByte(string text)
