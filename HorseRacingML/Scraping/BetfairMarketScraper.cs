@@ -160,6 +160,48 @@ namespace HorseRacingML.Scraping
                             2: ['2', 'two'],
                             3: ['3', 'three']
                         };
+ const findOursPriceButton = (type, index) => {
+                            const cellIndex = type === 'back' ? 4 : 5;
+                            const cell = row.querySelector(`td:nth-of-type(${cellIndex})`);
+                            if (cell) {
+                                const oursButtons = Array.from(cell.querySelectorAll('ours-price-button'));
+                                if (oursButtons.length >= index) {
+                                    const button = oursButtons[index - 1];
+                                    const priceLabel = button.querySelector('button label:nth-of-type(2)');
+                                    if (priceLabel) {
+                                        const text = textOrEmpty(priceLabel);
+                                        if (text) {
+                                            return text;
+                                        }
+                                    }
+
+                                    const fallbackButtonText = textOrEmpty(button.querySelector('button'));
+                                    if (fallbackButtonText) {
+                                        return fallbackButtonText;
+                                    }
+                                }
+                            }
+
+                            const allButtons = Array.from(row.querySelectorAll('ours-price-button'));
+                            const startIndex = type === 'lay' ? 3 : 0;
+                            if (allButtons.length >= index + startIndex) {
+                                const button = allButtons[startIndex + index - 1];
+                                const priceLabel = button.querySelector('button label:nth-of-type(2)');
+                                if (priceLabel) {
+                                    const text = textOrEmpty(priceLabel);
+                                    if (text) {
+                                        return text;
+                                    }
+                                }
+
+                                const fallbackButtonText = textOrEmpty(button.querySelector('button'));
+                                if (fallbackButtonText) {
+                                    return fallbackButtonText;
+                                }
+                            }
+
+                            return '';
+                        };
 
                         const findPrice = (type, index) => {
                             const tokens = indexTokens[index] || [String(index)];
