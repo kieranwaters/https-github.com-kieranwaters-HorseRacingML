@@ -36,6 +36,69 @@ namespace HorseRacingML.ML
             public float Bias { get; set; }
             public float[] Weights { get; set; } = Array.Empty<float>();
         }
+        private bool TryCalculateWithTrainedModel(RunnerFlow flow, out double probability)
+        {
+            probability = 0d;
+            if (!_hasTrainedModel || _metadata == null || _mean == null || _std == null ||
+                _outputWeights == null || _outputBias == null)
+            {
+                return false;
+            }
+
+            Dictionary<string, object?> rawFeatures = BuildRawFeatureMap(flow);
+            var encoded = EncodeFeatures(rawFeatures);
+            if (encoded == null || encoded.Length != _featureCount)
+            {
+                return false;
+            }
+
+            var normalized = new double[_featureCount];
+            for (int i = 0; i < _featureCount; i++)
+            {
+                var value = encoded[i];
+                if (!double.IsFinite(value))
+                {
+                    value = 0d;
+                }
+
+                var std = _std[i];
+                if (!double.IsFinite(std) || Math.Abs(std) < 1e-8)
+                {
+                    normalized[i] = 0d;
+                    continue;
+                }
+
+                var mean = _mean[i];
+                if (!double.IsFinite(mean))
+                {
+                    mean = 0d;
+                }
+
+                normalized[i] = (value - mean) / std;
+            }
+
+            var activations = normalized;
+            for (int i = 0; i < _hiddenWeights.Count; i++)
+            {
+                activations = ApplyRelu(Multiply(activations, _hiddenWeights[i], _hiddenBiases[i]));
+            }
+
+            var output = Multiply(activations, _outputWeights, _outputBias);
+            if (output.Length == 0)
+            {
+                return false;
+            }
+
+            var logit = output[0];
+            var prob = 1.0 / (1.0 + Math.Exp(-logit));
+            if (!double.IsFinite(prob) || prob < 0)
+            {
+                return false;
+            }
+
+            probability = prob;
+            return true;
+        }
         public AIOddsCalculator(string path)
         {
             _legacyWeights = Array.Empty<double>();
@@ -195,69 +258,7 @@ namespace HorseRacingML.ML
 
             return true;
         }
-        private bool TryCalculateWithTrainedModel(RunnerFlow flow, out double probability)
-        {
-            probability = 0d;
-            if (!_hasTrainedModel || _metadata == null || _mean == null || _std == null ||
-                _outputWeights == null || _outputBias == null)
-            {
-                return false;
-            }
-
-            Dictionary<string, object?> rawFeatures = BuildRawFeatureMap(flow);
-            var encoded = EncodeFeatures(rawFeatures);
-            if (encoded == null || encoded.Length != _featureCount)
-            {
-                return false;
-            }
-
-            var normalized = new double[_featureCount];
-            for (int i = 0; i < _featureCount; i++)
-            {
-                var value = encoded[i];
-                if (!double.IsFinite(value))
-                {
-                    value = 0d;
-                }
-
-                var std = _std[i];
-                if (!double.IsFinite(std) || Math.Abs(std) < 1e-8)
-                {
-                    normalized[i] = 0d;
-                    continue;
-                }
-
-                var mean = _mean[i];
-                if (!double.IsFinite(mean))
-                {
-                    mean = 0d;
-                }
-
-                normalized[i] = (value - mean) / std;
-            }
-
-            var activations = normalized;
-            for (int i = 0; i < _hiddenWeights.Count; i++)
-            {
-                activations = ApplyRelu(Multiply(activations, _hiddenWeights[i], _hiddenBiases[i]));
-            }
-
-            var output = Multiply(activations, _outputWeights, _outputBias);
-            if (output.Length == 0)
-            {
-                return false;
-            }
-
-            var logit = output[0];
-            var prob = 1.0 / (1.0 + Math.Exp(-logit));
-            if (!double.IsFinite(prob) || prob < 0)
-            {
-                return false;
-            }
-
-            probability = prob;
-            return true;
-        }
+        
         private double[]? EncodeFeatures(Dictionary<string, object?> raw)
         {
             if (_metadata == null)

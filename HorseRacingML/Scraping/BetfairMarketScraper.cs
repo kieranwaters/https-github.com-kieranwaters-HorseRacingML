@@ -152,22 +152,77 @@ namespace HorseRacingML.Scraping
                     var js = (IJavaScriptExecutor)driver;
                     var elementData = (IDictionary<string, object>)js.ExecuteScript(@"
                         const row = arguments[0];
-                        const q = s => {
-                            const el = row.querySelector(s);
-                            return el ? el.textContent.trim() : '';
+            const textOrEmpty = el => el && el.textContent ? el.textContent.trim() : '';
+                        const queryText = selector => selector ? textOrEmpty(row.querySelector(selector)) : '';
+
+                        const indexTokens = {
+                            1: ['1', 'one'],
+                            2: ['2', 'two'],
+                            3: ['3', 'three']
                         };
-                        return {
-                            cloth: q('.runner-number'),
-                            draw: q('.draw'),
-                            horse: q('.name .runner-name'),
-                            jockey: q('.name .jockey-name'),
-                            back1: q('.bet-button.back-selection-button.back-1 .bet-button-price'),
-                            back2: q('.bet-button.back-selection-button.back-2 .bet-button-price'),
-                            back3: q('.bet-button.back-selection-button.back-3 .bet-button-price'),
-                            lay1: q('.bet-button.lay-selection-button.lay-1 .bet-button-price'),
-                            lay2: q('.bet-button.lay-selection-button.lay-2 .bet-button-price'),
-                            lay3: q('.bet-button.lay-selection-button.lay-3 .bet-button-price')
+
+                        const findPrice = (type, index) => {
+                            const tokens = indexTokens[index] || [String(index)];
+                            const selectors = [];
+                            for (const token of tokens) {
+                                selectors.push(`.bet-button.${type}-selection-button.${type}-${token} .bet-button-price`);
+                                selectors.push(`.bet-button.price-button.${type}-${token} .bet-button-price`);
+                                selectors.push(`.bet-button.${type}-cell.${type}-${token} .bet-button-price`);
+                                selectors.push(`.bet-buttons-${type}-cell.${type}-${token} .bet-button-price`);
+                                selectors.push(`.${type}-cell.${type}-${token} .bet-button-price`);
+                                selectors.push(`.${type}-${token} .bet-button-price`);
+                            }
+
+                            const dataTestId = row.querySelector(`[data-testid='runner-${type}-${index}-price']`);
+                            if (dataTestId) {
+                                const text = textOrEmpty(dataTestId);
+                                if (text) {
+                                    return text;
+                                }
+                            }
+
+                            for (const selector of selectors) {
+                                const el = row.querySelector(selector);
+                                if (el) {
+                                    const text = textOrEmpty(el);
+                                    if (text) {
+                                        return text;
+                                    }
+                                }
+                            }
+
+                            return '';
                         };
+
+                        const result = {
+                            cloth: queryText('.runner-number'),
+                            draw: queryText('.draw'),
+                            horse: queryText('.name .runner-name'),
+                            jockey: queryText('.name .jockey-name')
+                        };
+
+                        for (let i = 1; i <= 3; i++) {
+                            result[`back${i}`] = findPrice('back', i);
+                            result[`lay${i}`] = findPrice('lay', i);
+                        }
+
+                        const fallbackButtons = Array.from(row.querySelectorAll('bet-button'));
+                        const fallbackPrices = fallbackButtons
+                            .map(btn => textOrEmpty(btn.querySelector('.bet-button-price') || btn))
+                            .filter(text => text);
+
+                        for (let i = 1; i <= 3; i++) {
+                            const backKey = `back${i}`;
+                            const layKey = `lay${i}`;
+                            if (!result[backKey] && fallbackPrices.length >= i) {
+                                result[backKey] = fallbackPrices[i - 1];
+                            }
+                            if (!result[layKey] && fallbackPrices.length >= i + 3) {
+                                result[layKey] = fallbackPrices[i + 2];
+                            }
+                        }
+
+                        return result;
                     ", row);
 
                     string Get(string key) => elementData.TryGetValue(key, out var v) ? v?.ToString() ?? string.Empty : string.Empty;
