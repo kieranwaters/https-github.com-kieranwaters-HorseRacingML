@@ -123,12 +123,6 @@ namespace HorseRacingML.ML
             return new TrainingDataset(trainRaces, validationRaces, metadata.FeatureKeys, metadata.FeatureDimensions, metadata.StringMaps, normalization);
         }
 
-        public TrainingResult Train(MLParameter param, int foldIndex, int foldCount, bool persistWeights = true)
-        {
-            var dataset = LoadTrainingDataset();
-            return Train(param, foldIndex, foldCount, dataset, persistWeights);
-        }
-
         public TrainingResult Train(MLParameter param, TrainingDataset.PreparedDataset dataset, int foldIndex, int foldCount, bool persistWeights = true)
         {
             if (dataset is null)

@@ -379,6 +379,49 @@ WHERE RaceDate < @Start OR RaceDate > @End
 ORDER BY RaceDate, RaceId";
             return conn.Query<int>(sql, new { Start = startInclusive, End = endInclusive }).ToList();
         }
+        public IDictionary<int, RaceSummary> GetRaceSummaries(IEnumerable<int> raceIds)
+        {
+            if (raceIds is null)
+            {
+                throw new ArgumentNullException(nameof(raceIds));
+            }
+
+            var distinctIds = raceIds
+                .Where(id => id > 0)
+                .Distinct()
+                .ToList();
+
+            if (distinctIds.Count == 0)
+            {
+                return new Dictionary<int, RaceSummary>();
+            }
+
+            var result = new Dictionary<int, RaceSummary>();
+            const int chunkSize = 2000; // stay below SQL parameter limit
+            const string sql = @"SELECT r.RaceId, r.RaceDate, r.Title, c.Name AS CourseName
+FROM Race r
+LEFT JOIN Course c ON c.CourseId = r.CourseId
+WHERE r.RaceId IN @Ids";
+
+            using var conn = OpenConnection();
+
+            for (int offset = 0; offset < distinctIds.Count; offset += chunkSize)
+            {
+                var chunk = distinctIds.Skip(offset).Take(chunkSize).ToArray();
+                if (chunk.Length == 0)
+                {
+                    continue;
+                }
+
+                foreach (var summary in conn.Query<RaceSummary>(sql, new { Ids = chunk }))
+                {
+                    result[summary.RaceId] = summary;
+                }
+            }
+
+            return result;
+        }
+
 
         public MLParameter? GetBestMLParameter()
         {
