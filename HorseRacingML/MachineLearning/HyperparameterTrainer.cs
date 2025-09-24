@@ -533,6 +533,26 @@ namespace HorseRacingML.ML
                 return result;
             }
         }
+        public TrainingDataset LoadTrainingDataset(ISet<int> trainingRaceIds, ISet<int> validationRaceIds)
+        {
+            if (trainingRaceIds is null)
+                throw new ArgumentNullException(nameof(trainingRaceIds));
+            if (validationRaceIds is null)
+                throw new ArgumentNullException(nameof(validationRaceIds));
+
+            var trainingPrepared = PrepareDataset(trainingRaceIds, trainingRaceIds);
+            PreparedDataset validationPrepared;
+            if (validationRaceIds.Count > 0)
+            {
+                validationPrepared = PrepareDataset(validationRaceIds, trainingRaceIds);
+            }
+            else
+            {
+                validationPrepared = new PreparedDataset(new List<PreparedRace>());
+            }
+
+            return BuildTrainingDataset(trainingPrepared, validationPrepared);
+        }
         private static void HyperparameterStarted(MLParameter param, int trainExampleCount, int validationExampleCount, int featureCount)
         {
             Console.WriteLine(

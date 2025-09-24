@@ -1,0 +1,67 @@
+﻿@model HorseRacingML.Models.AITestResultViewModel
+@{
+    ViewData["Title"] = "Test AI";
+}
+
+<h1>Test AI</h1>
+<p>
+    Run an evaluation using the most recent saved AI parameters. The model is retrained on all
+    available races except for the last month, and accuracy is calculated using the most recent month
+    of completed races.
+</p>
+
+<form asp-action="TestAI" method="post">
+    @Html.AntiForgeryToken()
+    <button type="submit" class="btn btn-primary">Test AI</button>
+</form>
+
+@if (!string.IsNullOrWhiteSpace(Model.Message))
+{
+    <div class="alert alert-info mt-3" role="alert">@Model.Message</div>
+}
+
+@if (Model.HasResult)
+{
+    <div class="card mt-4">
+        <div class="card-body">
+            <h5 class="card-title">Results</h5>
+            <dl class="row">
+                <dt class="col-sm-4">Validation window</dt>
+                <dd class="col-sm-8">
+                    @Model.ValidationStart.ToString("yyyy-MM-dd") – @Model.ValidationEnd.ToString("yyyy-MM-dd")
+                </dd>
+                <dt class="col-sm-4">Validation races</dt>
+                <dd class="col-sm-8">@Model.ValidationRaceCount</dd>
+                <dt class="col-sm-4">Training races</dt>
+                <dd class="col-sm-8">@Model.TrainingRaceCount</dd>
+                <dt class="col-sm-4">Validation accuracy</dt>
+                <dd class="col-sm-8">@Model.ValidationAccuracy?.ToString("P2")</dd>
+                <dt class="col-sm-4">Training accuracy</dt>
+                <dd class="col-sm-8">@Model.TrainAccuracy?.ToString("P2")</dd>
+                <dt class="col-sm-4">Validation loss</dt>
+                <dd class="col-sm-8">@Model.ValidationLoss?.ToString("F4")</dd>
+                <dt class="col-sm-4">Training loss</dt>
+                <dd class="col-sm-8">@Model.TrainLoss?.ToString("F4")</dd>
+                <dt class="col-sm-4">Validation Brier score</dt>
+                <dd class="col-sm-8">@Model.ValidationBrier?.ToString("F4")</dd>
+                <dt class="col-sm-4">Training Brier score</dt>
+                <dd class="col-sm-8">@Model.TrainBrier?.ToString("F4")</dd>
+            </dl>
+
+            @if (Model.ParameterUsed != null)
+            {
+                <h6>Parameters Used</h6>
+                <ul>
+                    <li>Layers: @Model.ParameterUsed.Layers</li>
+                    <li>Units per Layer: @Model.ParameterUsed.Units</li>
+                    <li>Dropout: @Model.ParameterUsed.Dropout</li>
+                    <li>Learning Rate: @Model.ParameterUsed.LearningRate</li>
+                    <li>Epochs: @Model.ParameterUsed.Epochs</li>
+                    <li>Batch Size: @Model.ParameterUsed.BatchSize</li>
+                </ul>
+            }
+        </div>
+    </div>
+}
+
+<a asp-action="TrainAI" class="btn btn-link mt-3">Back to Train AI</a>

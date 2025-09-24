@@ -350,6 +350,61 @@ SELECT CAST(SCOPE_IDENTITY() as int);";
             using var conn = OpenConnection();
             return conn.QuerySingle<int>(sql, param);
         }
+        public List<int> GetRaceIdsBetweenDates(DateTime startInclusive, DateTime endInclusive)
+        {
+            if (endInclusive < startInclusive)
+            {
+                throw new ArgumentException("The end date must be on or after the start date.", nameof(endInclusive));
+            }
+
+            using var conn = OpenConnection();
+            const string sql = @"SELECT RaceId
+FROM Race
+WHERE RaceDate >= @Start AND RaceDate <= @End
+ORDER BY RaceDate, RaceId";
+            return conn.Query<int>(sql, new { Start = startInclusive, End = endInclusive }).ToList();
+        }
+
+        public List<int> GetRaceIdsOutsideRange(DateTime startInclusive, DateTime endInclusive)
+        {
+            if (endInclusive < startInclusive)
+            {
+                throw new ArgumentException("The end date must be on or after the start date.", nameof(endInclusive));
+            }
+
+            using var conn = OpenConnection();
+            const string sql = @"SELECT RaceId
+FROM Race
+WHERE RaceDate < @Start OR RaceDate > @End
+ORDER BY RaceDate, RaceId";
+            return conn.Query<int>(sql, new { Start = startInclusive, End = endInclusive }).ToList();
+        }
+
+        public MLParameter? GetBestMLParameter()
+        {
+            const string sql = @"SELECT TOP (1)
+    Id,
+    RunDate,
+    Units,
+    Dropout,
+    Layers,
+    LearningRate,
+    TrainAccuracy,
+    ValidationAccuracy,
+    ValidationLoss,
+    Epochs,
+    BatchSize,
+    Folds,
+    TrainLoss,
+    TrainBrier,
+    Fold,
+    ValidationBrier
+FROM MLParameters
+ORDER BY ISNULL(ValidationAccuracy, 0) DESC, RunDate DESC";
+
+            using var conn = OpenConnection();
+            return conn.QueryFirstOrDefault<MLParameter>(sql);
+        }
 
         public int InsertRace(Race race)
         {
