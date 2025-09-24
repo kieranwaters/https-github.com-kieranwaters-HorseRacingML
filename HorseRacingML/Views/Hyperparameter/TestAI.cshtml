@@ -12,6 +12,24 @@
 
 <form asp-action="TestAI" method="post">
     @Html.AntiForgeryToken()
+    <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+    <div class="row g-3 mb-3">
+        <div class="col-md-4">
+            <label asp-for="SelectedValidationMonths" class="form-label">Validation window</label>
+            <select asp-for="SelectedValidationMonths" class="form-select">
+                @for (int months = 1; months <= 24; months++)
+                {
+                    <option value="@months">@months @(months == 1 ? "month" : "months")</option>
+                }
+            </select>
+            <span asp-validation-for="SelectedValidationMonths" class="text-danger"></span>
+        </div>
+        <div class="col-md-4">
+            <label asp-for="StartingBankroll" class="form-label">Starting bankroll</label>
+            <input asp-for="StartingBankroll" class="form-control" type="number" min="0" step="0.01" />
+            <span asp-validation-for="StartingBankroll" class="text-danger"></span>
+        </div>
+    </div>
     <button type="submit" class="btn btn-primary">Test AI</button>
 </form>
 
@@ -37,8 +55,7 @@
                 <dt class="col-sm-4">Validation accuracy</dt>
                 <dd class="col-sm-8">@Model.ValidationAccuracy?.ToString("P2")</dd>
                 <dt class="col-sm-4">Training accuracy</dt>
-                <dd class="col-sm-8">@Model.TrainAccuracy?.ToString("P2")</dd>
-                <dt class="col-sm-4">Validation loss</dt>
+@@ -42,26 +60,98 @@
                 <dd class="col-sm-8">@Model.ValidationLoss?.ToString("F4")</dd>
                 <dt class="col-sm-4">Training loss</dt>
                 <dd class="col-sm-8">@Model.TrainLoss?.ToString("F4")</dd>
@@ -64,4 +81,76 @@
     </div>
 }
 
+@if (Model.Simulation != null)
+{
+    <div class="card mt-4">
+        <div class="card-body">
+            <h5 class="card-title">Validation simulation</h5>
+            <dl class="row">
+                <dt class="col-sm-4">Starting bankroll</dt>
+                <dd class="col-sm-8">@Model.Simulation.StartingBankroll.ToString("C")</dd>
+                <dt class="col-sm-4">Ending bankroll</dt>
+                <dd class="col-sm-8">@Model.Simulation.EndingBankroll.ToString("C")</dd>
+                <dt class="col-sm-4">Profit</dt>
+                <dd class="col-sm-8">@Model.Simulation.Profit.ToString("C")</dd>
+                <dt class="col-sm-4">Total staked</dt>
+                <dd class="col-sm-8">@Model.Simulation.TotalStaked.ToString("C")</dd>
+                <dt class="col-sm-4">ROI</dt>
+                <dd class="col-sm-8">@Model.Simulation.Roi.ToString("P2")</dd>
+                <dt class="col-sm-4">Bets placed</dt>
+                <dd class="col-sm-8">@Model.Simulation.BetCount (Wins: @Model.Simulation.WinCount, Losses: @Model.Simulation.LossCount)</dd>
+            </dl>
+
+            @if (Model.Simulation.Bets != null && Model.Simulation.Bets.Count > 0)
+            {
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th scope="col">Race</th>
+                                <th scope="col">Date</th>
+                                <th scope="col">Horse</th>
+                                <th scope="col">AI prob</th>
+                                <th scope="col">Market prob</th>
+                                <th scope="col">Differential</th>
+                                <th scope="col">Odds</th>
+                                <th scope="col">Stake</th>
+                                <th scope="col">Profit</th>
+                                <th scope="col">Bankroll after</th>
+                                <th scope="col">Result</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var bet in Model.Simulation.Bets)
+                            {
+                                <tr>
+                                    <td>@(string.IsNullOrWhiteSpace(bet.RaceTitle) ? $"Race {bet.RaceId}" : bet.RaceTitle)</td>
+                                    <td>@bet.RaceDate?.ToString("yyyy-MM-dd")</td>
+                                    <td>@(string.IsNullOrWhiteSpace(bet.HorseName) ? "—" : bet.HorseName)</td>
+                                    <td>@bet.AiProbability.ToString("P2")</td>
+                                    <td>@bet.MarketProbability.ToString("P2")</td>
+                                    <td>@bet.Differential.ToString("P2")</td>
+                                    <td>@bet.DecimalOdds.ToString("0.00")</td>
+                                    <td>@bet.Stake.ToString("C")</td>
+                                    <td class="@(bet.Profit >= 0 ? "text-success" : "text-danger")">@bet.Profit.ToString("C")</td>
+                                    <td>@bet.BankrollAfter.ToString("C")</td>
+                                    <td>@(bet.Won ? "Win" : "Loss")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            else
+            {
+                <p class="text-muted mb-0">No qualifying bets were identified during the validation window.</p>
+            }
+        </div>
+    </div>
+}
+
 <a asp-action="TrainAI" class="btn btn-link mt-3">Back to Train AI</a>
+
+@section Scripts {
+    @{await Html.RenderPartialAsync("_ValidationScriptsPartial");}
+}

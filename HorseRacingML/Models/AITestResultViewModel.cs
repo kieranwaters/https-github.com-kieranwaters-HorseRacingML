@@ -1,4 +1,5 @@
 ﻿using System;
+using System.ComponentModel.DataAnnotations;
 
 namespace HorseRacingML.Models
 {
@@ -16,6 +17,10 @@ namespace HorseRacingML.Models
         public DateTime ValidationEnd { get; set; }
         public string? Message { get; set; }
         public MLParameter? ParameterUsed { get; set; }
+        [Range(1, 24, ErrorMessage = "Please choose between 1 and 24 months.")]
+        public int SelectedValidationMonths { get; set; } = 1;
+        public decimal StartingBankroll { get; set; } = 100m;
+        public ValidationSimulationResult? Simulation { get; set; }
         public bool HasResult => ValidationAccuracy.HasValue;
     }
 }

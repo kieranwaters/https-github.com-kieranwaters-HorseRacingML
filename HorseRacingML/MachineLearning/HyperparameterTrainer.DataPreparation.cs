@@ -300,16 +300,22 @@ namespace HorseRacingML.ML
 
         public class RunnerExample
         {
-            public RunnerExample(int raceId, float[] features, float label)
+            public RunnerExample(int raceId, float[] features, float label, int? horseId, string? horseName, decimal? startingPriceDecimal)
             {
                 RaceId = raceId;
                 Features = features;
                 Label = label;
+                HorseId = horseId;
+                HorseName = horseName;
+                StartingPriceDecimal = startingPriceDecimal;
             }
 
             public int RaceId { get; }
             public float[] Features { get; }
             public float Label { get; }
+            public int? HorseId { get; }
+            public string? HorseName { get; }
+            public decimal? StartingPriceDecimal { get; }
         }
 
         private sealed class DatasetFeatureMetadata
@@ -608,13 +614,71 @@ namespace HorseRacingML.ML
                     float label = row.TryGetValue("FinishPos", out var f) && PreparedDataset.TryConvertToInt32(f, out var finishPos) && finishPos == 1
                         ? 1f
                     : 0f;
-                    runners.Add(new RunnerExample(preparedRace.RaceId, features, label));
+
+                    int? horseId = null;
+                    if (row.TryGetValue("HorseId", out var horseIdValue) && horseIdValue is not null && PreparedDataset.TryConvertToInt32(horseIdValue, out var parsedHorseId))
+                    {
+                        horseId = parsedHorseId;
+                    }
+
+                    string? horseName = null;
+                    if (row.TryGetValue("HorseName", out var horseNameValue) && horseNameValue is not null)
+                    {
+                        horseName = horseNameValue.ToString();
+                    }
+
+                    var spDecimal = GetNullableDecimal(row, "SP_Decimal");
+
+                    runners.Add(new RunnerExample(preparedRace.RaceId, features, label, horseId, horseName, spDecimal));
                 }
 
                 result.Add(new RaceExample(preparedRace.RaceId, runners));
             }
 
             return result;
+        }
+        private static decimal? GetNullableDecimal(Dictionary<string, object?> row, string key)
+        {
+            if (!row.TryGetValue(key, out var value) || value is null)
+            {
+                return null;
+            }
+
+            return ConvertToDecimal(value);
+        }
+
+        private static decimal? ConvertToDecimal(object value)
+        {
+            try
+            {
+                return value switch
+                {
+                    decimal dec => dec,
+                    double dbl when double.IsFinite(dbl) => (decimal)dbl,
+                    float fl when float.IsFinite(fl) => (decimal)fl,
+                    int i => i,
+                    long l => l,
+                    short s => s,
+                    byte b => b,
+                    uint ui => (decimal)ui,
+                    ulong ul when ul <= (ulong)decimal.MaxValue => (decimal)ul,
+                    SqlDecimal sqlDec when !sqlDec.IsNull => sqlDec.Value,
+                    SqlMoney sqlMoney when !sqlMoney.IsNull => sqlMoney.Value,
+                    SqlDouble sqlDouble when !sqlDouble.IsNull && double.IsFinite(sqlDouble.Value) => (decimal)sqlDouble.Value,
+                    SqlSingle sqlSingle when !sqlSingle.IsNull && float.IsFinite(sqlSingle.Value) => (decimal)sqlSingle.Value,
+                    SqlInt32 sqlInt when !sqlInt.IsNull => sqlInt.Value,
+                    SqlInt64 sqlLong when !sqlLong.IsNull => sqlLong.Value,
+                    SqlInt16 sqlShort when !sqlShort.IsNull => sqlShort.Value,
+                    SqlByte sqlByte when !sqlByte.IsNull => sqlByte.Value,
+                    string s when decimal.TryParse(s, NumberStyles.Any, CultureInfo.InvariantCulture, out var parsed) => parsed,
+                    string s2 when decimal.TryParse(s2, NumberStyles.Any, CultureInfo.CurrentCulture, out var parsedLocal) => parsedLocal,
+                    _ => Convert.ToDecimal(value, CultureInfo.InvariantCulture)
+                };
+            }
+            catch
+            {
+                return null;
+            }
         }
 
     }

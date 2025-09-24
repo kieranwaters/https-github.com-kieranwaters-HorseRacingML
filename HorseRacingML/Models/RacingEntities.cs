@@ -112,5 +112,12 @@ namespace HorseRacingML.Models
         public double? AiOdds { get; set; }
         public Dictionary<string, object?>? FeatureValues { get; set; }
     }
+    public class RaceSummary
+    {
+        public int RaceId { get; set; }
+        public DateTime? RaceDate { get; set; }
+        public string? Title { get; set; }
+        public string? CourseName { get; set; }
+    }
 
 }

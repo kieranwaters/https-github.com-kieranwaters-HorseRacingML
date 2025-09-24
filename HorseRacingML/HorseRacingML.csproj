@@ -45,6 +45,7 @@
 		<PackageReference Include="Microsoft.ML.LightGbm" Version="2.0.0" />
 	</ItemGroup>
 	<ItemGroup>
+		<Folder Include="NewFolder\" />
 		<Folder Include="Views\NewFolder1\" />
 	</ItemGroup>
 

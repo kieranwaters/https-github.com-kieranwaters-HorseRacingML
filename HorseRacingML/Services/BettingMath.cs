@@ -1,0 +1,97 @@
+﻿using System;
+
+namespace HorseRacingML.Services
+{
+    /// <summary>
+    /// Provides helper methods for calculating bet sizing and odds
+    /// related metrics that are shared between automated betting and
+    /// offline simulations.
+    /// </summary>
+    public static class BettingMath
+    {
+        public static decimal CalculateAiDecimalOdds(double aiProbability)
+        {
+            if (aiProbability <= 0)
+            {
+                return 0m;
+            }
+
+            var inverted = 1.0 / aiProbability;
+
+            if (!double.IsFinite(inverted) || inverted <= 0)
+            {
+                return 0m;
+            }
+
+            if (inverted > (double)decimal.MaxValue)
+            {
+                return decimal.MaxValue;
+            }
+
+            return (decimal)inverted;
+        }
+
+        public static decimal CalculateKellyFraction(double probability, double decimalOdds, decimal? maxFraction = null)
+        {
+            if (probability <= 0 || probability >= 1 || decimalOdds <= 1)
+            {
+                return 0m;
+            }
+
+            var b = decimalOdds - 1.0;
+            if (Math.Abs(b) < double.Epsilon)
+            {
+                return 0m;
+            }
+
+            var q = 1.0 - probability;
+            var fraction = (b * probability - q) / b;
+
+            if (!double.IsFinite(fraction))
+            {
+                return 0m;
+            }
+
+            var result = (decimal)fraction;
+            if (result < 0m)
+            {
+                result = 0m;
+            }
+
+            if (maxFraction.HasValue && result > maxFraction.Value)
+            {
+                result = maxFraction.Value;
+            }
+
+            if (result > 1m)
+            {
+                result = 1m;
+            }
+
+            return result;
+        }
+
+        public static decimal CalculateSequentialStake(decimal bankroll, decimal kellyFraction)
+        {
+            if (bankroll <= 0m || kellyFraction <= 0m)
+            {
+                return 0m;
+            }
+
+            var stake = bankroll * kellyFraction;
+            if (stake <= 0m)
+            {
+                return 0m;
+            }
+
+            if (stake > bankroll)
+            {
+                stake = bankroll;
+            }
+
+            stake = decimal.Round(stake, 2, MidpointRounding.ToZero);
+
+            return stake;
+        }
+    }
+}

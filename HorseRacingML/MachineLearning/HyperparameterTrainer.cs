@@ -15,6 +15,7 @@ using PreparedDataset = HorseRacingML.ML.HyperparameterTrainer.TrainingDataset.P
 using PreparedRace = HorseRacingML.ML.HyperparameterTrainer.TrainingDataset.PreparedDataset.PreparedRace;
 using static Tensorflow.Binding;
 using TensorShape = Tensorflow.Shape;
+using System.Collections.ObjectModel;
 
 namespace HorseRacingML.ML
 {
@@ -40,10 +41,36 @@ namespace HorseRacingML.ML
 
 
 
+        public class TrainingResult
+        {
+            public double TrainAccuracy { get; init; }
+            public double TrainLoss { get; init; }
+            public double TrainBrier { get; init; }
+            public double ValidationAccuracy { get; init; }
+            public double ValidationLoss { get; init; }
+            public double ValidationBrier { get; init; }
+            public IReadOnlyList<float> TrainingPredictions { get; init; } = Array.Empty<float>();
+            public IReadOnlyList<float> TrainingLabels { get; init; } = Array.Empty<float>();
+            public IReadOnlyList<int> TrainingRaceIds { get; init; } = Array.Empty<int>();
+            public IReadOnlyList<float> ValidationPredictions { get; init; } = Array.Empty<float>();
+            public IReadOnlyList<float> ValidationLabels { get; init; } = Array.Empty<float>();
+            public IReadOnlyList<int> ValidationRaceIds { get; init; } = Array.Empty<int>();
+            public IReadOnlyList<RunnerExample> ValidationExamples { get; init; } = Array.Empty<RunnerExample>();
+        }
 
 
+        public TrainingDataset LoadTrainingDataset(bool includeIdentifiers = false)
+        {
+            var prepared = PrepareDataset(includeIdentifiers: includeIdentifiers);
+            var emptyValidation = new PreparedDataset(new List<PreparedRace>());
+            return BuildTrainingDataset(prepared, emptyValidation);
+        }
 
-
+        public TrainingResult Train(MLParameter param, int foldIndex, int foldCount, bool persistWeights = true)
+        {
+            var dataset = LoadTrainingDataset();
+            return Train(param, foldIndex, foldCount, dataset, persistWeights);
+        }
         private static double ComputeWinnerAccuracy(IReadOnlyList<int> raceIds,
             IReadOnlyList<float> preds, IReadOnlyList<float> labels)
         {
@@ -95,20 +122,14 @@ namespace HorseRacingML.ML
 
             return new TrainingDataset(trainRaces, validationRaces, metadata.FeatureKeys, metadata.FeatureDimensions, metadata.StringMaps, normalization);
         }
-        public TrainingDataset LoadTrainingDataset()
-        {
-            var prepared = PrepareDataset();
-            var emptyValidation = new PreparedDataset(new List<PreparedRace>());
-            return BuildTrainingDataset(prepared, emptyValidation);
-        }
 
-        public (double TrainAccuracy, double TrainLoss, double ValidationAccuracy, double ValidationLoss, double TrainBrier, double ValidationBrier) Train(MLParameter param, int foldIndex, int foldCount, bool persistWeights = true)
+        public TrainingResult Train(MLParameter param, int foldIndex, int foldCount, bool persistWeights = true)
         {
             var dataset = LoadTrainingDataset();
             return Train(param, foldIndex, foldCount, dataset, persistWeights);
         }
 
-        public (double TrainAccuracy, double TrainLoss, double ValidationAccuracy, double ValidationLoss, double TrainBrier, double ValidationBrier) Train(MLParameter param, TrainingDataset.PreparedDataset dataset, int foldIndex, int foldCount, bool persistWeights = true)
+        public TrainingResult Train(MLParameter param, TrainingDataset.PreparedDataset dataset, int foldIndex, int foldCount, bool persistWeights = true)
         {
             if (dataset is null)
                 throw new ArgumentNullException(nameof(dataset));
@@ -156,7 +177,7 @@ namespace HorseRacingML.ML
             var trainingDataset = BuildTrainingDataset(trainingPrepared, validationPrepared);
             return Train(param, foldIndex, foldCount, trainingDataset, persistWeights);
         }
-        public (double TrainAccuracy, double TrainLoss, double ValidationAccuracy, double ValidationLoss, double TrainBrier, double ValidationBrier) Train(MLParameter param, int foldIndex, int foldCount, TrainingDataset dataset, bool persistWeights = true)
+        public TrainingResult Train(MLParameter param, int foldIndex, int foldCount, TrainingDataset dataset, bool persistWeights = true)
         {
             if (dataset is null)
                 throw new ArgumentNullException(nameof(dataset));
@@ -513,7 +534,22 @@ namespace HorseRacingML.ML
                 }
             }
             HyperparameterCompleted(param, trainAcc, valAcc, trainLoss, valLoss, trainBrier, valBrier);
-            return (trainAcc, trainLoss, valAcc, valLoss, trainBrier, valBrier);
+            return new TrainingResult
+            {
+                TrainAccuracy = trainAcc,
+                TrainLoss = trainLoss,
+                TrainBrier = trainBrier,
+                ValidationAccuracy = valAcc,
+                ValidationLoss = valLoss,
+                ValidationBrier = valBrier,
+                TrainingPredictions = Array.AsReadOnly(trainPreds),
+                TrainingLabels = Array.AsReadOnly(trainLabels),
+                TrainingRaceIds = Array.AsReadOnly(trainRaceIds),
+                ValidationPredictions = Array.AsReadOnly(valPreds),
+                ValidationLabels = Array.AsReadOnly(valLabels),
+                ValidationRaceIds = Array.AsReadOnly(valRaceIds),
+                ValidationExamples = new ReadOnlyCollection<RunnerExample>(valExamples)
+            };
             static float[][] ToJagged2D(NDArray array)
             {
                 if (array.ndim != 2)
@@ -533,18 +569,18 @@ namespace HorseRacingML.ML
                 return result;
             }
         }
-        public TrainingDataset LoadTrainingDataset(ISet<int> trainingRaceIds, ISet<int> validationRaceIds)
+        public TrainingDataset LoadTrainingDataset(ISet<int> trainingRaceIds, ISet<int> validationRaceIds, bool includeIdentifiers = false)
         {
             if (trainingRaceIds is null)
                 throw new ArgumentNullException(nameof(trainingRaceIds));
             if (validationRaceIds is null)
                 throw new ArgumentNullException(nameof(validationRaceIds));
 
-            var trainingPrepared = PrepareDataset(trainingRaceIds, trainingRaceIds);
+            var trainingPrepared = PrepareDataset(trainingRaceIds, trainingRaceIds, includeIdentifiers);
             PreparedDataset validationPrepared;
             if (validationRaceIds.Count > 0)
             {
-                validationPrepared = PrepareDataset(validationRaceIds, trainingRaceIds);
+                validationPrepared = PrepareDataset(validationRaceIds, trainingRaceIds, includeIdentifiers: includeIdentifiers);
             }
             else
             {
