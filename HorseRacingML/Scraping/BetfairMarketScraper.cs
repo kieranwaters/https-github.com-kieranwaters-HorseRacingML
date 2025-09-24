@@ -150,9 +150,9 @@ namespace HorseRacingML.Scraping
                         }
                     }
                     var js = (IJavaScriptExecutor)driver;
-                    var elementData = (IDictionary<string, object>)js.ExecuteScript(@"
+                    const string runnerExtractionScript = @"
                         const row = arguments[0];
-            const textOrEmpty = el => el && el.textContent ? el.textContent.trim() : '';
+                        const textOrEmpty = el => el && el.textContent ? el.textContent.trim() : '';
                         const queryText = selector => selector ? textOrEmpty(row.querySelector(selector)) : '';
 
                         const indexTokens = {
@@ -160,7 +160,8 @@ namespace HorseRacingML.Scraping
                             2: ['2', 'two'],
                             3: ['3', 'three']
                         };
- const findOursPriceButton = (type, index) => {
+
+                        const findOursPriceButton = (type, index) => {
                             const cellIndex = type === 'back' ? 4 : 5;
                             const cell = row.querySelector(`td:nth-of-type(${cellIndex})`);
                             if (cell) {
@@ -214,6 +215,7 @@ namespace HorseRacingML.Scraping
                                 selectors.push(`.${type}-cell.${type}-${token} .bet-button-price`);
                                 selectors.push(`.${type}-${token} .bet-button-price`);
                             }
+
                             const oursButtonPrice = findOursPriceButton(type, index);
                             if (oursButtonPrice) {
                                 return oursButtonPrice;
@@ -251,10 +253,6 @@ namespace HorseRacingML.Scraping
                             result[`back${i}`] = findPrice('back', i);
                             result[`lay${i}`] = findPrice('lay', i);
                         }
-const oursButtonPrice = findOursPriceButton(type, index);
-                            if (oursButtonPrice) {
-                                return oursButtonPrice;
-                            }
 
                         const fallbackButtons = Array.from(row.querySelectorAll('bet-button'));
                         const fallbackPrices = fallbackButtons
@@ -273,7 +271,9 @@ const oursButtonPrice = findOursPriceButton(type, index);
                         }
 
                         return result;
-                    ", row);
+                    ";
+
+                    var elementData = (IDictionary<string, object>)js.ExecuteScript(runnerExtractionScript, row);
 
                     string Get(string key) => elementData.TryGetValue(key, out var v) ? v?.ToString() ?? string.Empty : string.Empty;
                     var flow = new RunnerFlow
