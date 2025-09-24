@@ -46,22 +46,45 @@ namespace HorseRacingML.Controllers
                 var parameters = batch.Parameters ?? new List<MLParameter>();
                 Console.WriteLine($"[Hyperparameter] Starting custom run for {parameters.Count} parameter set(s).");
 
-                    var dataset = _trainer.PrepareDataset();
-                    Console.WriteLine($"[Hyperparameter] Dataset prepared with {dataset.Races.Count} races and {dataset.RowCount} runner rows.");
+                var dataset = _trainer.PrepareDataset();
+                Console.WriteLine($"[Hyperparameter] Dataset prepared with {dataset.Races.Count} races and {dataset.RowCount} runner rows.");
 
-                    int modelIndex = 0;
-                    foreach (var model in parameters)
+                int modelIndex = 0;
+                foreach (var model in parameters)
+                {
+                    modelIndex++;
+                    Console.WriteLine($"[Hyperparameter] Starting model {modelIndex}/{parameters.Count} (layers: {model.Layers}, units: {model.Units}, dropout: {model.Dropout}, lr: {model.LearningRate}).");
+
+                    if (model.Folds <= 0)
                     {
-                        modelIndex++;
-                        Console.WriteLine($"[Hyperparameter] Starting model {modelIndex}/{parameters.Count} (layers: {model.Layers}, units: {model.Units}, dropout: {model.Dropout}, lr: {model.LearningRate}).");
+                        Console.WriteLine($"[Hyperparameter] Skipped storing results for model {modelIndex} due to invalid fold count {model.Folds}.");
+                        continue;
+                    }
 
-                        model.RunDate = DateTime.UtcNow;
-                        for (int i = 0; i < model.Folds; i++)
+                    model.RunDate = DateTime.UtcNow;
+
+                    double totalTrainAccuracy = 0;
+                    double totalTrainLoss = 0;
+                    double totalTrainBrier = 0;
+                    double totalValidationAccuracy = 0;
+                    double totalValidationLoss = 0;
+                    double totalValidationBrier = 0;
+
+                    for (int i = 0; i < model.Folds; i++)
+                    {
+                        Console.WriteLine($"[Hyperparameter]  Fold {i + 1}/{model.Folds} - training in progress...");
+                        var result = _trainer.Train(model, dataset, i, model.Folds, persistWeights: false);
+                        Console.WriteLine($"[Hyperparameter]  Fold {i + 1}/{model.Folds} complete. Train acc: {result.TrainAccuracy:F4}, val acc: {result.ValidationAccuracy:F4}.");
+
+                        totalTrainAccuracy += result.TrainAccuracy;
+                        totalTrainLoss += result.TrainLoss;
+                        totalTrainBrier += result.TrainBrier;
+                        totalValidationAccuracy += result.ValidationAccuracy;
+                        totalValidationLoss += result.ValidationLoss;
+                        totalValidationBrier += result.ValidationBrier;
+
+                        if (model.Folds > 1)
                         {
-                            Console.WriteLine($"[Hyperparameter]  Fold {i + 1}/{model.Folds} - training in progress...");
-                            var result = _trainer.Train(model, dataset, i, model.Folds, persistWeights: false);
-                            Console.WriteLine($"[Hyperparameter]  Fold {i + 1}/{model.Folds} complete. Train acc: {result.TrainAccuracy:F4}, val acc: {result.ValidationAccuracy:F4}.");
-
                             var foldModel = new MLParameter
                             {
                                 RunDate = model.RunDate,
@@ -71,21 +94,40 @@ namespace HorseRacingML.Controllers
                                 LearningRate = model.LearningRate,
                                 Epochs = model.Epochs,
                                 BatchSize = model.BatchSize,
+                                Folds = model.Folds,
+                                Fold = i + 1,
                                 TrainAccuracy = result.TrainAccuracy,
                                 TrainLoss = result.TrainLoss,
                                 TrainBrier = result.TrainBrier,
-                                Fold = null,
-                                ValidationAccuracy = totalValidationAccuracy / model.Folds,
-                                ValidationLoss = totalValidationLoss / model.Folds,
-                                ValidationBrier = totalValidationBrier / model.Folds
+                                ValidationAccuracy = result.ValidationAccuracy,
+                                ValidationLoss = result.ValidationLoss,
+                                ValidationBrier = result.ValidationBrier
                             };
 
-                        _repository.InsertMLParameter(averagedModel);
+                            _repository.InsertMLParameter(foldModel);
+                        }
                     }
-                    else
+
+                    var averagedModel = new MLParameter
                     {
-                        Console.WriteLine($"[Hyperparameter] Skipped storing results for model {modelIndex} due to invalid fold count {model.Folds}.");
-                    }
+                        RunDate = model.RunDate,
+                        Units = model.Units,
+                        Dropout = model.Dropout,
+                        Layers = model.Layers,
+                        LearningRate = model.LearningRate,
+                        Epochs = model.Epochs,
+                        BatchSize = model.BatchSize,
+                        Folds = model.Folds,
+                        Fold = null,
+                        TrainAccuracy = totalTrainAccuracy / model.Folds,
+                        TrainLoss = totalTrainLoss / model.Folds,
+                        TrainBrier = totalTrainBrier / model.Folds,
+                        ValidationAccuracy = totalValidationAccuracy / model.Folds,
+                        ValidationLoss = totalValidationLoss / model.Folds,
+                        ValidationBrier = totalValidationBrier / model.Folds
+                    };
+
+                    _repository.InsertMLParameter(averagedModel);
 
                     Console.WriteLine($"[Hyperparameter] Completed model {modelIndex}/{parameters.Count}.");
                 }
