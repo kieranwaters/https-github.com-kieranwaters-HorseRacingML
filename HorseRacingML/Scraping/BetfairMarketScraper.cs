@@ -214,6 +214,10 @@ namespace HorseRacingML.Scraping
                                 selectors.push(`.${type}-cell.${type}-${token} .bet-button-price`);
                                 selectors.push(`.${type}-${token} .bet-button-price`);
                             }
+                            const oursButtonPrice = findOursPriceButton(type, index);
+                            if (oursButtonPrice) {
+                                return oursButtonPrice;
+                            }
 
                             const dataTestId = row.querySelector(`[data-testid='runner-${type}-${index}-price']`);
                             if (dataTestId) {
