@@ -661,7 +661,7 @@ namespace HorseRacingML.ML
                     short s => s,
                     byte b => b,
                     uint ui => (decimal)ui,
-                    ulong ul when ul <= (ulong)decimal.MaxValue => (decimal)ul,
+                    ulong ul => Convert.ToDecimal(ul),
                     SqlDecimal sqlDec when !sqlDec.IsNull => sqlDec.Value,
                     SqlMoney sqlMoney when !sqlMoney.IsNull => sqlMoney.Value,
                     SqlDouble sqlDouble when !sqlDouble.IsNull && double.IsFinite(sqlDouble.Value) => (decimal)sqlDouble.Value,
