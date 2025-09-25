@@ -655,10 +655,12 @@ namespace HorseRacingML.Scraping
                     }
                     if (!flow.HasPreparedFeatures)
                     {
-                        var identifier = !string.IsNullOrWhiteSpace(flow.HorseName)
+                        var missingFeatureIdentifier = !string.IsNullOrWhiteSpace(flow.HorseName)
                             ? flow.HorseName!
                             : (flow.SelectionId ?? "unknown");
-                        Console.WriteLine($"\t\tNo prepared feature row matched for {identifier}; neural model will fall back to legacy odds.");
+                        Console.WriteLine(
+                            $"\t\tNo prepared feature row matched for {missingFeatureIdentifier}; " +
+                            "neural model will fall back to legacy odds.");
                     }
                     try
                     {
