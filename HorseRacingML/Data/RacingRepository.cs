@@ -26,6 +26,7 @@ namespace HorseRacingML.Data
         private static readonly object SchemaLock = new();
         private static bool _raceScreenTableEnsured;
         private static bool _runnerFlowTableEnsured;
+        private static bool _upcomingRaceTableEnsured;
         private IDbConnection OpenConnection()
         {
             const int maxAttempts = 3;
@@ -49,6 +50,214 @@ namespace HorseRacingML.Data
             finalConn.Open();
             return finalConn;
         }
+        public int UpsertUpcomingRace(UpcomingRace race)
+        {
+            if (race is null)
+            {
+                throw new ArgumentNullException(nameof(race));
+            }
+
+            StripBracketedText(race);
+            race.Going = NormalizeGoing(race.Going);
+
+            const string sql = @"
+SET NOCOUNT ON;
+
+DECLARE @ExistingId INT;
+
+SELECT TOP (1) @ExistingId = UpcomingRaceId
+FROM UpcomingRaces
+WHERE MarketId = @MarketId;
+
+IF @ExistingId IS NULL AND @RaceDate IS NOT NULL
+BEGIN
+    SELECT TOP (1) @ExistingId = UpcomingRaceId
+    FROM UpcomingRaces
+    WHERE RaceDate = @RaceDate
+      AND ISNULL(LTRIM(RTRIM(VenueName)), '') = ISNULL(LTRIM(RTRIM(@VenueName)), '')
+      AND ISNULL(ScheduledOff, '00:00:00') = ISNULL(@ScheduledOff, '00:00:00');
+END;
+
+IF @ExistingId IS NULL
+BEGIN
+    INSERT INTO UpcomingRaces
+    (
+        MarketId,
+        RaceDate,
+        ScheduledOff,
+        VenueName,
+        VenueCountry,
+        Title,
+        RaceDetails,
+        RaceType,
+        Class,
+        AgeRestriction,
+        Surface,
+        Going,
+        DistanceYards,
+        DistanceText,
+        RunnerCount,
+        BackBookPercentage,
+        LayBookPercentage
+    )
+    VALUES
+    (
+        @MarketId,
+        @RaceDate,
+        @ScheduledOff,
+        @VenueName,
+        @VenueCountry,
+        @Title,
+        @RaceDetails,
+        @RaceType,
+        @Class,
+        @AgeRestriction,
+        @Surface,
+        @Going,
+        @DistanceYards,
+        @DistanceText,
+        @RunnerCount,
+        @BackBookPercentage,
+        @LayBookPercentage
+    );
+
+    SELECT CAST(SCOPE_IDENTITY() AS INT);
+END
+ELSE
+BEGIN
+    UPDATE UpcomingRaces
+    SET RaceDate = COALESCE(@RaceDate, RaceDate),
+        ScheduledOff = @ScheduledOff,
+        VenueName = @VenueName,
+        VenueCountry = @VenueCountry,
+        Title = @Title,
+        RaceDetails = @RaceDetails,
+        RaceType = @RaceType,
+        Class = @Class,
+        AgeRestriction = @AgeRestriction,
+        Surface = @Surface,
+        Going = @Going,
+        DistanceYards = @DistanceYards,
+        DistanceText = @DistanceText,
+        RunnerCount = @RunnerCount,
+        BackBookPercentage = @BackBookPercentage,
+        LayBookPercentage = @LayBookPercentage,
+        LastUpdatedUtc = SYSUTCDATETIME()
+    WHERE UpcomingRaceId = @ExistingId;
+
+    SELECT @ExistingId;
+END;";
+
+            using var conn = OpenConnection();
+            EnsureUpcomingRaceTableExists(conn);
+            return conn.QuerySingle<int>(sql, race);
+        }
+        private static void EnsureUpcomingRaceTableExists(IDbConnection conn)
+        {
+            if (_upcomingRaceTableEnsured)
+            {
+                return;
+            }
+
+            lock (SchemaLock)
+            {
+                if (_upcomingRaceTableEnsured)
+                {
+                    return;
+                }
+
+                const string sql = @"
+IF OBJECT_ID(N'dbo.UpcomingRaces', 'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.UpcomingRaces
+    (
+        UpcomingRaceId      INT           IDENTITY(1,1) PRIMARY KEY,
+        MarketId            NVARCHAR(32)  NOT NULL,
+        RaceDate            DATE          NOT NULL,
+        ScheduledOff        TIME(0)       NULL,
+        VenueName           NVARCHAR(256) NULL,
+        VenueCountry        NVARCHAR(128) NULL,
+        Title               NVARCHAR(512) NULL,
+        RaceDetails         NVARCHAR(MAX) NULL,
+        RaceType            NVARCHAR(128) NULL,
+        Class               TINYINT       NULL,
+        AgeRestriction      NVARCHAR(64)  NULL,
+        Surface             NVARCHAR(64)  NULL,
+        Going               NVARCHAR(30)  NULL,
+        DistanceYards       SMALLINT      NULL,
+        DistanceText        NVARCHAR(64)  NULL,
+        RunnerCount         TINYINT       NULL,
+        BackBookPercentage  DECIMAL(9,2)  NULL,
+        LayBookPercentage   DECIMAL(9,2)  NULL,
+        CreatedUtc          DATETIME2(0)  NOT NULL DEFAULT SYSUTCDATETIME(),
+        LastUpdatedUtc      DATETIME2(0)  NOT NULL DEFAULT SYSUTCDATETIME()
+    );
+END;
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_UpcomingRaces_MarketId' AND object_id = OBJECT_ID(N'dbo.UpcomingRaces'))
+BEGIN
+    CREATE UNIQUE INDEX IX_UpcomingRaces_MarketId ON dbo.UpcomingRaces(MarketId);
+END;
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_UpcomingRaces_RaceDateVenue' AND object_id = OBJECT_ID(N'dbo.UpcomingRaces'))
+BEGIN
+    CREATE INDEX IX_UpcomingRaces_RaceDateVenue ON dbo.UpcomingRaces(RaceDate, VenueName);
+END;";
+
+                conn.Execute(sql);
+                _upcomingRaceTableEnsured = true;
+            }
+        }
+        public int InsertRace(Race race)
+        {
+            StripBracketedText(race);
+            race.Going = NormalizeGoing(race.Going);
+            const string sql = @"
+DECLARE @NormalizedTitle NVARCHAR(512) = LTRIM(RTRIM(ISNULL(@Title,'')));
+DECLARE @ExistingId INT;
+
+SELECT TOP 1 @ExistingId = RaceId
+FROM Race
+WHERE CourseId=@CourseId
+  AND RaceDate=@RaceDate
+  AND ScheduledOff=@ScheduledOff
+  AND (
+        @NormalizedTitle = ''
+        OR LTRIM(RTRIM(ISNULL(Title,''))) = @NormalizedTitle
+        OR LTRIM(RTRIM(ISNULL(Title,''))) = ''
+      )
+ORDER BY RaceId;
+
+IF @ExistingId IS NOT NULL
+BEGIN
+    UPDATE Race
+    SET Title = CASE WHEN LEN(LTRIM(RTRIM(ISNULL(Title,'')))) = 0 AND LEN(@NormalizedTitle) > 0 THEN @Title ELSE Title END,
+        RaceType = CASE WHEN LEN(LTRIM(RTRIM(ISNULL(RaceType,'')))) = 0 AND LEN(LTRIM(RTRIM(ISNULL(@RaceType,'')))) > 0 THEN @RaceType ELSE RaceType END,
+        Class = COALESCE(Class, @Class),
+        AgeRestriction = CASE WHEN LEN(LTRIM(RTRIM(ISNULL(AgeRestriction,'')))) = 0 AND LEN(LTRIM(RTRIM(ISNULL(@AgeRestriction,'')))) > 0 THEN @AgeRestriction ELSE AgeRestriction END,
+        Surface = CASE WHEN LEN(LTRIM(RTRIM(ISNULL(Surface,'')))) = 0 AND LEN(LTRIM(RTRIM(ISNULL(@Surface,'')))) > 0 THEN @Surface ELSE Surface END,
+        Going = CASE WHEN LEN(LTRIM(RTRIM(ISNULL(Going,'')))) = 0 AND LEN(LTRIM(RTRIM(ISNULL(@Going,'')))) > 0 THEN @Going ELSE Going END,
+        DistanceYards = CASE WHEN ISNULL(DistanceYards, 0) = 0 AND @DistanceYards > 0 THEN @DistanceYards ELSE DistanceYards END,
+        DistanceText = CASE WHEN LEN(LTRIM(RTRIM(ISNULL(DistanceText,'')))) = 0 AND LEN(LTRIM(RTRIM(ISNULL(@DistanceText,'')))) > 0 THEN @DistanceText ELSE DistanceText END,
+        RunnerCount = CASE WHEN RunnerCount IS NULL AND @RunnerCount IS NOT NULL THEN @RunnerCount ELSE RunnerCount END,
+        Status = CASE WHEN LEN(LTRIM(RTRIM(ISNULL(Status,'')))) = 0 AND LEN(LTRIM(RTRIM(ISNULL(@Status,'')))) > 0 THEN @Status ELSE Status END,
+        WinningTimeMs = COALESCE(WinningTimeMs, @WinningTimeMs),
+        WinningTimeText = CASE WHEN LEN(LTRIM(RTRIM(ISNULL(WinningTimeText,'')))) = 0 AND LEN(LTRIM(RTRIM(ISNULL(@WinningTimeText,'')))) > 0 THEN @WinningTimeText ELSE WinningTimeText END,
+        ActualOff = COALESCE(ActualOff, @ActualOff)
+    WHERE RaceId=@ExistingId;
+
+    SELECT @ExistingId;
+END
+ELSE
+BEGIN
+    INSERT INTO Race(CourseId, RaceDate, ScheduledOff, ActualOff, Title, RaceType, Class, AgeRestriction, Surface, Going, DistanceYards, DistanceText, RunnerCount, Status, WinningTimeMs, WinningTimeText)
+    VALUES(@CourseId, @RaceDate, @ScheduledOff, @ActualOff, @Title, @RaceType, @Class, @AgeRestriction, @Surface, @Going, @DistanceYards, @DistanceText, @RunnerCount, @Status, @WinningTimeMs, @WinningTimeText);
+    SELECT CAST(SCOPE_IDENTITY() as int);
+END";
+            using var conn = OpenConnection();
+            return conn.QuerySingle<int>(sql, race);
+        }
+
         public void BulkInsertRunnerResults(IEnumerable<RunnerResult> results)
         {
             var list = results?.ToList();
@@ -520,24 +729,6 @@ ORDER BY ISNULL(ValidationAccuracy, 0) DESC, RunDate DESC";
             using var conn = OpenConnection();
             return conn.QueryFirstOrDefault<MLParameter>(sql);
         }
-
-        public int InsertRace(Race race)
-        {
-            StripBracketedText(race);
-            race.Going = NormalizeGoing(race.Going);
-            const string sql = @"
-IF EXISTS (SELECT 1 FROM Race WHERE CourseId=@CourseId AND RaceDate=@RaceDate AND ScheduledOff=@ScheduledOff AND Title=@Title)
-    SELECT TOP 1 RaceId FROM Race WHERE CourseId=@CourseId AND RaceDate=@RaceDate AND ScheduledOff=@ScheduledOff AND Title=@Title ORDER BY RaceId;
-ELSE
-BEGIN
-    INSERT INTO Race(CourseId, RaceDate, ScheduledOff, ActualOff, Title, RaceType, Class, AgeRestriction, Surface, Going, DistanceYards, DistanceText, RunnerCount, Status, WinningTimeMs, WinningTimeText)
-    VALUES(@CourseId, @RaceDate, @ScheduledOff, @ActualOff, @Title, @RaceType, @Class, @AgeRestriction, @Surface, @Going, @DistanceYards, @DistanceText, @RunnerCount, @Status, @WinningTimeMs, @WinningTimeText);
-    SELECT CAST(SCOPE_IDENTITY() as int);
-END";
-            using var conn = OpenConnection();
-            return conn.QuerySingle<int>(sql, race);
-        }
-
         public short InsertTrainer(Trainer trainer)
         {
             StripBracketedText(trainer);

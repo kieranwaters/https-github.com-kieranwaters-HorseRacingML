@@ -41,6 +41,33 @@ namespace HorseRacingML.Scraping
             _betSlipSelectionsFilled = 0;
             _useMarketFallbackForAiDegeneracy = useMarketFallbackForAiDegeneracy;
         }
+        private static readonly Regex DistanceComponentRegex = new("(?<value>[0-9]+(?:\\.[0-9]+)?)\\s*(?<unit>[mfy])", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex ClassRegex = new("class\\s*(?<value>[0-9])", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex AgeRestrictionRegex = new("(?<value>[0-9]{1,2}\\s*(?:yo\\+?|yo|yrs?\\+?|years?\\+?))", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly string[] RaceTypeKeywords =
+        {
+            "handicap",
+            "maiden",
+            "novice",
+            "stakes",
+            "selling",
+            "claiming",
+            "listed",
+            "group",
+            "g1",
+            "g2",
+            "g3",
+            "nursery",
+            "hurdle",
+            "chase",
+            "bumper",
+            "nh flat",
+            "condition",
+            "fillies",
+            "mares",
+            "apprentice",
+            "amateur"
+        };
         private static string ResolveAiWeightPath()
         {
             static IEnumerable<string> EnumerateCandidates()
@@ -160,6 +187,8 @@ namespace HorseRacingML.Scraping
 
                 if (!raceId.HasValue)
                 {
+                    var upcomingId = TryRecordUpcomingRace(race);
+                    race.UpcomingRaceId = upcomingId;
                     continue;
                 }
 
@@ -249,6 +278,279 @@ namespace HorseRacingML.Scraping
                 }
             }
         }
+        private int? TryRecordUpcomingRace(RaceDayReport race)
+        {
+            if (race == null || !race.RaceDate.HasValue)
+            {
+                return null;
+            }
+
+            if (string.IsNullOrWhiteSpace(race.MarketId))
+            {
+                return null;
+            }
+
+            try
+            {
+                var metadata = ParseRaceMetadata(race);
+
+                short? distanceYards = null;
+                if (metadata.DistanceYards > 0)
+                {
+                    distanceYards = (short)Math.Min(metadata.DistanceYards, short.MaxValue);
+                }
+
+                byte? runnerCount = null;
+                if (race.Runners != null && race.Runners.Count > 0)
+                {
+                    runnerCount = (byte)Math.Min(race.Runners.Count, byte.MaxValue);
+                }
+
+                var upcoming = new UpcomingRace
+                {
+                    MarketId = race.MarketId,
+                    RaceDate = race.RaceDate.Value.Date,
+                    ScheduledOff = race.OffTime,
+                    VenueName = string.IsNullOrWhiteSpace(race.VenueName) ? null : race.VenueName!.Trim(),
+                    VenueCountry = string.IsNullOrWhiteSpace(race.VenueCountry) ? null : race.VenueCountry!.Trim(),
+                    Title = string.IsNullOrWhiteSpace(race.RaceTitle) ? null : race.RaceTitle!.Trim(),
+                    RaceDetails = string.IsNullOrWhiteSpace(race.RaceDetails) ? null : race.RaceDetails!.Trim(),
+                    RaceType = metadata.RaceType,
+                    Class = metadata.Class,
+                    AgeRestriction = metadata.AgeRestriction,
+                    Surface = metadata.Surface,
+                    Going = metadata.Going,
+                    DistanceYards = distanceYards,
+                    DistanceText = metadata.DistanceText,
+                    RunnerCount = runnerCount,
+                    BackBookPercentage = race.BackBookPercentage,
+                    LayBookPercentage = race.LayBookPercentage
+                };
+
+                lock (_repoLock)
+                {
+                    var upcomingId = _repo.UpsertUpcomingRace(upcoming);
+                    Console.WriteLine($"\t[DayReport] Recorded upcoming race {upcomingId} for {race.VenueName?.Trim() ?? "unknown venue"} on {race.RaceDate:yyyy-MM-dd}.");
+                    return upcomingId;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"\t[DayReport] Failed to record upcoming race for {race.RaceTitle ?? race.MarketId}: {ex.Message}");
+                return null;
+            }
+        }
+
+        private static ParsedRaceMetadata ParseRaceMetadata(RaceDayReport race)
+        {
+            var tokens = EnumerateDetailTokens(race.RaceDetails)
+                .Concat(EnumerateDetailTokens(race.RaceTitle))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            string? distanceToken = tokens.FirstOrDefault(HasDistanceToken);
+            if (distanceToken == null && !string.IsNullOrWhiteSpace(race.RaceDetails))
+            {
+                distanceToken = race.RaceDetails;
+            }
+
+            var distanceYards = ParseDistanceToYards(distanceToken);
+
+            byte? classValue = null;
+            foreach (var token in tokens)
+            {
+                var match = ClassRegex.Match(token);
+                if (match.Success && byte.TryParse(match.Groups["value"].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+                {
+                    classValue = parsed;
+                    break;
+                }
+            }
+
+            string? going = tokens.FirstOrDefault(IsGoingToken);
+
+            string? ageRestriction = null;
+            foreach (var token in tokens)
+            {
+                var match = AgeRestrictionRegex.Match(token);
+                if (match.Success)
+                {
+                    ageRestriction = match.Groups["value"].Value.Replace(" ", string.Empty);
+                    break;
+                }
+            }
+
+            var raceType = TryDetectRaceType(tokens, race.RaceTitle);
+            var surface = DetermineSurface(going, tokens);
+
+            return new ParsedRaceMetadata(
+                string.IsNullOrWhiteSpace(distanceToken) ? null : distanceToken.Trim(),
+                distanceYards,
+                classValue,
+                string.IsNullOrWhiteSpace(ageRestriction) ? null : ageRestriction,
+                string.IsNullOrWhiteSpace(going) ? null : going.Trim(),
+                surface,
+                raceType);
+        }
+
+        private static IEnumerable<string> EnumerateDetailTokens(string? source)
+        {
+            if (string.IsNullOrWhiteSpace(source))
+            {
+                yield break;
+            }
+
+            var normalized = source.Replace('\u00A0', ' ').Trim();
+            if (!string.IsNullOrEmpty(normalized))
+            {
+                yield return normalized;
+            }
+
+            var separators = new[] { '|', '/', '\\', ',', ';', '–', '—', '·' };
+            foreach (var segment in normalized.Split(separators, StringSplitOptions.RemoveEmptyEntries))
+            {
+                var trimmed = segment.Trim();
+                if (!string.IsNullOrEmpty(trimmed))
+                {
+                    yield return trimmed;
+                }
+
+                foreach (var token in trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                {
+                    var inner = token.Trim();
+                    if (!string.IsNullOrEmpty(inner))
+                    {
+                        yield return inner;
+                    }
+                }
+            }
+        }
+
+        private static bool HasDistanceToken(string token)
+        {
+            if (string.IsNullOrWhiteSpace(token))
+            {
+                return false;
+            }
+
+            return DistanceComponentRegex.IsMatch(token);
+        }
+
+        private static int ParseDistanceToYards(string? token)
+        {
+            if (string.IsNullOrWhiteSpace(token))
+            {
+                return 0;
+            }
+
+            var text = token.ToLowerInvariant();
+            var total = 0;
+            foreach (Match match in DistanceComponentRegex.Matches(text))
+            {
+                if (!double.TryParse(match.Groups["value"].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var value))
+                {
+                    continue;
+                }
+
+                switch (match.Groups["unit"].Value)
+                {
+                    case "m":
+                        total += (int)Math.Round(value * 1760d);
+                        break;
+                    case "f":
+                        total += (int)Math.Round(value * 220d);
+                        break;
+                    case "y":
+                        total += (int)Math.Round(value);
+                        break;
+                }
+            }
+
+            return total;
+        }
+
+        private static string? TryDetectRaceType(IEnumerable<string> tokens, string? title)
+        {
+            foreach (var token in tokens)
+            {
+                var found = RaceTypeKeywords.FirstOrDefault(k => token.IndexOf(k, StringComparison.OrdinalIgnoreCase) >= 0);
+                if (!string.IsNullOrEmpty(found))
+                {
+                    return CultureInfo.InvariantCulture.TextInfo.ToTitleCase(found);
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(title))
+            {
+                foreach (var keyword in RaceTypeKeywords)
+                {
+                    if (title.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        return CultureInfo.InvariantCulture.TextInfo.ToTitleCase(keyword);
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        private static bool IsGoingToken(string token)
+        {
+            if (string.IsNullOrWhiteSpace(token))
+            {
+                return false;
+            }
+
+            var normalized = token.ToLowerInvariant();
+            if (normalized.Contains("going"))
+            {
+                return true;
+            }
+
+            var keywords = new[] { "heavy", "soft", "yielding", "good", "firm", "standard", "slow", "fast" };
+            return keywords.Any(k => Regex.IsMatch(normalized, $"\\b{k}\\b"));
+        }
+
+        private static string? DetermineSurface(string? going, IEnumerable<string> tokens)
+        {
+            static bool ContainsAwIndicator(string value)
+            {
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    return false;
+                }
+
+                var normalized = value.ToLowerInvariant();
+                return normalized.Contains("all weather")
+                    || normalized.Contains("all-weather")
+                    || normalized.Contains("a/w")
+                    || normalized.Equals("aw", StringComparison.OrdinalIgnoreCase)
+                    || normalized.Contains("polytrack")
+                    || normalized.Contains("tapeta")
+                    || normalized.Contains("fibresand");
+            }
+
+            if (!string.IsNullOrEmpty(going) && going.IndexOf("standard", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return "All Weather";
+            }
+
+            if (tokens.Any(ContainsAwIndicator))
+            {
+                return "All Weather";
+            }
+
+            return "Turf";
+        }
+
+        private readonly record struct ParsedRaceMetadata(
+            string? DistanceText,
+            int DistanceYards,
+            byte? Class,
+            string? AgeRestriction,
+            string? Going,
+            string? Surface,
+            string? RaceType);
         private static bool TryConvertToByte(object? value, out byte result)
         {
             switch (value)
