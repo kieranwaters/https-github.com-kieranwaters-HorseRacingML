@@ -381,22 +381,78 @@ namespace HorseRacingML.Scraping
                 d.Url.Contains("horse-racing", StringComparison.OrdinalIgnoreCase) ||
                 d.Url.Contains("horse-racing-betting-7", StringComparison.OrdinalIgnoreCase));
         }
+        private const int DayReportEpochs = 12;
+        private const int DayReportBatchSize = 500;
+        private const double DayReportLearningRate = 0.005;
+
+        private void TrainModelForDayReport(RacingRepository repo, HyperparameterTrainer trainer)
+        {
+            if (trainer == null)
+            {
+                throw new ArgumentNullException(nameof(trainer));
+            }
+
+            Console.WriteLine("[DayReport] Training AI model using full dataset prior to report generation.");
+
+            var best = repo?.GetBestMLParameter();
+            var parameter = new MLParameter
+            {
+                RunDate = DateTime.UtcNow,
+                Units = best?.Units ?? 256,
+                Dropout = best?.Dropout ?? 0.3,
+                Layers = best?.Layers ?? 3,
+                LearningRate = DayReportLearningRate,
+                Epochs = DayReportEpochs,
+                BatchSize = DayReportBatchSize,
+                Folds = 1,
+                Fold = null
+            };
+
+            try
+            {
+                var result = trainer.Train(parameter, 0, 1, persistWeights: true);
+                parameter.TrainAccuracy = result.TrainAccuracy;
+                parameter.TrainLoss = result.TrainLoss;
+                parameter.TrainBrier = result.TrainBrier;
+                parameter.ValidationAccuracy = result.ValidationAccuracy;
+                parameter.ValidationLoss = result.ValidationLoss;
+                parameter.ValidationBrier = result.ValidationBrier;
+
+                try
+                {
+                    repo?.InsertMLParameter(parameter);
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"[DayReport] Failed to persist training summary: {ex.Message}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[DayReport] AI training failed: {ex.Message}");
+                throw;
+            }
+        }
+
         public DayReportViewModel GenerateDayReport(RacingRepository repo, HyperparameterTrainer trainer)
         {
-            var bankroll = GetEffectiveBankroll();
-            var scraper = new BetfairMarketScraper(
-                repo,
-                trainer,
-                bankroll,
-                _maxKellyFraction,
-                _useMarketFallbackForAiDegeneracy);
-            var races = scraper.ScrapeOpenRaceTabsForReport(_driver);
-            return new DayReportViewModel
+            TrainModelForDayReport(repo, trainer);
             {
-                GeneratedAt = DateTime.UtcNow,
-                Bankroll = bankroll,
-                Races = new List<RaceDayReport>(races)
-            };
+                var bankroll = GetEffectiveBankroll();
+                var scraper = new BetfairMarketScraper(
+                    repo,
+                    trainer,
+                    bankroll,
+                    _maxKellyFraction,
+                    _useMarketFallbackForAiDegeneracy);
+                var races = scraper.ScrapeOpenRaceTabsForReport(_driver);
+                return new DayReportViewModel
+                {
+                    GeneratedAt = DateTime.UtcNow,
+                    Bankroll = bankroll,
+                    Races = new List<RaceDayReport>(races)
+                };
+            }
         }
         public async Task OpenHorseRaceMeetingsInNewTabsAsync(int delayBetweenTabsMs = 0)
         {
