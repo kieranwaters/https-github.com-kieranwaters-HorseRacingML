@@ -515,18 +515,31 @@ namespace HorseRacingML.ML
 
             if (persistWeights)
             {
-                var weightPath = Path.Combine(AppContext.BaseDirectory, "aiweights.json");
+                var weightsDirectory = Path.Combine(AppContext.BaseDirectory, "weights");
+                var legacyWeightPath = Path.Combine(AppContext.BaseDirectory, "aiweights.json");
                 try
                 {
+                    Directory.CreateDirectory(weightsDirectory);
+
                     var options = new JsonSerializerOptions { WriteIndented = true };
-                    File.WriteAllText(weightPath, JsonSerializer.Serialize(model, options));
+                    var serialized = JsonSerializer.Serialize(model, options);
+                    var weightPath = Path.Combine(weightsDirectory, "aiweights.json");
+                    File.WriteAllText(weightPath, serialized);
+
+                    try
+                    {
+                        File.WriteAllText(legacyWeightPath, serialized);
+                    }
+                    catch
+                    {
+                        // Updating the legacy path is best-effort only.
+                    }
                 }
                 catch
                 {
-                    // Failing to persist weights shouldn't abort training; simply swallow
-                    // any IO issues so training metrics are still returned.
+                    // Updating the legacy path is best-effort only.
                 }
-            }
+                }
             HyperparameterCompleted(param, trainAcc, valAcc, trainLoss, valLoss, trainBrier, valBrier);
             return new TrainingResult
             {

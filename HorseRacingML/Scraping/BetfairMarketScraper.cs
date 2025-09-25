@@ -38,7 +38,14 @@ namespace HorseRacingML.Scraping
         {
             var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10));
             var handles = driver.WindowHandles.ToList();
-            var weightPath = Path.Combine(AppContext.BaseDirectory, "aiweights.json");
+            var weightsDirectory = Path.Combine(AppContext.BaseDirectory, "weights");
+            var newWeightPath = Path.Combine(weightsDirectory, "aiweights.json");
+            var legacyWeightPath = Path.Combine(AppContext.BaseDirectory, "aiweights.json");
+            var weightPath = File.Exists(newWeightPath)
+                ? newWeightPath
+                : File.Exists(legacyWeightPath)
+                    ? legacyWeightPath
+                    : newWeightPath;
             var aiCalculator = new AIOddsCalculator(weightPath);
             var result = new BetfairScrapeResult();
             var recommendations = new List<BetRecommendation>();
