@@ -282,6 +282,7 @@ namespace HorseRacingML.ML
 
                     public int RaceId { get; }
                     public List<Dictionary<string, object?>> Rows { get; }
+                    public List<Dictionary<string, object?>> Runners => Rows;
                 }
             }
         }

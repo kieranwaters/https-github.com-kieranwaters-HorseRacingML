@@ -898,6 +898,58 @@ namespace HorseRacingML.Scraping
 
             return runner;
         }
+        private FeatureLookup LoadFeatureLookup(DateTime? raceDate, string? raceTitle, string? venueName)
+        {
+            if (!raceDate.HasValue)
+            {
+                return FeatureLookup.Empty;
+            }
+
+            int? raceId;
+            try
+            {
+                raceId = _repo.FindRaceId(raceDate.Value, raceTitle, venueName);
+                if (raceId.HasValue)
+                {
+                    Console.WriteLine(
+                        $"\tResolved race lookup: date={raceDate.Value:yyyy-MM-dd}, title='{raceTitle ?? "<null>"}', venue='{venueName ?? "<null>"}' => raceId={raceId.Value}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"\tUnable to resolve race details for feature lookup: {ex.Message}");
+                return FeatureLookup.Empty;
+            }
+
+            if (!raceId.HasValue)
+            {
+                Console.WriteLine(
+                    $"\tNo race ID found for date={raceDate.Value:yyyy-MM-dd}, title='{raceTitle ?? "<null>"}', venue='{venueName ?? "<null>"}'.");
+                return FeatureLookup.Empty;
+            }
+
+            try
+            {
+                var include = new HashSet<int> { raceId.Value };
+                var prepared = _trainer.PrepareDataset(include, null, includeIdentifiers: true);
+                var race = prepared.Races.FirstOrDefault(r => r.RaceId == raceId.Value);
+                if (race == null)
+                {
+                    Console.WriteLine($"\tFeature preparation returned no race data for raceId={raceId.Value}.");
+                    return FeatureLookup.Empty;
+                }
+
+                Console.WriteLine(
+                    $"\tLoaded feature rows for raceId={raceId.Value}; runner count={race.Runners.Count}.");
+
+                return FeatureLookup.FromPreparedRace(race);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"\tFailed to build feature vector for race {raceId.Value}: {ex.Message}");
+                return FeatureLookup.Empty;
+            }
+        }
 
         private sealed class BetfairScrapeResult
         {
@@ -986,48 +1038,7 @@ namespace HorseRacingML.Scraping
 
             return recommendations;
         }
-        private FeatureLookup LoadFeatureLookup(DateTime? raceDate, string? raceTitle, string? venueName)
-        {
-            if (!raceDate.HasValue)
-            {
-                return FeatureLookup.Empty;
-            }
-
-            int? raceId;
-            try
-            {
-                raceId = _repo.FindRaceId(raceDate.Value, raceTitle, venueName);
-            }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine($"\tUnable to resolve race details for feature lookup: {ex.Message}");
-                return FeatureLookup.Empty;
-            }
-
-            if (!raceId.HasValue)
-            {
-                return FeatureLookup.Empty;
-            }
-
-            try
-            {
-                var include = new HashSet<int> { raceId.Value };
-                var prepared = _trainer.PrepareDataset(include, null, includeIdentifiers: true);
-                var race = prepared.Races.FirstOrDefault(r => r.RaceId == raceId.Value);
-                if (race == null)
-                {
-                    return FeatureLookup.Empty;
-                }
-
-                return FeatureLookup.FromPreparedRace(race);
-            }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine($"\tFailed to build feature vector for race {raceId.Value}: {ex.Message}");
-                return FeatureLookup.Empty;
-            }
-        }
-
+        
         private sealed class FeatureLookup
         {
             private readonly Dictionary<string, Dictionary<string, object?>> _byHorse;
