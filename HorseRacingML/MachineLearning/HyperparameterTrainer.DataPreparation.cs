@@ -382,7 +382,7 @@ namespace HorseRacingML.ML
             string key,
             object? value,
             int dim,
-            Dictionary<string, Dictionary<string, int>> stringMaps)
+             IDictionary<string, Dictionary<string, int>> stringMaps)
         {
             // Determine the base dimension (excluding missing indicator) and whether an
             // additional slot is reserved for missing values.
@@ -433,7 +433,7 @@ namespace HorseRacingML.ML
             string key,
             string s,
             int dim,
-            Dictionary<string, Dictionary<string, int>> stringMaps)
+            IDictionary<string, Dictionary<string, int>> stringMaps)
         {
             var vec = new float[dim];
             if (stringMaps.TryGetValue(key, out var map) && map.TryGetValue(s, out var idx))
