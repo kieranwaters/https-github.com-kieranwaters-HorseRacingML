@@ -23,9 +23,15 @@ namespace HorseRacingML.Scraping
         private readonly object _repoLock = new();
         private readonly decimal _bankroll;
         private readonly decimal? _maxKellyFraction;
+        private readonly bool _useMarketFallbackForAiDegeneracy;
         private decimal _availableBankroll;
         private int _betSlipSelectionsFilled;
-        public BetfairMarketScraper(RacingRepository repo, HyperparameterTrainer trainer, decimal bankroll, decimal? maxKellyFraction = null)
+        public BetfairMarketScraper(
+            RacingRepository repo,
+            HyperparameterTrainer trainer,
+            decimal bankroll,
+            decimal? maxKellyFraction = null,
+            bool useMarketFallbackForAiDegeneracy = true)
         {
             _repo = repo ?? throw new ArgumentNullException(nameof(repo));
             _trainer = trainer ?? throw new ArgumentNullException(nameof(trainer));
@@ -33,6 +39,7 @@ namespace HorseRacingML.Scraping
             _availableBankroll = bankroll;
             _maxKellyFraction = maxKellyFraction;
             _betSlipSelectionsFilled = 0;
+            _useMarketFallbackForAiDegeneracy = useMarketFallbackForAiDegeneracy;
         }
         private static string ResolveAiWeightPath()
         {
@@ -499,7 +506,7 @@ namespace HorseRacingML.Scraping
                     var maxProb = validAiBefore.Max();
                     Console.WriteLine($"\tAI probability summary before normalization for market {marketId}: valid={validAiBefore.Count}, missing={missingAiCount}, sum={sumProb.ToString("0.####", CultureInfo.InvariantCulture)}, min={minProb.ToString("0.####", CultureInfo.InvariantCulture)}, max={maxProb.ToString("0.####", CultureInfo.InvariantCulture)}");
                 }
-                NormalizeAiOdds(flows);
+                NormalizeAiOdds(flows, _useMarketFallbackForAiDegeneracy);
                 if (captureReport)
                 {
                     var report = BuildRaceReport(
@@ -1302,7 +1309,7 @@ namespace HorseRacingML.Scraping
 
             return result;
         }
-        private static void NormalizeAiOdds(ICollection<RunnerFlow> flows)
+        private static void NormalizeAiOdds(ICollection<RunnerFlow> flows, bool useMarketFallbackForDegeneracy)
         {
             var valid = flows
                 .Where(f => f.AiOdds.HasValue && double.IsFinite(f.AiOdds.Value) && f.AiOdds.Value >= 0)
@@ -1324,40 +1331,47 @@ namespace HorseRacingML.Scraping
 
             if (maxValue - minValue <= degeneracyTolerance)
             {
-                Console.WriteLine("\t\tDetected degenerate AI probability distribution; falling back to market-implied probabilities.");
-
-                bool anyFallbackApplied = false;
-                foreach (var flow in flows)
+                if (!useMarketFallbackForDegeneracy)
                 {
-                    if (flow.BackPrice1.HasValue && flow.BackPrice1.Value > 1m)
+                    Console.WriteLine("\t\tDetected degenerate AI probability distribution; preserving raw AI outputs (market fallback disabled).");
+                }
+                else
+                {
+                    Console.WriteLine("\t\tDetected degenerate AI probability distribution; falling back to market-implied probabilities.");
+
+                    bool anyFallbackApplied = false;
+                    foreach (var flow in flows)
                     {
-                        flow.AiOdds = 1.0 / (double)flow.BackPrice1.Value;
-                        anyFallbackApplied = true;
+                        if (flow.BackPrice1.HasValue && flow.BackPrice1.Value > 1m)
+                        {
+                            flow.AiOdds = 1.0 / (double)flow.BackPrice1.Value;
+                            anyFallbackApplied = true;
+                        }
+                        else
+                        {
+                            flow.AiOdds = null;
+                        }
                     }
-                    else
+
+                    if (!anyFallbackApplied)
                     {
-                        flow.AiOdds = null;
+                        Console.WriteLine("\t\tUnable to apply market fallback due to missing back prices; AI odds will remain unavailable for this race.");
+                        return;
                     }
-                }
 
-                if (!anyFallbackApplied)
-                {
-                    Console.WriteLine("\t\tUnable to apply market fallback due to missing back prices; AI odds will remain unavailable for this race.");
-                    return;
-                }
+                    valid = flows
+                        .Where(f => f.AiOdds.HasValue && double.IsFinite(f.AiOdds.Value) && f.AiOdds.Value >= 0)
+                        .ToList();
+                    missingCount = flows.Count - valid.Count;
+                    if (valid.Count == 0)
+                    {
+                        Console.WriteLine("\t\tMarket fallback produced no usable probabilities; skipping normalization.");
+                        return;
+                    }
 
-                valid = flows
-                    .Where(f => f.AiOdds.HasValue && double.IsFinite(f.AiOdds.Value) && f.AiOdds.Value >= 0)
-                    .ToList();
-                missingCount = flows.Count - valid.Count;
-                if (valid.Count == 0)
-                {
-                    Console.WriteLine("\t\tMarket fallback produced no usable probabilities; skipping normalization.");
-                    return;
+                    minValue = valid.Min(f => f.AiOdds!.Value);
+                    maxValue = valid.Max(f => f.AiOdds!.Value);
                 }
-
-                minValue = valid.Min(f => f.AiOdds!.Value);
-                maxValue = valid.Max(f => f.AiOdds!.Value);
             }
             var sum = valid.Sum(f => f.AiOdds!.Value);
             Console.WriteLine($"\tNormalizeAiOdds: normalizing {valid.Count} runner(s) (missing={missingCount}, raw sum={sum.ToString("0.####", CultureInfo.InvariantCulture)}).");

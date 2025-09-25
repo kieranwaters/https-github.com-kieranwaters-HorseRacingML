@@ -25,6 +25,7 @@ namespace HorseRacingML.Scraping
         private readonly decimal _configuredBankroll;
         private decimal _bankroll;
         private readonly decimal? _maxKellyFraction;
+        private readonly bool _useMarketFallbackForAiDegeneracy;
 
         public BetfairNavigationService(IConfiguration config)
         {
@@ -33,6 +34,7 @@ namespace HorseRacingML.Scraping
             _configuredBankroll = config.GetValue<decimal?>("Betting:Bankroll") ?? 100m;
             _bankroll = _configuredBankroll;
             _maxKellyFraction = config.GetValue<decimal?>("Betting:MaxKellyFraction");
+            _useMarketFallbackForAiDegeneracy = config.GetValue<bool?>("Betting:UseMarketFallbackForAiDegeneracy") ?? true;
 
             var options = new ChromeOptions();
             options.AddArguments(
@@ -50,7 +52,12 @@ namespace HorseRacingML.Scraping
         public IReadOnlyList<BetRecommendation> ScrapeOpenRaceTabs(RacingRepository repo, HyperparameterTrainer trainer)
         {
             var bankroll = GetEffectiveBankroll();
-            var scraper = new BetfairMarketScraper(repo, trainer, bankroll, _maxKellyFraction);
+            var scraper = new BetfairMarketScraper(
+                repo,
+                trainer,
+                bankroll,
+                _maxKellyFraction,
+                _useMarketFallbackForAiDegeneracy);
             return scraper.ScrapeOpenRaceTabs(_driver);
         }
 
@@ -377,7 +384,12 @@ namespace HorseRacingML.Scraping
         public DayReportViewModel GenerateDayReport(RacingRepository repo, HyperparameterTrainer trainer)
         {
             var bankroll = GetEffectiveBankroll();
-            var scraper = new BetfairMarketScraper(repo, trainer, bankroll, _maxKellyFraction);
+            var scraper = new BetfairMarketScraper(
+                repo,
+                trainer,
+                bankroll,
+                _maxKellyFraction,
+                _useMarketFallbackForAiDegeneracy);
             var races = scraper.ScrapeOpenRaceTabsForReport(_driver);
             return new DayReportViewModel
             {
