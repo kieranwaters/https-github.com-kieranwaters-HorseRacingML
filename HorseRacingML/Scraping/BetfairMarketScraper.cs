@@ -297,8 +297,22 @@ namespace HorseRacingML.Scraping
                     return false;
             }
         }
+        private static readonly Regex BracketedNameContentRegex =
+            new Regex(@"\s*[\(\[][^\)\]]*[\)\]]\s*", RegexOptions.Compiled);
 
-        
+        private static string NormalizeName(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            var withoutBracketed = BracketedNameContentRegex.Replace(value, " ");
+            var normalized = Regex.Replace(withoutBracketed.Trim().ToLowerInvariant(), "[^a-z0-9]+", " ");
+            normalized = Regex.Replace(normalized, "\\s+", " ").Trim();
+            return normalized;
+        }
+
         private BetfairScrapeResult ScrapeOpenRaceTabsInternal(IWebDriver driver, bool executeBets, bool captureReport)
         {
             var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10));
@@ -1012,18 +1026,6 @@ namespace HorseRacingML.Scraping
                 Console.Error.WriteLine($"\tFailed to build feature vector for race {raceId.Value}: {ex.Message}");
                 return FeatureLookup.Empty;
             }
-        }
-
-        private static string NormalizeName(string? value)
-        {
-            if (string.IsNullOrWhiteSpace(value))
-            {
-                return string.Empty;
-            }
-
-            var normalized = Regex.Replace(value.Trim().ToLowerInvariant(), "[^a-z0-9]+", " ");
-            normalized = Regex.Replace(normalized, "\\s+", " ").Trim();
-            return normalized;
         }
 
         private sealed class FeatureLookup
