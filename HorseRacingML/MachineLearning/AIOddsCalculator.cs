@@ -40,7 +40,8 @@ namespace HorseRacingML.ML
         private bool TryCalculateWithTrainedModel(RunnerFlow flow, out double probability)
         {
             probability = 0d;
-            if (!_hasTrainedModel || _metadata == null || _mean == null || _std == null ||
+            if (!_hasTrainedModel || !flow.HasPreparedFeatures ||
+                _metadata == null || _mean == null || _std == null ||
                 _outputWeights == null || _outputBias == null)
             {
                 return false;

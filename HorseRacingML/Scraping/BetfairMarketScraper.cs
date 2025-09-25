@@ -614,6 +614,7 @@ namespace HorseRacingML.Scraping
                     };
                     var matchedFeatures = featureLookup.FindByHorse(flow.HorseName)
                         ?? featureLookup.FindBySaddlecloth(flow.ClothNumber);
+                    flow.HasPreparedFeatures = matchedFeatures != null;
                     var featureVector = matchedFeatures != null
                         ? new Dictionary<string, object?>(matchedFeatures, StringComparer.OrdinalIgnoreCase)
                         : new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
@@ -652,7 +653,13 @@ namespace HorseRacingML.Scraping
                     {
                         flow.FeatureValues = featureVector;
                     }
-
+                    if (!flow.HasPreparedFeatures)
+                    {
+                        var identifier = !string.IsNullOrWhiteSpace(flow.HorseName)
+                            ? flow.HorseName!
+                            : (flow.SelectionId ?? "unknown");
+                        Console.WriteLine($"\t\tNo prepared feature row matched for {identifier}; neural model will fall back to legacy odds.");
+                    }
                     try
                     {
                         var probability = aiCalculator.CalculateOdds(flow);

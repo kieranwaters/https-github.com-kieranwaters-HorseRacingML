@@ -111,6 +111,7 @@ namespace HorseRacingML.Models
         public decimal? LayPrice3 { get; set; }
         public double? AiOdds { get; set; }
         public Dictionary<string, object?>? FeatureValues { get; set; }
+        public bool HasPreparedFeatures { get; set; }
     }
     public class RaceSummary
     {
