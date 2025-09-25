@@ -725,23 +725,57 @@ namespace HorseRacingML.Scraping
                 var featureLookup = LoadFeatureLookup(parsedRaceDate, title, venueName);
                 var flows = new List<RunnerFlow>();
                 var runnerEntries = new List<(IWebElement Row, RunnerFlow Flow)>();
+                // Betfair have historically stored the runner selection identifier in
+                // a variety of data attributes.  The original markup used
+                // "data-selection-id", but recent variants have shifted the value to
+                // alternative attributes (for example "data-selection-key").  Check
+                // the most common options when harvesting the identifier so that we
+                // retain a resilient mapping between the DOM node and the selection.
+                var selectionIdAttributes = new[]
+                {
+                    "data-selection-id",
+                    "data-selection-key",
+                    "data-selection-uid",
+                    "data-selectionid",
+                    "data-runner-id"
+                };
+
                 foreach (var row in rows)
                 {
-                    // Some runner rows nest the data-selection-id on a child element, so
-                    // fall back to searching within the row if it's missing on the row
-                    // itself.
-                    var selectionId = row.GetAttribute("data-selection-id");
+                    string? selectionId = null;
+                    foreach (var attribute in selectionIdAttributes)
+                    {
+                        selectionId = row.GetAttribute(attribute);
+                        if (!string.IsNullOrEmpty(selectionId))
+                        {
+                            break;
+                        }
+                    }
+
                     if (string.IsNullOrEmpty(selectionId))
                     {
-                        try
+                        foreach (var attribute in selectionIdAttributes)
                         {
-                            var childWithId = row.FindElement(By.CssSelector("[data-selection-id]"));
-                            selectionId = childWithId.GetAttribute("data-selection-id");
+                            try
+                            {
+                                var childWithId = row.FindElement(By.CssSelector($"[{attribute}]"));
+                                selectionId = childWithId.GetAttribute(attribute);
+                                if (!string.IsNullOrEmpty(selectionId))
+                                {
+                                    break;
+                                }
+                            }
+                            catch (NoSuchElementException)
+                            {
+                                selectionId = null;
+                            }
                         }
-                        catch (NoSuchElementException)
-                        {
-                            selectionId = null;
-                        }
+                    }
+
+                    if (string.IsNullOrEmpty(selectionId))
+                    {
+                        Console.Error.WriteLine($"\tUnable to determine selection id for a runner in market {marketId}; skipping row.");
+                        continue;
                     }
                     var js = (IJavaScriptExecutor)driver;
                     const string runnerExtractionScript = @"
