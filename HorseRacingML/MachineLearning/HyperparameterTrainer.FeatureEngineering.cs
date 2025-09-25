@@ -1,4 +1,5 @@
 ﻿using Dapper;
+using HorseRacingML.Models;
 using Microsoft.Data.SqlClient;
 using System;
 using System.Collections.Generic;
@@ -1397,6 +1398,328 @@ namespace HorseRacingML.ML
             }
 
             return new PreparedDataset(races);
+        }
+        public PreparedRace? PrepareUpcomingRace(UpcomingRace upcoming, IReadOnlyList<RunnerFlow> flows)
+        {
+            if (upcoming is null)
+                throw new ArgumentNullException(nameof(upcoming));
+            if (flows is null)
+                throw new ArgumentNullException(nameof(flows));
+            if (flows.Count == 0)
+            {
+                return null;
+            }
+
+            using var conn = new SqlConnection(_connectionString);
+            conn.Open();
+
+            var raceColumns = PreparedDataset.LoadColumnNames(conn, "Race");
+            string scheduledOffColumn = raceColumns.Contains("ScheduledOff")
+                ? "r.ScheduledOff AS ScheduledOff"
+                : "CAST(NULL AS time(0)) AS ScheduledOff";
+            string actualOffColumn = raceColumns.Contains("ActualOff")
+                ? "r.ActualOff AS ActualOff"
+                : "CAST(NULL AS time(0)) AS ActualOff";
+
+            var sql = $@"SELECT c.Name AS CourseName,
+                                   h.Name AS HorseName,
+                                   j.Name AS JockeyName,
+                                   t.Name AS TrainerName,
+                                   r.RaceId,
+                                   r.CourseId,
+                                   r.RaceDate,
+                                   {scheduledOffColumn},
+                                   {actualOffColumn},
+                                   r.Title,
+                                   r.RaceType,
+                                   r.Class,
+                                   r.AgeRestriction,
+                                   r.Surface,
+                                   r.Going,
+                                   r.DistanceYards,
+                                   r.DistanceText,
+                                   r.RunnerCount,
+                                   r.Status,
+                                   r.WinningTimeMs,
+                                   rr.HorseId,
+                                   rr.TrainerId,
+                                   rr.JockeyId,
+                                   rr.SaddleclothNumber,
+                                   rr.Draw,
+                                   rr.Age,
+                                   rr.WeightLbs,
+                                   rr.WeightText,
+                                   rr.FinishPos,
+                                   rr.OutcomeCode,
+                                   rr.DistanceBeatenText,
+                                   rr.SP_Fraction,
+                                   rr.SP_Decimal,
+                                   rr.FavTag,
+                                   rr.OpeningFraction,
+                                   rr.TouchedHighFraction,
+                                   rr.TouchedLowFraction
+                            FROM Race r
+                            JOIN Course c ON r.CourseId = c.CourseId
+                            JOIN RunnerResult rr ON r.RaceId = rr.RaceId
+                            LEFT JOIN Horse h ON rr.HorseId = h.HorseId
+                            LEFT JOIN Trainer t ON rr.TrainerId = t.TrainerId
+                            LEFT JOIN Jockey j ON rr.JockeyId = j.JockeyId
+                            WHERE r.RaceDate < @TargetDate
+                            ORDER BY r.RaceDate, r.RaceId, rr.RunnerResultId";
+
+            var identifierKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "HorseName",
+                "HorseId",
+                "TrainerName",
+                "TrainerId",
+                "JockeyName",
+                "JockeyId",
+                "SaddleclothNumber",
+                "Draw",
+                "SelectionId"
+            };
+
+            var featureState = new FeatureEngineeringState(this, identifierKeys);
+
+            var currentRows = new List<Dictionary<string, object?>>();
+            int? currentRaceId = null;
+            foreach (var record in conn.Query(sql, new { TargetDate = upcoming.RaceDate.Date }, commandTimeout: 6000, buffered: false))
+            {
+                var source = (IDictionary<string, object?>)record;
+                var row = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+                foreach (var kvp in source)
+                {
+                    row[kvp.Key] = NormalizeDbValue(kvp.Value);
+                }
+
+                if (!PreparedDataset.TryGetRequiredInt32(row, "RaceId", out var raceId))
+                {
+                    continue;
+                }
+
+                if (currentRaceId.HasValue && raceId != currentRaceId.Value)
+                {
+                    if (currentRows.Count > 0)
+                    {
+                        featureState.ProcessRace(currentRows, includeRace: false, updateState: true);
+                    }
+                    currentRows = new List<Dictionary<string, object?>>();
+                }
+
+                currentRows.Add(row);
+                currentRaceId = raceId;
+            }
+
+            if (currentRaceId.HasValue && currentRows.Count > 0)
+            {
+                featureState.ProcessRace(currentRows, includeRace: false, updateState: true);
+            }
+
+            var syntheticRaceId = CreateSyntheticRaceId(upcoming);
+            var syntheticRows = BuildUpcomingRaceRows(conn, upcoming, flows, syntheticRaceId);
+            if (syntheticRows.Count == 0)
+            {
+                return null;
+            }
+
+            featureState.ProcessRace(syntheticRows, includeRace: true, updateState: false);
+            return new PreparedRace(syntheticRaceId, syntheticRows);
+        }
+
+        private static int CreateSyntheticRaceId(UpcomingRace upcoming)
+        {
+            unchecked
+            {
+                int hash = 17;
+                hash = hash * 31 + upcoming.RaceDate.GetHashCode();
+                if (!string.IsNullOrWhiteSpace(upcoming.MarketId))
+                {
+                    hash = hash * 31 + StringComparer.OrdinalIgnoreCase.GetHashCode(upcoming.MarketId.Trim());
+                }
+                if (!string.IsNullOrWhiteSpace(upcoming.Title))
+                {
+                    hash = hash * 31 + StringComparer.OrdinalIgnoreCase.GetHashCode(upcoming.Title.Trim());
+                }
+
+                return unchecked((int)(0x80000000 | ((uint)hash & 0x7FFFFFFF)));
+            }
+        }
+
+        private List<Dictionary<string, object?>> BuildUpcomingRaceRows(
+            SqlConnection conn,
+            UpcomingRace upcoming,
+            IReadOnlyList<RunnerFlow> flows,
+            int raceId)
+        {
+            var rows = new List<Dictionary<string, object?>>(flows.Count);
+            var (courseId, courseName) = ResolveCourse(conn, upcoming);
+            int runnerCount = flows.Count;
+
+            foreach (var flow in flows)
+            {
+                if (flow == null)
+                {
+                    continue;
+                }
+
+                var horseName = flow.HorseName;
+                if (string.IsNullOrWhiteSpace(horseName))
+                {
+                    continue;
+                }
+
+                var row = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["RaceId"] = raceId,
+                    ["CourseId"] = courseId,
+                    ["CourseName"] = courseName,
+                    ["RaceDate"] = upcoming.RaceDate,
+                    ["ScheduledOff"] = upcoming.ScheduledOff,
+                    ["ActualOff"] = null,
+                    ["Title"] = upcoming.Title,
+                    ["RaceType"] = upcoming.RaceType,
+                    ["Class"] = upcoming.Class,
+                    ["AgeRestriction"] = upcoming.AgeRestriction,
+                    ["Surface"] = upcoming.Surface,
+                    ["Going"] = upcoming.Going,
+                    ["DistanceYards"] = upcoming.DistanceYards,
+                    ["DistanceText"] = upcoming.DistanceText,
+                    ["RunnerCount"] = upcoming.RunnerCount ?? Math.Min(runnerCount, byte.MaxValue),
+                    ["Status"] = null,
+                    ["WinningTimeMs"] = null,
+                    ["HorseName"] = horseName,
+                    ["SelectionId"] = flow.SelectionId,
+                    ["JockeyName"] = flow.JockeyName,
+                    ["SaddleclothNumber"] = flow.ClothNumber,
+                    ["Draw"] = flow.Draw,
+                    ["BackPrice1"] = flow.BackPrice1,
+                    ["BackPrice2"] = flow.BackPrice2,
+                    ["BackPrice3"] = flow.BackPrice3,
+                    ["LayPrice1"] = flow.LayPrice1,
+                    ["LayPrice2"] = flow.LayPrice2,
+                    ["LayPrice3"] = flow.LayPrice3
+                };
+
+                var horseId = ResolveHorseId(conn, horseName);
+                row["HorseId"] = horseId;
+
+                if (!string.IsNullOrWhiteSpace(flow.JockeyName))
+                {
+                    var jockeyId = ResolveJockeyId(conn, flow.JockeyName!);
+                    if (jockeyId.HasValue)
+                    {
+                        row["JockeyId"] = jockeyId.Value;
+                    }
+                }
+
+                rows.Add(row);
+            }
+
+            return rows;
+        }
+
+        private (int CourseId, string? CourseName) ResolveCourse(SqlConnection conn, UpcomingRace upcoming)
+        {
+            if (!string.IsNullOrWhiteSpace(upcoming.VenueName))
+            {
+                const string exactSql = "SELECT TOP (1) CourseId, Name FROM Course WHERE Name = @Name ORDER BY CourseId";
+                var exact = conn.QuerySingleOrDefault<(int CourseId, string Name)?>(exactSql, new { Name = upcoming.VenueName });
+                if (exact.HasValue)
+                {
+                    return (exact.Value.CourseId, exact.Value.Name);
+                }
+
+                const string courseSql = "SELECT CourseId, Name FROM Course";
+                var allCourses = conn.Query<(int CourseId, string Name)>(courseSql).ToList();
+                var normalizedVenue = NormalizeLookupKey(upcoming.VenueName);
+                (int CourseId, string Name)? best = null;
+                int bestScore = int.MaxValue;
+                foreach (var course in allCourses)
+                {
+                    var candidate = NormalizeLookupKey(course.Name);
+                    int score = 0;
+                    if (candidate == normalizedVenue)
+                    {
+                        score -= 3;
+                    }
+                    else if (!string.IsNullOrEmpty(candidate) &&
+                             (candidate.Contains(normalizedVenue) || normalizedVenue.Contains(candidate)))
+                    {
+                        score -= 1;
+                    }
+                    else
+                    {
+                        score += 1;
+                    }
+
+                    if (score < bestScore || (score == bestScore && (!best.HasValue || course.CourseId < best.Value.CourseId)))
+                    {
+                        best = course;
+                        bestScore = score;
+                    }
+                }
+
+                if (best.HasValue)
+                {
+                    return (best.Value.CourseId, best.Value.Name);
+                }
+            }
+
+            int syntheticCourseId = GenerateSyntheticId("course:" + (upcoming.VenueName ?? upcoming.MarketId ?? string.Empty));
+            return (syntheticCourseId, upcoming.VenueName);
+        }
+
+        private int ResolveHorseId(SqlConnection conn, string horseName)
+        {
+            const string sql = "SELECT TOP (1) HorseId FROM Horse WHERE Name = @Name ORDER BY HorseId";
+            var existing = conn.QuerySingleOrDefault<int?>(sql, new { Name = horseName });
+            if (existing.HasValue)
+            {
+                return existing.Value;
+            }
+
+            return GenerateSyntheticId("horse:" + horseName);
+        }
+
+        private int? ResolveJockeyId(SqlConnection conn, string jockeyName)
+        {
+            const string sql = "SELECT TOP (1) JockeyId FROM Jockey WHERE Name = @Name ORDER BY JockeyId";
+            var existing = conn.QuerySingleOrDefault<int?>(sql, new { Name = jockeyName });
+            if (existing.HasValue)
+            {
+                return existing.Value;
+            }
+
+            return null;
+        }
+
+        private static int GenerateSyntheticId(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return int.MaxValue;
+            }
+
+            unchecked
+            {
+                int hash = 17;
+                hash = hash * 31 + StringComparer.OrdinalIgnoreCase.GetHashCode(value.Trim());
+                return 0x60000000 | (hash & 0x0FFFFFFF);
+            }
+        }
+
+        private static string NormalizeLookupKey(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            var lower = value.Trim().ToLowerInvariant();
+            lower = System.Text.RegularExpressions.Regex.Replace(lower, "[^a-z0-9]+", " ");
+            lower = System.Text.RegularExpressions.Regex.Replace(lower, "\\s+", " ").Trim();
+            return lower;
         }
     }
 }

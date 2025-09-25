@@ -729,6 +729,90 @@ ORDER BY ISNULL(ValidationAccuracy, 0) DESC, RunDate DESC";
             using var conn = OpenConnection();
             return conn.QueryFirstOrDefault<MLParameter>(sql);
         }
+        public UpcomingRace? FindUpcomingRace(DateTime raceDate, string? title, string? venueName)
+        {
+            const string sql = @"SELECT UpcomingRaceId,
+                                           MarketId,
+                                           RaceDate,
+                                           ScheduledOff,
+                                           VenueName,
+                                           VenueCountry,
+                                           Title,
+                                           RaceDetails,
+                                           RaceType,
+                                           Class,
+                                           AgeRestriction,
+                                           Surface,
+                                           Going,
+                                           DistanceYards,
+                                           DistanceText,
+                                           RunnerCount,
+                                           BackBookPercentage,
+                                           LayBookPercentage
+                                    FROM UpcomingRaces
+                                    WHERE RaceDate = @RaceDate";
+
+            using var conn = OpenConnection();
+            var candidates = conn.Query<UpcomingRace>(sql, new { RaceDate = raceDate.Date }).ToList();
+            if (candidates.Count == 0)
+            {
+                return null;
+            }
+
+            var normalizedTitle = NormalizeLookupKey(title);
+            var normalizedVenue = NormalizeLookupKey(venueName);
+
+            UpcomingRace? best = null;
+            int bestScore = int.MaxValue;
+
+            foreach (var candidate in candidates)
+            {
+                int score = 0;
+                var candidateTitle = NormalizeLookupKey(candidate.Title);
+                if (!string.IsNullOrEmpty(normalizedTitle))
+                {
+                    if (candidateTitle == normalizedTitle)
+                    {
+                        score -= 4;
+                    }
+                    else if (!string.IsNullOrEmpty(candidateTitle) &&
+                             (candidateTitle.Contains(normalizedTitle) || normalizedTitle.Contains(candidateTitle)))
+                    {
+                        score -= 2;
+                    }
+                    else
+                    {
+                        score += 4;
+                    }
+                }
+
+                var candidateVenue = NormalizeLookupKey(candidate.VenueName);
+                if (!string.IsNullOrEmpty(normalizedVenue))
+                {
+                    if (candidateVenue == normalizedVenue)
+                    {
+                        score -= 2;
+                    }
+                    else if (!string.IsNullOrEmpty(candidateVenue) &&
+                             (candidateVenue.Contains(normalizedVenue) || normalizedVenue.Contains(candidateVenue)))
+                    {
+                        score -= 1;
+                    }
+                    else
+                    {
+                        score += 2;
+                    }
+                }
+
+                if (score < bestScore || (score == bestScore && (best == null || candidate.UpcomingRaceId < best.UpcomingRaceId)))
+                {
+                    bestScore = score;
+                    best = candidate;
+                }
+            }
+
+            return best;
+        }
         public short InsertTrainer(Trainer trainer)
         {
             StripBracketedText(trainer);
