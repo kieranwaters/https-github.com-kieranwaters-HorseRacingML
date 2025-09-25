@@ -551,54 +551,54 @@ namespace HorseRacingML.Scraping
             string? Going,
             string? Surface,
             string? RaceType);
-        private static bool TryConvertToByte(object? value, out byte result)
-        {
-            switch (value)
-            {
-                case byte b:
-                    result = b;
-                    return true;
-                case sbyte sb when sb >= byte.MinValue:
-                    result = (byte)sb;
-                    return true;
-                case short s when s >= byte.MinValue && s <= byte.MaxValue:
-                    result = (byte)s;
-                    return true;
-                case ushort us when us <= byte.MaxValue:
-                    result = (byte)us;
-                    return true;
-                case int i when i >= byte.MinValue && i <= byte.MaxValue:
-                    result = (byte)i;
-                    return true;
-                case uint ui when ui <= byte.MaxValue:
-                    result = (byte)ui;
-                    return true;
-                case long l when l >= byte.MinValue && l <= byte.MaxValue:
-                    result = (byte)l;
-                    return true;
-                case ulong ul when ul <= byte.MaxValue:
-                    result = (byte)ul;
-                    return true;
-                case float f when f >= byte.MinValue && f <= byte.MaxValue:
-                    result = (byte)Math.Round(f);
-                    return true;
-                case double d when d >= byte.MinValue && d <= byte.MaxValue:
-                    result = (byte)Math.Round(d);
-                    return true;
-                case decimal m when m >= byte.MinValue && m <= byte.MaxValue:
-                    result = (byte)Math.Round(m);
-                    return true;
-                case string s when byte.TryParse(s, NumberStyles.Any, CultureInfo.InvariantCulture, out var parsedInv):
-                    result = parsedInv;
-                    return true;
-                case string s when byte.TryParse(s, NumberStyles.Any, CultureInfo.CurrentCulture, out var parsedCur):
-                    result = parsedCur;
-                    return true;
-                default:
-                    result = 0;
-                    return false;
-            }
-        }
+        //private static bool TryConvertToByte(object? value, out byte result)
+        //{
+        //    switch (value)
+        //    {
+        //        case byte b:
+        //            result = b;
+        //            return true;
+        //        case sbyte sb when sb >= byte.MinValue:
+        //            result = (byte)sb;
+        //            return true;
+        //        case short s when s >= byte.MinValue && s <= byte.MaxValue:
+        //            result = (byte)s;
+        //            return true;
+        //        case ushort us when us <= byte.MaxValue:
+        //            result = (byte)us;
+        //            return true;
+        //        case int i when i >= byte.MinValue && i <= byte.MaxValue:
+        //            result = (byte)i;
+        //            return true;
+        //        case uint ui when ui <= byte.MaxValue:
+        //            result = (byte)ui;
+        //            return true;
+        //        case long l when l >= byte.MinValue && l <= byte.MaxValue:
+        //            result = (byte)l;
+        //            return true;
+        //        case ulong ul when ul <= byte.MaxValue:
+        //            result = (byte)ul;
+        //            return true;
+        //        case float f when f >= byte.MinValue && f <= byte.MaxValue:
+        //            result = (byte)Math.Round(f);
+        //            return true;
+        //        case double d when d >= byte.MinValue && d <= byte.MaxValue:
+        //            result = (byte)Math.Round(d);
+        //            return true;
+        //        case decimal m when m >= byte.MinValue && m <= byte.MaxValue:
+        //            result = (byte)Math.Round(m);
+        //            return true;
+        //        case string s when byte.TryParse(s, NumberStyles.Any, CultureInfo.InvariantCulture, out var parsedInv):
+        //            result = parsedInv;
+        //            return true;
+        //        case string s when byte.TryParse(s, NumberStyles.Any, CultureInfo.CurrentCulture, out var parsedCur):
+        //            result = parsedCur;
+        //            return true;
+        //        default:
+        //            result = 0;
+        //            return false;
+        //    }
+        //}
         private static readonly Regex BracketedNameContentRegex =
             new Regex(@"\s*[\(\[][^\)\]]*[\)\]]\s*", RegexOptions.Compiled);
 
@@ -617,529 +617,278 @@ namespace HorseRacingML.Scraping
 
         private BetfairScrapeResult ScrapeOpenRaceTabsInternal(IWebDriver driver, bool executeBets, bool captureReport)
         {
-            var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10));
-            var handles = driver.WindowHandles.ToList();
-            var weightPath = ResolveAiWeightPath();
+            var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10)); // short explicit wait
+            var handles = driver.WindowHandles.ToList(); // capture all open tabs
+            var weightPath = ResolveAiWeightPath(); // model weights path
             if (File.Exists(weightPath))
             {
-                var info = new FileInfo(weightPath);
-                Console.WriteLine($"\tAI weight file located at {weightPath} ({info.Length} bytes, last modified {info.LastWriteTimeUtc:u}).");
+                var info = new FileInfo(weightPath); // file info for logging
+                Console.WriteLine($"\tAI weight file located at {weightPath} ({info.Length} bytes, last modified {info.LastWriteTimeUtc:u})."); // status
             }
             else
             {
-                Console.WriteLine($"\tAI weight file missing at {weightPath}; AI probabilities may fall back to defaults.");
+                Console.WriteLine($"\tAI weight file missing at {weightPath}; AI probabilities may fall back to defaults."); // warn missing weights
             }
-
-            var aiCalculator = new AIOddsCalculator(weightPath);
-            Console.WriteLine($"\tAI model status: {aiCalculator.ModelStatus}");
-            var result = new BetfairScrapeResult();
-            var recommendations = new List<BetRecommendation>();
+            var aiCalculator = new AIOddsCalculator(weightPath); // init AI calc
+            Console.WriteLine($"\tAI model status: {aiCalculator.ModelStatus}"); // log model status
+            var result = new BetfairScrapeResult(); // aggregate result
+            var recommendations = new List<BetRecommendation>(); // all bet recs
             foreach (var handle in handles)
             {
-                driver.SwitchTo().Window(handle);
-                Console.WriteLine($"Processing tab: {driver.Url}");
+                driver.SwitchTo().Window(handle); // switch tab
+                Console.WriteLine($"Processing tab: {driver.Url}"); // log url
                 if (!driver.Url.Contains("/horse-racing/", StringComparison.OrdinalIgnoreCase))
                 {
-                    Console.WriteLine("\tSkipping non-racing tab");
-                    continue;
+                    Console.WriteLine("\tSkipping non-racing tab"); // skip non-racing
+                    continue; // next tab
                 }
-
                 try
                 {
-                    // Betfair recently changed the markup for runner rows.  The old
-                    // selector looked for elements with a "data-test-id" attribute of
-                    // "runner" which no longer exists.  Runner rows are now rendered
-                    // with the class "runner-line", but the data-selection-id may be on
-                    // a nested element rather than the row itself.  Wait until at least
-                    // one element with this class is present.
-
-                    wait.Until(d => d.FindElements(By.CssSelector(".runner-line")).Count > 0);
+                    wait.Until(d => d.FindElements(By.CssSelector(".runner-line")).Count > 0); // wait for new runner rows
                 }
                 catch (WebDriverTimeoutException)
                 {
-                    Console.Error.WriteLine("\tTimed out waiting for runner rows");
-                    continue;
+                    Console.Error.WriteLine("\tTimed out waiting for runner rows"); // timeout
+                    continue; // next tab
                 }
-
-                var marketId = ExtractMarketId(driver.Url);
+                var marketId = ExtractMarketId(driver.Url); // parse market id
                 if (string.IsNullOrEmpty(marketId))
                 {
-                    Console.Error.WriteLine($"\tFailed to extract market ID from URL: {driver.Url}");
-                    continue;
+                    Console.Error.WriteLine($"\tFailed to extract market ID from URL: {driver.Url}"); // log failure
+                    continue; // next tab
                 }
-
-                var title = TextOrEmpty(driver, By.CssSelector("[data-testid='marketTitle']"));
-                var venueText = TextOrEmpty(driver, By.CssSelector(".venue-name"));
-                var eventDateText = TextOrEmpty(driver, By.CssSelector(".event-date"));
-                var raceDetailsText = TextOrEmpty(driver, By.CssSelector(".market-name"));
-                var offTimeText = TextOrEmpty(driver, By.CssSelector("[data-testid='startTime']"));
-                var backBookText = TextOrEmpty(driver, By.CssSelector(".rh-back-book-percentage-label"));
-                var layBookText = TextOrEmpty(driver, By.CssSelector(".rh-lay-book-percentage-label"));
-                TimeSpan? offTime = TimeSpan.TryParse(offTimeText, out var t) ? t : (TimeSpan?)null;
-                var (venueTime, venueName, venueCountry) = ParseVenueDetails(venueText);
-                if (!offTime.HasValue && venueTime.HasValue)
-                {
-                    offTime = venueTime;
-                }
-                var parsedRaceDate = ParseEventDate(eventDateText, DateTime.Today);
-                var backBookPercentage = ParsePercentage(backBookText);
-                var layBookPercentage = ParsePercentage(layBookText);
-                Console.WriteLine($"\tScraping market {marketId} - {title}");
-
+                var title = TextOrEmpty(driver, By.CssSelector("[data-testid='marketTitle']")); // market title
+                var venueText = TextOrEmpty(driver, By.CssSelector(".venue-name")); // venue text
+                var eventDateText = TextOrEmpty(driver, By.CssSelector(".event-date")); // event date raw
+                var raceDetailsText = TextOrEmpty(driver, By.CssSelector(".market-name")); // race details
+                var offTimeText = TextOrEmpty(driver, By.CssSelector("[data-testid='startTime']")); // off time raw
+                var backBookText = TextOrEmpty(driver, By.CssSelector(".rh-back-book-percentage-label")); // back book %
+                var layBookText = TextOrEmpty(driver, By.CssSelector(".rh-lay-book-percentage-label")); // lay book %
+                TimeSpan? offTime = TimeSpan.TryParse(offTimeText, out var t) ? t : (TimeSpan?)null; // parse off time
+                var (venueTime, venueName, venueCountry) = ParseVenueDetails(venueText); // parse venue details
+                if (!offTime.HasValue && venueTime.HasValue) { offTime = venueTime; } // fallback to venue time
+                var parsedRaceDate = ParseEventDate(eventDateText, DateTime.Today); // parse date
+                var backBookPercentage = ParsePercentage(backBookText); // parse %
+                var layBookPercentage = ParsePercentage(layBookText); // parse %
+                Console.WriteLine($"\tScraping market {marketId} - {title}"); // progress
                 try
                 {
                     var screen = new RaceScreen
                     {
-                        MarketId = marketId,
-                        OffTime = offTime,
-                        Title = title,
-                        RaceDate = parsedRaceDate ?? DateTime.Today,
-                        VenueName = venueName,
-                        VenueCountry = venueCountry,
-                        EventDateText = string.IsNullOrWhiteSpace(eventDateText) ? null : eventDateText.Trim(),
-                        RaceDetails = string.IsNullOrWhiteSpace(raceDetailsText) ? null : raceDetailsText.Trim(),
-                        BackBookPercentage = backBookPercentage,
-                        LayBookPercentage = layBookPercentage
-                    };
-                    lock (_repoLock)
-                    {
-                        _repo.InsertRaceScreen(screen);
-                    }
-                    Console.WriteLine($"\tInserted race screen for {marketId}");
+                        MarketId = marketId, // ids
+                        OffTime = offTime, // off time
+                        Title = title, // title
+                        RaceDate = parsedRaceDate ?? DateTime.Today, // date
+                        VenueName = venueName, // venue
+                        VenueCountry = venueCountry, // country
+                        EventDateText = string.IsNullOrWhiteSpace(eventDateText) ? null : eventDateText.Trim(), // raw text
+                        RaceDetails = string.IsNullOrWhiteSpace(raceDetailsText) ? null : raceDetailsText.Trim(), // details
+                        BackBookPercentage = backBookPercentage, // %
+                        LayBookPercentage = layBookPercentage // %
+                    }; // init screen row
+                    lock (_repoLock) { _repo.InsertRaceScreen(screen); } // persist
+                    Console.WriteLine($"\tInserted race screen for {marketId}"); // log ok
                 }
                 catch (Exception ex)
                 {
-                    Console.Error.WriteLine($"\tInsertRaceScreen failed for market {marketId}: {ex.Message}");
-                    continue;
+                    Console.Error.WriteLine($"\tInsertRaceScreen failed for market {marketId}: {ex.Message}"); // log error
+                    continue; // next tab
                 }
-
-                // Retrieve the runner rows using the updated selector described above
-                // (any element with the runner-line class)
-                var rows = driver.FindElements(By.CssSelector(".runner-line"));
-                if (rows.Count == 0)
-                {
-                    Console.Error.WriteLine($"\tNo runner rows found for market {marketId}");
-                    continue;
-                }
-                Console.WriteLine($"\tFound {rows.Count} runners for market {marketId}");
-                var flows = new List<RunnerFlow>();
-                var runnerEntries = new List<(IWebElement Row, RunnerFlow Flow)>();
-                // Betfair have historically stored the runner selection identifier in
-                // a variety of data attributes.  The original markup used
-                // "data-selection-id", but recent variants have shifted the value to
-                // alternative attributes (for example "data-selection-key").  Check
-                // the most common options when harvesting the identifier so that we
-                // retain a resilient mapping between the DOM node and the selection.
-                var selectionIdAttributes = new[]
-                {
-                    "data-selection-id",
-                    "data-selection-key",
-                    "data-selection-uid",
-                    "data-selectionid",
-                    "data-runner-id"
-                };
-
+                var rows = driver.FindElements(By.CssSelector(".runner-line")); // current runner rows
+                if (rows.Count == 0) { Console.Error.WriteLine($"\tNo runner rows found for market {marketId}"); continue; } // guard no rows
+                Console.WriteLine($"\tFound {rows.Count} runners for market {marketId}"); // log count
+                var flows = new List<RunnerFlow>(); // collect runner flows
+                var runnerEntries = new List<(IWebElement Row, RunnerFlow Flow)>(); // row→flow mapping
+                var selectionIdAttributes = new[] { "data-selection-id", "data-selection-key", "data-selection-uid", "data-selectionid", "data-runner-id" }; // possible id attrs
                 foreach (var row in rows)
                 {
-                    string? selectionId = null;
-                    foreach (var attribute in selectionIdAttributes)
-                    {
-                        selectionId = row.GetAttribute(attribute);
-                        if (!string.IsNullOrEmpty(selectionId))
-                        {
-                            break;
-                        }
-                    }
-
+                    string? selectionId = null; // selection id holder
+                    foreach (var attribute in selectionIdAttributes) { selectionId = row.GetAttribute(attribute); if (!string.IsNullOrEmpty(selectionId)) { break; } } // try row attrs
                     if (string.IsNullOrEmpty(selectionId))
                     {
                         foreach (var attribute in selectionIdAttributes)
                         {
                             try
                             {
-                                var childWithId = row.FindElement(By.CssSelector($"[{attribute}]"));
-                                selectionId = childWithId.GetAttribute(attribute);
-                                if (!string.IsNullOrEmpty(selectionId))
-                                {
-                                    break;
-                                }
+                                var childWithId = row.FindElement(By.CssSelector($"[{attribute}]")); // search child
+                                selectionId = childWithId.GetAttribute(attribute); // read id
+                                if (!string.IsNullOrEmpty(selectionId)) { break; } // stop if found
                             }
-                            catch (NoSuchElementException)
-                            {
-                                selectionId = null;
-                            }
+                            catch (NoSuchElementException) { selectionId = null; } // ignore missing
                         }
                     }
-
-                    if (string.IsNullOrEmpty(selectionId))
-                    {
-                        Console.Error.WriteLine($"\tUnable to determine selection id for a runner in market {marketId}; skipping row.");
-                        continue;
-                    }
-                    var js = (IJavaScriptExecutor)driver;
+                    if (string.IsNullOrEmpty(selectionId)) { Console.Error.WriteLine($"\tUnable to determine selection id for a runner in market {marketId}; skipping row."); continue; } // skip if still missing
+                    var js = (IJavaScriptExecutor)driver; // cast to JS
                     const string runnerExtractionScript = @"
-                        const row = arguments[0];
-                        const textOrEmpty = el => el && el.textContent ? el.textContent.trim() : '';
-                        const queryText = selector => selector ? textOrEmpty(row.querySelector(selector)) : '';
-
-                        const extractPriceText = raw => {
-                            if (!raw) {
-                                return '';
-                            }
-                            const text = raw.trim();
-                            if (!text) {
-                                return '';
-                            }
-                            if (/^[£€$]/.test(text)) {
-                                return '';
-                            }
-                            return text;
-                        };
-
-                        const extractPriceFromButton = raw => {
-                            if (!raw) {
-                                return '';
-                            }
-                            const text = raw.trim();
-                            if (!text) {
-                                return '';
-                            }
-                            const tokens = text.split(/\s+/);
-                            for (const token of tokens) {
-                                if (!token || /^[£€$]/.test(token)) {
-                                    continue;
-                                }
-                                if (/^[0-9]+(\.[0-9]+)?$/.test(token)) {
-                                    return token;
-                                }
-                            }
-                            return extractPriceText(text);
-                        };
-
-                        const indexTokens = {
-                            1: ['1', 'one'],
-                            2: ['2', 'two'],
-                            3: ['3', 'three']
-                        };
-
-                        const findOursPriceButton = (type, index) => {
-                            const cellIndex = type === 'back' ? 4 : 5;
-                            const cell = row.querySelector(`td:nth-of-type(${cellIndex})`);
-                            if (cell) {
-                                const oursButtons = Array.from(cell.querySelectorAll('ours-price-button'));
-                                if (oursButtons.length >= index) {
-                                    const button = oursButtons[index - 1];
-                                    const priceLabel = button.querySelector('button label:nth-of-type(1), button span:nth-of-type(1), .bet-button-price');
-                                    if (priceLabel) {
-                                        const text = extractPriceText(textOrEmpty(priceLabel));
-                                        if (text) {
-                                            return text;
-                                        }
-                                    }
-
-                                    const fallbackButtonText = extractPriceFromButton(textOrEmpty(button.querySelector('button')));
-                                    if (fallbackButtonText) {
-                                        return fallbackButtonText;
-                                    }
-                                }
-                            }
-
-                            const allButtons = Array.from(row.querySelectorAll('ours-price-button'));
-                            const startIndex = type === 'lay' ? 3 : 0;
-                            if (allButtons.length >= index + startIndex) {
-                                const button = allButtons[startIndex + index - 1];
-                                const priceLabel = button.querySelector('button label:nth-of-type(1), button span:nth-of-type(1), .bet-button-price');
-                                if (priceLabel) {
-                                    const text = extractPriceText(textOrEmpty(priceLabel));
-                                    if (text) {
-                                        return text;
-                                    }
-                                }
-
-                                const fallbackButtonText = extractPriceFromButton(textOrEmpty(button.querySelector('button')));
-                                if (fallbackButtonText) {
-                                    return fallbackButtonText;
-                                }
-                            }
-
-                            return '';
-                        };
-
-                        const findPrice = (type, index) => {
-                            const tokens = indexTokens[index] || [String(index)];
-                            const selectors = [];
-                            for (const token of tokens) {
-                                selectors.push(`.bet-button.${type}-selection-button.${type}-${token} .bet-button-price`);
-                                selectors.push(`.bet-button.price-button.${type}-${token} .bet-button-price`);
-                                selectors.push(`.bet-button.${type}-cell.${type}-${token} .bet-button-price`);
-                                selectors.push(`.bet-buttons-${type}-cell.${type}-${token} .bet-button-price`);
-                                selectors.push(`.${type}-cell.${type}-${token} .bet-button-price`);
-                                selectors.push(`.${type}-${token} .bet-button-price`);
-                            }
-
-                            const oursButtonPrice = findOursPriceButton(type, index);
-                            if (oursButtonPrice) {
-                                return oursButtonPrice;
-                            }
-
-                            const dataTestId = row.querySelector(`[data-testid='runner-${type}-${index}-price']`);
-                            if (dataTestId) {
-                                const text = textOrEmpty(dataTestId);
-                                if (text) {
-                                    return text;
-                                }
-                            }
-
-                            for (const selector of selectors) {
-                                const el = row.querySelector(selector);
-                                if (el) {
-                                    const text = textOrEmpty(el);
-                                    if (text) {
-                                        return text;
-                                    }
-                                }
-                            }
-
-                            return '';
-                        };
-
-                        const result = {
-                            cloth: queryText('.runner-number'),
-                            draw: queryText('.draw'),
-                            horse: queryText('.name .runner-name'),
-                            jockey: queryText('.name .jockey-name')
-                        };
-
-                        for (let i = 1; i <= 3; i++) {
-                            result[`back${i}`] = findPrice('back', i);
-                            result[`lay${i}`] = findPrice('lay', i);
+                const row = arguments[0];
+                const textOrEmpty = el => el && el.textContent ? el.textContent.trim() : '';
+                const queryText = selector => selector ? textOrEmpty(row.querySelector(selector)) : '';
+                const extractPriceText = raw => { if (!raw) { return ''; } const text = raw.trim(); if (!text) { return ''; } if (/^[£€$]/.test(text)) { return ''; } return text; };
+                const extractPriceFromButton = raw => { if (!raw) { return ''; } const text = raw.trim(); if (!text) { return ''; } const tokens = text.split(/\s+/); for (const token of tokens) { if (!token || /^[£€$]/.test(token)) { continue; } if (/^[0-9]+(\.[0-9]+)?$/.test(token)) { return token; } } return extractPriceText(text); };
+                const indexTokens = { 1: ['1','one'], 2: ['2','two'], 3: ['3','three'] };
+                const findOursPriceButton = (type, index) => {
+                    const cellIndex = type === 'back' ? 4 : 5;
+                    const cell = row.querySelector(`td:nth-of-type(${cellIndex})`);
+                    if (cell) {
+                        const oursButtons = Array.from(cell.querySelectorAll('ours-price-button'));
+                        if (oursButtons.length >= index) {
+                            const button = oursButtons[index - 1];
+                            const priceLabel = button.querySelector('button label:nth-of-type(1), button span:nth-of-type(1), .bet-button-price');
+                            if (priceLabel) { const text = extractPriceText(textOrEmpty(priceLabel)); if (text) { return text; } }
+                            const fallbackButtonText = extractPriceFromButton(textOrEmpty(button.querySelector('button')));
+                            if (fallbackButtonText) { return fallbackButtonText; }
                         }
-
-                        const fallbackButtons = Array.from(row.querySelectorAll('bet-button'));
-                        const fallbackPrices = fallbackButtons
-                             .map(btn => {
-                                const label = btn.querySelector('button label:nth-of-type(1), button span:nth-of-type(1), .bet-button-price');
-                                if (label) {
-                                    const priceText = extractPriceText(textOrEmpty(label));
-                                    if (priceText) {
-                                        return priceText;
-                                    }
-                                }
-                                const buttonText = btn.querySelector('button');
-                                return extractPriceFromButton(textOrEmpty(buttonText || btn));
-                            })
-
-                        for (let i = 1; i <= 3; i++) {
-                            const backKey = `back${i}`;
-                            const layKey = `lay${i}`;
-                            if (!result[backKey] && fallbackPrices.length >= i) {
-                                result[backKey] = fallbackPrices[i - 1];
-                            }
-                            if (!result[layKey] && fallbackPrices.length >= i + 3) {
-                                result[layKey] = fallbackPrices[i + 2];
-                            }
-                        }
-
-                        return result;
-                    ";
-
-                    var elementData = (IDictionary<string, object>)js.ExecuteScript(runnerExtractionScript, row);
-
-                    string Get(string key) => elementData.TryGetValue(key, out var v) ? v?.ToString() ?? string.Empty : string.Empty;
-                    var flow = new RunnerFlow
-                    {
-                        MarketId = marketId,
-                        SelectionId = selectionId,
-                        ClothNumber = TryParseByte(Get("cloth")),
-                        Draw = TryParseByte(Get("draw")),
-                        HorseName = Get("horse"),
-                        JockeyName = Get("jockey"),
-                        BackPrice1 = ParseDecimal(Get("back1")),
-                        BackPrice2 = ParseDecimal(Get("back2")),
-                        BackPrice3 = ParseDecimal(Get("back3")),
-                        LayPrice1 = ParseDecimal(Get("lay1")),
-                        LayPrice2 = ParseDecimal(Get("lay2")),
-                        LayPrice3 = ParseDecimal(Get("lay3"))
-                    };
-                    flows.Add(flow);
-                    runnerEntries.Add((row, flow));
+                    }
+                    const allButtons = Array.from(row.querySelectorAll('ours-price-button'));
+                    const startIndex = type === 'lay' ? 3 : 0;
+                    if (allButtons.length >= index + startIndex) {
+                        const button = allButtons[startIndex + index - 1];
+                        const priceLabel = button.querySelector('button label:nth-of-type(1), button span:nth-of-type(1), .bet-button-price');
+                        if (priceLabel) { const text = extractPriceText(textOrEmpty(priceLabel)); if (text) { return text; } }
+                        const fallbackButtonText = extractPriceFromButton(textOrEmpty(button.querySelector('button')));
+                        if (fallbackButtonText) { return fallbackButtonText; }
+                    }
+                    return '';
+                };
+                const findPrice = (type, index) => {
+                    const tokens = indexTokens[index] || [String(index)];
+                    const selectors = [];
+                    for (const token of tokens) {
+                        selectors.push(`.bet-button.${type}-selection-button.${type}-${token} .bet-button-price`);
+                        selectors.push(`.bet-button.price-button.${type}-${token} .bet-button-price`);
+                        selectors.push(`.bet-button.${type}-cell.${type}-${token} .bet-button-price`);
+                        selectors.push(`.bet-buttons-${type}-cell.${type}-${token} .bet-button-price`);
+                        selectors.push(`.${type}-cell.${type}-${token} .bet-button-price`);
+                        selectors.push(`.${type}-${token} .bet-button-price`);
+                    }
+                    const oursButtonPrice = findOursPriceButton(type, index);
+                    if (oursButtonPrice) { return oursButtonPrice; }
+                    const dataTestId = row.querySelector(`[data-testid='runner-${type}-${index}-price']`);
+                    if (dataTestId) { const text = textOrEmpty(dataTestId); if (text) { return text; } }
+                    for (const selector of selectors) {
+                        const el = row.querySelector(selector);
+                        if (el) { const text = textOrEmpty(el); if (text) { return text; } }
+                    }
+                    return '';
+                };
+                const result = { cloth: queryText('.runner-number'), draw: queryText('.draw'), horse: queryText('.name .runner-name'), jockey: queryText('.name .jockey-name') };
+                for (let i = 1; i <= 3; i++) { result[`back${i}`] = findPrice('back', i); result[`lay${i}`] = findPrice('lay', i); }
+                const fallbackButtons = Array.from(row.querySelectorAll('bet-button'));
+                const fallbackPrices = fallbackButtons.map(btn => { const label = btn.querySelector('button label:nth-of-type(1), button span:nth-of-type(1), .bet-button-price'); if (label) { const priceText = extractPriceText(textOrEmpty(label)); if (priceText) { return priceText; } } const buttonText = btn.querySelector('button'); return extractPriceFromButton(textOrEmpty(buttonText || btn)); });
+                for (let i = 1; i <= 3; i++) {
+                    const backKey = `back${i}`; const layKey = `lay${i}`;
+                    if (!result[backKey] && fallbackPrices.length >= i) { result[backKey] = fallbackPrices[i - 1]; }
+                    if (!result[layKey] && fallbackPrices.length >= i + 3) { result[layKey] = fallbackPrices[i + 2]; }
                 }
-                PopulateFeatureVectors(parsedRaceDate, title, venueName, flows, rows.Count);
-                foreach (var flow in flows)
+                return result;
+            ";
+                    var elementData = (IDictionary<string, object>)js.ExecuteScript(runnerExtractionScript, row); // execute script
+                    string Get(string key) => elementData.TryGetValue(key, out var v) ? v?.ToString() ?? string.Empty : string.Empty; // helper
+                    var runnerFlow = new RunnerFlow // renamed to avoid CS0136
+                    {
+                        MarketId = marketId, // market id
+                        SelectionId = selectionId, // selection id
+                        ClothNumber = TryParseByte(Get("cloth")), // cloth
+                        Draw = TryParseByte(Get("draw")), // draw
+                        HorseName = Get("horse"), // horse
+                        JockeyName = Get("jockey"), // jockey
+                        BackPrice1 = ParseDecimal(Get("back1")), // b1
+                        BackPrice2 = ParseDecimal(Get("back2")), // b2
+                        BackPrice3 = ParseDecimal(Get("back3")), // b3
+                        LayPrice1 = ParseDecimal(Get("lay1")), // l1
+                        LayPrice2 = ParseDecimal(Get("lay2")), // l2
+                        LayPrice3 = ParseDecimal(Get("lay3")) // l3
+                    }; // create flow
+                    flows.Add(runnerFlow); // add to list
+                    runnerEntries.Add((row, runnerFlow)); // keep mapping
+                }
+                PopulateFeatureVectors(parsedRaceDate, title, venueName, flows, rows.Count); // build features
+                foreach (var rf in flows) // renamed loop variable to avoid CS0136
                 {
-                    if (flow.FeatureValues != null && !flow.FeatureValues.ContainsKey("RunnerCount") && rows.Count > 0)
+                    if (rf.FeatureValues != null && !rf.FeatureValues.ContainsKey("RunnerCount") && rows.Count > 0) { rf.FeatureValues["RunnerCount"] = rows.Count; } // ensure runner count
+                    if (rf.FeatureValues != null)
                     {
-                        flow.FeatureValues["RunnerCount"] = rows.Count;
+                        if (rf.BackPrice1.HasValue) { rf.FeatureValues["BackPrice1"] = rf.BackPrice1.Value; } // copy b1
+                        if (rf.BackPrice2.HasValue) { rf.FeatureValues["BackPrice2"] = rf.BackPrice2.Value; } // copy b2
+                        if (rf.BackPrice3.HasValue) { rf.FeatureValues["BackPrice3"] = rf.BackPrice3.Value; } // copy b3
+                        if (rf.LayPrice1.HasValue) { rf.FeatureValues["LayPrice1"] = rf.LayPrice1.Value; } // copy l1
+                        if (rf.LayPrice2.HasValue) { rf.FeatureValues["LayPrice2"] = rf.LayPrice2.Value; } // copy l2
+                        if (rf.LayPrice3.HasValue) { rf.FeatureValues["LayPrice3"] = rf.LayPrice3.Value; } // copy l3
                     }
-
-                    if (flow.FeatureValues != null)
-                    {
-                        if (flow.BackPrice1.HasValue)
-                        {
-                            flow.FeatureValues["BackPrice1"] = flow.BackPrice1.Value;
-                        }
-                        if (flow.BackPrice2.HasValue)
-                        {
-                            flow.FeatureValues["BackPrice2"] = flow.BackPrice2.Value;
-                        }
-                        if (flow.BackPrice3.HasValue)
-                        {
-                            flow.FeatureValues["BackPrice3"] = flow.BackPrice3.Value;
-                        }
-                        if (flow.LayPrice1.HasValue)
-                        {
-                            flow.FeatureValues["LayPrice1"] = flow.LayPrice1.Value;
-                        }
-                        if (flow.LayPrice2.HasValue)
-                        {
-                            flow.FeatureValues["LayPrice2"] = flow.LayPrice2.Value;
-                        }
-                        if (flow.LayPrice3.HasValue)
-                        {
-                            flow.FeatureValues["LayPrice3"] = flow.LayPrice3.Value;
-                        }
-                    }
-
                     try
                     {
-                        var probability = aiCalculator.CalculateOdds(flow);
-                        if (double.IsFinite(probability) && probability >= 0)
-                        {
-                            flow.AiOdds = probability;
-                        }
-                        else
-                        {
-                            flow.AiOdds = null;
-                            var identifier = flow.SelectionId ?? flow.HorseName ?? "unknown";
-                            Console.Error.WriteLine($"\tInvalid AI odds calculated for selection {identifier} in market {marketId}");
-                        }
+                        var probability = aiCalculator.CalculateOdds(rf); // compute AI odds
+                        if (double.IsFinite(probability) && probability >= 0) { rf.AiOdds = probability; } else { rf.AiOdds = null; var identifier = rf.SelectionId ?? rf.HorseName ?? "unknown"; Console.Error.WriteLine($"\tInvalid AI odds calculated for selection {identifier} in market {marketId}"); } // handle invalid
                     }
                     catch (Exception ex)
                     {
-                        flow.AiOdds = null;
-                        var identifier = flow.SelectionId ?? flow.HorseName ?? "unknown";
-                        Console.Error.WriteLine($"\tFailed to calculate AI odds for selection {identifier} in market {marketId}: {ex.Message}");
+                        rf.AiOdds = null; // set null on fail
+                        var identifier = rf.SelectionId ?? rf.HorseName ?? "unknown"; // id for log
+                        Console.Error.WriteLine($"\tFailed to calculate AI odds for selection {identifier} in market {marketId}: {ex.Message}"); // log
                     }
-
-                    var runnerIdentifier = !string.IsNullOrWhiteSpace(flow.HorseName)
-                        ? flow.HorseName!
-                        : (flow.SelectionId ?? "unknown");
-                    var aiText = flow.AiOdds.HasValue
-                        ? flow.AiOdds.Value.ToString("0.####", CultureInfo.InvariantCulture)
-                        : "null";
-                    var backText = flow.BackPrice1.HasValue
-                        ? flow.BackPrice1.Value.ToString("0.##", CultureInfo.InvariantCulture)
-                        : "null";
-                    Console.WriteLine($"\tRunner snapshot {runnerIdentifier}: back1={backText}, aiProbabilityRaw={aiText}");
-                    if (!flow.AiOdds.HasValue)
-                    {
-                        Console.WriteLine($"\t\tAI probability missing for {runnerIdentifier}; downstream filters will treat this runner as zero edge.");
-                    }
-                    if (!flow.BackPrice1.HasValue)
-                    {
-                        Console.WriteLine($"\t\tNo back price available for {runnerIdentifier}; cannot compare against market probability.");
-                    }
-                    var validAiBefore = flows
-                    .Where(f => f.AiOdds.HasValue && double.IsFinite(f.AiOdds.Value) && f.AiOdds.Value >= 0)
-                    .Select(f => f.AiOdds!.Value)
-                    .ToList();
-                    var missingAiCount = flows.Count - validAiBefore.Count;
-                    if (validAiBefore.Count == 0)
-                    {
-                        Console.WriteLine($"\tAll {flows.Count} runner(s) in market {marketId} are missing AI probabilities before normalization.");
-                    }
-                    else
-                    {
-                        var sumProb = validAiBefore.Sum();
-                        var minProb = validAiBefore.Min();
-                        var maxProb = validAiBefore.Max();
-                        Console.WriteLine($"\tAI probability summary before normalization for market {marketId}: valid={validAiBefore.Count}, missing={missingAiCount}, sum={sumProb.ToString("0.####", CultureInfo.InvariantCulture)}, min={minProb.ToString("0.####", CultureInfo.InvariantCulture)}, max={maxProb.ToString("0.####", CultureInfo.InvariantCulture)}");
-                    }
-                    NormalizeAiOdds(flows, _useMarketFallbackForAiDegeneracy);
+                    var runnerIdentifier = !string.IsNullOrWhiteSpace(rf.HorseName) ? rf.HorseName! : (rf.SelectionId ?? "unknown"); // readable id
+                    var aiText = rf.AiOdds.HasValue ? rf.AiOdds.Value.ToString("0.####", CultureInfo.InvariantCulture) : "null"; // ai text
+                    var backText = rf.BackPrice1.HasValue ? rf.BackPrice1.Value.ToString("0.##", CultureInfo.InvariantCulture) : "null"; // back text
+                    Console.WriteLine($"\tRunner snapshot {runnerIdentifier}: back1={backText}, aiProbabilityRaw={aiText}"); // per-runner log
+                    if (!rf.AiOdds.HasValue) { Console.WriteLine($"\t\tAI probability missing for {runnerIdentifier}; downstream filters will treat this runner as zero edge."); } // warn missing ai
+                    if (!rf.BackPrice1.HasValue) { Console.WriteLine($"\t\tNo back price available for {runnerIdentifier}; cannot compare against market probability."); } // warn missing price
+                    var validAiBefore = flows.Where(f => f.AiOdds.HasValue && double.IsFinite(f.AiOdds.Value) && f.AiOdds.Value >= 0).Select(f => f.AiOdds!.Value).ToList(); // gather valid ai
+                    var missingAiCount = flows.Count - validAiBefore.Count; // count missing
+                    if (validAiBefore.Count == 0) { Console.WriteLine($"\tAll {flows.Count} runner(s) in market {marketId} are missing AI probabilities before normalization."); } else { var sumProb = validAiBefore.Sum(); var minProb = validAiBefore.Min(); var maxProb = validAiBefore.Max(); Console.WriteLine($"\tAI probability summary before normalization for market {marketId}: valid={validAiBefore.Count}, missing={missingAiCount}, sum={sumProb.ToString("0.####", CultureInfo.InvariantCulture)}, min={minProb.ToString("0.####", CultureInfo.InvariantCulture)}, max={maxProb.ToString("0.####", CultureInfo.InvariantCulture)}"); } // summary
+                    NormalizeAiOdds(flows, _useMarketFallbackForAiDegeneracy); // normalize
                     if (captureReport)
                     {
-                        var report = BuildRaceReport(
-                            marketId,
-                            title,
-                            venueName,
-                            venueCountry,
-                            parsedRaceDate,
-                            offTime,
-                            string.IsNullOrWhiteSpace(raceDetailsText) ? null : raceDetailsText.Trim(),
-                            backBookPercentage,
-                            layBookPercentage,
-                            flows);
-                        result.Races.Add(report);
+                        var report = BuildRaceReport(marketId, title, venueName, venueCountry, parsedRaceDate, offTime, string.IsNullOrWhiteSpace(raceDetailsText) ? null : raceDetailsText.Trim(), backBookPercentage, layBookPercentage, flows); // build report
+                        result.Races.Add(report); // collect report
                     }
-                    var raceRecommendations = CreateRecommendations(flows, marketId, title, venueName, parsedRaceDate)
-                        .OrderByDescending(r => r.Differential)
-                        .ThenByDescending(r => r.KellyFraction)
-                        .ToList();
-                    Console.WriteLine($"\t{raceRecommendations.Count} runner(s) passed value filters for market {marketId}.");
+                    var raceRecommendations = CreateRecommendations(flows, marketId, title, venueName, parsedRaceDate).OrderByDescending(r => r.Differential).ThenByDescending(r => r.KellyFraction).ToList(); // rank recs
+                    Console.WriteLine($"\t{raceRecommendations.Count} runner(s) passed value filters for market {marketId}."); // log count
                     if (!executeBets)
                     {
-                        if (raceRecommendations.Count > 0)
-                        {
-                            Console.WriteLine("\tReport mode: positive expected value runner(s) identified; skipping bet execution.");
-                        }
-                        else
-                        {
-                            Console.WriteLine($"\tNo positive value opportunity identified for market {marketId}");
-                        }
+                        if (raceRecommendations.Count > 0) { Console.WriteLine("\tReport mode: positive expected value runner(s) identified; skipping bet execution."); } else { Console.WriteLine($"\tNo positive value opportunity identified for market {marketId}"); } // report only
                     }
                     else
                     {
-                        if (raceRecommendations.Count > 1)
-                        {
-                            Console.WriteLine("\t\tMultiple runners qualified in the same market; sequential Kelly stakes will size each independently in tab order.");
-                        }
+                        if (raceRecommendations.Count > 1) { Console.WriteLine("\t\tMultiple runners qualified in the same market; sequential Kelly stakes will size each independently in tab order."); } // info
                         if (raceRecommendations.Count > 0)
                         {
-                            var bankrollBeforeClicks = _availableBankroll;
-                            var clickedRecommendations = ExecuteBackAllClicks(driver, runnerEntries, raceRecommendations);
-
+                            var bankrollBeforeClicks = _availableBankroll; // snapshot bankroll
+                            var clickedRecommendations = ExecuteBackAllClicks(driver, runnerEntries, raceRecommendations); // click bets
                             if (clickedRecommendations.Count > 0)
                             {
-                                var top = clickedRecommendations.First();
-                                Console.WriteLine($"\tKelly stake {top.Stake.ToString("0.##", CultureInfo.InvariantCulture)} on {top.HorseName ?? "unknown"} (diff {top.Differential.ToString("0.####", CultureInfo.InvariantCulture)})");
-                                recommendations.AddRange(clickedRecommendations);
-                                PopulateBetSlipStakes(driver, clickedRecommendations, bankrollBeforeClicks);
+                                var top = clickedRecommendations.First(); // first rec
+                                Console.WriteLine($"\tKelly stake {top.Stake.ToString("0.##", CultureInfo.InvariantCulture)} on {top.HorseName ?? "unknown"} (diff {top.Differential.ToString("0.####", CultureInfo.InvariantCulture)})"); // log stake
+                                recommendations.AddRange(clickedRecommendations); // keep all
+                                PopulateBetSlipStakes(driver, clickedRecommendations, bankrollBeforeClicks); // fill stakes
                             }
                             else
                             {
-                                Console.WriteLine("\tNo qualifying Back-All clicks were executed for this market");
+                                Console.WriteLine("\tNo qualifying Back-All clicks were executed for this market"); // none clicked
                             }
                         }
                         else
                         {
-                            Console.WriteLine($"\tNo positive value opportunity identified for market {marketId}");
+                            Console.WriteLine($"\tNo positive value opportunity identified for market {marketId}"); // no value
                         }
                     }
-
-                    foreach (var flow in flows)
+                    foreach (var inner in flows) // persist each flow (use a different name to avoid any shadowing)
                     {
                         try
                         {
-                            lock (_repoLock)
-                            {
-                                _repo.InsertRunnerFlow(flow);
-                            }
-                            Console.WriteLine($"\tInserted runner {flow.SelectionId} for market {marketId}");
+                            lock (_repoLock) { _repo.InsertRunnerFlow(inner); } // save flow
+                            Console.WriteLine($"\tInserted runner {inner.SelectionId} for market {marketId}"); // log ok
                         }
                         catch (Exception ex)
                         {
-                            var selId = flow.SelectionId ?? "unknown";
-                            Console.Error.WriteLine($"\tInsertRunnerFlow failed for market {marketId}, selection {selId}: {ex.Message}");
+                            var selId = inner.SelectionId ?? "unknown"; // safe id
+                            Console.Error.WriteLine($"\tInsertRunnerFlow failed for market {marketId}, selection {selId}: {ex.Message}"); // log error
                         }
                     }
                 }
-                result.Recommendations.AddRange(recommendations
-                    .OrderByDescending(r => r.Differential)
-                    .ThenByDescending(r => r.KellyFraction));
-                return result;
             }
+            result.Recommendations.AddRange(recommendations.OrderByDescending(r => r.Differential).ThenByDescending(r => r.KellyFraction)); // finalize ordering
+            return result; // done
         }
-
         private RaceDayReport BuildRaceReport(
             string marketId,
             string? raceTitle,
@@ -1226,7 +975,7 @@ namespace HorseRacingML.Scraping
           DateTime? raceDate,
           string? raceTitle,
           string? venueName,
-          IList<RunnerFlow> flows,
+          IReadOnlyList<RunnerFlow> flows,
           int runnerCount,
           IReadOnlyList<IDictionary<string, object?>>? preparedRows = null)
         {
@@ -1493,8 +1242,6 @@ namespace HorseRacingML.Scraping
 
                 return _bySaddlecloth.TryGetValue(clothNumber.Value, out var features) ? features : null;
             }
-
-            public IReadOnlyList<IDictionary<string, object?>> Rows => _rows;
         }
         private IEnumerable<BetRecommendation> CreateRecommendations(
             IEnumerable<RunnerFlow> flows,
@@ -2456,11 +2203,11 @@ namespace HorseRacingML.Scraping
             catch { return string.Empty; }
         }
 
-        private static string SafeText(IWebElement e, By by)
-        {
-            try { return e.FindElement(by).Text.Trim(); }
-            catch { return string.Empty; }
-        }
+        //private static string SafeText(IWebElement e, By by)
+        //{
+        //    try { return e.FindElement(by).Text.Trim(); }
+        //    catch { return string.Empty; }
+        //}
 
         private static decimal? ParseDecimal(string text)
         {
