@@ -165,7 +165,27 @@ namespace HorseRacingML.Scraping
                 {
                     continue;
                 }
+                if (race.Runners == null || race.Runners.Count == 0)
+                {
+                    continue;
+                }
 
+                var runnersByHorse = new Dictionary<string, RunnerDayReport>(StringComparer.Ordinal);
+                foreach (var runner in race.Runners)
+                {
+                    if (runner?.HorseName == null)
+                    {
+                        continue;
+                    }
+
+                    var normalizedHorse = NormalizeName(runner.HorseName);
+                    if (string.IsNullOrEmpty(normalizedHorse) || runnersByHorse.ContainsKey(normalizedHorse))
+                    {
+                        continue;
+                    }
+
+                    runnersByHorse[normalizedHorse] = runner;
+                }
                 int? raceId = null;
                 try
                 {
@@ -220,25 +240,33 @@ namespace HorseRacingML.Scraping
                     .First();
 
                 RunnerDayReport? runnerMatch = null;
-                if (!string.IsNullOrEmpty(winner.SelectionId))
+                if (!string.IsNullOrEmpty(winner.HorseName))
                 {
-                    runnerMatch = race.Runners.FirstOrDefault(r => string.Equals(r.SelectionId, winner.SelectionId, StringComparison.OrdinalIgnoreCase));
+                    var horseKey = NormalizeName(winner.HorseName);
+                    if (!string.IsNullOrEmpty(horseKey) && runnersByHorse.TryGetValue(horseKey, out var horseMatch))
+                    {
+                        runnerMatch = horseMatch;
+                    }
                 }
 
                 if (runnerMatch == null && winner.ClothNumber.HasValue)
                 {
-                    runnerMatch = race.Runners.FirstOrDefault(r => r.ClothNumber == winner.ClothNumber.Value);
+                    runnerMatch = race.Runners.FirstOrDefault(r => r?.ClothNumber == winner.ClothNumber.Value);
                 }
 
-                if (runnerMatch == null && !string.IsNullOrEmpty(winner.HorseName))
+                if (runnerMatch == null && !string.IsNullOrEmpty(winner.SelectionId))
                 {
-                    var horseKey = NormalizeName(winner.HorseName);
-                    runnerMatch = race.Runners.FirstOrDefault(r => NormalizeName(r.HorseName) == horseKey);
+                    runnerMatch = race.Runners.FirstOrDefault(r =>
+                        !string.IsNullOrWhiteSpace(r?.SelectionId) &&
+                        string.Equals(r.SelectionId, winner.SelectionId, StringComparison.OrdinalIgnoreCase));
                 }
 
                 if (runnerMatch == null)
                 {
-                    Console.Error.WriteLine($"\t[DayReport] Failed to match predicted winner for race {race.RaceTitle ?? race.MarketId}.");
+                    var winnerIdentifier = !string.IsNullOrWhiteSpace(winner.HorseName)
+                        ? winner.HorseName
+                        : (!string.IsNullOrWhiteSpace(winner.SelectionId) ? winner.SelectionId : "unknown");
+                    Console.Error.WriteLine($"\t[DayReport] Failed to match predicted winner {winnerIdentifier} for race {race.RaceTitle ?? race.MarketId}.");
                     continue;
                 }
 
@@ -717,7 +745,11 @@ namespace HorseRacingML.Scraping
                             catch (NoSuchElementException) { selectionId = null; } // ignore missing
                         }
                     }
-                    if (string.IsNullOrEmpty(selectionId)) { Console.Error.WriteLine($"\tUnable to determine selection id for a runner in market {marketId}; skipping row."); continue; } // skip if still missing
+                    var selectionIdMissing = string.IsNullOrWhiteSpace(selectionId);
+                    if (selectionIdMissing)
+                    {
+                        selectionId = null;
+                    }
                     var js = (IJavaScriptExecutor)driver; // cast to JS
                     const string runnerExtractionScript = @"
                 const row = arguments[0];
@@ -799,6 +831,20 @@ namespace HorseRacingML.Scraping
                         LayPrice2 = ParseDecimal(Get("lay2")), // l2
                         LayPrice3 = ParseDecimal(Get("lay3")) // l3
                     }; // create flow
+                    if (selectionIdMissing && string.IsNullOrWhiteSpace(runnerFlow.HorseName))
+                    {
+                        Console.Error.WriteLine($"\tUnable to determine selection id or horse name for a runner in market {marketId}; skipping row.");
+                        continue;
+                    }
+                    if (selectionIdMissing)
+                    {
+                        var fallbackIdentifier = !string.IsNullOrWhiteSpace(runnerFlow.HorseName)
+                            ? runnerFlow.HorseName!.Trim()
+                            : runnerFlow.ClothNumber.HasValue
+                                ? $"cloth #{runnerFlow.ClothNumber.Value.ToString(CultureInfo.InvariantCulture)}"
+                                : "unknown runner";
+                        Console.WriteLine($"\tRunner {fallbackIdentifier} in market {marketId} missing selection id; relying on horse name for identification.");
+                    }
                     flows.Add(runnerFlow); // add to list
                     runnerEntries.Add((row, runnerFlow)); // keep mapping
                 }
@@ -876,12 +922,17 @@ namespace HorseRacingML.Scraping
                         try
                         {
                             lock (_repoLock) { _repo.InsertRunnerFlow(inner); } // save flow
-                            Console.WriteLine($"\tInserted runner {inner.SelectionId} for market {marketId}"); // log ok
+                            var runnerIdentifier = !string.IsNullOrWhiteSpace(inner.HorseName)
+                                ? inner.HorseName!.Trim()
+                                : (!string.IsNullOrWhiteSpace(inner.SelectionId) ? inner.SelectionId! : "unknown");
+                            Console.WriteLine($"\tInserted runner {runnerIdentifier} for market {marketId}"); // log ok
                         }
                         catch (Exception ex)
                         {
-                            var selId = inner.SelectionId ?? "unknown"; // safe id
-                            Console.Error.WriteLine($"\tInsertRunnerFlow failed for market {marketId}, selection {selId}: {ex.Message}"); // log error
+                            var runnerIdentifier = !string.IsNullOrWhiteSpace(inner.HorseName)
+                                ? inner.HorseName!.Trim()
+                                : (inner.SelectionId ?? "unknown");
+                            Console.Error.WriteLine($"\tInsertRunnerFlow failed for market {marketId}, runner {runnerIdentifier}: {ex.Message}"); // log error
                         }
                     }
                 }
