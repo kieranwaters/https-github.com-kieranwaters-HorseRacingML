@@ -106,6 +106,324 @@ namespace HorseRacingML.Scraping
             Console.Error.WriteLine($"\tAI weight file not found; expected locations include {fallback}");
             return fallback;
         }
+        public IReadOnlyList<RaceDayReport> ScrapeOpenRaceTabsForReport(IWebDriver driver)
+        {
+            var result = ScrapeOpenRaceTabsInternal(driver, executeBets: false, captureReport: true);
+            PopulateWinnerProbabilities(result.Races);
+            return result.Races;
+        }
+
+        public void PopulateWinnerProbabilities(IEnumerable<RaceDayReport> races)
+        {
+            if (races == null)
+            {
+                return;
+            }
+
+            var raceList = races as IList<RaceDayReport> ?? races.ToList();
+            if (raceList.Count == 0)
+            {
+                return;
+            }
+
+            var weightPath = ResolveAiWeightPath();
+            var aiCalculator = new AIOddsCalculator(weightPath);
+
+            foreach (var race in raceList)
+            {
+                if (race == null)
+                {
+                    continue;
+                }
+
+                int? raceId = null;
+                try
+                {
+                    if (race.RaceDate.HasValue)
+                    {
+                        raceId = _repo.FindRaceId(race.RaceDate.Value, race.RaceTitle, race.VenueName);
+                    }
+
+                    if (!raceId.HasValue && race.RaceDate.HasValue)
+                    {
+                        raceId = _repo.FindRaceId(race.RaceDate.Value, race.RaceTitle, null);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"\t[DayReport] Failed to resolve race identifier for {race.RaceTitle ?? race.MarketId}: {ex.Message}");
+                    continue;
+                }
+
+                if (!raceId.HasValue)
+                {
+                    continue;
+                }
+
+                PreparedDataset prepared;
+                try
+                {
+                    prepared = _trainer.PrepareDataset(new HashSet<int> { raceId.Value }, null, includeIdentifiers: true);
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"\t[DayReport] Failed to prepare feature set for race {raceId.Value}: {ex.Message}");
+                    continue;
+                }
+
+                var preparedRace = prepared.Races.FirstOrDefault(r => r.RaceId == raceId.Value);
+                if (preparedRace == null)
+                {
+                    continue;
+                }
+
+                var probabilityByCloth = new Dictionary<int, double>();
+                var probabilityByHorse = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+                var finishByCloth = new Dictionary<int, int>();
+                var finishByHorse = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var row in preparedRace.Rows)
+                {
+                    if (row == null)
+                    {
+                        continue;
+                    }
+
+                    var flow = BuildFlowFromPreparedRow(row);
+                    double probability;
+                    try
+                    {
+                        probability = aiCalculator.CalculateOdds(flow);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.Error.WriteLine($"\t[DayReport] Failed to score runner {flow.HorseName ?? flow.SelectionId ?? "unknown"}: {ex.Message}");
+                        continue;
+                    }
+
+                    if (!double.IsFinite(probability) || probability <= 0)
+                    {
+                        continue;
+                    }
+
+                    if (flow.ClothNumber.HasValue)
+                    {
+                        probabilityByCloth[flow.ClothNumber.Value] = probability;
+                    }
+
+                    var horseKey = NormalizeName(flow.HorseName);
+                    if (!string.IsNullOrEmpty(horseKey))
+                    {
+                        probabilityByHorse[horseKey] = probability;
+                    }
+
+                    if (row.TryGetValue("FinishPos", out var finishObj) && TryConvertToInt(finishObj, out var finishPos))
+                    {
+                        if (flow.ClothNumber.HasValue)
+                        {
+                            finishByCloth[flow.ClothNumber.Value] = finishPos;
+                        }
+
+                        if (!string.IsNullOrEmpty(horseKey))
+                        {
+                            finishByHorse[horseKey] = finishPos;
+                        }
+                    }
+                }
+
+                foreach (var runner in race.Runners)
+                {
+                    if (runner == null)
+                    {
+                        continue;
+                    }
+
+                    if (!TryMatchProbability(runner, probabilityByCloth, probabilityByHorse, out var probability))
+                    {
+                        continue;
+                    }
+
+                    runner.AiProbability = probability;
+                    runner.AiDecimalOdds = BettingMath.CalculateAiDecimalOdds(probability);
+
+                    if (runner.FeatureValues == null)
+                    {
+                        runner.FeatureValues = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+                    }
+
+                    if (runner.ClothNumber.HasValue && finishByCloth.TryGetValue(runner.ClothNumber.Value, out var finishFromCloth))
+                    {
+                        runner.FeatureValues["FinishPos"] = finishFromCloth;
+                    }
+                    else
+                    {
+                        var horseKey = NormalizeName(runner.HorseName);
+                        if (!string.IsNullOrEmpty(horseKey) && finishByHorse.TryGetValue(horseKey, out var finishFromHorse))
+                        {
+                            runner.FeatureValues["FinishPos"] = finishFromHorse;
+                        }
+                    }
+
+                    if (runner.MarketProbability.HasValue)
+                    {
+                        runner.Differential = probability - runner.MarketProbability.Value;
+                    }
+
+                    if (runner.MarketDecimalOdds.HasValue && runner.MarketDecimalOdds.Value > 1m)
+                    {
+                        var kelly = BettingMath.CalculateKellyFraction(probability, (double)runner.MarketDecimalOdds.Value, _maxKellyFraction);
+                        runner.KellyFraction = kelly;
+                        runner.SuggestedStake = (kelly > 0m && _bankroll > 0m) ? BettingMath.CalculateSequentialStake(_bankroll, kelly) : (decimal?)null;
+                    }
+                    else
+                    {
+                        runner.KellyFraction = null;
+                        runner.SuggestedStake = null;
+                    }
+                }
+            }
+        }
+
+        private static RunnerFlow BuildFlowFromPreparedRow(Dictionary<string, object?> row)
+        {
+            var flow = new RunnerFlow
+            {
+                FeatureValues = new Dictionary<string, object?>(row, StringComparer.OrdinalIgnoreCase)
+            };
+
+            if (row.TryGetValue("HorseName", out var horseObj) && horseObj is string horseName)
+            {
+                flow.HorseName = horseName;
+            }
+
+            if (row.TryGetValue("SelectionId", out var selectionObj) && selectionObj is string selectionId)
+            {
+                flow.SelectionId = selectionId;
+            }
+
+            if (row.TryGetValue("SaddleclothNumber", out var clothObj) && TryConvertToByte(clothObj, out var cloth))
+            {
+                flow.ClothNumber = cloth;
+            }
+
+            if (row.TryGetValue("Draw", out var drawObj) && TryConvertToByte(drawObj, out var draw))
+            {
+                flow.Draw = draw;
+            }
+
+            return flow;
+        }
+
+        private static bool TryMatchProbability(
+            RunnerDayReport runner,
+            IDictionary<int, double> byCloth,
+            IDictionary<string, double> byHorse,
+            out double probability)
+        {
+            probability = 0;
+
+            if (runner.ClothNumber.HasValue && byCloth.TryGetValue(runner.ClothNumber.Value, out probability))
+            {
+                return true;
+            }
+
+            var horseKey = NormalizeName(runner.HorseName);
+            if (!string.IsNullOrEmpty(horseKey) && byHorse.TryGetValue(horseKey, out probability))
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool TryConvertToByte(object? value, out byte result)
+        {
+            switch (value)
+            {
+                case byte b:
+                    result = b;
+                    return true;
+                case sbyte sb when sb >= byte.MinValue:
+                    result = (byte)sb;
+                    return true;
+                case short s when s >= byte.MinValue && s <= byte.MaxValue:
+                    result = (byte)s;
+                    return true;
+                case ushort us when us <= byte.MaxValue:
+                    result = (byte)us;
+                    return true;
+                case int i when i >= byte.MinValue && i <= byte.MaxValue:
+                    result = (byte)i;
+                    return true;
+                case uint ui when ui <= byte.MaxValue:
+                    result = (byte)ui;
+                    return true;
+                case long l when l >= byte.MinValue && l <= byte.MaxValue:
+                    result = (byte)l;
+                    return true;
+                case ulong ul when ul <= byte.MaxValue:
+                    result = (byte)ul;
+                    return true;
+                case float f when f >= byte.MinValue && f <= byte.MaxValue:
+                    result = (byte)Math.Round(f);
+                    return true;
+                case double d when d >= byte.MinValue && d <= byte.MaxValue:
+                    result = (byte)Math.Round(d);
+                    return true;
+                case decimal m when m >= byte.MinValue && m <= byte.MaxValue:
+                    result = (byte)Math.Round(m);
+                    return true;
+                case string s when byte.TryParse(s, NumberStyles.Any, CultureInfo.InvariantCulture, out var parsedInv):
+                    result = parsedInv;
+                    return true;
+                case string s when byte.TryParse(s, NumberStyles.Any, CultureInfo.CurrentCulture, out var parsedCur):
+                    result = parsedCur;
+                    return true;
+                default:
+                    result = 0;
+                    return false;
+            }
+        }
+
+        private static bool TryConvertToInt(object? value, out int result)
+        {
+            switch (value)
+            {
+                case int i:
+                    result = i;
+                    return true;
+                case short s:
+                    result = s;
+                    return true;
+                case ushort us:
+                    result = us;
+                    return true;
+                case long l when l >= int.MinValue && l <= int.MaxValue:
+                    result = (int)l;
+                    return true;
+                case ulong ul when ul <= int.MaxValue:
+                    result = (int)ul;
+                    return true;
+                case float f when f >= int.MinValue && f <= int.MaxValue:
+                    result = (int)Math.Round(f);
+                    return true;
+                case double d when d >= int.MinValue && d <= int.MaxValue:
+                    result = (int)Math.Round(d);
+                    return true;
+                case decimal m when m >= int.MinValue && m <= int.MaxValue:
+                    result = (int)Math.Round(m);
+                    return true;
+                case string s when int.TryParse(s, NumberStyles.Any, CultureInfo.InvariantCulture, out var parsedInv):
+                    result = parsedInv;
+                    return true;
+                case string s when int.TryParse(s, NumberStyles.Any, CultureInfo.CurrentCulture, out var parsedCur):
+                    result = parsedCur;
+                    return true;
+                default:
+                    result = 0;
+                    return false;
+            }
+        }
         private BetfairScrapeResult ScrapeOpenRaceTabsInternal(IWebDriver driver, bool executeBets, bool captureReport)
         {
             var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10));
@@ -692,11 +1010,6 @@ namespace HorseRacingML.Scraping
         public IReadOnlyList<BetRecommendation> ScrapeOpenRaceTabs(IWebDriver driver)
         {
             return ScrapeOpenRaceTabsInternal(driver, executeBets: true, captureReport: false).Recommendations;
-        }
-
-        public IReadOnlyList<RaceDayReport> ScrapeOpenRaceTabsForReport(IWebDriver driver)
-        {
-            return ScrapeOpenRaceTabsInternal(driver, executeBets: false, captureReport: true).Races;
         }
         private IEnumerable<BetRecommendation> CreateRecommendations(
             IEnumerable<RunnerFlow> flows,
