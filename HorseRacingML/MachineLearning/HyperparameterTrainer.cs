@@ -625,7 +625,220 @@ namespace HorseRacingML.ML
                 trainBrier,
                 validationBrier);
         }
+        public record RunnerProbability(int RaceId, int? ClothNumber, string? HorseName, string? SelectionId, double Probability);
 
+        public TrainedModel? LoadLatestTrainedModel()
+        {
+            var weightDirectory = Path.Combine(AppContext.BaseDirectory, "weights");
+            var weightPath = Path.Combine(weightDirectory, "aiweights.json");
+            if (!File.Exists(weightPath))
+            {
+                Console.Error.WriteLine($"[AI] Trained weight file not found at {weightPath}.");
+                return null;
+            }
+
+            try
+            {
+                var json = File.ReadAllText(weightPath);
+                var model = JsonSerializer.Deserialize<TrainedModel>(json);
+                if (model == null)
+                {
+                    Console.Error.WriteLine("[AI] Failed to deserialize trained weight file; model was null.");
+                }
+                return model;
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[AI] Failed to load trained model: {ex.Message}");
+                return null;
+            }
+        }
+
+        public IReadOnlyList<RunnerProbability> PredictRaceProbabilities(TrainingDataset.PreparedDataset.PreparedRace race, TrainedModel model)
+        {
+            if (race is null)
+                throw new ArgumentNullException(nameof(race));
+            if (model is null)
+                throw new ArgumentNullException(nameof(model));
+
+            if (model.Metadata is null || model.Metadata.Keys is null || model.Metadata.FeatureDimensions is null)
+            {
+                return Array.Empty<RunnerProbability>();
+            }
+
+            var featureKeys = model.Metadata.Keys;
+            var featureDimensions = model.Metadata.FeatureDimensions;
+            var stringMaps = model.Metadata.StringMaps ?? new Dictionary<string, Dictionary<string, int>>();
+            int featureCount = featureDimensions.Values.Sum();
+            if (featureCount == 0)
+            {
+                return Array.Empty<RunnerProbability>();
+            }
+
+            var normalization = model.Normalization ?? new NormalizationParameters();
+            var results = new List<RunnerProbability>(race.Rows.Count);
+            foreach (var row in race.Rows)
+            {
+                if (row is null)
+                {
+                    continue;
+                }
+
+                float[] featureVector;
+                try
+                {
+                    featureVector = HyperparameterTrainer.EncodeFeatureVector(row, featureKeys, featureDimensions, stringMaps, featureCount);
+                }
+                catch
+                {
+                    continue;
+                }
+
+                var normalized = NormalizeFeatures(featureVector, normalization);
+                var probability = ForwardPass(normalized, model.HiddenLayers, model.OutputLayer);
+                if (!double.IsFinite(probability) || probability <= 0)
+                {
+                    continue;
+                }
+
+                int? clothNumber = null;
+                if (row.TryGetValue("SaddleclothNumber", out var clothObj) && TrainingDataset.PreparedDataset.TryConvertToInt32(clothObj, out var cloth))
+                {
+                    clothNumber = cloth;
+                }
+
+                string? selectionId = null;
+                if (row.TryGetValue("SelectionId", out var selectionObj) && selectionObj is not null)
+                {
+                    selectionId = selectionObj.ToString();
+                }
+
+                string? horseName = null;
+                if (row.TryGetValue("HorseName", out var horseObj) && horseObj is not null)
+                {
+                    horseName = horseObj.ToString();
+                }
+
+                results.Add(new RunnerProbability(race.RaceId, clothNumber, horseName, selectionId, probability));
+            }
+
+            return results;
+        }
+
+        private static double[] NormalizeFeatures(float[] features, NormalizationParameters normalization)
+        {
+            if (features is null)
+                throw new ArgumentNullException(nameof(features));
+            if (normalization is null)
+                throw new ArgumentNullException(nameof(normalization));
+
+            var normalized = new double[features.Length];
+            var means = normalization.Mean ?? Array.Empty<float>();
+            var stds = normalization.StdDev ?? Array.Empty<float>();
+
+            for (int i = 0; i < features.Length; i++)
+            {
+                double value = double.IsFinite(features[i]) ? features[i] : 0d;
+                double mean = i < means.Length && double.IsFinite(means[i]) ? means[i] : 0d;
+                double std = i < stds.Length && double.IsFinite(stds[i]) ? stds[i] : 0d;
+                if (Math.Abs(std) < 1e-8)
+                {
+                    normalized[i] = 0d;
+                }
+                else
+                {
+                    normalized[i] = (value - mean) / std;
+                }
+            }
+
+            return normalized;
+        }
+
+        private static double ForwardPass(double[] inputs, List<LayerWeights> hiddenLayers, LayerWeights outputLayer)
+        {
+            if (inputs is null)
+                throw new ArgumentNullException(nameof(inputs));
+            if (hiddenLayers is null)
+                throw new ArgumentNullException(nameof(hiddenLayers));
+            if (outputLayer is null)
+                throw new ArgumentNullException(nameof(outputLayer));
+
+            var activations = inputs;
+            foreach (var layer in hiddenLayers)
+            {
+                activations = ApplyRelu(ApplyLayer(activations, layer));
+            }
+
+            var output = ApplyLayer(activations, outputLayer);
+            if (output.Length == 0)
+            {
+                return 0d;
+            }
+
+            return Sigmoid(output[0]);
+        }
+
+        private static double[] ApplyLayer(double[] inputs, LayerWeights layer)
+        {
+            if (inputs is null)
+                throw new ArgumentNullException(nameof(inputs));
+            if (layer is null)
+                throw new ArgumentNullException(nameof(layer));
+
+            var weights = layer.Weights ?? Array.Empty<float[]>();
+            var bias = layer.Bias ?? Array.Empty<float>();
+            int outputCount = Math.Max(bias.Length, weights.Length > 0 ? weights[0]?.Length ?? 0 : 0);
+            var outputs = new double[outputCount];
+
+            for (int j = 0; j < outputCount; j++)
+            {
+                double sum = j < bias.Length ? bias[j] : 0d;
+                int inputCount = Math.Min(inputs.Length, weights.Length);
+                for (int i = 0; i < inputCount; i++)
+                {
+                    var weightRow = weights[i];
+                    if (weightRow == null || j >= weightRow.Length)
+                    {
+                        continue;
+                    }
+
+                    sum += inputs[i] * weightRow[j];
+                }
+
+                outputs[j] = sum;
+            }
+
+            return outputs;
+        }
+
+        private static double[] ApplyRelu(double[] values)
+        {
+            if (values is null)
+                throw new ArgumentNullException(nameof(values));
+
+            var result = new double[values.Length];
+            for (int i = 0; i < values.Length; i++)
+            {
+                var value = values[i];
+                result[i] = value > 0d ? value : 0d;
+            }
+
+            return result;
+        }
+
+        private static double Sigmoid(double value)
+        {
+            if (value >= 0)
+            {
+                var z = Math.Exp(-value);
+                return 1d / (1d + z);
+            }
+            else
+            {
+                var z = Math.Exp(value);
+                return z / (1d + z);
+            }
+        }
         private static void HyperparameterFailed(MLParameter param, Exception exception)
         {
             Console.Error.WriteLine(

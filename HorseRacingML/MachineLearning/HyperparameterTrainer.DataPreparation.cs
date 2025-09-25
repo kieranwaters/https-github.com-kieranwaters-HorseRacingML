@@ -577,6 +577,39 @@ namespace HorseRacingML.ML
 
             return new DatasetFeatureMetadata(featureKeys, featureDims, stringMaps);
         }
+        internal static float[] EncodeFeatureVector(
+           Dictionary<string, object?> row,
+           IList<string> featureKeys,
+           IDictionary<string, int> featureDimensions,
+           IDictionary<string, Dictionary<string, int>> stringMaps,
+           int featureCount)
+        {
+            if (row is null)
+                throw new ArgumentNullException(nameof(row));
+            if (featureKeys is null)
+                throw new ArgumentNullException(nameof(featureKeys));
+            if (featureDimensions is null)
+                throw new ArgumentNullException(nameof(featureDimensions));
+            if (stringMaps is null)
+                throw new ArgumentNullException(nameof(stringMaps));
+
+            var features = new float[featureCount];
+            int offset = 0;
+            foreach (var key in featureKeys)
+            {
+                if (!featureDimensions.TryGetValue(key, out var dim))
+                {
+                    continue;
+                }
+
+                row.TryGetValue(key, out var value);
+                var vec = EncodeFeature(key, value, dim, stringMaps);
+                Array.Copy(vec, 0, features, offset, dim);
+                offset += dim;
+            }
+
+            return features;
+        }
 
         private static List<RaceExample> EncodeRaces(
             IEnumerable<PreparedRace> races,
@@ -600,16 +633,7 @@ namespace HorseRacingML.ML
                 var runners = new List<RunnerExample>(preparedRace.Rows.Count);
                 foreach (var row in preparedRace.Rows)
                 {
-                    var features = new float[featureCount];
-                    int offset = 0;
-                    foreach (var key in featureKeys)
-                    {
-                        int dim = featureDimensions[key];
-                        row.TryGetValue(key, out var value);
-                        var vec = EncodeFeature(key, value, dim, stringMaps);
-                        Array.Copy(vec, 0, features, offset, dim);
-                        offset += dim;
-                    }
+                    var features = EncodeFeatureVector(row, featureKeys, featureDimensions, stringMaps, featureCount);
 
                     float label = row.TryGetValue("FinishPos", out var f) && PreparedDataset.TryConvertToInt32(f, out var finishPos) && finishPos == 1
                         ? 1f
