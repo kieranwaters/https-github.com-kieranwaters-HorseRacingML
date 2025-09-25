@@ -28,6 +28,7 @@ namespace HorseRacingML.ML
         private readonly bool _hasTrainedModel;
         private readonly double[] _legacyWeights;
         private readonly double _legacyBias;
+        private readonly string _modelStatus;
 
         private static readonly DateTime BaseDate = new DateTime(2005, 1, 1);
 
@@ -103,9 +104,11 @@ namespace HorseRacingML.ML
         {
             _legacyWeights = Array.Empty<double>();
             _legacyBias = 0d;
+            _modelStatus = "AI model not initialized.";
             if (!File.Exists(path))
             {
                 Console.Error.WriteLine($"[AI] Weight file not found at {path}; falling back to legacy logistic model.");
+                _modelStatus = $"Weight file not found at {path}; defaulting to zero-probability outputs.";
                 return;
             }
 
@@ -114,6 +117,7 @@ namespace HorseRacingML.ML
             {
                 _hasTrainedModel = true;
                 Console.WriteLine($"[AI] Loaded trained model with {_featureCount} features from {Path.GetFileName(path)}.");
+                _modelStatus = $"Loaded trained model with {_featureCount} features from {Path.GetFileName(path)}.";
                 return;
             }
 
@@ -125,10 +129,12 @@ namespace HorseRacingML.ML
                 if (_legacyWeights.Length == 0)
                 {
                     Console.Error.WriteLine($"[AI] Legacy weight file {Path.GetFileName(path)} did not contain any usable coefficients; probabilities will default to zero.");
+                    _modelStatus = $"Legacy weight file {Path.GetFileName(path)} was empty; probabilities will default to zero.";
                 }
                 else
                 {
                     Console.WriteLine($"[AI] Loaded legacy logistic weights ({_legacyWeights.Length}) from {Path.GetFileName(path)}.");
+                    _modelStatus = $"Loaded legacy logistic model with {_legacyWeights.Length} coefficients from {Path.GetFileName(path)}.";
                 }
             }
             catch (JsonException)
@@ -136,8 +142,15 @@ namespace HorseRacingML.ML
                 _legacyWeights = Array.Empty<double>();
                 _legacyBias = 0d;
                 Console.Error.WriteLine($"[AI] Failed to parse weight file {Path.GetFileName(path)}; probabilities will default to zero.");
+                _modelStatus = $"Failed to parse weight file {Path.GetFileName(path)}; probabilities will default to zero.";
             }
         }
+
+        public string ModelStatus => _modelStatus;
+
+        public bool HasTrainedModel => _hasTrainedModel;
+
+        public bool HasLegacyModel => _legacyWeights.Length > 0;
         private Dictionary<string, object?> BuildRawFeatureMap(RunnerFlow flow)
         {
             var raw = flow.FeatureValues != null

@@ -111,7 +111,18 @@ namespace HorseRacingML.Scraping
             var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10));
             var handles = driver.WindowHandles.ToList();
             var weightPath = ResolveAiWeightPath();
+            if (File.Exists(weightPath))
+            {
+                var info = new FileInfo(weightPath);
+                Console.WriteLine($"\tAI weight file located at {weightPath} ({info.Length} bytes, last modified {info.LastWriteTimeUtc:u}).");
+            }
+            else
+            {
+                Console.WriteLine($"\tAI weight file missing at {weightPath}; AI probabilities may fall back to defaults.");
+            }
+
             var aiCalculator = new AIOddsCalculator(weightPath);
+            Console.WriteLine($"\tAI model status: {aiCalculator.ModelStatus}");
             var result = new BetfairScrapeResult();
             var recommendations = new List<BetRecommendation>();
             foreach (var handle in handles)
@@ -1331,13 +1342,20 @@ namespace HorseRacingML.Scraping
 
             if (maxValue - minValue <= degeneracyTolerance)
             {
+                Console.WriteLine("\t\tDetected degenerate AI probability distribution; raw outputs are identical across runners.");
+
+                if (TryResolveDegenerateDistribution(flows))
+                {
+                    return;
+                }
+
                 if (!useMarketFallbackForDegeneracy)
                 {
-                    Console.WriteLine("\t\tDetected degenerate AI probability distribution; preserving raw AI outputs (market fallback disabled).");
+                    Console.WriteLine("\t\tPreserving raw AI outputs (market fallback disabled).");
                 }
                 else
                 {
-                    Console.WriteLine("\t\tDetected degenerate AI probability distribution; falling back to market-implied probabilities.");
+                    Console.WriteLine("\t\tFalling back to market-implied probabilities.");
 
                     bool anyFallbackApplied = false;
                     foreach (var flow in flows)
@@ -1373,6 +1391,7 @@ namespace HorseRacingML.Scraping
                     maxValue = valid.Max(f => f.AiOdds!.Value);
                 }
             }
+        NormalizationSummary:
             var sum = valid.Sum(f => f.AiOdds!.Value);
             Console.WriteLine($"\tNormalizeAiOdds: normalizing {valid.Count} runner(s) (missing={missingCount}, raw sum={sum.ToString("0.####", CultureInfo.InvariantCulture)}).");
             if (missingCount > 0)
@@ -1398,6 +1417,251 @@ namespace HorseRacingML.Scraping
 
             var normalizedSum = valid.Sum(f => f.AiOdds!.Value);
             Console.WriteLine($"\t\tNormalized probability sum: {normalizedSum.ToString("0.####", CultureInfo.InvariantCulture)}.");
+        }
+        private static bool TryResolveDegenerateDistribution(ICollection<RunnerFlow> flows)
+        {
+            if (flows is null || flows.Count == 0)
+            {
+                return false;
+            }
+
+            var winner = ResolveLikelyWinnerFromFeatures(flows);
+            if (winner == null || !winner.AiOdds.HasValue || !double.IsFinite(winner.AiOdds.Value) || winner.AiOdds.Value <= 0)
+            {
+                return false;
+            }
+
+            var winnerProbability = winner.AiOdds.Value;
+            var others = flows.Where(f => !ReferenceEquals(f, winner)).ToList();
+            var leftoverMass = Math.Max(1.0 - winnerProbability, 0);
+
+            if (others.Count > 0)
+            {
+                var weights = new Dictionary<RunnerFlow, double>();
+                foreach (var flow in others)
+                {
+                    double weight = 0d;
+
+                    if (flow.BackPrice1.HasValue && flow.BackPrice1.Value > 1m)
+                    {
+                        weight = 1.0 / (double)flow.BackPrice1.Value;
+                    }
+                    else if (flow.AiOdds.HasValue && double.IsFinite(flow.AiOdds.Value) && flow.AiOdds.Value > 0)
+                    {
+                        weight = flow.AiOdds.Value;
+                    }
+                    else
+                    {
+                        weight = 1d;
+                    }
+
+                    if (!double.IsFinite(weight) || weight < 0)
+                    {
+                        weight = 0d;
+                    }
+
+                    weights[flow] = weight;
+                }
+
+                var weightSum = weights.Values.Sum();
+                if (weightSum <= double.Epsilon)
+                {
+                    var uniform = others.Count > 0 ? leftoverMass / others.Count : 0d;
+                    foreach (var flow in others)
+                    {
+                        flow.AiOdds = uniform;
+                    }
+                }
+                else
+                {
+                    foreach (var kvp in weights)
+                    {
+                        var share = leftoverMass * (kvp.Value / weightSum);
+                        kvp.Key.AiOdds = Math.Max(share, 0d);
+                    }
+                }
+            }
+
+            winner.AiOdds = winnerProbability;
+
+            var validAfter = flows
+                .Where(f => f.AiOdds.HasValue && double.IsFinite(f.AiOdds.Value) && f.AiOdds.Value >= 0)
+                .ToList();
+            var missingAfter = flows.Count - validAfter.Count;
+            if (missingAfter > 0)
+            {
+                Console.WriteLine($"\t\tMissing AI predictions detected for {missingAfter} runner(s); surviving probabilities may be inflated relative to the full field.");
+            }
+
+            var winnerName = !string.IsNullOrWhiteSpace(winner.HorseName)
+                ? winner.HorseName!
+                : (winner.SelectionId ?? "unknown");
+
+            Console.WriteLine($"\t\tInterpreting degenerate predictions as winner-only probability; assigning {winnerProbability.ToString("0.####", CultureInfo.InvariantCulture)} to {winnerName}.");
+
+            if (others.Count > 0 && leftoverMass > 0)
+            {
+                Console.WriteLine($"\t\tRedistributed remaining {leftoverMass.ToString("0.####", CultureInfo.InvariantCulture)} probability mass across {others.Count} runner(s) using market-derived weights.");
+            }
+
+            var normalized = validAfter.Sum(f => f.AiOdds!.Value);
+            Console.WriteLine($"\t\tNormalized probability sum: {normalized.ToString("0.####", CultureInfo.InvariantCulture)}.");
+
+            return true;
+        }
+
+        private static RunnerFlow? ResolveLikelyWinnerFromFeatures(IEnumerable<RunnerFlow> flows)
+        {
+            if (flows is null)
+            {
+                return null;
+            }
+
+            var flowList = flows.ToList();
+            if (flowList.Count == 0)
+            {
+                return null;
+            }
+
+            var booleanKeys = new[] { "AiLikelyWinner", "LikelyWinner", "PredictedWinner", "IsAiWinner" };
+            foreach (var flow in flowList)
+            {
+                if (flow.FeatureValues == null)
+                {
+                    continue;
+                }
+
+                foreach (var key in booleanKeys)
+                {
+                    if (IsFeatureTrue(flow.FeatureValues, key))
+                    {
+                        return flow;
+                    }
+                }
+            }
+
+            var selectionHint = FindFirstFeatureString(flowList, "AiLikelyWinnerSelectionId", "LikelyWinnerSelectionId", "PredictedWinnerSelectionId");
+            if (!string.IsNullOrWhiteSpace(selectionHint))
+            {
+                var match = flowList.FirstOrDefault(f => !string.IsNullOrWhiteSpace(f.SelectionId) && string.Equals(f.SelectionId, selectionHint, StringComparison.OrdinalIgnoreCase));
+                if (match != null)
+                {
+                    return match;
+                }
+            }
+
+            var horseIdHint = FindFirstFeatureString(flowList, "AiLikelyWinnerHorseId", "LikelyWinnerHorseId", "PredictedWinnerHorseId");
+            if (!string.IsNullOrWhiteSpace(horseIdHint))
+            {
+                foreach (var flow in flowList)
+                {
+                    if (flow.FeatureValues != null && flow.FeatureValues.TryGetValue("HorseId", out var horseIdObj) && horseIdObj != null)
+                    {
+                        var horseIdText = ConvertToInvariantString(horseIdObj);
+                        if (!string.IsNullOrWhiteSpace(horseIdText) && string.Equals(horseIdText, horseIdHint, StringComparison.OrdinalIgnoreCase))
+                        {
+                            return flow;
+                        }
+                    }
+                }
+            }
+
+            var horseNameHint = FindFirstFeatureString(flowList, "AiLikelyWinnerHorse", "AiLikelyWinnerHorseName", "LikelyWinnerHorse", "LikelyWinnerHorseName", "PredictedWinnerHorse", "PredictedWinnerHorseName");
+            if (!string.IsNullOrWhiteSpace(horseNameHint))
+            {
+                var match = flowList.FirstOrDefault(f => !string.IsNullOrWhiteSpace(f.HorseName) && string.Equals(f.HorseName, horseNameHint, StringComparison.OrdinalIgnoreCase));
+                if (match != null)
+                {
+                    return match;
+                }
+            }
+
+            return null;
+        }
+
+        private static string? FindFirstFeatureString(IEnumerable<RunnerFlow> flows, params string[] keys)
+        {
+            foreach (var flow in flows)
+            {
+                if (flow.FeatureValues == null)
+                {
+                    continue;
+                }
+
+                foreach (var key in keys)
+                {
+                    if (flow.FeatureValues.TryGetValue(key, out var value) && value != null)
+                    {
+                        var text = ConvertToInvariantString(value)?.Trim();
+                        if (!string.IsNullOrWhiteSpace(text))
+                        {
+                            return text;
+                        }
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        private static bool IsFeatureTrue(Dictionary<string, object?> features, string key)
+        {
+            if (!features.TryGetValue(key, out var value) || value is null)
+            {
+                return false;
+            }
+
+            switch (value)
+            {
+                case bool b:
+                    return b;
+                case string s:
+                    var trimmed = s.Trim();
+                    if (bool.TryParse(trimmed, out var parsed))
+                    {
+                        return parsed;
+                    }
+
+                    if (double.TryParse(trimmed, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var numericFromString))
+                    {
+                        return Math.Abs(numericFromString) > double.Epsilon;
+                    }
+
+                    return false;
+                default:
+                    if (value is IConvertible convertible)
+                    {
+                        try
+                        {
+                            return convertible.ToBoolean(CultureInfo.InvariantCulture);
+                        }
+                        catch
+                        {
+                            try
+                            {
+                                var numeric = convertible.ToDouble(CultureInfo.InvariantCulture);
+                                return Math.Abs(numeric) > double.Epsilon;
+                            }
+                            catch
+                            {
+                                return false;
+                            }
+                        }
+                    }
+
+                    return false;
+            }
+        }
+
+        private static string? ConvertToInvariantString(object value)
+        {
+            return value switch
+            {
+                null => null,
+                string s => s,
+                IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture),
+                _ => value.ToString()
+            };
         }
         private static decimal? ParsePercentage(string text)
         {
