@@ -34,18 +34,76 @@ namespace HorseRacingML.Scraping
             _maxKellyFraction = maxKellyFraction;
             _betSlipSelectionsFilled = 0;
         }
+        private static string ResolveAiWeightPath()
+        {
+            static IEnumerable<string> EnumerateCandidates()
+            {
+                static IEnumerable<string> ExpandDirectory(string? directory)
+                {
+                    if (string.IsNullOrWhiteSpace(directory))
+                    {
+                        yield break;
+                    }
+
+                    yield return Path.Combine(directory, "weights", "aiweights.json");
+                    yield return Path.Combine(directory, "aiweights.json");
+                }
+
+                var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var path in ExpandDirectory(AppContext.BaseDirectory))
+                {
+                    if (seen.Add(path))
+                    {
+                        yield return path;
+                    }
+                }
+
+                foreach (var path in ExpandDirectory(Directory.GetCurrentDirectory()))
+                {
+                    if (seen.Add(path))
+                    {
+                        yield return path;
+                    }
+                }
+
+                var current = AppContext.BaseDirectory;
+                for (var i = 0; i < 5 && !string.IsNullOrEmpty(current); i++)
+                {
+                    current = Path.GetDirectoryName(current?.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+                    if (string.IsNullOrEmpty(current))
+                    {
+                        break;
+                    }
+
+                    foreach (var path in ExpandDirectory(current))
+                    {
+                        if (seen.Add(path))
+                        {
+                            yield return path;
+                        }
+                    }
+                }
+            }
+
+            foreach (var candidate in EnumerateCandidates())
+            {
+                if (File.Exists(candidate))
+                {
+                    Console.WriteLine($"\tUsing AI weight file at {candidate}");
+                    return candidate;
+                }
+            }
+
+            var fallback = Path.Combine(AppContext.BaseDirectory, "weights", "aiweights.json");
+            Console.Error.WriteLine($"\tAI weight file not found; expected locations include {fallback}");
+            return fallback;
+        }
         private BetfairScrapeResult ScrapeOpenRaceTabsInternal(IWebDriver driver, bool executeBets, bool captureReport)
         {
             var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10));
             var handles = driver.WindowHandles.ToList();
-            var weightsDirectory = Path.Combine(AppContext.BaseDirectory, "weights");
-            var newWeightPath = Path.Combine(weightsDirectory, "aiweights.json");
-            var legacyWeightPath = Path.Combine(AppContext.BaseDirectory, "aiweights.json");
-            var weightPath = File.Exists(newWeightPath)
-                ? newWeightPath
-                : File.Exists(legacyWeightPath)
-                    ? legacyWeightPath
-                    : newWeightPath;
+            var weightPath = ResolveAiWeightPath();
             var aiCalculator = new AIOddsCalculator(weightPath);
             var result = new BetfairScrapeResult();
             var recommendations = new List<BetRecommendation>();
@@ -1260,7 +1318,47 @@ namespace HorseRacingML.Scraping
                 }
                 return;
             }
+            const double degeneracyTolerance = 1e-8;
+            double minValue = valid.Min(f => f.AiOdds!.Value);
+            double maxValue = valid.Max(f => f.AiOdds!.Value);
 
+            if (maxValue - minValue <= degeneracyTolerance)
+            {
+                Console.WriteLine("\t\tDetected degenerate AI probability distribution; falling back to market-implied probabilities.");
+
+                bool anyFallbackApplied = false;
+                foreach (var flow in flows)
+                {
+                    if (flow.BackPrice1.HasValue && flow.BackPrice1.Value > 1m)
+                    {
+                        flow.AiOdds = 1.0 / (double)flow.BackPrice1.Value;
+                        anyFallbackApplied = true;
+                    }
+                    else
+                    {
+                        flow.AiOdds = null;
+                    }
+                }
+
+                if (!anyFallbackApplied)
+                {
+                    Console.WriteLine("\t\tUnable to apply market fallback due to missing back prices; AI odds will remain unavailable for this race.");
+                    return;
+                }
+
+                valid = flows
+                    .Where(f => f.AiOdds.HasValue && double.IsFinite(f.AiOdds.Value) && f.AiOdds.Value >= 0)
+                    .ToList();
+                missingCount = flows.Count - valid.Count;
+                if (valid.Count == 0)
+                {
+                    Console.WriteLine("\t\tMarket fallback produced no usable probabilities; skipping normalization.");
+                    return;
+                }
+
+                minValue = valid.Min(f => f.AiOdds!.Value);
+                maxValue = valid.Max(f => f.AiOdds!.Value);
+            }
             var sum = valid.Sum(f => f.AiOdds!.Value);
             Console.WriteLine($"\tNormalizeAiOdds: normalizing {valid.Count} runner(s) (missing={missingCount}, raw sum={sum.ToString("0.####", CultureInfo.InvariantCulture)}).");
             if (missingCount > 0)
