@@ -26,6 +26,7 @@ namespace HorseRacingML.Scraping
         private decimal _bankroll;
         private readonly decimal? _maxKellyFraction;
         private readonly bool _useMarketFallbackForAiDegeneracy;
+        private static readonly Regex NonNumericCharactersRegex = new("[^0-9.,-]", RegexOptions.Compiled);
 
         public BetfairNavigationService(IConfiguration config)
         {
@@ -189,7 +190,7 @@ namespace HorseRacingML.Scraping
                 }
             }
 
-            var sanitized = Regex.Replace(trimmed, "[^0-9.,-]", string.Empty);
+            var sanitized = NonNumericCharactersRegex.Replace(trimmed, string.Empty);
             sanitized = sanitized.Replace(",", string.Empty);
 
             return decimal.TryParse(

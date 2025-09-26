@@ -32,6 +32,7 @@
 		<!-- Data access packages for inserting parsed race data -->
 		<PackageReference Include="Dapper" Version="2.1.24" />
 		<PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.0" />
+		<PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="8.0.0" />
 	</ItemGroup>
 	<ItemGroup>
 		<PackageReference Include="TensorFlow.NET" Version="0.110.0" />
