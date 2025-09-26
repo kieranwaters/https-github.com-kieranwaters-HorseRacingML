@@ -381,10 +381,32 @@ namespace HorseRacingML.Scraping
                     continue; // next tab
                 }
 
-                var title = TextOrEmpty(driver, By.CssSelector("[data-testid='marketTitle']")); // market title
+                var title = ReadFirstNonEmptyText(driver,
+                    "[data-testid='marketTitle']",
+                    "[data-testid='market-title']",
+                    "[data-testid='eventTitle']",
+                    "h1[data-testid='marketTitle']",
+                    "h1[data-testid='eventTitle']",
+                    ".market-title",
+                    "header h1",
+                    ".page-title h1"); // market title with fallbacks
+
+                if (string.IsNullOrWhiteSpace(title))
+                {
+                    title = ExtractDocumentTitle(driver);
+                    if (!string.IsNullOrWhiteSpace(title))
+                    {
+                        Console.WriteLine("\tResolved market title using document title fallback.");
+                    }
+                }
+
                 var venueText = TextOrEmpty(driver, By.CssSelector(".venue-name")); // venue text
                 var eventDateText = TextOrEmpty(driver, By.CssSelector(".event-date")); // event date raw
-                var raceDetailsText = TextOrEmpty(driver, By.CssSelector(".market-name")); // race details
+                var raceDetailsText = ReadFirstNonEmptyText(driver,
+                    ".market-name",
+                    "[data-testid='marketName']",
+                    "[data-testid='market-name']",
+                    "[data-testid='marketDescription']"); // race details
                 var offTimeText = TextOrEmpty(driver, By.CssSelector("[data-testid='startTime']")); // off time raw
                 var backBookText = TextOrEmpty(driver, By.CssSelector(".rh-back-book-percentage-label")); // back book %
                 var layBookText = TextOrEmpty(driver, By.CssSelector(".rh-lay-book-percentage-label")); // lay book %

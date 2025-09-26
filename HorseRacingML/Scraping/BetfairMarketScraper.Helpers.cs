@@ -748,7 +748,61 @@ namespace HorseRacingML.Scraping
             return null;
         }
 
-        
+        private static string ReadFirstNonEmptyText(IWebDriver driver, params string[] selectors)
+        {
+            if (driver == null || selectors == null || selectors.Length == 0)
+            {
+                return string.Empty;
+            }
+
+            foreach (var selector in selectors)
+            {
+                if (string.IsNullOrWhiteSpace(selector))
+                {
+                    continue;
+                }
+
+                var text = TextOrEmpty(driver, By.CssSelector(selector));
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    return text.Trim();
+                }
+            }
+
+            return string.Empty;
+        }
+
+        private static string ExtractDocumentTitle(IWebDriver driver)
+        {
+            if (driver == null)
+            {
+                return string.Empty;
+            }
+
+            try
+            {
+                var documentTitle = driver.Title;
+                if (string.IsNullOrWhiteSpace(documentTitle))
+                {
+                    return string.Empty;
+                }
+
+                var normalized = documentTitle.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .FirstOrDefault()?.Trim() ?? documentTitle.Trim();
+
+                if (string.IsNullOrWhiteSpace(normalized))
+                {
+                    return string.Empty;
+                }
+
+                normalized = Regex.Replace(normalized, @"\s+-\s+betfair.*$", string.Empty, RegexOptions.IgnoreCase);
+                return normalized.Trim();
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
         private static bool IsFeatureTrue(Dictionary<string, object?> features, string key)
         {
             if (!features.TryGetValue(key, out var value) || value is null)

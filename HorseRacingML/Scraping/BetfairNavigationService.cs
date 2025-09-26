@@ -399,9 +399,9 @@ namespace HorseRacingML.Scraping
             var parameter = new MLParameter
             {
                 RunDate = DateTime.UtcNow,
-                Units = best?.Units ?? 256,
-                Dropout = best?.Dropout ?? 0.3,
-                Layers = best?.Layers ?? 3,
+                Units = best?.Units ?? 0,
+                Dropout = best?.Dropout ?? 0,
+                Layers = best?.Layers ?? 0,
                 LearningRate = DayReportLearningRate,
                 Epochs = DayReportEpochs,
                 BatchSize = DayReportBatchSize,

@@ -271,15 +271,12 @@ namespace HorseRacingML.Controllers
 
             var parameter = new MLParameter
             {
-                RunDate = DateTime.UtcNow,
-                Units = savedParameter.Units,
-                Dropout = savedParameter.Dropout,
-                Layers = savedParameter.Layers,
-                LearningRate = savedParameter.LearningRate,
-                Epochs = savedParameter.Epochs,
-                BatchSize = savedParameter.BatchSize,
-                Folds = 1,
-                Fold = null
+                Units = MLParameterValidator.EnsureUnits(savedParameter.Units, 0),
+                Dropout = MLParameterValidator.EnsureDropout(savedParameter.Dropout, 0),
+                Layers = MLParameterValidator.EnsureLayers(savedParameter.Layers, 0),
+                LearningRate = MLParameterValidator.EnsureLearningRate(savedParameter.LearningRate, 0.005),
+                Epochs = MLParameterValidator.EnsurePositive(savedParameter.Epochs, 12),
+                BatchSize = MLParameterValidator.EnsurePositive(savedParameter.BatchSize, 500),
             };
 
             var result = await Task.Run(() => _trainer.Train(parameter, 0, 1, dataset, persistWeights: false));

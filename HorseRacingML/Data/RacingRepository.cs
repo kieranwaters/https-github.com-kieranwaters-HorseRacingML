@@ -724,6 +724,11 @@ WHERE r.RaceId IN @Ids";
     Fold,
     ValidationBrier
 FROM MLParameters
+WHERE Units > 0
+  AND Layers > 0
+  AND Epochs > 0
+  AND BatchSize > 0
+  AND LearningRate > 0
 ORDER BY ISNULL(ValidationAccuracy, 0) DESC, RunDate DESC";
 
             using var conn = OpenConnection();
