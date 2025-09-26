@@ -382,87 +382,22 @@ namespace HorseRacingML.Scraping
                 d.Url.Contains("horse-racing", StringComparison.OrdinalIgnoreCase) ||
                 d.Url.Contains("horse-racing-betting-7", StringComparison.OrdinalIgnoreCase));
         }
-        private const int DayReportEpochs = 12;
-        private const int DayReportBatchSize = 500;
-        private const double DayReportLearningRate = 0.005;
-
-        private void TrainModelForDayReport(RacingRepository repo, HyperparameterTrainer trainer)
-        {
-            if (trainer == null)
-            {
-                throw new ArgumentNullException(nameof(trainer));
-            }
-
-            Console.WriteLine("[DayReport] Training AI model using full dataset prior to report generation.");
-
-            var best = repo?.GetBestMLParameter();
-            var parameter = new MLParameter
-            {
-                RunDate = DateTime.UtcNow,
-                Units = best?.Units ?? 0,
-                Dropout = best?.Dropout ?? 0,
-                Layers = best?.Layers ?? 0,
-                LearningRate = DayReportLearningRate,
-                Epochs = DayReportEpochs,
-                BatchSize = DayReportBatchSize,
-                Folds = 1,
-                Fold = null
-            };
-            Console.WriteLine(
-                $"[DayReport] Training configuration => Units:{parameter.Units}, Layers:{parameter.Layers}, Dropout:{parameter.Dropout:P1}, " +
-                $"LearningRate:{parameter.LearningRate}, Epochs:{parameter.Epochs}, BatchSize:{parameter.BatchSize}.");
-            try
-            {
-                var result = trainer.Train(parameter, 0, 1, persistWeights: true);
-                parameter.TrainAccuracy = result.TrainAccuracy;
-                parameter.TrainLoss = result.TrainLoss;
-                parameter.TrainBrier = result.TrainBrier;
-                parameter.ValidationAccuracy = result.ValidationAccuracy;
-                parameter.ValidationLoss = result.ValidationLoss;
-                parameter.ValidationBrier = result.ValidationBrier;
-                Console.WriteLine(
-                    $"[DayReport] Training metrics => TrainAcc:{parameter.TrainAccuracy:P2}, TrainLoss:{parameter.TrainLoss:F4}, TrainBrier:{parameter.TrainBrier:F4}, " +
-                    $"ValAcc:{parameter.ValidationAccuracy:P2}, ValLoss:{parameter.ValidationLoss:F4}, ValBrier:{parameter.ValidationBrier:F4}.");
-
-                try
-                {
-                    repo?.InsertMLParameter(parameter);
-                    Console.WriteLine(
-                    $"[DayReport] Training metrics => TrainAcc:{parameter.TrainAccuracy:P2}, TrainLoss:{parameter.TrainLoss:F4}, TrainBrier:{parameter.TrainBrier:F4}, " +
-                    $"ValAcc:{parameter.ValidationAccuracy:P2}, ValLoss:{parameter.ValidationLoss:F4}, ValBrier:{parameter.ValidationBrier:F4}.");
-
-                }
-                catch (Exception ex)
-                {
-                    Console.Error.WriteLine($"[DayReport] Failed to persist training summary: {ex.Message}");
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine($"[DayReport] AI training failed: {ex.Message}");
-                throw;
-            }
-        }
-
         public DayReportViewModel GenerateDayReport(RacingRepository repo, HyperparameterTrainer trainer)
         {
-            TrainModelForDayReport(repo, trainer);
+            var bankroll = GetEffectiveBankroll();
+            var scraper = new BetfairMarketScraper(
+                repo,
+                trainer,
+                bankroll,
+                _maxKellyFraction,
+                _useMarketFallbackForAiDegeneracy);
+            var races = scraper.ScrapeOpenRaceTabsForReport(_driver);
+            return new DayReportViewModel
             {
-                var bankroll = GetEffectiveBankroll();
-                var scraper = new BetfairMarketScraper(
-                    repo,
-                    trainer,
-                    bankroll,
-                    _maxKellyFraction,
-                    _useMarketFallbackForAiDegeneracy);
-                var races = scraper.ScrapeOpenRaceTabsForReport(_driver);
-                return new DayReportViewModel
-                {
-                    GeneratedAt = DateTime.UtcNow,
-                    Bankroll = bankroll,
-                    Races = new List<RaceDayReport>(races)
-                };
-            }
+                GeneratedAt = DateTime.UtcNow,
+                Bankroll = bankroll,
+                Races = new List<RaceDayReport>(races)
+            };
         }
         public async Task OpenHorseRaceMeetingsInNewTabsAsync(int delayBetweenTabsMs = 0)
         {
