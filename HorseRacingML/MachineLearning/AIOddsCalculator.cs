@@ -40,10 +40,21 @@ namespace HorseRacingML.ML
         private bool TryCalculateWithTrainedModel(RunnerFlow flow, out double probability)
         {
             probability = 0d;
-            if (!_hasTrainedModel || !flow.HasPreparedFeatures ||
-                _metadata == null || _mean == null || _std == null ||
+            if (!_hasTrainedModel)
+            {
+                return false;
+            }
+
+            if (!flow.HasPreparedFeatures)
+            {
+                LogFallback(flow, "no prepared feature vector matched the runner");
+                return false;
+            }
+
+            if (_metadata == null || _mean == null || _std == null ||
                 _outputWeights == null || _outputBias == null)
             {
+                LogFallback(flow, "trained model metadata is incomplete");
                 return false;
             }
 
@@ -51,6 +62,9 @@ namespace HorseRacingML.ML
             var encoded = EncodeFeatures(rawFeatures);
             if (encoded == null || encoded.Length != _featureCount)
             {
+                LogFallback(flow, encoded == null
+                    ? "feature encoding returned null"
+                    : $"feature encoding length mismatch (expected {_featureCount}, observed {encoded.Length})");
                 return false;
             }
 
@@ -88,6 +102,7 @@ namespace HorseRacingML.ML
             var output = Multiply(activations, _outputWeights, _outputBias);
             if (output.Length == 0)
             {
+                LogFallback(flow, "forward pass produced an empty output vector");
                 return false;
             }
 
@@ -95,11 +110,68 @@ namespace HorseRacingML.ML
             var prob = 1.0 / (1.0 + Math.Exp(-logit));
             if (!double.IsFinite(prob) || prob < 0)
             {
+                LogFallback(flow, "model produced a non-finite probability");
                 return false;
             }
 
             probability = prob;
             return true;
+        }
+        public double CalculateOdds(RunnerFlow flow)
+        {
+            if (TryCalculateWithTrainedModel(flow, out var probability))
+            {
+                return probability;
+            }
+
+            var fallback = CalculateLegacyOdds(flow);
+            if (_hasTrainedModel)
+            {
+                LogFallback(flow, "falling back to legacy odds");
+            }
+
+            return fallback;
+        }
+
+        private static void LogFallback(RunnerFlow flow, string reason)
+        {
+            if (flow == null)
+            {
+                return;
+            }
+
+            var runnerId = DescribeRunner(flow);
+            var marketId = string.IsNullOrWhiteSpace(flow.MarketId) ? "<unknown>" : flow.MarketId;
+            Console.WriteLine($"[AI] Unable to use trained model for {runnerId} in market {marketId}: {reason}.");
+        }
+
+        private static string DescribeRunner(RunnerFlow flow)
+        {
+            var parts = new List<string>();
+            if (!string.IsNullOrWhiteSpace(flow.HorseName))
+            {
+                parts.Add(flow.HorseName!.Trim());
+            }
+            else if (!string.IsNullOrWhiteSpace(flow.SelectionId))
+            {
+                parts.Add(flow.SelectionId!.Trim());
+            }
+            else
+            {
+                parts.Add("unknown runner");
+            }
+
+            if (flow.ClothNumber.HasValue)
+            {
+                parts.Add($"cloth {flow.ClothNumber.Value}");
+            }
+
+            if (flow.Draw.HasValue)
+            {
+                parts.Add($"draw {flow.Draw.Value}");
+            }
+
+            return string.Join(", ", parts);
         }
         public AIOddsCalculator(string path)
         {
@@ -211,17 +283,6 @@ namespace HorseRacingML.ML
             }
 
             return raw;
-        }
-
-
-        public double CalculateOdds(RunnerFlow flow)
-        {
-            if (TryCalculateWithTrainedModel(flow, out var probability))
-            {
-                return probability;
-            }
-
-            return CalculateLegacyOdds(flow);
         }
 
         private bool TryLoadTrainedModel(string json)
