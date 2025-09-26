@@ -1593,6 +1593,19 @@ namespace HorseRacingML.ML
                     ["JockeyName"] = flow.JockeyName,
                     ["SaddleclothNumber"] = flow.ClothNumber,
                     ["Draw"] = flow.Draw,
+                    ["Age"] = null,
+                    ["WeightLbs"] = null,
+                    ["WeightText"] = null,
+                    ["OfficialRating"] = null,
+                    ["FinishPos"] = null,
+                    ["OutcomeCode"] = null,
+                    ["DistanceBeatenText"] = null,
+                    ["SP_Fraction"] = null,
+                    ["SP_Decimal"] = null,
+                    ["FavTag"] = null,
+                    ["OpeningFraction"] = null,
+                    ["TouchedHighFraction"] = null,
+                    ["TouchedLowFraction"] = null,
                     ["BackPrice1"] = flow.BackPrice1,
                     ["BackPrice2"] = flow.BackPrice2,
                     ["BackPrice3"] = flow.BackPrice3,
@@ -1600,6 +1613,11 @@ namespace HorseRacingML.ML
                     ["LayPrice2"] = flow.LayPrice2,
                     ["LayPrice3"] = flow.LayPrice3
                 };
+
+                // Values that depend on historical lookups are populated below when data is available.
+                row["Purse"] = null;
+                row["TrainerId"] = null;
+                row["TrainerName"] = null;
 
                 var horseId = ResolveHorseId(conn, horseName);
                 row["HorseId"] = horseId;
@@ -1618,6 +1636,7 @@ namespace HorseRacingML.ML
 
             return rows;
         }
+
 
         private (int CourseId, string? CourseName) ResolveCourse(SqlConnection conn, UpcomingRace upcoming)
         {
