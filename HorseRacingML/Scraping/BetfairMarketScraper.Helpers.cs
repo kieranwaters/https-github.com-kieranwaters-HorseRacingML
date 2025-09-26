@@ -748,31 +748,7 @@ namespace HorseRacingML.Scraping
             return null;
         }
 
-        private static string? FindFirstFeatureString(IEnumerable<RunnerFlow> flows, params string[] keys)
-        {
-            foreach (var flow in flows)
-            {
-                if (flow.FeatureValues == null)
-                {
-                    continue;
-                }
-
-                foreach (var key in keys)
-                {
-                    if (flow.FeatureValues.TryGetValue(key, out var value) && value != null)
-                    {
-                        var text = ConvertToInvariantString(value)?.Trim();
-                        if (!string.IsNullOrWhiteSpace(text))
-                        {
-                            return text;
-                        }
-                    }
-                }
-            }
-
-            return null;
-        }
-
+        
         private static bool IsFeatureTrue(Dictionary<string, object?> features, string key)
         {
             if (!features.TryGetValue(key, out var value) || value is null)

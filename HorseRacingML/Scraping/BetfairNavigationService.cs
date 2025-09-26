@@ -408,7 +408,9 @@ namespace HorseRacingML.Scraping
                 Folds = 1,
                 Fold = null
             };
-
+            Console.WriteLine(
+                $"[DayReport] Training configuration => Units:{parameter.Units}, Layers:{parameter.Layers}, Dropout:{parameter.Dropout:P1}, " +
+                $"LearningRate:{parameter.LearningRate}, Epochs:{parameter.Epochs}, BatchSize:{parameter.BatchSize}.");
             try
             {
                 var result = trainer.Train(parameter, 0, 1, persistWeights: true);
@@ -418,10 +420,17 @@ namespace HorseRacingML.Scraping
                 parameter.ValidationAccuracy = result.ValidationAccuracy;
                 parameter.ValidationLoss = result.ValidationLoss;
                 parameter.ValidationBrier = result.ValidationBrier;
+                Console.WriteLine(
+                    $"[DayReport] Training metrics => TrainAcc:{parameter.TrainAccuracy:P2}, TrainLoss:{parameter.TrainLoss:F4}, TrainBrier:{parameter.TrainBrier:F4}, " +
+                    $"ValAcc:{parameter.ValidationAccuracy:P2}, ValLoss:{parameter.ValidationLoss:F4}, ValBrier:{parameter.ValidationBrier:F4}.");
 
                 try
                 {
                     repo?.InsertMLParameter(parameter);
+                    Console.WriteLine(
+                    $"[DayReport] Training metrics => TrainAcc:{parameter.TrainAccuracy:P2}, TrainLoss:{parameter.TrainLoss:F4}, TrainBrier:{parameter.TrainBrier:F4}, " +
+                    $"ValAcc:{parameter.ValidationAccuracy:P2}, ValLoss:{parameter.ValidationLoss:F4}, ValBrier:{parameter.ValidationBrier:F4}.");
+
                 }
                 catch (Exception ex)
                 {

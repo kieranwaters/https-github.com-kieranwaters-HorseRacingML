@@ -75,9 +75,13 @@ namespace HorseRacingML.Scraping
                 }
                 if (race.Runners == null || race.Runners.Count == 0)
                 {
+                    Console.WriteLine("\t[DayReport] Skipping race with no runners available for probability population.");
                     continue;
                 }
-
+                Console.WriteLine(
+                    $"\t[DayReport] Processing race {race.RaceTitle ?? race.MarketId ?? "unknown race"} on " +
+                    $"{(race.RaceDate.HasValue ? race.RaceDate.Value.ToString("yyyy-MM-dd") : "unknown date")} " +
+                    $"with {race.Runners.Count} runner(s).");
                 var runnersByHorse = new Dictionary<string, RunnerDayReport>(StringComparer.Ordinal);
                 foreach (var runner in race.Runners)
                 {
@@ -117,6 +121,8 @@ namespace HorseRacingML.Scraping
                 {
                     var upcomingId = TryRecordUpcomingRace(race);
                     race.UpcomingRaceId = upcomingId;
+                    Console.WriteLine(
+                        $"\t[DayReport] Unable to map race {race.RaceTitle ?? race.MarketId}; recorded upcoming race id {upcomingId?.ToString() ?? "n/a"}. Skipping AI probability population.");
                     continue;
                 }
 
@@ -134,13 +140,53 @@ namespace HorseRacingML.Scraping
                 var preparedRace = prepared.Races.FirstOrDefault(r => r.RaceId == raceId.Value);
                 if (preparedRace == null)
                 {
+                    Console.WriteLine($"\t[DayReport] Prepared dataset did not contain race id {raceId.Value}; skipping.");
                     continue;
                 }
-
+                Console.WriteLine(
+                    $"\t[DayReport] Prepared dataset for race id {raceId.Value} with {preparedRace.Rows.Count} runner row(s) (report has {race.Runners.Count}).");
+                if (preparedRace.Rows.Count > 0)
+                {
+                    var sampleRow = preparedRace.Rows[0];
+                    var sampleFeatureCount = sampleRow?.Count ?? 0;
+                    var identifierKeys = sampleRow?.Keys
+                        .Where(k => k is "HorseName" or "SelectionId" or "SaddleclothNumber")
+                        .ToList() ?? new List<string>();
+                    var identifierSummary = identifierKeys.Count > 0 ? string.Join(", ", identifierKeys) : "none";
+                    Console.WriteLine(
+                        $"\t[DayReport] Sample feature vector contains {sampleFeatureCount} feature(s). Identifiers present: {identifierSummary}.");
+                }
                 var predictions = _trainer.PredictRaceProbabilities(preparedRace, model);
                 if (predictions.Count == 0)
                 {
+                    Console.WriteLine($"\t[DayReport] No predictions were produced for race id {raceId.Value}; skipping.");
                     continue;
+                }
+                var probabilitySum = predictions.Sum(p => p.Probability);
+                var minProbability = predictions.Min(p => p.Probability);
+                var maxProbability = predictions.Max(p => p.Probability);
+                var uniformProbability = predictions.Count > 0 ? 1d / predictions.Count : double.NaN;
+                var maxDeviationFromUniform = predictions.Max(p => Math.Abs(p.Probability - uniformProbability));
+
+                Console.WriteLine(
+                    $"\t[DayReport] Generated {predictions.Count} prediction(s). Sum={probabilitySum:F6}, Min={minProbability:F6}, Max={maxProbability:F6}, " +
+                    $"UniformTarget={(double.IsFinite(uniformProbability) ? uniformProbability.ToString("F6") : "n/a")}, MaxΔ={maxDeviationFromUniform:F6}.");
+
+                if (double.IsFinite(uniformProbability) && maxDeviationFromUniform < 1e-3)
+                {
+                    Console.WriteLine(
+                        $"\t[DayReport] Probabilities are approximately uniform (within 0.001 of 1/{predictions.Count}); investigate feature or normalization inputs.");
+                }
+
+                foreach (var prediction in predictions
+                             .OrderByDescending(p => p.Probability)
+                             .Take(Math.Min(5, predictions.Count)))
+                {
+                    var identifier = !string.IsNullOrWhiteSpace(prediction.HorseName)
+                        ? prediction.HorseName
+                        : (!string.IsNullOrWhiteSpace(prediction.SelectionId) ? prediction.SelectionId : "unknown");
+                    Console.WriteLine(
+                        $"\t[DayReport] Prediction: {identifier} (cloth {prediction.ClothNumber?.ToString() ?? "?"}) => {prediction.Probability:P4}.");
                 }
 
                 var winner = predictions
@@ -181,14 +227,20 @@ namespace HorseRacingML.Scraping
                 var probability = winner.Probability;
                 runnerMatch.AiProbability = probability;
                 runnerMatch.AiDecimalOdds = BettingMath.CalculateAiDecimalOdds(probability);
+                Console.WriteLine(
+                    $"\t[DayReport] Matched winner {runnerMatch.HorseName ?? runnerMatch.SelectionId ?? "unknown"} => {probability:P4} (decimal odds {runnerMatch.AiDecimalOdds?.ToString("F3") ?? "n/a"}).");
 
                 if (runnerMatch.MarketProbability.HasValue)
                 {
                     runnerMatch.Differential = probability - runnerMatch.MarketProbability.Value;
+                    Console.WriteLine(
+                        $"\t[DayReport] Market probability {runnerMatch.MarketProbability.Value:P4}; differential {runnerMatch.Differential.Value:P4}.");
                 }
                 else
                 {
                     runnerMatch.Differential = null;
+                    Console.WriteLine(
+                        $"\t[DayReport] Market probability {runnerMatch.MarketProbability.Value:P4}; differential {runnerMatch.Differential.Value:P4}.");
                 }
 
                 if (runnerMatch.MarketDecimalOdds.HasValue && runnerMatch.MarketDecimalOdds.Value > 1m)
@@ -198,11 +250,14 @@ namespace HorseRacingML.Scraping
                     runnerMatch.SuggestedStake = (kelly > 0m && _bankroll > 0m)
                         ? BettingMath.CalculateSequentialStake(_bankroll, kelly)
                         : (decimal?)null;
+                    Console.WriteLine(
+                        $"\t[DayReport] Kelly fraction {kelly:P4}; suggested stake {(runnerMatch.SuggestedStake?.ToString("F2") ?? "n/a")} from bankroll {_bankroll:F2}.");
                 }
                 else
                 {
                     runnerMatch.KellyFraction = null;
                     runnerMatch.SuggestedStake = null;
+                    Console.WriteLine("\t[DayReport] Market odds unavailable or <= 1; skipping Kelly stake calculation.");
                 }
 
                 foreach (var runner in race.Runners.ToList())
@@ -276,169 +331,6 @@ namespace HorseRacingML.Scraping
                 return null;
             }
         }
-        private static IEnumerable<string> EnumerateDetailTokens(string? source)
-        {
-            if (string.IsNullOrWhiteSpace(source))
-            {
-                yield break;
-            }
-
-            var normalized = source.Replace('\u00A0', ' ').Trim();
-            if (!string.IsNullOrEmpty(normalized))
-            {
-                yield return normalized;
-            }
-
-            var separators = new[] { '|', '/', '\\', ',', ';', '–', '—', '·' };
-            foreach (var segment in normalized.Split(separators, StringSplitOptions.RemoveEmptyEntries))
-            {
-                var trimmed = segment.Trim();
-                if (!string.IsNullOrEmpty(trimmed))
-                {
-                    yield return trimmed;
-                }
-
-                foreach (var token in trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries))
-                {
-                    var inner = token.Trim();
-                    if (!string.IsNullOrEmpty(inner))
-                    {
-                        yield return inner;
-                    }
-                }
-            }
-        }
-
-        private static bool HasDistanceToken(string token)
-        {
-            if (string.IsNullOrWhiteSpace(token))
-            {
-                return false;
-            }
-
-            return DistanceComponentRegex.IsMatch(token);
-        }
-
-        private static int ParseDistanceToYards(string? token)
-        {
-            if (string.IsNullOrWhiteSpace(token))
-            {
-                return 0;
-            }
-
-            var text = token.ToLowerInvariant();
-            var total = 0;
-            foreach (Match match in DistanceComponentRegex.Matches(text))
-            {
-                if (!double.TryParse(match.Groups["value"].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var value))
-                {
-                    continue;
-                }
-
-                switch (match.Groups["unit"].Value)
-                {
-                    case "m":
-                        total += (int)Math.Round(value * 1760d);
-                        break;
-                    case "f":
-                        total += (int)Math.Round(value * 220d);
-                        break;
-                    case "y":
-                        total += (int)Math.Round(value);
-                        break;
-                }
-            }
-
-            return total;
-        }
-
-        private static string? TryDetectRaceType(IEnumerable<string> tokens, string? title)
-        {
-            foreach (var token in tokens)
-            {
-                var found = RaceTypeKeywords.FirstOrDefault(k => token.IndexOf(k, StringComparison.OrdinalIgnoreCase) >= 0);
-                if (!string.IsNullOrEmpty(found))
-                {
-                    return CultureInfo.InvariantCulture.TextInfo.ToTitleCase(found);
-                }
-            }
-
-            if (!string.IsNullOrWhiteSpace(title))
-            {
-                foreach (var keyword in RaceTypeKeywords)
-                {
-                    if (title.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) >= 0)
-                    {
-                        return CultureInfo.InvariantCulture.TextInfo.ToTitleCase(keyword);
-                    }
-                }
-            }
-
-            return null;
-        }
-
-        private static bool IsGoingToken(string token)
-        {
-            if (string.IsNullOrWhiteSpace(token))
-            {
-                return false;
-            }
-
-            var normalized = token.ToLowerInvariant();
-            if (normalized.Contains("going"))
-            {
-                return true;
-            }
-
-            var keywords = new[] { "heavy", "soft", "yielding", "good", "firm", "standard", "slow", "fast" };
-            return keywords.Any(k => Regex.IsMatch(normalized, $"\\b{k}\\b"));
-        }
-
-        private static string? DetermineSurface(string? going, IEnumerable<string> tokens)
-        {
-            static bool ContainsAwIndicator(string value)
-            {
-                if (string.IsNullOrWhiteSpace(value))
-                {
-                    return false;
-                }
-
-                var normalized = value.ToLowerInvariant();
-                return normalized.Contains("all weather")
-                    || normalized.Contains("all-weather")
-                    || normalized.Contains("a/w")
-                    || normalized.Equals("aw", StringComparison.OrdinalIgnoreCase)
-                    || normalized.Contains("polytrack")
-                    || normalized.Contains("tapeta")
-                    || normalized.Contains("fibresand");
-            }
-
-            if (!string.IsNullOrEmpty(going) && going.IndexOf("standard", StringComparison.OrdinalIgnoreCase) >= 0)
-            {
-                return "All Weather";
-            }
-
-            if (tokens.Any(ContainsAwIndicator))
-            {
-                return "All Weather";
-            }
-
-            return "Turf";
-        }
-
-        private readonly record struct ParsedRaceMetadata(
-            string? DistanceText,
-            int DistanceYards,
-            byte? Class,
-            string? AgeRestriction,
-            string? Going,
-            string? Surface,
-            string? RaceType);
-      
-        private static readonly Regex BracketedNameContentRegex =
-            new Regex(@"\s*[\(\[][^\)\]]*[\)\]]\s*", RegexOptions.Compiled);
-
-
         private BetfairScrapeResult ScrapeOpenRaceTabsInternal(IWebDriver driver, bool executeBets, bool captureReport)
         {
             var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10)); // short explicit wait
