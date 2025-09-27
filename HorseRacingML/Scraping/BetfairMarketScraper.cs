@@ -394,7 +394,18 @@ namespace HorseRacingML.Scraping
                     runnerEntries.Add((row, runnerFlow)); // keep mapping
                 }
 
-                PopulateFeatureVectors(parsedRaceDate, title, venueName, flows, rows.Count); // build features
+                PopulateFeatureVectors(
+                    parsedRaceDate,
+                    title,
+                    venueName,
+                    venueCountry,
+                    offTime,
+                    raceDetailsText,
+                    backBookPercentage,
+                    layBookPercentage,
+                    marketId,
+                    flows,
+                    rows.Count); // build features
 
                 foreach (var rf in flows) // process each runner
                 {
@@ -402,7 +413,9 @@ namespace HorseRacingML.Scraping
                     {
                         rf.FeatureValues["RunnerCount"] = rows.Count; // ensure runner count
                     }
-
+                    var rfIdentifier = !string.IsNullOrWhiteSpace(rf.HorseName)
+                        ? rf.HorseName!
+                        : (rf.SelectionId ?? "unknown");
                     if (rf.FeatureValues != null)
                     {
                         if (rf.BackPrice1.HasValue) { rf.FeatureValues["BackPrice1"] = rf.BackPrice1.Value; } // copy b1
@@ -411,9 +424,6 @@ namespace HorseRacingML.Scraping
                         if (rf.LayPrice1.HasValue) { rf.FeatureValues["LayPrice1"] = rf.LayPrice1.Value; } // copy l1
                         if (rf.LayPrice2.HasValue) { rf.FeatureValues["LayPrice2"] = rf.LayPrice2.Value; } // copy l2
                         if (rf.LayPrice3.HasValue) { rf.FeatureValues["LayPrice3"] = rf.LayPrice3.Value; } // copy l3
-                        var rfIdentifier = !string.IsNullOrWhiteSpace(rf.HorseName)
-                        ? rf.HorseName!
-                        : (rf.SelectionId ?? "unknown");
                     }
 
                     try
@@ -628,6 +638,12 @@ namespace HorseRacingML.Scraping
           DateTime? raceDate,
           string? raceTitle,
           string? venueName,
+          string? venueCountry,
+          TimeSpan? scheduledOff,
+          string? raceDetails,
+          decimal? backBookPercentage,
+          decimal? layBookPercentage,
+          string? marketId,
           IReadOnlyList<RunnerFlow> flows,
           int runnerCount,
           IReadOnlyList<IDictionary<string, object?>>? preparedRows = null)
@@ -637,7 +653,18 @@ namespace HorseRacingML.Scraping
                 return;
             }
 
-            var featureLookup = LoadFeatureLookup(raceDate, raceTitle, venueName, flows, preparedRows);
+            var featureLookup = LoadFeatureLookup(
+                raceDate,
+                raceTitle,
+                venueName,
+                venueCountry,
+                scheduledOff,
+                raceDetails,
+                backBookPercentage,
+                layBookPercentage,
+                marketId,
+                flows,
+                preparedRows);
             foreach (var flow in flows)
             {
                 var matchedFeatures = featureLookup.FindByHorse(flow.HorseName)
@@ -674,6 +701,12 @@ namespace HorseRacingML.Scraping
             DateTime? raceDate,
             string? raceTitle,
             string? venueName,
+            string? venueCountry,
+            TimeSpan? scheduledOff,
+            string? raceDetails,
+            decimal? backBookPercentage,
+            decimal? layBookPercentage,
+            string? marketId,
             IReadOnlyList<RunnerFlow> flows,
             IReadOnlyList<IDictionary<string, object?>>? preparedRows)
         {
@@ -708,11 +741,34 @@ namespace HorseRacingML.Scraping
             {
                 Console.WriteLine(
                     $"\tNo race ID found for date={raceDate.Value:yyyy-MM-dd}, title='{raceTitle ?? "<null>"}', venue='{venueName ?? "<null>"}'.");
-                var upcoming = _repo.FindUpcomingRace(raceDate.Value, raceTitle, venueName);
+                UpcomingRace? upcoming = null;
+                try
+                {
+                    upcoming = _repo.FindUpcomingRace(raceDate.Value, raceTitle, venueName);
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"\tFailed to query upcoming race metadata: {ex.Message}");
+                }
                 if (upcoming == null)
                 {
-                    Console.WriteLine("\tNo matching upcoming race metadata available for feature synthesis.");
-                    return FeatureLookup.Empty;
+                    upcoming = BuildSyntheticUpcomingRace(
+                        raceDate.Value,
+                        raceTitle,
+                        venueName,
+                        venueCountry,
+                        scheduledOff,
+                        raceDetails,
+                        backBookPercentage,
+                        layBookPercentage,
+                        marketId,
+                        flows);
+                    if (upcoming == null)
+                    {
+                        Console.WriteLine("\tNo matching upcoming race metadata available for feature synthesis.");
+                        return FeatureLookup.Empty;
+                    }
+                    Console.WriteLine("\tConstructed synthetic upcoming race metadata for feature synthesis.");
                 }
 
                 try
@@ -756,6 +812,68 @@ namespace HorseRacingML.Scraping
                 Console.Error.WriteLine($"\tFailed to build feature vector for race {raceId.Value}: {ex.Message}");
                 return FeatureLookup.Empty;
             }
+        }
+        private UpcomingRace? BuildSyntheticUpcomingRace(
+            DateTime raceDate,
+            string? raceTitle,
+            string? venueName,
+            string? venueCountry,
+            TimeSpan? scheduledOff,
+            string? raceDetails,
+            decimal? backBookPercentage,
+            decimal? layBookPercentage,
+            string? marketId,
+            IReadOnlyList<RunnerFlow> flows)
+        {
+            string sanitizedMarketId;
+            if (!string.IsNullOrWhiteSpace(marketId))
+            {
+                sanitizedMarketId = marketId.Trim();
+            }
+            else if (!string.IsNullOrWhiteSpace(raceTitle) || !string.IsNullOrWhiteSpace(venueName))
+            {
+                sanitizedMarketId = $"synthetic:{raceDate:yyyyMMdd}:{(venueName ?? raceTitle ?? "race")}";
+            }
+            else
+            {
+                return null;
+            }
+
+            var metadataSource = new RaceDayReport
+            {
+                RaceTitle = raceTitle,
+                RaceDetails = raceDetails
+            };
+            var parsedMetadata = ParseRaceMetadata(metadataSource);
+
+            short? distanceYards = parsedMetadata.DistanceYards > 0
+                ? (short)Math.Min(parsedMetadata.DistanceYards, short.MaxValue)
+                : null;
+
+            byte? runnerCount = (flows != null && flows.Count > 0)
+                ? (byte)Math.Min(flows.Count, byte.MaxValue)
+                : (byte?)null;
+
+            return new UpcomingRace
+            {
+                MarketId = sanitizedMarketId,
+                RaceDate = raceDate.Date,
+                ScheduledOff = scheduledOff,
+                VenueName = string.IsNullOrWhiteSpace(venueName) ? null : venueName.Trim(),
+                VenueCountry = string.IsNullOrWhiteSpace(venueCountry) ? null : venueCountry.Trim(),
+                Title = string.IsNullOrWhiteSpace(raceTitle) ? null : raceTitle.Trim(),
+                RaceDetails = string.IsNullOrWhiteSpace(raceDetails) ? null : raceDetails.Trim(),
+                RaceType = parsedMetadata.RaceType,
+                Class = parsedMetadata.Class,
+                AgeRestriction = parsedMetadata.AgeRestriction,
+                Surface = parsedMetadata.Surface,
+                Going = parsedMetadata.Going,
+                DistanceYards = distanceYards,
+                DistanceText = parsedMetadata.DistanceText,
+                RunnerCount = runnerCount,
+                BackBookPercentage = backBookPercentage,
+                LayBookPercentage = layBookPercentage
+            };
         }
 
         private sealed class BetfairScrapeResult
