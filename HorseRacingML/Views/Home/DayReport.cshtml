@@ -6,6 +6,45 @@
     var generatedLocal = Model.GeneratedAt.ToLocalTime();
     var bankrollText = Model.Bankroll > 0 ? Model.Bankroll.ToString("C", CultureInfo.CurrentCulture) : Model.Bankroll.ToString("0.00", CultureInfo.CurrentCulture);
 }
+@functions {
+    private static string FormatProbabilityPercent(double value, CultureInfo culture)
+    {
+        if (!double.IsFinite(value) || value < 0)
+        {
+            return "-";
+        }
+
+        var percent = value * 100d;
+
+        if (percent >= 0.01d)
+        {
+            return percent.ToString("0.##", culture) + "%";
+        }
+
+        if (percent >= 0.0001d)
+        {
+            return percent.ToString("0.####", culture) + "%";
+        }
+
+        if (percent > 0d)
+        {
+            return "<0.0001%";
+        }
+
+        return "0%";
+    }
+
+    private static string? BuildProbabilityTooltip(double value, CultureInfo culture)
+    {
+        if (!double.IsFinite(value) || value < 0)
+        {
+            return null;
+        }
+
+        return value.ToString("P6", culture);
+    }
+}
+
 
 <div class="d-flex justify-content-between align-items-center mb-3">
     <div>
@@ -96,9 +135,17 @@ else
                             var marketOdds = runner.MarketDecimalOdds.HasValue
                                 ? runner.MarketDecimalOdds.Value.ToString("0.00", CultureInfo.CurrentCulture)
                                 : "-";
-                            var aiProb = runner.AiProbability.HasValue
-                                ? (runner.AiProbability.Value * 100).ToString("0.##", CultureInfo.CurrentCulture) + "%"
-                                : "-";
+                            string aiProb;
+                            string? aiProbTitle = null;
+                            if (runner.AiProbability.HasValue)
+                            {
+                                aiProb = FormatProbabilityPercent(runner.AiProbability.Value, CultureInfo.CurrentCulture);
+                                aiProbTitle = BuildProbabilityTooltip(runner.AiProbability.Value, CultureInfo.CurrentCulture);
+                            }
+                            else
+                            {
+                                aiProb = "-";
+                            }
                             var aiOdds = runner.AiDecimalOdds.HasValue
                                 ? runner.AiDecimalOdds.Value.ToString("0.00", CultureInfo.CurrentCulture)
                                 : "-";
@@ -145,7 +192,16 @@ else
                                 </td>
                                 <td>@runner.JockeyName</td>
                                 <td class="text-end">@marketOdds</td>
-                                <td class="text-end">@aiProb</td>
+                                <td class="text-end">
+                                    @if (runner.AiProbability.HasValue)
+                                    {
+                                        <span title="@aiProbTitle">@aiProb</span>
+                                    }
+                                    else
+                                    {
+                                        @aiProb
+                                    }
+                                </td>
                                 <td class="text-end">@aiOdds</td>
                                 <td class="text-end">@marketProb</td>
                                 <td class="text-end">@diff</td>

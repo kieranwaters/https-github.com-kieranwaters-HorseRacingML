@@ -447,7 +447,21 @@ namespace HorseRacingML.Scraping
                         rf.AiOdds = null; // set null on fail
                         Console.Error.WriteLine($"\tFailed to calculate AI odds for selection {rfIdentifier} in market {marketId}: {ex.Message}"); // log
                     }
-                    var aiText = rf.AiOdds.HasValue ? rf.AiOdds.Value.ToString("0.####", CultureInfo.InvariantCulture) : "null"; // ai text
+                    string aiText;
+                    if (rf.AiOdds.HasValue)
+                    {
+                        var rawProbability = rf.AiOdds.Value;
+                        aiText = rawProbability.ToString("0.####", CultureInfo.InvariantCulture);
+                        if (rawProbability > 0 && rawProbability < 1e-3)
+                        {
+                            var scientific = rawProbability.ToString("0.###E+0", CultureInfo.InvariantCulture);
+                            aiText = $"{aiText} (~{scientific})";
+                        }
+                    }
+                    else
+                    {
+                        aiText = "null";
+                    }
                     var backText = rf.BackPrice1.HasValue ? rf.BackPrice1.Value.ToString("0.##", CultureInfo.InvariantCulture) : "null"; // back text
                     Console.WriteLine($"\tRunner snapshot {rfIdentifier}: back1={backText}, aiProbabilityRaw={aiText}"); // per-runner log
 

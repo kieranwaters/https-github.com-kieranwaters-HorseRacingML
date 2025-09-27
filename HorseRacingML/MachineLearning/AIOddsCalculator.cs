@@ -152,7 +152,14 @@ namespace HorseRacingML.ML
             }
 
             probability = prob;
-            LogDebug(flow, $"Calculated probability {probability:0.0000}");
+            var formattedProbability = probability.ToString("0.0000", CultureInfo.InvariantCulture);
+            if (probability > 0 && probability < 1e-3)
+            {
+                var scientific = probability.ToString("0.###E+0", CultureInfo.InvariantCulture);
+                formattedProbability = $"{formattedProbability} (~{scientific})";
+            }
+
+            LogDebug(flow, $"Calculated probability {formattedProbability}");
             return true;
         }
         private static void LogDebug(RunnerFlow flow, string message)

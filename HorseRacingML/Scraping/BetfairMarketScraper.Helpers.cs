@@ -539,14 +539,20 @@ namespace HorseRacingML.Scraping
 
                 if (TryResolveDegenerateDistribution(flows))
                 {
-                    return;
-                }
+                    valid = flows
+                         .Where(f => f.AiOdds.HasValue && double.IsFinite(f.AiOdds.Value) && f.AiOdds.Value >= 0)
+                         .ToList();
+                    missingCount = flows.Count - valid.Count;
+                    if (valid.Count == 0)
+                    {
+                        Console.WriteLine("\t\tUnable to normalize after resolving degeneracy; all AI probabilities were discarded.");
+                        return;
+                    }
 
-                if (!useMarketFallbackForDegeneracy)
-                {
-                    Console.WriteLine("\t\tPreserving raw AI outputs (market fallback disabled).");
+                    minValue = valid.Min(f => f.AiOdds!.Value);
+                    maxValue = valid.Max(f => f.AiOdds!.Value);
                 }
-                else
+                else if (useMarketFallbackForDegeneracy)
                 {
                     Console.WriteLine("\t\tFalling back to market-implied probabilities.");
 
@@ -582,6 +588,12 @@ namespace HorseRacingML.Scraping
 
                     minValue = valid.Min(f => f.AiOdds!.Value);
                     maxValue = valid.Max(f => f.AiOdds!.Value);
+                }
+                else
+                {
+                    Console.WriteLine("\t\tPreserving raw AI outputs (market fallback disabled).");
+                    Console.WriteLine("\t\tSkipping normalization to avoid fabricating probabilities from degenerate model output.");
+                    return;
                 }
             }
 
