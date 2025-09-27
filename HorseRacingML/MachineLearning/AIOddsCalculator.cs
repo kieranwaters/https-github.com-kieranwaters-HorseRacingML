@@ -106,8 +106,8 @@ namespace HorseRacingML.ML
                 return false;
             }
 
-            var logit = output[0];
-            var prob = 1.0 / (1.0 + Math.Exp(-logit));
+            var logit = Math.Clamp(output[0], -700d, 700d);
+            var prob = Sigmoid(logit);
             if (!double.IsFinite(prob) || prob < 0)
             {
                 LogFallback(flow, "model produced a non-finite probability");
@@ -116,6 +116,17 @@ namespace HorseRacingML.ML
 
             probability = prob;
             return true;
+        }
+        private static double Sigmoid(double logit)
+        {
+            if (logit >= 0)
+            {
+                var neg = Math.Exp(-logit);
+                return 1d / (1d + neg);
+            }
+
+            var pos = Math.Exp(logit);
+            return pos / (1d + pos);
         }
         public double CalculateOdds(RunnerFlow flow)
         {
