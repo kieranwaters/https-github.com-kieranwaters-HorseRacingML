@@ -15,6 +15,8 @@ namespace HorseRacingML.Scraping
         private static readonly Regex DistanceComponentRegex = new("(?<value>[0-9]+(?:\\.[0-9]+)?)\\s*(?<unit>[mfy])", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex ClassRegex = new("class\\s*(?<value>[0-9])", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex AgeRestrictionRegex = new("(?<value>[0-9]{1,2}\\s*(?:yo\\+?|yo|yrs?\\+?|years?\\+?))", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex MarketTitleExchangeSuffixRegex = new(@"\s*(?:[»|,-]\s*)?BetfairT?\s*Exchange.*$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex MarketTitleSiteSuffixRegex = new(@"\s*(?:[-–—]|\|)\s*Betfair.*$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly string[] RaceTypeKeywords =
         {
             "handicap",
@@ -39,7 +41,31 @@ namespace HorseRacingML.Scraping
             "apprentice",
             "amateur"
         };
+        private static string NormalizeMarketTitle(string? rawTitle)
+        {
+            if (string.IsNullOrWhiteSpace(rawTitle))
+            {
+                return string.Empty;
+            }
 
+            var normalized = rawTitle.Replace('\u00A0', ' ').Trim();
+
+            var bettingIndex = normalized.IndexOf(" Betting Odds", StringComparison.OrdinalIgnoreCase);
+            if (bettingIndex >= 0)
+            {
+                normalized = normalized.Substring(0, bettingIndex).Trim();
+            }
+
+            normalized = MarketTitleExchangeSuffixRegex.Replace(normalized, string.Empty);
+            normalized = MarketTitleSiteSuffixRegex.Replace(normalized, string.Empty);
+
+            while (normalized.Contains("  "))
+            {
+                normalized = normalized.Replace("  ", " ");
+            }
+
+            return normalized.Trim();
+        }
         private static string ResolveAiWeightPath()
         {
             static IEnumerable<string> EnumerateCandidates()

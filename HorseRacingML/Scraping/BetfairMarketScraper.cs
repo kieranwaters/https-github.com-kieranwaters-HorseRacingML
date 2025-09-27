@@ -26,6 +26,7 @@ namespace HorseRacingML.Scraping
         private readonly bool _useMarketFallbackForAiDegeneracy;
         private decimal _availableBankroll;
         private int _betSlipSelectionsFilled;
+        private const string MarketHeaderXPath = "/html/body/ui-view/div/div/div[2]/div/ui-view/div/div/div[1]/div[1]/div/bf-sports-header/div/div/div/div[1]/div/span[1]";
         public BetfairMarketScraper(
             RacingRepository repo,
             HyperparameterTrainer trainer,
@@ -169,7 +170,15 @@ namespace HorseRacingML.Scraping
                     ".market-title",
                     "header h1",
                     ".page-title h1"); // market title with fallbacks
-
+                if (string.IsNullOrWhiteSpace(title))
+                {
+                    var xpathTitle = TextOrEmpty(driver, By.XPath(MarketHeaderXPath));
+                    if (!string.IsNullOrWhiteSpace(xpathTitle))
+                    {
+                        Console.WriteLine("\tResolved market title using dedicated header XPath.");
+                        title = xpathTitle;
+                    }
+                }
                 if (string.IsNullOrWhiteSpace(title))
                 {
                     title = ExtractDocumentTitle(driver);
@@ -178,7 +187,20 @@ namespace HorseRacingML.Scraping
                         Console.WriteLine("\tResolved market title using document title fallback.");
                     }
                 }
+                var normalizedTitle = NormalizeMarketTitle(title);
+                if (!string.IsNullOrWhiteSpace(normalizedTitle))
+                {
+                    if (!string.IsNullOrWhiteSpace(title) && !string.Equals(normalizedTitle, title.Trim(), StringComparison.Ordinal))
+                    {
+                        Console.WriteLine($"\tNormalized market title to '{normalizedTitle}'.");
+                    }
 
+                    title = normalizedTitle;
+                }
+                else if (!string.IsNullOrWhiteSpace(title))
+                {
+                    title = title.Trim();
+                }
                 var venueText = TextOrEmpty(driver, By.CssSelector(".venue-name")); // venue text
                 var eventDateText = TextOrEmpty(driver, By.CssSelector(".event-date")); // event date raw
                 var raceDetailsText = ReadFirstNonEmptyText(driver,
@@ -389,21 +411,32 @@ namespace HorseRacingML.Scraping
                         if (rf.LayPrice1.HasValue) { rf.FeatureValues["LayPrice1"] = rf.LayPrice1.Value; } // copy l1
                         if (rf.LayPrice2.HasValue) { rf.FeatureValues["LayPrice2"] = rf.LayPrice2.Value; } // copy l2
                         if (rf.LayPrice3.HasValue) { rf.FeatureValues["LayPrice3"] = rf.LayPrice3.Value; } // copy l3
+                        var rfIdentifier = !string.IsNullOrWhiteSpace(rf.HorseName)
+                        ? rf.HorseName!
+                        : (rf.SelectionId ?? "unknown");
                     }
 
                     try
                     {
                         var probability = aiCalculator.CalculateOdds(rf); // compute AI odds
-                        if (double.IsFinite(probability) && probability >= 0) { rf.AiOdds = probability; } else { rf.AiOdds = null; var badId = rf.SelectionId ?? rf.HorseName ?? "unknown"; Console.Error.WriteLine($"\tInvalid AI odds calculated for selection {badId} in market {marketId}"); } // validate
+                        if (double.IsFinite(probability) && probability > 0 && probability <= 1)
+                        {
+                            rf.AiOdds = probability;
+                        }
+                        else
+                        {
+                            rf.AiOdds = null;
+                            var probabilityText = double.IsFinite(probability)
+                                ? probability.ToString("0.####", CultureInfo.InvariantCulture)
+                                : "non-finite";
+                            Console.WriteLine($"\t\tDiscarding non-positive AI probability {probabilityText} for {rfIdentifier}; treating as missing.");
+                        }
                     }
                     catch (Exception ex)
                     {
                         rf.AiOdds = null; // set null on fail
-                        var failId = rf.SelectionId ?? rf.HorseName ?? "unknown"; // id for log
-                        Console.Error.WriteLine($"\tFailed to calculate AI odds for selection {failId} in market {marketId}: {ex.Message}"); // log
+                        Console.Error.WriteLine($"\tFailed to calculate AI odds for selection {rfIdentifier} in market {marketId}: {ex.Message}"); // log
                     }
-
-                    var rfIdentifier = !string.IsNullOrWhiteSpace(rf.HorseName) ? rf.HorseName! : (rf.SelectionId ?? "unknown"); // readable id
                     var aiText = rf.AiOdds.HasValue ? rf.AiOdds.Value.ToString("0.####", CultureInfo.InvariantCulture) : "null"; // ai text
                     var backText = rf.BackPrice1.HasValue ? rf.BackPrice1.Value.ToString("0.##", CultureInfo.InvariantCulture) : "null"; // back text
                     Console.WriteLine($"\tRunner snapshot {rfIdentifier}: back1={backText}, aiProbabilityRaw={aiText}"); // per-runner log
