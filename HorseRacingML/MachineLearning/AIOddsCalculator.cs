@@ -155,6 +155,19 @@ namespace HorseRacingML.ML
             LogDebug(flow, $"Calculated probability {probability:0.0000}");
             return true;
         }
+        private static void LogDebug(RunnerFlow flow, string message)
+        {
+            if (flow == null)
+            {
+                Console.WriteLine($"[AI][debug] {message} (runner flow was null).");
+                return;
+            }
+
+            var runnerId = DescribeRunner(flow);
+            var marketId = string.IsNullOrWhiteSpace(flow.MarketId) ? string.Empty : $" in market {flow.MarketId}";
+            Console.WriteLine($"[AI][debug] {message} for {runnerId}{marketId}.");
+        }
+
         private static double Sigmoid(double logit)
         {
             if (logit >= 0)
