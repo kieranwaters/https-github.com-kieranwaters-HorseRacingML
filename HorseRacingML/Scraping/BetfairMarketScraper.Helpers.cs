@@ -514,7 +514,7 @@ namespace HorseRacingML.Scraping
         }
 
         private static void NormalizeAiOdds(ICollection<RunnerFlow> flows, bool useMarketFallbackForDegeneracy)
-        {
+      {
             var valid = flows
                 .Where(f => f.AiOdds.HasValue && double.IsFinite(f.AiOdds.Value) && f.AiOdds.Value >= 0)
                 .ToList();

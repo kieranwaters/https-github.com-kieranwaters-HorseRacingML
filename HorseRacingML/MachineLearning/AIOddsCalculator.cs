@@ -67,7 +67,20 @@ namespace HorseRacingML.ML
                     : $"feature encoding length mismatch (expected {_featureCount}, observed {encoded.Length})");
                 return false;
             }
+            bool hasSignal = false;
+            foreach (var value in encoded)
+            {
+                if (double.IsFinite(value) && Math.Abs(value) > 1e-9)
+                {
+                    hasSignal = true;
+                    break;
+                }
+            }
 
+            if (!hasSignal)
+            {
+                Console.WriteLine($"[AI] Encoded feature vector for {DescribeRunner(flow)} contains no usable signal; neural output will rely on bias terms.");
+            }
             var normalized = new double[_featureCount];
             for (int i = 0; i < _featureCount; i++)
             {
