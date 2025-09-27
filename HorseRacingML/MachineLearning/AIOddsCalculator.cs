@@ -40,8 +40,10 @@ namespace HorseRacingML.ML
         private bool TryCalculateWithTrainedModel(RunnerFlow flow, out double probability)
         {
             probability = 0d;
+            LogDebug(flow, "Attempting to calculate probability with trained model");
             if (!_hasTrainedModel)
             {
+                LogDebug(flow, "Trained model is unavailable; will fall back to legacy odds");
                 return false;
             }
 
@@ -59,6 +61,7 @@ namespace HorseRacingML.ML
             }
 
             Dictionary<string, object?> rawFeatures = BuildRawFeatureMap(flow);
+            LogDebug(flow, $"Built raw feature map with {rawFeatures.Count} entries");
             var encoded = EncodeFeatures(rawFeatures);
             if (encoded == null || encoded.Length != _featureCount)
             {
@@ -67,6 +70,7 @@ namespace HorseRacingML.ML
                     : $"feature encoding length mismatch (expected {_featureCount}, observed {encoded.Length})");
                 return false;
             }
+            LogDebug(flow, $"Encoded feature vector length {_featureCount}");
             bool hasSignal = false;
             foreach (var value in encoded)
             {
@@ -82,18 +86,31 @@ namespace HorseRacingML.ML
                 Console.WriteLine($"[AI] Encoded feature vector for {DescribeRunner(flow)} contains no usable signal; neural output will rely on bias terms.");
             }
             var normalized = new double[_featureCount];
+            bool loggedNonFiniteValue = false;
+            bool loggedInvalidStd = false;
+            bool loggedNonFiniteMean = false;
             for (int i = 0; i < _featureCount; i++)
             {
                 var value = encoded[i];
                 if (!double.IsFinite(value))
                 {
                     value = 0d;
+                    if (!loggedNonFiniteValue)
+                    {
+                        LogDebug(flow, $"Encountered non-finite encoded value at index {i}; substituting 0");
+                        loggedNonFiniteValue = true;
+                    }
                 }
 
                 var std = _std[i];
                 if (!double.IsFinite(std) || Math.Abs(std) < 1e-8)
                 {
                     normalized[i] = 0d;
+                    if (!loggedInvalidStd)
+                    {
+                        LogDebug(flow, $"Standard deviation at index {i} was not usable ({std}); substituting 0");
+                        loggedInvalidStd = true;
+                    }
                     continue;
                 }
 
@@ -101,6 +118,11 @@ namespace HorseRacingML.ML
                 if (!double.IsFinite(mean))
                 {
                     mean = 0d;
+                    if (!loggedNonFiniteMean)
+                    {
+                        LogDebug(flow, $"Encountered non-finite mean at index {i}; substituting 0");
+                        loggedNonFiniteMean = true;
+                    }
                 }
 
                 normalized[i] = (value - mean) / std;
@@ -109,7 +131,9 @@ namespace HorseRacingML.ML
             var activations = normalized;
             for (int i = 0; i < _hiddenWeights.Count; i++)
             {
+                LogDebug(flow, $"Feeding hidden layer {i + 1} with vector length {activations.Length}");
                 activations = ApplyRelu(Multiply(activations, _hiddenWeights[i], _hiddenBiases[i]));
+                LogDebug(flow, $"Hidden layer {i + 1} output length {activations.Length}");
             }
 
             var output = Multiply(activations, _outputWeights, _outputBias);
@@ -128,6 +152,7 @@ namespace HorseRacingML.ML
             }
 
             probability = prob;
+            LogDebug(flow, $"Calculated probability {probability:0.0000}");
             return true;
         }
         private static double Sigmoid(double logit)
