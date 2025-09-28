@@ -188,9 +188,25 @@ namespace HorseRacingML.ML
         }
         public double CalculateOdds(RunnerFlow flow)
         {
+            var legacyProbability = TryCalculateLegacyProbability(flow);
+            if (flow != null)
+            {
+                flow.LegacyProbability = legacyProbability;
+            }
+
             if (TryCalculateWithTrainedModel(flow, out var probability))
             {
                 return probability;
+            }
+
+            if (legacyProbability.HasValue)
+            {
+                if (_hasTrainedModel)
+                {
+                    LogFallback(flow, "falling back to legacy odds");
+                }
+
+                return legacyProbability.Value;
             }
 
             var fallback = CalculateLegacyOdds(flow);
@@ -200,6 +216,21 @@ namespace HorseRacingML.ML
             }
 
             return fallback;
+        }
+        private double? TryCalculateLegacyProbability(RunnerFlow flow)
+        {
+            if (!HasLegacyModel || flow == null)
+            {
+                return null;
+            }
+
+            var probability = CalculateLegacyOdds(flow);
+            if (!double.IsFinite(probability) || probability <= 0 || probability > 1)
+            {
+                return null;
+            }
+
+            return probability;
         }
 
         private static void LogFallback(RunnerFlow flow, string reason)

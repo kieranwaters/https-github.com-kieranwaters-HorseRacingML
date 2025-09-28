@@ -537,7 +537,16 @@ namespace HorseRacingML.Scraping
             {
                 Console.WriteLine("\t\tDetected degenerate AI probability distribution; raw outputs are identical across runners.");
 
-                if (TryResolveDegenerateDistribution(flows))
+                if (TryApplyLegacyFallback(flows))
+                {
+                    valid = flows
+                        .Where(f => f.AiOdds.HasValue && double.IsFinite(f.AiOdds.Value) && f.AiOdds.Value >= 0)
+                        .ToList();
+                    missingCount = flows.Count - valid.Count;
+                    minValue = valid.Min(f => f.AiOdds!.Value);
+                    maxValue = valid.Max(f => f.AiOdds!.Value);
+                }
+                else if (TryResolveDegenerateDistribution(flows))
                 {
                     valid = flows
                          .Where(f => f.AiOdds.HasValue && double.IsFinite(f.AiOdds.Value) && f.AiOdds.Value >= 0)
@@ -624,7 +633,46 @@ namespace HorseRacingML.Scraping
             var normalizedSum = valid.Sum(f => f.AiOdds!.Value);
             Console.WriteLine($"\t\tNormalized probability sum: {normalizedSum.ToString("0.####", CultureInfo.InvariantCulture)}.");
         }
+        private static bool TryApplyLegacyFallback(ICollection<RunnerFlow> flows)
+        {
+            if (flows is null || flows.Count == 0)
+            {
+                return false;
+            }
 
+            const double tolerance = 1e-8;
+            var legacyProbabilities = flows
+                .Where(f => f.LegacyProbability.HasValue && double.IsFinite(f.LegacyProbability.Value) && f.LegacyProbability.Value > 0)
+                .Select(f => f.LegacyProbability!.Value)
+                .ToList();
+
+            if (legacyProbabilities.Count == 0)
+            {
+                return false;
+            }
+
+            var minLegacy = legacyProbabilities.Min();
+            var maxLegacy = legacyProbabilities.Max();
+            if (maxLegacy - minLegacy <= tolerance)
+            {
+                return false;
+            }
+
+            foreach (var flow in flows)
+            {
+                if (flow.LegacyProbability.HasValue && double.IsFinite(flow.LegacyProbability.Value) && flow.LegacyProbability.Value > 0)
+                {
+                    flow.AiOdds = flow.LegacyProbability.Value;
+                }
+                else
+                {
+                    flow.AiOdds = null;
+                }
+            }
+
+            Console.WriteLine("\t\tApplied legacy probability fallback due to degenerate trained model outputs.");
+            return true;
+        }
         private static bool TryResolveDegenerateDistribution(ICollection<RunnerFlow> flows)
         {
             if (flows is null || flows.Count == 0)
