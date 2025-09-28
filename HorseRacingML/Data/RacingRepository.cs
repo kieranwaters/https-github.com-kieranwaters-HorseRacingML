@@ -326,6 +326,38 @@ END";
 
             bulk.WriteToServer(table);
         }
+        public UpcomingRace? GetUpcomingRaceByMarketId(string? marketId)
+        {
+            if (string.IsNullOrWhiteSpace(marketId))
+            {
+                return null;
+            }
+
+            const string sql = @"SELECT UpcomingRaceId,
+                                           MarketId,
+                                           RaceDate,
+                                           ScheduledOff,
+                                           VenueName,
+                                           VenueCountry,
+                                           Title,
+                                           RaceDetails,
+                                           RaceType,
+                                           Class,
+                                           AgeRestriction,
+                                           Surface,
+                                           Going,
+                                           DistanceYards,
+                                           DistanceText,
+                                           RunnerCount,
+                                           BackBookPercentage,
+                                           LayBookPercentage
+                                    FROM UpcomingRaces
+                                    WHERE MarketId = @MarketId";
+
+            using var conn = OpenConnection();
+            EnsureUpcomingRaceTableExists(conn);
+            return conn.QueryFirstOrDefault<UpcomingRace>(sql, new { MarketId = marketId.Trim() });
+        }
         public int? FindRaceId(DateTime raceDate, string? title, string? venueName)
         {
             const string sql = @"SELECT r.RaceId, r.Title, r.RaceDate, c.Name AS CourseName

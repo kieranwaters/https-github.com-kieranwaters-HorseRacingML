@@ -48,7 +48,223 @@ namespace HorseRacingML.Scraping
             PopulateWinnerProbabilities(result.Races);
             return result.Races;
         }
-        public void PopulateWinnerProbabilities(IEnumerable<RaceDayReport> races) { if (races == null) { return; } var raceList = races as IList<RaceDayReport> ?? races.ToList(); if (raceList.Count == 0) { return; } foreach (var race in raceList) { if (race == null) { continue; } if (race.Runners == null || race.Runners.Count == 0) { Console.WriteLine("\t[DayReport] Skipping race with no runners available for probability population."); continue; } var raceName = race.RaceTitle ?? race.MarketId ?? "unknown race"; var raceDateStr = race.RaceDate.HasValue ? race.RaceDate.Value.ToString("yyyy-MM-dd") : "unknown date"; Console.WriteLine($"\t[DayReport] Processing race {raceName} on {raceDateStr} with {race.Runners.Count} runner(s)."); int? raceId = null; try { if (race.RaceDate.HasValue) { raceId = _repo.FindRaceId(race.RaceDate.Value, race.RaceTitle, race.VenueName); } if (!raceId.HasValue && race.RaceDate.HasValue) { raceId = _repo.FindRaceId(race.RaceDate.Value, race.RaceTitle, null); } } catch (Exception ex) { Console.Error.WriteLine($"\t[DayReport] Failed to resolve race identifier for {raceName}: {ex.Message}"); } if (!raceId.HasValue) { var upcomingId = TryRecordUpcomingRace(race); race.UpcomingRaceId = upcomingId; Console.WriteLine($"\t[DayReport] Unable to map race {raceName}; recorded upcoming race id {upcomingId?.ToString() ?? "n/a"}. Using saved AI probabilities without historical feature alignment."); } foreach (var runner in race.Runners) { if (runner == null) { continue; } if (!runner.AiProbability.HasValue || !double.IsFinite(runner.AiProbability.Value) || runner.AiProbability.Value <= 0) { runner.AiProbability = null; runner.AiDecimalOdds = null; runner.Differential = null; runner.KellyFraction = null; runner.SuggestedStake = null; continue; } if (!runner.AiDecimalOdds.HasValue) { runner.AiDecimalOdds = BettingMath.CalculateAiDecimalOdds(runner.AiProbability.Value); } if (!runner.MarketProbability.HasValue && runner.MarketDecimalOdds.HasValue && runner.MarketDecimalOdds.Value > 0m) { runner.MarketProbability = 1.0 / (double)runner.MarketDecimalOdds.Value; } runner.Differential = runner.MarketProbability.HasValue ? runner.AiProbability.Value - runner.MarketProbability.Value : (double?)null; if (runner.MarketDecimalOdds.HasValue && runner.MarketDecimalOdds.Value > 1m) { var kelly = BettingMath.CalculateKellyFraction(runner.AiProbability.Value, (double)runner.MarketDecimalOdds.Value, _maxKellyFraction); runner.KellyFraction = kelly; runner.SuggestedStake = (kelly > 0m && _bankroll > 0m) ? BettingMath.CalculateSequentialStake(_bankroll, kelly) : (decimal?)null; } else { runner.KellyFraction = null; runner.SuggestedStake = null; } } var winner = race.Runners.Where(r => r?.AiProbability.HasValue == true).OrderByDescending(r => r!.AiProbability!.Value).FirstOrDefault(); if (winner == null) { Console.WriteLine("\t[DayReport] No runners produced AI probabilities; skipping race output."); continue; } var identifier = !string.IsNullOrWhiteSpace(winner.HorseName) ? winner.HorseName : (!string.IsNullOrWhiteSpace(winner.SelectionId) ? winner.SelectionId : "unknown"); var aiProb = winner.AiProbability!.Value; var aiOddsStr = winner.AiDecimalOdds?.ToString("F3") ?? "n/a"; Console.WriteLine($"\t[DayReport] Top AI runner {identifier} => {aiProb:P4} (decimal odds {aiOddsStr})."); if (winner.MarketProbability.HasValue && winner.Differential.HasValue) { Console.WriteLine($"\t[DayReport] Market probability {winner.MarketProbability.Value:P4}; differential {winner.Differential.Value:P4}."); } else { Console.WriteLine("\t[DayReport] Market probability unavailable; differential not computed."); } if (winner.KellyFraction.HasValue) { Console.WriteLine($"\t[DayReport] Kelly fraction {winner.KellyFraction.Value:P4}; suggested stake {(winner.SuggestedStake?.ToString("F2") ?? "n/a")} from bankroll {_bankroll:F2}."); } else { Console.WriteLine("\t[DayReport] Kelly fraction unavailable; stake not suggested."); } } }
+        public void PopulateWinnerProbabilities(IEnumerable<RaceDayReport> races)
+        {
+            if (races == null)
+            {
+                return;
+            }
+
+            var raceList = races as IList<RaceDayReport> ?? races.ToList();
+            if (raceList.Count == 0)
+            {
+                return;
+            }
+
+            foreach (var race in raceList)
+            {
+                if (race == null)
+                {
+                    continue;
+                }
+
+                if (race.Runners == null || race.Runners.Count == 0)
+                {
+                    Console.WriteLine("\t[DayReport] Skipping race with no runners available for probability population.");
+                    continue;
+                }
+
+                var raceName = race.RaceTitle ?? race.MarketId ?? "unknown race";
+                var raceDateStr = race.RaceDate.HasValue ? race.RaceDate.Value.ToString("yyyy-MM-dd") : "unknown date";
+                Console.WriteLine($"\t[DayReport] Processing race {raceName} on {raceDateStr} with {race.Runners.Count} runner(s).");
+
+                int? raceId = null;
+                bool attemptedHistoricalLookup = false;
+
+                if (race.RaceDate.HasValue && !IsFutureRace(race.RaceDate.Value, race.OffTime))
+                {
+                    attemptedHistoricalLookup = true;
+
+                    try
+                    {
+                        raceId = _repo.FindRaceId(race.RaceDate.Value, race.RaceTitle, race.VenueName);
+
+                        if (!raceId.HasValue)
+                        {
+                            raceId = _repo.FindRaceId(race.RaceDate.Value, race.RaceTitle, null);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.Error.WriteLine($"\t[DayReport] Failed to resolve historical race identifier for {raceName}: {ex.Message}");
+                    }
+                }
+
+                if (raceId.HasValue)
+                {
+                    Console.WriteLine($"\t[DayReport] Matched race {raceName} to historical raceId={raceId.Value} for probability alignment.");
+                }
+                else
+                {
+                    var upcomingRecord = TryResolveUpcomingRace(race);
+                    if (upcomingRecord != null)
+                    {
+                        race.UpcomingRaceId = upcomingRecord.UpcomingRaceId;
+                        Console.WriteLine($"\t[DayReport] Using upcoming race {upcomingRecord.UpcomingRaceId} (market {upcomingRecord.MarketId}) for probability alignment.");
+                    }
+                    else
+                    {
+                        var upcomingId = TryRecordUpcomingRace(race);
+                        race.UpcomingRaceId = upcomingId;
+
+                        if (attemptedHistoricalLookup)
+                        {
+                            Console.WriteLine($"\t[DayReport] Unable to map race {raceName} to historical data; recorded upcoming race id {upcomingId?.ToString() ?? "n/a"}. Using saved AI probabilities without historical feature alignment.");
+                        }
+                        else
+                        {
+                            Console.WriteLine($"\t[DayReport] Race {raceName} is upcoming; recorded upcoming race id {upcomingId?.ToString() ?? "n/a"}. Using saved AI probabilities for reporting.");
+                        }
+                    }
+                }
+
+                foreach (var runner in race.Runners)
+                {
+                    if (runner == null)
+                    {
+                        continue;
+                    }
+
+                    if (!runner.AiProbability.HasValue || !double.IsFinite(runner.AiProbability.Value) || runner.AiProbability.Value <= 0)
+                    {
+                        runner.AiProbability = null;
+                        runner.AiDecimalOdds = null;
+                        runner.Differential = null;
+                        runner.KellyFraction = null;
+                        runner.SuggestedStake = null;
+                        continue;
+                    }
+
+                    if (!runner.AiDecimalOdds.HasValue)
+                    {
+                        runner.AiDecimalOdds = BettingMath.CalculateAiDecimalOdds(runner.AiProbability.Value);
+                    }
+
+                    if (!runner.MarketProbability.HasValue && runner.MarketDecimalOdds.HasValue && runner.MarketDecimalOdds.Value > 0m)
+                    {
+                        runner.MarketProbability = 1.0 / (double)runner.MarketDecimalOdds.Value;
+                    }
+
+                    runner.Differential = runner.MarketProbability.HasValue
+                        ? runner.AiProbability.Value - runner.MarketProbability.Value
+                        : (double?)null;
+
+                    if (runner.MarketDecimalOdds.HasValue && runner.MarketDecimalOdds.Value > 1m)
+                    {
+                        var kelly = BettingMath.CalculateKellyFraction(runner.AiProbability.Value, (double)runner.MarketDecimalOdds.Value, _maxKellyFraction);
+                        runner.KellyFraction = kelly;
+                        runner.SuggestedStake = (kelly > 0m && _bankroll > 0m)
+                            ? BettingMath.CalculateSequentialStake(_bankroll, kelly)
+                            : (decimal?)null;
+                    }
+                    else
+                    {
+                        runner.KellyFraction = null;
+                        runner.SuggestedStake = null;
+                    }
+                }
+
+                var winner = race.Runners
+                    .Where(r => r?.AiProbability.HasValue == true)
+                    .OrderByDescending(r => r!.AiProbability!.Value)
+                    .FirstOrDefault();
+
+                if (winner == null)
+                {
+                    Console.WriteLine("\t[DayReport] No runners produced AI probabilities; skipping race output.");
+                    continue;
+                }
+
+                var identifier = !string.IsNullOrWhiteSpace(winner.HorseName)
+                    ? winner.HorseName
+                    : (!string.IsNullOrWhiteSpace(winner.SelectionId) ? winner.SelectionId : "unknown");
+
+                var aiProb = winner.AiProbability!.Value;
+                var aiOddsStr = winner.AiDecimalOdds?.ToString("F3") ?? "n/a";
+                Console.WriteLine($"\t[DayReport] Top AI runner {identifier} => {aiProb:P4} (decimal odds {aiOddsStr}).");
+
+                if (winner.MarketProbability.HasValue && winner.Differential.HasValue)
+                {
+                    Console.WriteLine($"\t[DayReport] Market probability {winner.MarketProbability.Value:P4}; differential {winner.Differential.Value:P4}.");
+                }
+                else
+                {
+                    Console.WriteLine("\t[DayReport] Market probability unavailable; differential not computed.");
+                }
+
+                if (winner.KellyFraction.HasValue)
+                {
+                    Console.WriteLine($"\t[DayReport] Kelly fraction {winner.KellyFraction.Value:P4}; suggested stake {(winner.SuggestedStake?.ToString("F2") ?? "n/a")} from bankroll {_bankroll:F2}.");
+                }
+                else
+                {
+                    Console.WriteLine("\t[DayReport] Kelly fraction unavailable; stake not suggested.");
+                }
+            }
+        }
+
+        private static bool IsFutureRace(DateTime raceDate, TimeSpan? offTime)
+        {
+            var now = DateTime.Now;
+            if (raceDate.Date > now.Date)
+            {
+                return true;
+            }
+
+            if (raceDate.Date < now.Date)
+            {
+                return false;
+            }
+
+            return offTime.HasValue && offTime.Value > now.TimeOfDay;
+        }
+
+        private UpcomingRace? TryResolveUpcomingRace(RaceDayReport race)
+        {
+            UpcomingRace? upcoming = null;
+
+            if (!string.IsNullOrWhiteSpace(race.MarketId))
+            {
+                try
+                {
+                    upcoming = _repo.GetUpcomingRaceByMarketId(race.MarketId);
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"\t[DayReport] Failed to resolve upcoming race by market {race.MarketId}: {ex.Message}");
+                }
+            }
+
+            if (upcoming != null)
+            {
+                return upcoming;
+            }
+
+            if (!race.RaceDate.HasValue)
+            {
+                return null;
+            }
+
+            try
+            {
+                return _repo.FindUpcomingRace(race.RaceDate.Value, race.RaceTitle, race.VenueName);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"\t[DayReport] Failed to resolve upcoming race by metadata for {race.RaceTitle ?? race.MarketId}: {ex.Message}");
+                return null;
+            }
+        }
         private int? TryRecordUpcomingRace(RaceDayReport race)
         {
             if (race == null || !race.RaceDate.HasValue)
