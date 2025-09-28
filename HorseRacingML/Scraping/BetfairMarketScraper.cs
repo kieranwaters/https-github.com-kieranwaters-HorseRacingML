@@ -77,6 +77,26 @@ namespace HorseRacingML.Scraping
                 var raceName = race.RaceTitle ?? race.MarketId ?? "unknown race";
                 var raceDateStr = race.RaceDate.HasValue ? race.RaceDate.Value.ToString("yyyy-MM-dd") : "unknown date";
                 Console.WriteLine($"\t[DayReport] Processing race {raceName} on {raceDateStr} with {race.Runners.Count} runner(s).");
+                if (IsUnitedStatesRace(race))
+                {
+                    Console.WriteLine("\t[DayReport] Skipping AI probability population for United States race.");
+
+                    foreach (var runner in race.Runners)
+                    {
+                        if (runner == null)
+                        {
+                            continue;
+                        }
+
+                        runner.AiProbability = null;
+                        runner.AiDecimalOdds = null;
+                        runner.Differential = null;
+                        runner.KellyFraction = null;
+                        runner.SuggestedStake = null;
+                    }
+
+                    continue;
+                }
 
                 int? raceId = null;
                 bool attemptedHistoricalLookup = false;
@@ -212,7 +232,31 @@ namespace HorseRacingML.Scraping
                 }
             }
         }
+        private static readonly HashSet<string> s_usVenueCountryCodes = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "US",
+            "USA",
+            "UNITED STATES",
+            "UNITED STATES OF AMERICA"
+        };
 
+        private static bool IsUnitedStatesRace(RaceDayReport race)
+        {
+            if (race == null)
+            {
+                return false;
+            }
+
+            var country = race.VenueCountry;
+
+            if (string.IsNullOrWhiteSpace(country))
+            {
+                return false;
+            }
+
+            country = country.Trim();
+            return s_usVenueCountryCodes.Contains(country);
+        }
         private static bool IsFutureRace(DateTime raceDate, TimeSpan? offTime)
         {
             var now = DateTime.Now;
