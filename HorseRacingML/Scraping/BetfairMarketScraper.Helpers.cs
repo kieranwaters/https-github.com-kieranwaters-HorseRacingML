@@ -639,6 +639,20 @@ namespace HorseRacingML.Scraping
             }
 
             var winnerProbability = winner.AiOdds.Value;
+            const double probabilityFloor = 1e-6;
+            bool substitutedWinnerProbability = false;
+            if (winnerProbability <= probabilityFloor)
+            {
+                if (winner.BackPrice1.HasValue && winner.BackPrice1.Value > 1m)
+                {
+                    winnerProbability = 1.0 / (double)winner.BackPrice1.Value;
+                    substitutedWinnerProbability = true;
+                }
+                else
+                {
+                    winnerProbability = probabilityFloor;
+                }
+            }
             var others = flows.Where(f => !ReferenceEquals(f, winner)).ToList();
             var leftoverMass = Math.Max(1.0 - winnerProbability, 0);
 
@@ -704,8 +718,14 @@ namespace HorseRacingML.Scraping
                 ? winner.HorseName!
                 : (winner.SelectionId ?? "unknown");
 
-            Console.WriteLine($"\t\tInterpreting degenerate predictions as winner-only probability; assigning {winnerProbability.ToString("0.####", CultureInfo.InvariantCulture)} to {winnerName}.");
-
+            if (substitutedWinnerProbability)
+            {
+                Console.WriteLine($"\t\tWinner probability substituted with market-implied value {winnerProbability.ToString("0.####", CultureInfo.InvariantCulture)} for {winnerName}.");
+            }
+            else
+            {
+                Console.WriteLine($"\t\tInterpreting degenerate predictions as winner-only probability; assigning {winnerProbability.ToString("0.####", CultureInfo.InvariantCulture)} to {winnerName}.");
+            }
             if (others.Count > 0 && leftoverMass > 0)
             {
                 Console.WriteLine($"\t\tRedistributed remaining {leftoverMass.ToString("0.####", CultureInfo.InvariantCulture)} probability mass across {others.Count} runner(s) using market-derived weights.");
@@ -783,7 +803,34 @@ namespace HorseRacingML.Scraping
                 }
             }
 
-            return null;
+            var marketFavourite = flowList
+               .Where(f => f != null && f.AiOdds.HasValue && f.BackPrice1.HasValue && f.BackPrice1.Value > 1m)
+               .OrderBy(f => f.BackPrice1.Value)
+               .FirstOrDefault();
+            if (marketFavourite != null)
+            {
+                return marketFavourite;
+            }
+
+            var aiCandidate = flowList
+                .Where(f => f != null && f.AiOdds.HasValue && double.IsFinite(f.AiOdds.Value) && f.AiOdds.Value > 0)
+                .OrderByDescending(f => f.AiOdds.Value)
+                .FirstOrDefault();
+            if (aiCandidate != null)
+            {
+                return aiCandidate;
+            }
+
+            var fallbackMarket = flowList
+                .Where(f => f != null && f.BackPrice1.HasValue && f.BackPrice1.Value > 1m)
+                .OrderBy(f => f.BackPrice1.Value)
+                .FirstOrDefault();
+            if (fallbackMarket != null)
+            {
+                return fallbackMarket;
+            }
+
+            return flowList.FirstOrDefault();
         }
 
         private static string ReadFirstNonEmptyText(IWebDriver driver, params string[] selectors)

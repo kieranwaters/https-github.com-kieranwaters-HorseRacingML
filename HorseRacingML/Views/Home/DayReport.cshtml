@@ -96,7 +96,7 @@ else
             bookParts.Add($"Lay {race.LayBookPercentage.Value.ToString("0.##", CultureInfo.CurrentCulture)}%");
         }
 
-        var orderedRunners = (race.Runners ?? Enumerable.Empty<HorseRacingML.Models.DayReportRunnerViewModel>())
+        var orderedRunners = (race.Runners ?? Enumerable.Empty<RunnerDayReport>())
             .OrderByDescending(r => r.Differential ?? double.NegativeInfinity)
             .ToList();
 
