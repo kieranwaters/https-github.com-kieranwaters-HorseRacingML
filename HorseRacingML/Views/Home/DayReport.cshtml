@@ -46,31 +46,83 @@
         return value.ToString("P6", culture);
     }
 }
+
 <div class="d-flex justify-content-between align-items-center mb-3">
     <div>
         <h1 class="mb-0">Day Report</h1>
-        <p class="text-muted mb-0">Generated @generatedLocal.ToString("f",CultureInfo.CurrentCulture)<span class="ms-2">Bankroll: @bankrollText</span></p>
+        <p class="text-muted mb-0">
+            Generated @generatedLocal.ToString("f", CultureInfo.CurrentCulture)
+            <span class="ms-2">Bankroll: @bankrollText</span>
+        </p>
     </div>
     <button type="button" id="saveReportButton" class="btn btn-outline-primary">Save Report</button>
 </div>
-@if(Model.Races==null||Model.Races.Count==0){
+
+@if (Model.Races == null || Model.Races.Count == 0)
+{
     <div class="alert alert-info">No race data was captured while scanning the open markets.</div>
-}else{
-    foreach(var race in Model.Races){
-        @{ // compute per-race fields inside a code block to avoid Razor parse issues
-            var raceTitle=string.IsNullOrWhiteSpace(race.RaceTitle)?"Unknown Race":race.RaceTitle; // title
-            var venueParts=new[]{race.VenueName,race.VenueCountry}.Where(p=>!string.IsNullOrWhiteSpace(p)).ToList(); // venue
-            var scheduleParts=new System.Collections.Generic.List<string>(); if(race.RaceDate.HasValue){scheduleParts.Add(race.RaceDate.Value.ToString("yyyy-MM-dd",CultureInfo.CurrentCulture));} if(race.OffTime.HasValue){scheduleParts.Add(race.OffTime.Value.ToString(@"hh\:mm",CultureInfo.CurrentCulture));} // schedule
-            var bookParts=new System.Collections.Generic.List<string>(); if(race.BackBookPercentage.HasValue){bookParts.Add($"Back {race.BackBookPercentage.Value.ToString("0.##",CultureInfo.CurrentCulture)}% ");} if(race.LayBookPercentage.HasValue){bookParts.Add($"Lay {race.LayBookPercentage.Value.ToString("0.##",CultureInfo.CurrentCulture)}%");} // book %
+}
+else
+{
+    foreach (var race in Model.Races)
+    {
+        var raceTitle = string.IsNullOrWhiteSpace(race.RaceTitle)
+            ? "Unknown Race"
+            : race.RaceTitle;
+
+        var venueParts = new[] { race.VenueName, race.VenueCountry }
+            .Where(p => !string.IsNullOrWhiteSpace(p))
+            .ToList();
+
+        var scheduleParts = new List<string>();
+        if (race.RaceDate.HasValue)
+        {
+            scheduleParts.Add(race.RaceDate.Value.ToString("yyyy-MM-dd", CultureInfo.CurrentCulture));
         }
+
+        if (race.OffTime.HasValue)
+        {
+            scheduleParts.Add(race.OffTime.Value.ToString(@"hh\:mm", CultureInfo.CurrentCulture));
+        }
+
+        var bookParts = new List<string>();
+        if (race.BackBookPercentage.HasValue)
+        {
+            bookParts.Add($"Back {race.BackBookPercentage.Value.ToString("0.##", CultureInfo.CurrentCulture)}%");
+        }
+
+        if (race.LayBookPercentage.HasValue)
+        {
+            bookParts.Add($"Lay {race.LayBookPercentage.Value.ToString("0.##", CultureInfo.CurrentCulture)}%");
+        }
+
+        var orderedRunners = (race.Runners ?? Enumerable.Empty<HorseRacingML.Models.DayReportRunnerViewModel>())
+            .OrderByDescending(r => r.Differential ?? double.NegativeInfinity)
+            .ToList();
+
         <div class="card mb-4">
             <div class="card-header bg-light">
                 <h2 class="h5 mb-1">@raceTitle</h2>
                 <div class="small text-muted">
-                    @if(venueParts.Count>0){<span>@string.Join(" - ",venueParts)</span>}
-                    @if(scheduleParts.Count>0){<span class="ms-2">@string.Join(" ",scheduleParts)</span>}
-                    @if(!string.IsNullOrWhiteSpace(race.RaceDetails)){<span class="ms-2">@race.RaceDetails</span>}
-                    @if(bookParts.Count>0){<span class="ms-2">Book: @string.Join(" / ",bookParts)</span>}
+                    @if (venueParts.Count > 0)
+                    {
+                        <span>@string.Join(" - ", venueParts)</span>
+                    }
+
+                    @if (scheduleParts.Count > 0)
+                    {
+                        <span class="ms-2">@string.Join(" ", scheduleParts)</span>
+                    }
+
+                    @if (!string.IsNullOrWhiteSpace(race.RaceDetails))
+                    {
+                        <span class="ms-2">@race.RaceDetails</span>
+                    }
+
+                    @if (bookParts.Count > 0)
+                    {
+                        <span class="ms-2">Book: @string.Join(" / ", bookParts)</span>
+                    }
                 </div>
             </div>
             <div class="card-body">
@@ -92,47 +144,102 @@
                             </tr>
                         </thead>
                         <tbody>
-                        @foreach(var runner in race.Runners?.OrderByDescending(r=>r.Differential??double.NegativeInfinity)??Enumerable.Empty<HorseRacingML.Models.DayReportRunnerViewModel>()){
-                            @{ // compute per-runner fields inside a code block to avoid Razor parse issues
-                                var cloth=runner.ClothNumber.HasValue?runner.ClothNumber.Value.ToString(CultureInfo.CurrentCulture):"-"; // cloth
-                                var draw=runner.Draw.HasValue?runner.Draw.Value.ToString(CultureInfo.CurrentCulture):"-"; // draw
-                                var marketOdds=runner.MarketDecimalOdds.HasValue?runner.MarketDecimalOdds.Value.ToString("0.00",CultureInfo.CurrentCulture):"-"; // market odds
-                                string aiProb; string? aiProbTitle=null; if(runner.AiProbability.HasValue){aiProb=FormatProbabilityPercent(runner.AiProbability.Value,CultureInfo.CurrentCulture); aiProbTitle=BuildProbabilityTooltip(runner.AiProbability.Value,CultureInfo.CurrentCulture);}else{aiProb="-";} // AI %
-                                var aiOdds=runner.AiDecimalOdds.HasValue?runner.AiDecimalOdds.Value.ToString("0.00",CultureInfo.CurrentCulture):"-"; // AI odds
-                                var marketProb=runner.MarketProbability.HasValue?(runner.MarketProbability.Value*100).ToString("0.##",CultureInfo.CurrentCulture)+"%":"-"; // market %
-                                var diff=runner.Differential.HasValue?(runner.Differential.Value*100).ToString("0.##",CultureInfo.CurrentCulture)+"%":"-"; // edge
-                                var kelly=runner.KellyFraction.HasValue?(runner.KellyFraction.Value*100).ToString("0.##",CultureInfo.CurrentCulture)+"%":"-"; // kelly
-                                var stake=runner.SuggestedStake.HasValue&&runner.SuggestedStake.Value>0?runner.SuggestedStake.Value.ToString("0.00",CultureInfo.CurrentCulture):"-"; // stake
+                            @foreach (var runner in orderedRunners)
+                            {
+                                var cloth = runner.ClothNumber.HasValue
+                                    ? runner.ClothNumber.Value.ToString(CultureInfo.CurrentCulture)
+                                    : "-";
+
+                                var draw = runner.Draw.HasValue
+                                    ? runner.Draw.Value.ToString(CultureInfo.CurrentCulture)
+                                    : "-";
+
+                                var marketOdds = runner.MarketDecimalOdds.HasValue
+                                    ? runner.MarketDecimalOdds.Value.ToString("0.00", CultureInfo.CurrentCulture)
+                                    : "-";
+
+                                string aiProb;
+                                string? aiProbTitle = null;
+                                if (runner.AiProbability.HasValue)
+                                {
+                                    aiProb = FormatProbabilityPercent(runner.AiProbability.Value, CultureInfo.CurrentCulture);
+                                    aiProbTitle = BuildProbabilityTooltip(runner.AiProbability.Value, CultureInfo.CurrentCulture);
+                                }
+                                else
+                                {
+                                    aiProb = "-";
+                                }
+
+                                var aiOdds = runner.AiDecimalOdds.HasValue
+                                    ? runner.AiDecimalOdds.Value.ToString("0.00", CultureInfo.CurrentCulture)
+                                    : "-";
+
+                                var marketProb = runner.MarketProbability.HasValue
+                                    ? (runner.MarketProbability.Value * 100).ToString("0.##", CultureInfo.CurrentCulture) + "%"
+                                    : "-";
+
+                                var diff = runner.Differential.HasValue
+                                    ? (runner.Differential.Value * 100).ToString("0.##", CultureInfo.CurrentCulture) + "%"
+                                    : "-";
+
+                                var kelly = runner.KellyFraction.HasValue
+                                    ? (runner.KellyFraction.Value * 100).ToString("0.##", CultureInfo.CurrentCulture) + "%"
+                                    : "-";
+
+                                var stake = runner.SuggestedStake.HasValue && runner.SuggestedStake.Value > 0
+                                    ? runner.SuggestedStake.Value.ToString("0.00", CultureInfo.CurrentCulture)
+                                    : "-";
+
+                                <tr>
+                                    <td>@cloth</td>
+                                    <td>@draw</td>
+                                    <td>
+                                        <div class="fw-semibold">@runner.HorseName</div>
+                                        @if (!string.IsNullOrWhiteSpace(runner.SelectionId))
+                                        {
+                                            <div class="text-muted small">Selection ID: @runner.SelectionId</div>
+                                        }
+
+                                        @if (runner.FeatureValues != null && runner.FeatureValues.Count > 0)
+                                        {
+                                            <details class="small mt-1">
+                                                <summary class="text-muted">Feature inputs</summary>
+                                                <dl class="row mb-0">
+                                                    @foreach (var feature in runner.FeatureValues.OrderBy(f => f.Key))
+                                                    {
+                                                        var valueText = feature.Value switch
+                                                        {
+                                                            null => "-",
+                                                            IFormattable formattable => formattable.ToString(null, CultureInfo.CurrentCulture),
+                                                            _ => feature.Value.ToString() ?? string.Empty
+                                                        };
+
+                                                        <dt class="col-sm-5">@feature.Key</dt>
+                                                        <dd class="col-sm-7">@valueText</dd>
+                                                    }
+                                                </dl>
+                                            </details>
+                                        }
+                                    </td>
+                                    <td>@runner.JockeyName</td>
+                                    <td class="text-end">@marketOdds</td>
+                                    <td class="text-end">
+                                        @if (runner.AiProbability.HasValue)
+                                        {
+                                            <span title="@aiProbTitle">@aiProb</span>
+                                        }
+                                        else
+                                        {
+                                            @aiProb
+                                        }
+                                    </td>
+                                    <td class="text-end">@aiOdds</td>
+                                    <td class="text-end">@marketProb</td>
+                                    <td class="text-end">@diff</td>
+                                    <td class="text-end">@kelly</td>
+                                    <td class="text-end">@stake</td>
+                                </tr>
                             }
-                            <tr>
-                                <td>@cloth</td>
-                                <td>@draw</td>
-                                <td>
-                                    <div class="fw-semibold">@runner.HorseName</div>
-                                    @if(!string.IsNullOrWhiteSpace(runner.SelectionId)){<div class="text-muted small">Selection ID: @runner.SelectionId</div>}
-                                    @if(runner.FeatureValues!=null&&runner.FeatureValues.Count>0){
-                                        <details class="small mt-1">
-                                            <summary class="text-muted">Feature inputs</summary>
-                                            <dl class="row mb-0">
-                                                @foreach(var feature in runner.FeatureValues.OrderBy(f=>f.Key)){
-                                                    var valueText=feature.Value switch{null=>"-",IFormattable formattable=>formattable.ToString(null,CultureInfo.CurrentCulture),_=>feature.Value.ToString()}; // value text
-                                                    <dt class="col-sm-5">@feature.Key</dt>
-                                                    <dd class="col-sm-7">@valueText</dd>
-                                                }
-                                            </dl>
-                                        </details>
-                                    }
-                                </td>
-                                <td>@runner.JockeyName</td>
-                                <td class="text-end">@marketOdds</td>
-                                <td class="text-end">@if(runner.AiProbability.HasValue){<span title="@aiProbTitle">@aiProb</span>}else{@aiProb}</td>
-                                <td class="text-end">@aiOdds</td>
-                                <td class="text-end">@marketProb</td>
-                                <td class="text-end">@diff</td>
-                                <td class="text-end">@kelly</td>
-                                <td class="text-end">@stake</td>
-                            </tr>
-                        }
                         </tbody>
                     </table>
                 </div>
@@ -140,17 +247,29 @@
         </div>
     }
 }
-@section Scripts{
+
+@section Scripts {
     <script>
-        (function(){
-            const saveButton=document.getElementById('saveReportButton'); if(!saveButton){return;} // guard
-            saveButton.addEventListener('click',function(){
-                const fullHtml='<!DOCTYPE html>'+document.documentElement.outerHTML; // full document
-                const blob=new Blob([fullHtml],{type:'text/html'}); // blob
-                const url=URL.createObjectURL(blob); // url
-                const a=document.createElement('a'); // link
-                const ts=new Date().toISOString().replace(/[:.]/g,'-'); // timestamp
-                a.href=url; a.download=`day-report-${ts}.html`; document.body.appendChild(a); a.click(); document.body.removeChild(a); setTimeout(()=>URL.revokeObjectURL(url),1000); // cleanup
+        (function () {
+            const saveButton = document.getElementById('saveReportButton');
+            if (!saveButton) {
+                return;
+            }
+
+            saveButton.addEventListener('click', function () {
+                const fullHtml = '<!DOCTYPE html>' + document.documentElement.outerHTML;
+                const blob = new Blob([fullHtml], { type: 'text/html' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                const ts = new Date().toISOString().replace(/[:.]/g, '-');
+
+                a.href = url;
+                a.download = `day-report-${ts}.html`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
             });
         })();
     </script>
