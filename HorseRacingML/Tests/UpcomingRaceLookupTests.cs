@@ -190,7 +190,7 @@ namespace HorseRacingML.Tests
                     _upcomingByMarket[race.MarketId] = Clone(race);
                 }
 
-                return race.UpcomingRaceId ?? 0;
+                return race.UpcomingRaceId;
             }
 
             private static UpcomingRace Clone(UpcomingRace race)

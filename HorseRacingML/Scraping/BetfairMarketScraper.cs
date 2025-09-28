@@ -18,7 +18,7 @@ namespace HorseRacingML.Scraping
 {
     public partial class BetfairMarketScraper
     {
-        private readonly RacingRepository _repo;
+        private readonly IRacingRepository _repo;
         private readonly HyperparameterTrainer _trainer;
         private readonly object _repoLock = new();
         private readonly decimal _bankroll;
@@ -1123,7 +1123,7 @@ namespace HorseRacingML.Scraping
                 return FeatureLookup.Empty;
             }
         }
-        internal static bool ShouldUseUpcomingCandidate(
+        public static bool ShouldUseUpcomingCandidate(
             UpcomingRace upcoming,
             string? marketId,
             string? raceTitle,

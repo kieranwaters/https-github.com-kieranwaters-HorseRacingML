@@ -6,7 +6,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text;
-
+using System.Text.RegularExpressions;
 using PreparedDataset = HorseRacingML.ML.HyperparameterTrainer.TrainingDataset.PreparedDataset;
 using PreparedRace = HorseRacingML.ML.HyperparameterTrainer.TrainingDataset.PreparedDataset.PreparedRace;
 
@@ -25,6 +25,9 @@ namespace HorseRacingML.ML
         private const int TrainerJockeyRecentDays = 180;
         private const float TypicalRestDays = 30f;
         private const float MsPerLength = 200f;
+        private static readonly Regex HorseNameBracketTextRegex =
+            new Regex("\\s*\\([^\\)]*\\)|\\s*\\[[^\\]]*\\]", RegexOptions.Compiled);
+        private static readonly Regex HorseNameWhitespaceRegex = new Regex("\\s+", RegexOptions.Compiled);
 
         private class RollingStat
         {
@@ -1085,6 +1088,32 @@ namespace HorseRacingML.ML
             }
             private static string DistanceBucket(int yards)
                 => yards < 1760 ? "Sprint" : yards < 2640 ? "Middle" : "Long";
+            private static string NormalizeHorseNameForLookup(string horseName)
+            {
+                if (string.IsNullOrWhiteSpace(horseName))
+                {
+                    return string.Empty;
+                }
+
+                var trimmed = horseName.Trim();
+                var withoutBracketed = HorseNameBracketTextRegex.Replace(trimmed, " ");
+                var collapsed = HorseNameWhitespaceRegex.Replace(withoutBracketed, " ").Trim();
+
+                return string.IsNullOrEmpty(collapsed) ? trimmed : collapsed;
+            }
+            private int ResolveHorseId(SqlConnection conn, string horseName)
+            {
+                const string sql = "SELECT TOP (1) HorseId FROM Horse WHERE Name = @Name ORDER BY HorseId";
+                var normalizedName = NormalizeHorseNameForLookup(horseName);
+                var existing = conn.QuerySingleOrDefault<int?>(sql, new { Name = normalizedName });
+                if (existing.HasValue)
+                {
+                    return existing.Value;
+                }
+
+                var syntheticSeed = string.IsNullOrWhiteSpace(normalizedName) ? horseName : normalizedName;
+                return GenerateSyntheticId("horse:" + syntheticSeed);
+            }
 
             private RaceStats ComputeRaceStats(List<Dictionary<string, object?>> rows)
             {

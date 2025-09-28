@@ -425,7 +425,7 @@ WHERE CAST(r.RaceDate AS date) = @RaceDate";
             return bestId;
         }
 
-        internal static string NormalizeLookupKey(string? value)
+        public static string NormalizeLookupKey(string? value)
         {
             if (string.IsNullOrWhiteSpace(value))
             {
