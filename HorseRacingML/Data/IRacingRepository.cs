@@ -9,7 +9,6 @@ namespace HorseRacingML.Data
         void InsertRaceScreen(RaceScreen screen);
         void InsertRunnerFlow(RunnerFlow flow);
         int UpsertUpcomingRace(UpcomingRace race);
-        int? FindRaceId(DateTime raceDate, string? raceTitle, string? venueName);
         UpcomingRace? FindUpcomingRace(DateTime raceDate, string? raceTitle, string? venueName);
         UpcomingRace? GetUpcomingRaceByMarketId(string? marketId);
     }

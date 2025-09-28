@@ -358,72 +358,7 @@ END";
             EnsureUpcomingRaceTableExists(conn);
             return conn.QueryFirstOrDefault<UpcomingRace>(sql, new { MarketId = marketId.Trim() });
         }
-        public int? FindRaceId(DateTime raceDate, string? title, string? venueName)
-        {
-            const string sql = @"SELECT r.RaceId, r.Title, r.RaceDate, c.Name AS CourseName
-FROM Race r
-LEFT JOIN Course c ON r.CourseId = c.CourseId
-WHERE CAST(r.RaceDate AS date) = @RaceDate";
-
-            using var conn = OpenConnection();
-            var candidates = conn.Query<(int RaceId, string Title, DateTime RaceDate, string? CourseName)>(sql, new { RaceDate = raceDate.Date }).ToList();
-            if (candidates.Count == 0)
-            {
-                return null;
-            }
-
-            var normalizedTitle = NormalizeLookupKey(title);
-            var normalizedVenue = NormalizeLookupKey(venueName);
-
-            int? bestId = null;
-            int bestScore = int.MaxValue;
-
-            foreach (var candidate in candidates)
-            {
-                int score = 0;
-                var candidateTitle = NormalizeLookupKey(candidate.Title);
-                if (!string.IsNullOrEmpty(normalizedTitle))
-                {
-                    if (candidateTitle == normalizedTitle)
-                    {
-                        score -= 4;
-                    }
-                    else if (!string.IsNullOrEmpty(candidateTitle) && (candidateTitle.Contains(normalizedTitle) || normalizedTitle.Contains(candidateTitle)))
-                    {
-                        score -= 2;
-                    }
-                    else
-                    {
-                        score += 4;
-                    }
-                }
-
-                var candidateVenue = NormalizeLookupKey(candidate.CourseName);
-                if (!string.IsNullOrEmpty(normalizedVenue))
-                {
-                    if (candidateVenue == normalizedVenue)
-                    {
-                        score -= 2;
-                    }
-                    else if (!string.IsNullOrEmpty(candidateVenue) && (candidateVenue.Contains(normalizedVenue) || normalizedVenue.Contains(candidateVenue)))
-                    {
-                        score -= 1;
-                    }
-                    else
-                    {
-                        score += 2;
-                    }
-                }
-
-                if (score < bestScore || (score == bestScore && (!bestId.HasValue || candidate.RaceId < bestId.Value)))
-                {
-                    bestScore = score;
-                    bestId = candidate.RaceId;
-                }
-            }
-
-            return bestId;
-        }
+        
 
         public static string NormalizeLookupKey(string? value)
         {

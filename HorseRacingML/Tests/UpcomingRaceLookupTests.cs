@@ -157,8 +157,6 @@ namespace HorseRacingML.Tests
                 return _upcomingByMarket.TryGetValue(marketId, out var race) ? race : null;
             }
 
-            public int? FindRaceId(DateTime raceDate, string? raceTitle, string? venueName) => null;
-
             public void InsertRaceScreen(RaceScreen screen)
             {
             }

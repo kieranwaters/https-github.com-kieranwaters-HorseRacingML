@@ -1713,7 +1713,7 @@ namespace HorseRacingML.ML
                     return (best.Value.CourseId, best.Value.Name);
                 }
             }
-
+            Console.WriteLine($"\t\tNo match found in Course.Name for venue '{upcoming.VenueName ?? "<null>"}'; using synthetic course metadata.");
             int syntheticCourseId = GenerateSyntheticId("course:" + (upcoming.VenueName ?? upcoming.MarketId ?? string.Empty));
             return (syntheticCourseId, upcoming.VenueName);
         }
@@ -1726,7 +1726,7 @@ namespace HorseRacingML.ML
             {
                 return existing.Value;
             }
-
+            Console.WriteLine($"\t\tNo match found in Horse.Name for '{horseName}'; using synthetic horse identifier.");
             return GenerateSyntheticId("horse:" + horseName);
         }
 
@@ -1738,7 +1738,7 @@ namespace HorseRacingML.ML
             {
                 return existing.Value;
             }
-
+            Console.WriteLine($"\t\tNo match found in Jockey.Name for '{jockeyName}'; jockey history will be unavailable.");
             return null;
         }
 

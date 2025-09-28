@@ -98,31 +98,11 @@ namespace HorseRacingML.Scraping
                     continue;
                 }
 
-                int? raceId = null;
-                bool attemptedHistoricalLookup = false;
-
-                if (race.RaceDate.HasValue && !IsFutureRace(race.RaceDate.Value, race.OffTime))
+                var upcomingRecord = TryResolveUpcomingRace(race);
+                if (upcomingRecord != null)
                 {
-                    attemptedHistoricalLookup = true;
-
-                    try
-                    {
-                        raceId = _repo.FindRaceId(race.RaceDate.Value, race.RaceTitle, race.VenueName);
-
-                        if (!raceId.HasValue)
-                        {
-                            raceId = _repo.FindRaceId(race.RaceDate.Value, race.RaceTitle, null);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.Error.WriteLine($"\t[DayReport] Failed to resolve historical race identifier for {raceName}: {ex.Message}");
-                    }
-                }
-
-                if (raceId.HasValue)
-                {
-                    Console.WriteLine($"\t[DayReport] Matched race {raceName} to historical raceId={raceId.Value} for probability alignment.");
+                    race.UpcomingRaceId = upcomingRecord.UpcomingRaceId;
+                    Console.WriteLine($"	[DayReport] Using upcoming race {upcomingRecord.UpcomingRaceId} (market {upcomingRecord.MarketId}) for probability alignment.");
                 }
                 else
                 {
@@ -134,17 +114,7 @@ namespace HorseRacingML.Scraping
                     }
                     else
                     {
-                        var upcomingId = TryRecordUpcomingRace(race);
-                        race.UpcomingRaceId = upcomingId;
-
-                        if (attemptedHistoricalLookup)
-                        {
-                            Console.WriteLine($"\t[DayReport] Unable to map race {raceName} to historical data; recorded upcoming race id {upcomingId?.ToString() ?? "n/a"}. Using saved AI probabilities without historical feature alignment.");
-                        }
-                        else
-                        {
-                            Console.WriteLine($"\t[DayReport] Race {raceName} is upcoming; recorded upcoming race id {upcomingId?.ToString() ?? "n/a"}. Using saved AI probabilities for reporting.");
-                        }
+                        Console.WriteLine($"	[DayReport] Race {raceName} is upcoming; recorded upcoming race id {upcomingId?.ToString() ?? "n/a"}. Using saved AI probabilities for reporting.");
                     }
                 }
 
@@ -230,6 +200,109 @@ namespace HorseRacingML.Scraping
                 {
                     Console.WriteLine("\t[DayReport] Kelly fraction unavailable; stake not suggested.");
                 }
+            }
+        }
+        private FeatureLookup LoadFeatureLookup(
+            DateTime? raceDate,
+            string? raceTitle,
+            string? venueName,
+            string? venueCountry,
+            TimeSpan? scheduledOff,
+            string? raceDetails,
+            decimal? backBookPercentage,
+            decimal? layBookPercentage,
+            string? marketId,
+            IReadOnlyList<RunnerFlow> flows,
+            IReadOnlyList<IDictionary<string, object?>>? preparedRows,
+            UpcomingRace? persistedUpcoming)
+        {
+            if (preparedRows != null && preparedRows.Count > 0)
+            {
+                Console.WriteLine(
+                    $"	Using {preparedRows.Count} pre-provided feature row(s) for lookup.");
+                return FeatureLookup.FromRows(preparedRows);
+            }
+            if (!raceDate.HasValue)
+            {
+                return FeatureLookup.Empty;
+            }
+
+            UpcomingRace? upcoming = null;
+            try
+            {
+                upcoming = _repo.FindUpcomingRace(raceDate.Value, raceTitle, venueName);
+                if (upcoming != null)
+                {
+                    Console.WriteLine($"	Located UpcomingRaces row: UpcomingRaceId={upcoming.UpcomingRaceId}, MarketId={upcoming.MarketId ?? "<null>"}.");
+                }
+                else
+                {
+                    Console.WriteLine($"	No UpcomingRaces row matched date/title/venue search (RaceDate, Title, VenueName).");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"	Failed to query upcoming race metadata: {ex.Message}");
+            }
+
+            if (upcoming != null &&
+                !ShouldUseUpcomingCandidate(upcoming, marketId, raceTitle, venueName))
+            {
+                Console.WriteLine($"	UpcomingRaces row {upcoming.UpcomingRaceId} rejected due to metadata misalignment with scraped race (Title/VenueName).");
+                upcoming = null;
+            }
+
+            if (upcoming == null &&
+                persistedUpcoming != null &&
+                ShouldUseUpcomingCandidate(persistedUpcoming, marketId, raceTitle, venueName))
+            {
+                upcoming = persistedUpcoming;
+                Console.WriteLine($"	Using persisted upcoming race metadata for market {persistedUpcoming.MarketId ?? marketId ?? "<unknown>"}.");
+            }
+
+            if (upcoming == null)
+            {
+                upcoming = BuildSyntheticUpcomingRace(
+                    raceDate.Value,
+                    raceTitle,
+                    venueName,
+                    venueCountry,
+                    scheduledOff,
+                    raceDetails,
+                    backBookPercentage,
+                    layBookPercentage,
+                    marketId,
+                    flows);
+                if (upcoming == null)
+                {
+                    Console.WriteLine("	Unable to create synthetic upcoming race metadata; feature lookup aborted.");
+                    return FeatureLookup.Empty;
+                }
+
+                Console.WriteLine("	Constructed synthetic upcoming race metadata for feature synthesis.");
+            }
+            else
+            {
+                Console.WriteLine($"	Using UpcomingRaces metadata from repository for market {upcoming.MarketId ?? marketId ?? "<unknown>"}.");
+            }
+
+            try
+            {
+                var prepared = _trainer.PrepareUpcomingRace(upcoming, flows);
+                if (prepared == null)
+                {
+                    Console.WriteLine("	Synthetic feature preparation for upcoming race returned no rows.");
+                    return FeatureLookup.Empty;
+                }
+
+                Console.WriteLine(
+                    $"	Loaded synthetic feature rows for upcoming race {upcoming.MarketId}; runner count={prepared.Rows.Count}.");
+                return FeatureLookup.FromPreparedRace(prepared);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"	Failed to build synthetic feature vector for upcoming race {upcoming.MarketId}:{ex.Message}");
+                return FeatureLookup.Empty;
             }
         }
         private static readonly HashSet<string> s_usVenueCountryCodes = new(StringComparer.OrdinalIgnoreCase)
@@ -1031,140 +1104,6 @@ namespace HorseRacingML.Scraping
                 {
                     flow.FeatureValues = featureVector;
                 }
-            }
-        }
-
-        private FeatureLookup LoadFeatureLookup(
-            DateTime? raceDate,
-            string? raceTitle,
-            string? venueName,
-            string? venueCountry,
-            TimeSpan? scheduledOff,
-            string? raceDetails,
-            decimal? backBookPercentage,
-            decimal? layBookPercentage,
-            string? marketId,
-            IReadOnlyList<RunnerFlow> flows,
-            IReadOnlyList<IDictionary<string, object?>>? preparedRows,
-            UpcomingRace? persistedUpcoming)
-        {
-            if (preparedRows != null && preparedRows.Count > 0)
-            {
-                Console.WriteLine(
-                    $"\tUsing {preparedRows.Count} pre-provided feature row(s) for lookup.");
-                return FeatureLookup.FromRows(preparedRows);
-            }
-            if (!raceDate.HasValue)
-            {
-                return FeatureLookup.Empty;
-            }
-
-            int? raceId;
-            try
-            {
-                raceId = _repo.FindRaceId(raceDate.Value, raceTitle, venueName);
-                if (raceId.HasValue)
-                {
-                    Console.WriteLine(
-                        $"\tResolved race lookup: date={raceDate.Value:yyyy-MM-dd}, title='{raceTitle ?? "<null>"}', venue='{venueName ?? "<null>"}' => raceId={raceId.Value}");
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine($"\tUnable to resolve race details for feature lookup: {ex.Message}");
-                return FeatureLookup.Empty;
-            }
-
-            if (!raceId.HasValue)
-            {
-                Console.WriteLine(
-                    $"\tNo race ID found for date={raceDate.Value:yyyy-MM-dd}, title='{raceTitle ?? "<null>"}', venue='{venueName ?? "<null>"}'.");
-                UpcomingRace? upcoming = null;
-                try
-                {
-                    upcoming = _repo.FindUpcomingRace(raceDate.Value, raceTitle, venueName);
-                    if (upcoming != null)
-                    {
-                        Console.WriteLine($"\tResolved upcoming race metadata from repository: id={upcoming.UpcomingRaceId}, market={upcoming.MarketId ?? "<null>"}.");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Console.Error.WriteLine($"\tFailed to query upcoming race metadata: {ex.Message}");
-                }
-                if (upcoming != null &&
-                    !ShouldUseUpcomingCandidate(upcoming, marketId, raceTitle, venueName))
-                {
-                    upcoming = null;
-                }
-                if (upcoming == null &&
-                    persistedUpcoming != null &&
-                    ShouldUseUpcomingCandidate(persistedUpcoming, marketId, raceTitle, venueName))
-                {
-                    upcoming = persistedUpcoming;
-                    Console.WriteLine($"\tUsing persisted upcoming race metadata for market {persistedUpcoming.MarketId ?? marketId ?? "<unknown>"}.");
-                }
-                if (upcoming == null)
-                {
-                    upcoming = BuildSyntheticUpcomingRace(
-                        raceDate.Value,
-                        raceTitle,
-                        venueName,
-                        venueCountry,
-                        scheduledOff,
-                        raceDetails,
-                        backBookPercentage,
-                        layBookPercentage,
-                        marketId,
-                        flows);
-                    if (upcoming == null)
-                    {
-                        Console.WriteLine("\tNo matching upcoming race metadata available for feature synthesis.");
-                        return FeatureLookup.Empty;
-                    }
-                    Console.WriteLine("\tConstructed synthetic upcoming race metadata for feature synthesis.");
-                }
-
-                try
-                {
-                    var prepared = _trainer.PrepareUpcomingRace(upcoming, flows);
-                    if (prepared == null)
-                    {
-                        Console.WriteLine("\tSynthetic feature preparation for upcoming race returned no rows.");
-                        return FeatureLookup.Empty;
-                    }
-
-                    Console.WriteLine(
-                        $"\tLoaded synthetic feature rows for upcoming race {upcoming.MarketId}; runner count={prepared.Rows.Count}.");
-                    return FeatureLookup.FromPreparedRace(prepared);
-                }
-                catch (Exception ex)
-                {
-                    Console.Error.WriteLine($"\tFailed to build synthetic feature vector for upcoming race {upcoming.MarketId}: {ex.Message}");
-                    return FeatureLookup.Empty;
-                }
-            }
-
-            try
-            {
-                var include = new HashSet<int> { raceId.Value };
-                var prepared = _trainer.PrepareDataset(include, null, includeIdentifiers: true);
-                var race = prepared.Races.FirstOrDefault(r => r.RaceId == raceId.Value);
-                if (race == null)
-                {
-                    Console.WriteLine($"\tFeature preparation returned no race data for raceId={raceId.Value}.");
-                    return FeatureLookup.Empty;
-                }
-
-                Console.WriteLine(
-                    $"\tLoaded feature rows for raceId={raceId.Value}; runner count={race.Runners.Count}.");
-
-                return FeatureLookup.FromPreparedRace(race);
-            }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine($"\tFailed to build feature vector for race {raceId.Value}: {ex.Message}");
-                return FeatureLookup.Empty;
             }
         }
         public static bool ShouldUseUpcomingCandidate(
