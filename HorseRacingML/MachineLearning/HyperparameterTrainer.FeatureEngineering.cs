@@ -1261,7 +1261,7 @@ namespace HorseRacingML.ML
             }
         }
 
-        public PreparedDataset PrepareDataset(
+        public virtual PreparedDataset PrepareDataset(
                 ISet<int>? includeRaceIds = null,
                 ISet<int>? stateRaceWhitelist = null,
                 bool includeIdentifiers = false)
@@ -1399,7 +1399,7 @@ namespace HorseRacingML.ML
 
             return new PreparedDataset(races);
         }
-        public PreparedRace? PrepareUpcomingRace(UpcomingRace upcoming, IReadOnlyList<RunnerFlow> flows)
+        public virtual PreparedRace? PrepareUpcomingRace(UpcomingRace upcoming, IReadOnlyList<RunnerFlow> flows)
         {
             if (upcoming is null)
                 throw new ArgumentNullException(nameof(upcoming));

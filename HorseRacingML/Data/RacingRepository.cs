@@ -17,7 +17,7 @@ namespace HorseRacingML.Data
     /// <summary>
     /// Simple repository for inserting parsed race data into SQL Server.
     /// </summary>
-    public class RacingRepository
+    public class RacingRepository : IRacingRepository
     {
         private readonly string _connectionString;
         private static readonly Regex BracketTextRegex =

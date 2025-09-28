@@ -28,7 +28,7 @@ namespace HorseRacingML.Scraping
         private int _betSlipSelectionsFilled;
         private const string MarketHeaderXPath = "/html/body/ui-view/div/div/div[2]/div/ui-view/div/div/div[1]/div[1]/div/bf-sports-header/div/div/div/div[1]/div/span[1]";
         public BetfairMarketScraper(
-            RacingRepository repo,
+            IRacingRepository repo,
             HyperparameterTrainer trainer,
             decimal bankroll,
             decimal? maxKellyFraction = null,
@@ -476,7 +476,61 @@ namespace HorseRacingML.Scraping
                 }
 
                 Console.WriteLine($"\tFound {rows.Count} runners for market {marketId}"); // log count
+                UpcomingRace? persistedUpcoming = null;
+                if (parsedRaceDate.HasValue)
+                {
+                    try
+                    {
+                        var metadataSource = new RaceDayReport
+                        {
+                            RaceTitle = title,
+                            RaceDetails = raceDetailsText
+                        };
+                        var metadata = ParseRaceMetadata(metadataSource);
 
+                        short? distanceYards = metadata.DistanceYards > 0
+                            ? (short)Math.Min(metadata.DistanceYards, short.MaxValue)
+                            : null;
+
+                        byte? runnerCount = rows.Count > 0
+                            ? (byte)Math.Min(rows.Count, byte.MaxValue)
+                            : (byte?)null;
+
+                        persistedUpcoming = new UpcomingRace
+                        {
+                            MarketId = marketId,
+                            RaceDate = parsedRaceDate.Value.Date,
+                            ScheduledOff = offTime,
+                            VenueName = string.IsNullOrWhiteSpace(venueName) ? null : venueName.Trim(),
+                            VenueCountry = string.IsNullOrWhiteSpace(venueCountry) ? null : venueCountry.Trim(),
+                            Title = string.IsNullOrWhiteSpace(title) ? null : title.Trim(),
+                            RaceDetails = string.IsNullOrWhiteSpace(raceDetailsText) ? null : raceDetailsText.Trim(),
+                            RaceType = metadata.RaceType,
+                            Class = metadata.Class,
+                            AgeRestriction = metadata.AgeRestriction,
+                            Surface = metadata.Surface,
+                            Going = metadata.Going,
+                            DistanceYards = distanceYards,
+                            DistanceText = metadata.DistanceText,
+                            RunnerCount = runnerCount,
+                            BackBookPercentage = backBookPercentage,
+                            LayBookPercentage = layBookPercentage
+                        };
+
+                        lock (_repoLock)
+                        {
+                            var upcomingId = _repo.UpsertUpcomingRace(persistedUpcoming);
+                            persistedUpcoming.UpcomingRaceId = upcomingId;
+                        }
+
+                        Console.WriteLine($"\tRecorded upcoming race {persistedUpcoming.UpcomingRaceId} for market {marketId}.");
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.Error.WriteLine($"\tFailed to record upcoming race metadata for market {marketId}: {ex.Message}");
+                        persistedUpcoming = null;
+                    }
+                }
                 var flows = new List<RunnerFlow>(); // collect runner flows
                 var runnerEntries = new List<(IWebElement Row, RunnerFlow Flow)>(); // row→flow mapping
                 var selectionIdAttributes = new[] { "data-selection-id", "data-selection-key", "data-selection-uid", "data-selectionid", "data-runner-id" }; // possible id attrs
@@ -626,7 +680,9 @@ namespace HorseRacingML.Scraping
                     layBookPercentage,
                     marketId,
                     flows,
-                    rows.Count); // build features
+                    rows.Count,
+                    preparedRows: null,
+                    persistedUpcoming: persistedUpcoming); // build features
 
                 foreach (var rf in flows) // process each runner
                 {
@@ -881,7 +937,8 @@ namespace HorseRacingML.Scraping
           string? marketId,
           IReadOnlyList<RunnerFlow> flows,
           int runnerCount,
-          IReadOnlyList<IDictionary<string, object?>>? preparedRows = null)
+          IReadOnlyList<IDictionary<string, object?>>? preparedRows = null,
+          UpcomingRace? persistedUpcoming = null)
         {
             if (flows == null || flows.Count == 0)
             {
@@ -899,7 +956,8 @@ namespace HorseRacingML.Scraping
                 layBookPercentage,
                 marketId,
                 flows,
-                preparedRows);
+                 preparedRows,
+                persistedUpcoming);
             foreach (var flow in flows)
             {
                 var matchedFeatures = featureLookup.FindByHorse(flow.HorseName)
@@ -943,7 +1001,8 @@ namespace HorseRacingML.Scraping
             decimal? layBookPercentage,
             string? marketId,
             IReadOnlyList<RunnerFlow> flows,
-            IReadOnlyList<IDictionary<string, object?>>? preparedRows)
+            IReadOnlyList<IDictionary<string, object?>>? preparedRows,
+            UpcomingRace? persistedUpcoming)
         {
             if (preparedRows != null && preparedRows.Count > 0)
             {
@@ -980,6 +1039,10 @@ namespace HorseRacingML.Scraping
                 try
                 {
                     upcoming = _repo.FindUpcomingRace(raceDate.Value, raceTitle, venueName);
+                    if (upcoming != null)
+                    {
+                        Console.WriteLine($"\tResolved upcoming race metadata from repository: id={upcoming.UpcomingRaceId}, market={upcoming.MarketId ?? "<null>"}.");
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -989,6 +1052,13 @@ namespace HorseRacingML.Scraping
                     !ShouldUseUpcomingCandidate(upcoming, marketId, raceTitle, venueName))
                 {
                     upcoming = null;
+                }
+                if (upcoming == null &&
+                    persistedUpcoming != null &&
+                    ShouldUseUpcomingCandidate(persistedUpcoming, marketId, raceTitle, venueName))
+                {
+                    upcoming = persistedUpcoming;
+                    Console.WriteLine($"\tUsing persisted upcoming race metadata for market {persistedUpcoming.MarketId ?? marketId ?? "<unknown>"}.");
                 }
                 if (upcoming == null)
                 {
