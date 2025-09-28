@@ -226,7 +226,12 @@ namespace HorseRacingML.Scraping
                 return false;
             }
 
-            return offTime.HasValue && offTime.Value > now.TimeOfDay;
+            if (offTime.HasValue)
+            {
+                return offTime.Value > now.TimeOfDay;
+            }
+
+            return true;
         }
 
         private UpcomingRace? TryResolveUpcomingRace(RaceDayReport race)
