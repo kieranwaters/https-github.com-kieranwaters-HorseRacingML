@@ -980,6 +980,11 @@ namespace HorseRacingML.Scraping
                 {
                     Console.Error.WriteLine($"\tFailed to query upcoming race metadata: {ex.Message}");
                 }
+                if (upcoming != null &&
+                    !ShouldUseUpcomingCandidate(upcoming, marketId, raceTitle, venueName))
+                {
+                    upcoming = null;
+                }
                 if (upcoming == null)
                 {
                     upcoming = BuildSyntheticUpcomingRace(
@@ -1043,6 +1048,58 @@ namespace HorseRacingML.Scraping
                 return FeatureLookup.Empty;
             }
         }
+        internal static bool ShouldUseUpcomingCandidate(
+            UpcomingRace upcoming,
+            string? marketId,
+            string? raceTitle,
+            string? venueName)
+        {
+            if (upcoming == null)
+            {
+                return false;
+            }
+
+            if (!string.IsNullOrWhiteSpace(upcoming.MarketId) &&
+                !string.IsNullOrWhiteSpace(marketId) &&
+                !string.Equals(upcoming.MarketId, marketId, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            var normalizedTitle = RacingRepository.NormalizeLookupKey(raceTitle);
+            var normalizedVenue = RacingRepository.NormalizeLookupKey(venueName);
+            var candidateTitle = RacingRepository.NormalizeLookupKey(upcoming.Title);
+            var candidateVenue = RacingRepository.NormalizeLookupKey(upcoming.VenueName);
+
+            var hasTitle = !string.IsNullOrEmpty(normalizedTitle);
+            var hasVenue = !string.IsNullOrEmpty(normalizedVenue);
+            var titleAligned = hasTitle && IsNormalizedMatch(normalizedTitle, candidateTitle);
+            var venueAligned = hasVenue && IsNormalizedMatch(normalizedVenue, candidateVenue);
+
+            if ((hasTitle || hasVenue) && !titleAligned && !venueAligned)
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        private static bool IsNormalizedMatch(string expected, string candidate)
+        {
+            if (string.IsNullOrEmpty(expected) || string.IsNullOrEmpty(candidate))
+            {
+                return false;
+            }
+
+            if (candidate == expected)
+            {
+                return true;
+            }
+
+            return candidate.Contains(expected, StringComparison.Ordinal) ||
+                   expected.Contains(candidate, StringComparison.Ordinal);
+        }
+
         private UpcomingRace? BuildSyntheticUpcomingRace(
             DateTime raceDate,
             string? raceTitle,

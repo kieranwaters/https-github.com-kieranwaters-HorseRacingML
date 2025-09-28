@@ -44,10 +44,16 @@
 		<!-- ML.NET packages used for winner prediction -->
 		<PackageReference Include="Microsoft.ML" Version="2.0.0" />
 		<PackageReference Include="Microsoft.ML.LightGbm" Version="2.0.0" />
+		<PackageReference Include="xunit.abstractions" Version="2.0.3" />
+		<PackageReference Include="xunit.assert" Version="2.9.3" />
+		<PackageReference Include="xunit.extensibility.core" Version="2.9.3" />
 	</ItemGroup>
 	<ItemGroup>
 		<Folder Include="NewFolder\" />
 		<Folder Include="Views\NewFolder1\" />
+	</ItemGroup>
+	<ItemGroup>
+	  <None Include="tests\HorseRacingML.Tests.csproj" />
 	</ItemGroup>
 
 </Project>

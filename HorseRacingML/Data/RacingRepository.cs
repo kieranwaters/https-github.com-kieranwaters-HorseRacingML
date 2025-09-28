@@ -425,7 +425,7 @@ WHERE CAST(r.RaceDate AS date) = @RaceDate";
             return bestId;
         }
 
-        private static string NormalizeLookupKey(string? value)
+        internal static string NormalizeLookupKey(string? value)
         {
             if (string.IsNullOrWhiteSpace(value))
             {
@@ -799,56 +799,108 @@ ORDER BY ISNULL(ValidationAccuracy, 0) DESC, RunDate DESC";
             var normalizedTitle = NormalizeLookupKey(title);
             var normalizedVenue = NormalizeLookupKey(venueName);
 
-            UpcomingRace? best = null;
-            int bestScore = int.MaxValue;
+            var (best, bestScore, titleAligned, venueAligned) = SelectBestUpcomingRaceCandidate(
+                candidates,
+                normalizedTitle,
+                normalizedVenue);
 
-            foreach (var candidate in candidates)
+            if (best is null)
             {
-                int score = 0;
-                var candidateTitle = NormalizeLookupKey(candidate.Title);
-                if (!string.IsNullOrEmpty(normalizedTitle))
-                {
-                    if (candidateTitle == normalizedTitle)
-                    {
-                        score -= 4;
-                    }
-                    else if (!string.IsNullOrEmpty(candidateTitle) &&
-                             (candidateTitle.Contains(normalizedTitle) || normalizedTitle.Contains(candidateTitle)))
-                    {
-                        score -= 2;
-                    }
-                    else
-                    {
-                        score += 4;
-                    }
-                }
+                return null;
+            }
 
-                var candidateVenue = NormalizeLookupKey(candidate.VenueName);
-                if (!string.IsNullOrEmpty(normalizedVenue))
-                {
-                    if (candidateVenue == normalizedVenue)
-                    {
-                        score -= 2;
-                    }
-                    else if (!string.IsNullOrEmpty(candidateVenue) &&
-                             (candidateVenue.Contains(normalizedVenue) || normalizedVenue.Contains(candidateVenue)))
-                    {
-                        score -= 1;
-                    }
-                    else
-                    {
-                        score += 2;
-                    }
-                }
+            if (bestScore > 0)
+            {
+                return null;
+            }
 
-                if (score < bestScore || (score == bestScore && (best == null || candidate.UpcomingRaceId < best.UpcomingRaceId)))
-                {
-                    bestScore = score;
-                    best = candidate;
-                }
+            var hasTitle = !string.IsNullOrEmpty(normalizedTitle);
+            var hasVenue = !string.IsNullOrEmpty(normalizedVenue);
+            if ((hasTitle || hasVenue) && !titleAligned && !venueAligned)
+            {
+                return null;
             }
 
             return best;
+        }
+
+        internal static (UpcomingRace? Candidate, int Score, bool TitleAligned, bool VenueAligned) SelectBestUpcomingRaceCandidate(
+            IEnumerable<UpcomingRace> candidates,
+            string normalizedTitle,
+            string normalizedVenue)
+        {
+            UpcomingRace? best = null;
+            int bestScore = int.MaxValue;
+            bool bestTitleAligned = false;
+            bool bestVenueAligned = false;
+
+            foreach (var candidate in candidates)
+            {
+                var (score, titleAligned, venueAligned) = ScoreUpcomingCandidate(candidate, normalizedTitle, normalizedVenue);
+
+                if (score < bestScore ||
+                    (score == bestScore && (best == null || candidate.UpcomingRaceId < best.UpcomingRaceId)))
+                {
+                    best = candidate;
+                    bestScore = score;
+                    bestTitleAligned = titleAligned;
+                    bestVenueAligned = venueAligned;
+                }
+            }
+
+            return (best, bestScore, bestTitleAligned, bestVenueAligned);
+        }
+
+        private static (int Score, bool TitleAligned, bool VenueAligned) ScoreUpcomingCandidate(
+            UpcomingRace candidate,
+            string normalizedTitle,
+            string normalizedVenue)
+        {
+            int score = 0;
+            bool titleAligned = false;
+            bool venueAligned = false;
+
+            var candidateTitle = NormalizeLookupKey(candidate.Title);
+            if (!string.IsNullOrEmpty(normalizedTitle))
+            {
+                if (candidateTitle == normalizedTitle)
+                {
+                    score -= 4;
+                    titleAligned = true;
+                }
+                else if (!string.IsNullOrEmpty(candidateTitle) &&
+                         (candidateTitle.Contains(normalizedTitle) || normalizedTitle.Contains(candidateTitle)))
+                {
+                    score -= 2;
+                    titleAligned = true;
+                }
+                else
+                {
+                    score += 4;
+                }
+            }
+
+            var candidateVenue = NormalizeLookupKey(candidate.VenueName);
+            if (!string.IsNullOrEmpty(normalizedVenue))
+            {
+                if (candidateVenue == normalizedVenue)
+                {
+                    score -= 2;
+                    venueAligned = true;
+                }
+                else if (!string.IsNullOrEmpty(candidateVenue) &&
+                         (candidateVenue.Contains(normalizedVenue) || normalizedVenue.Contains(candidateVenue)))
+                {
+                    score -= 1;
+                    venueAligned = true;
+                }
+                else
+                {
+                    score += 2;
+                }
+            }
+
+            return (score, titleAligned, venueAligned);
         }
         public short InsertTrainer(Trainer trainer)
         {
