@@ -113,6 +113,7 @@ namespace HorseRacingML.Models
         public double? LegacyProbability { get; set; }
         public Dictionary<string, object?>? FeatureValues { get; set; }
         public bool HasPreparedFeatures { get; set; }
+        public int? HistoricalRaceCount { get; set; }
     }
     public class UpcomingRace
     {

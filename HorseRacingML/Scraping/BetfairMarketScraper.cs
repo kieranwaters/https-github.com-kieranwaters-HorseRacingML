@@ -1035,10 +1035,15 @@ namespace HorseRacingML.Scraping
                     runner.SuggestedStake = BettingMath.CalculateSequentialStake(_bankroll, kelly);
                 }
             }
-            if (flow.FeatureValues != null &&
-               flow.FeatureValues.TryGetValue("CareerStarts", out var historyValue))
+            if (flow.HistoricalRaceCount.HasValue)
+            {
+                runner.HistoricalRaceCount = flow.HistoricalRaceCount;
+            }
+            else if (flow.FeatureValues != null &&
+                     flow.FeatureValues.TryGetValue("CareerStarts", out var historyValue))
             {
                 runner.HistoricalRaceCount = TryConvertToInt32(historyValue);
+                flow.HistoricalRaceCount = runner.HistoricalRaceCount;
             }
             return runner;
         }
@@ -1152,6 +1157,14 @@ namespace HorseRacingML.Scraping
                 if (featureVector.Count > 0)
                 {
                     flow.FeatureValues = featureVector;
+                }
+                if (featureVector.TryGetValue("CareerStarts", out var careerStartsValue))
+                {
+                    flow.HistoricalRaceCount = TryConvertToInt32(careerStartsValue);
+                }
+                else
+                {
+                    flow.HistoricalRaceCount = null;
                 }
             }
         }
