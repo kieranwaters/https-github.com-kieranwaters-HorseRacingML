@@ -150,12 +150,10 @@ else
             bookParts.Add($"Lay {race.LayBookPercentage.Value.ToString("0.##", CultureInfo.CurrentCulture)}%");
         }
 
-        @{
-            var orderedRunners = (race.Runners ?? new List<RunnerDayReport>())
-                .OrderBy(r => r.ClothNumber ?? byte.MaxValue)
-                .ThenBy(r => r.HorseName ?? string.Empty)
-                .ToList();
-        }
+        var orderedRunners = (race.Runners ?? new List<RunnerDayReport>())
+            .OrderBy(r => r.ClothNumber ?? byte.MaxValue)
+            .ThenBy(r => r.HorseName ?? string.Empty)
+            .ToList();
 
         <div class="card mb-4" data-market-id="@race.MarketId">
             <div class="card-header bg-light">
