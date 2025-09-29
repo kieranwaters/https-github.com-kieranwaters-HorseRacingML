@@ -1443,13 +1443,28 @@ namespace HorseRacingML.ML
             conn.Open();
 
             var raceColumns = PreparedDataset.LoadColumnNames(conn, "Race");
+            var runnerColumns = PreparedDataset.LoadColumnNames(conn, "RunnerResult");
             string scheduledOffColumn = raceColumns.Contains("ScheduledOff")
                 ? "r.ScheduledOff AS ScheduledOff"
                 : "CAST(NULL AS time(0)) AS ScheduledOff";
             string actualOffColumn = raceColumns.Contains("ActualOff")
                 ? "r.ActualOff AS ActualOff"
                 : "CAST(NULL AS time(0)) AS ActualOff";
-
+            string purseColumn = raceColumns.Contains("Purse")
+                ? "r.Purse AS Purse"
+                : "CAST(NULL AS decimal(18, 2)) AS Purse";
+            string officialRatingColumn = runnerColumns.Contains("OfficialRating")
+                ? "rr.OfficialRating AS OfficialRating"
+                : "CAST(NULL AS smallint) AS OfficialRating";
+            string weightTextColumn = runnerColumns.Contains("WeightText")
+                ? "rr.WeightText AS WeightText"
+                : "CAST(NULL AS nvarchar(50)) AS WeightText";
+            string weightLbsColumn = runnerColumns.Contains("WeightLbs")
+                ? "rr.WeightLbs AS WeightLbs"
+                : "CAST(NULL AS smallint) AS WeightLbs";
+            string ageColumn = runnerColumns.Contains("Age")
+                ? "rr.Age AS Age"
+                : "CAST(NULL AS smallint) AS Age";
             var sql = $@"SELECT c.Name AS CourseName,
                                    h.Name AS HorseName,
                                    j.Name AS JockeyName,
@@ -1470,14 +1485,16 @@ namespace HorseRacingML.ML
                                    r.RunnerCount,
                                    r.Status,
                                    r.WinningTimeMs,
+                                    {purseColumn},
                                    rr.HorseId,
                                    rr.TrainerId,
                                    rr.JockeyId,
                                    rr.SaddleclothNumber,
                                    rr.Draw,
-                                   rr.Age,
-                                   rr.WeightLbs,
-                                   rr.WeightText,
+                                   {ageColumn},
+                                   {weightLbsColumn},
+                                   {weightTextColumn},
+                                   {officialRatingColumn},
                                    rr.FinishPos,
                                    rr.OutcomeCode,
                                    rr.DistanceBeatenText,
@@ -1546,7 +1563,7 @@ namespace HorseRacingML.ML
             }
 
             var syntheticRaceId = CreateSyntheticRaceId(upcoming);
-            var syntheticRows = BuildUpcomingRaceRows(conn, upcoming, flows, syntheticRaceId);
+            var syntheticRows = BuildUpcomingRaceRows(conn, upcoming, flows, syntheticRaceId, runnerColumns);
             if (syntheticRows.Count == 0)
             {
                 return null;
@@ -1579,7 +1596,8 @@ namespace HorseRacingML.ML
             SqlConnection conn,
             UpcomingRace upcoming,
             IReadOnlyList<RunnerFlow> flows,
-            int raceId)
+            int raceId,
+            IReadOnlyCollection<string> runnerColumns)
         {
             var rows = new List<Dictionary<string, object?>>(flows.Count);
             var (courseId, courseName) = ResolveCourse(conn, upcoming);
@@ -1662,10 +1680,93 @@ namespace HorseRacingML.ML
 
                 rows.Add(row);
             }
-
+            PopulateRunnerDefaults(conn, upcoming, runnerColumns, row, horseId);
             return rows;
         }
+        private void PopulateRunnerDefaults(
+            SqlConnection conn,
+            UpcomingRace upcoming,
+            IReadOnlyCollection<string> runnerColumns,
+            Dictionary<string, object?> row,
+            int horseId)
+        {
+            if (runnerColumns == null)
+            {
+                return;
+            }
 
+            string weightTextColumn = runnerColumns.Contains("WeightText")
+                ? "rr.WeightText AS WeightText"
+                : "CAST(NULL AS nvarchar(50)) AS WeightText";
+            string officialRatingColumn = runnerColumns.Contains("OfficialRating")
+                ? "rr.OfficialRating AS OfficialRating"
+                : "CAST(NULL AS smallint) AS OfficialRating";
+            string ageColumn = runnerColumns.Contains("Age")
+                ? "rr.Age AS Age"
+                : "CAST(NULL AS smallint) AS Age";
+            string weightLbsColumn = runnerColumns.Contains("WeightLbs")
+                ? "rr.WeightLbs AS WeightLbs"
+                : "CAST(NULL AS smallint) AS WeightLbs";
+
+            const string trainerNameSelect = "t.Name AS TrainerName";
+
+            string sql = $@"SELECT TOP (1)
+                                        rr.TrainerId,
+                                        {trainerNameSelect},
+                                        {ageColumn},
+                                        {weightLbsColumn},
+                                        {weightTextColumn},
+                                        {officialRatingColumn}
+                                  FROM RunnerResult rr
+                                  JOIN Race r ON r.RaceId = rr.RaceId
+                                  LEFT JOIN Trainer t ON rr.TrainerId = t.TrainerId
+                                  WHERE rr.HorseId = @HorseId AND r.RaceDate < @TargetDate
+                                  ORDER BY r.RaceDate DESC, rr.RunnerResultId DESC";
+
+            var snapshot = conn.QuerySingleOrDefault(sql, new
+            {
+                HorseId = horseId,
+                TargetDate = upcoming.RaceDate.Date
+            });
+
+            if (snapshot == null)
+            {
+                return;
+            }
+
+            var dict = (IDictionary<string, object?>)snapshot;
+
+            if (row["TrainerId"] == null && dict.TryGetValue("TrainerId", out var trainerIdObj) && trainerIdObj != null)
+            {
+                row["TrainerId"] = Convert.ToInt32(trainerIdObj);
+            }
+
+            if (row["TrainerName"] == null &&
+                dict.TryGetValue("TrainerName", out var trainerNameObj) && trainerNameObj is string trainerName)
+            {
+                row["TrainerName"] = trainerName;
+            }
+
+            if (row["Age"] == null && dict.TryGetValue("Age", out var ageObj) && ageObj != null)
+            {
+                row["Age"] = Convert.ToInt32(ageObj);
+            }
+
+            if (row["WeightLbs"] == null && dict.TryGetValue("WeightLbs", out var weightObj) && weightObj != null)
+            {
+                row["WeightLbs"] = Convert.ToInt32(weightObj);
+            }
+
+            if (row["WeightText"] == null && dict.TryGetValue("WeightText", out var weightTextObj) && weightTextObj is string weightText)
+            {
+                row["WeightText"] = weightText;
+            }
+
+            if (dict.TryGetValue("OfficialRating", out var ratingObj) && ratingObj != null)
+            {
+                row["OfficialRating"] = Convert.ToInt32(ratingObj);
+            }
+        }
 
         private (int CourseId, string? CourseName) ResolveCourse(SqlConnection conn, UpcomingRace upcoming)
         {

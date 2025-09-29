@@ -7,6 +7,7 @@ using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using Tensorflow.Keras.Engine;
+using System.Text;
 
 namespace HorseRacingML.Scraping
 {
@@ -359,9 +360,27 @@ namespace HorseRacingML.Scraping
             }
 
             var withoutBracketed = BracketedNameContentRegex.Replace(value, " ");
-            var normalized = Regex.Replace(withoutBracketed.Trim().ToLowerInvariant(), "[^a-z0-9]+", " ");
-            normalized = Regex.Replace(normalized, "\\s+", " ").Trim();
-            return normalized;
+            var lower = withoutBracketed.Trim().ToLowerInvariant();
+            var decomposed = lower.Normalize(NormalizationForm.FormD);
+
+            var builder = new StringBuilder(decomposed.Length);
+            foreach (var c in decomposed)
+            {
+                var category = CharUnicodeInfo.GetUnicodeCategory(c);
+                if (category == UnicodeCategory.NonSpacingMark
+                    || category == UnicodeCategory.SpacingCombiningMark
+                    || category == UnicodeCategory.EnclosingMark)
+                {
+                    continue;
+                }
+
+                if (char.IsLetterOrDigit(c))
+                {
+                    builder.Append(c);
+                }
+            }
+
+            return builder.ToString();
         }
 
         private static IReadOnlyList<IWebElement> FindBetSlipStakeInputs(IWebDriver driver)
