@@ -355,6 +355,361 @@ else
             const refreshButtons = document.querySelectorAll('.refresh-race-btn');
             if (refreshButtons.length > 0) {
                 const refreshEndpoint = '@Url.Action("RefreshRaceOdds")';
+ const formatProbabilityPercent = (value) => {
+                    if (typeof value !== 'number' || !isFinite(value) || value < 0) {
+                        return '-';
+                    }
+
+                    const percent = value * 100;
+                    if (percent >= 0.01) {
+                        return percent.toLocaleString(undefined, { maximumFractionDigits: 2 }) + '%';
+                    }
+
+                    if (percent >= 0.0001) {
+                        return percent.toLocaleString(undefined, { maximumFractionDigits: 4 }) + '%';
+                    }
+
+                    if (percent > 0) {
+                        return '<0.0001%';
+                    }
+
+                    return '0%';
+                };
+
+                const buildProbabilityTooltip = (value) => {
+                    if (typeof value !== 'number' || !isFinite(value) || value < 0) {
+                        return null;
+                    }
+
+                    return (value).toLocaleString(undefined, {
+                        style: 'percent',
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 6
+                    });
+                };
+
+                const formatDate = (value) => {
+                    if (!value) {
+                        return null;
+                    }
+
+                    const parsed = new Date(value);
+                    if (Number.isNaN(parsed.getTime())) {
+                        return value;
+                    }
+
+                    const year = parsed.getFullYear();
+                    const month = String(parsed.getMonth() + 1).padStart(2, '0');
+                    const day = String(parsed.getDate()).padStart(2, '0');
+                    return `${year}-${month}-${day}`;
+                };
+
+                const formatTime = (value) => {
+                    if (!value) {
+                        return null;
+                    }
+
+                    if (typeof value === 'string' && /^\d{1,2}:\d{2}(:\d{2})?$/.test(value)) {
+                        return value.slice(0, 5);
+                    }
+
+                    if (typeof value === 'number' && Number.isFinite(value)) {
+                        // assume minutes
+                        const hours = Math.floor(value / 60);
+                        const minutes = Math.round(value % 60);
+                        return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+                    }
+
+                    return null;
+                };
+
+                const formatPercentage = (value) => {
+                    if (typeof value !== 'number' || !isFinite(value)) {
+                        return null;
+                    }
+
+                    return value.toLocaleString(undefined, { maximumFractionDigits: 2 }) + '%';
+                };
+
+                const formatDecimal = (value, fractionDigits = 2) => {
+                    if (typeof value !== 'number' || !isFinite(value)) {
+                        return '-';
+                    }
+
+                    return value.toLocaleString(undefined, {
+                        minimumFractionDigits: fractionDigits,
+                        maximumFractionDigits: fractionDigits
+                    });
+                };
+
+                const resolveStakeData = (value) => {
+                    if (typeof value !== 'number' || !isFinite(value) || value <= 0) {
+                        return { text: '-', dataStake: '' };
+                    }
+
+                    return {
+                        text: formatDecimal(value),
+                        dataStake: value.toFixed(2)
+                    };
+                };
+
+                const resolveKellyData = (value) => {
+                    if (typeof value !== 'number' || !isFinite(value)) {
+                        return { text: '-', data: '' };
+                    }
+
+                    const fraction = value * 100;
+                    return {
+                        text: fraction.toLocaleString(undefined, { maximumFractionDigits: 2 }) + '%',
+                        data: value.toFixed(6)
+                    };
+                };
+
+                const updateRaceMetadata = (card, race) => {
+                    const title = card.querySelector('h2.h5');
+                    if (title) {
+                        const text = race?.raceTitle && race.raceTitle.trim().length > 0
+                            ? race.raceTitle
+                            : 'Unknown Race';
+                        title.textContent = text;
+                    }
+
+                    const infoContainer = card.querySelector('.card-header .small.text-muted');
+                    if (infoContainer) {
+                        infoContainer.innerHTML = '';
+
+                        const appendSpan = (text, classes = []) => {
+                            if (!text) {
+                                return;
+                            }
+
+                            const span = document.createElement('span');
+                            span.textContent = text;
+                            classes.forEach(cls => span.classList.add(cls));
+                            infoContainer.appendChild(span);
+                        };
+
+                        const venueParts = [race?.venueName, race?.venueCountry]
+                            .filter(part => typeof part === 'string' && part.trim().length > 0)
+                            .map(part => part.trim());
+                        if (venueParts.length > 0) {
+                            appendSpan(venueParts.join(' - '));
+                        }
+
+                        const scheduleParts = [];
+                        const formattedDate = formatDate(race?.raceDate);
+                        if (formattedDate) {
+                            scheduleParts.push(formattedDate);
+                        }
+
+                        const formattedTime = formatTime(race?.offTime);
+                        if (formattedTime) {
+                            scheduleParts.push(formattedTime);
+                        }
+
+                        if (scheduleParts.length > 0) {
+                            appendSpan(scheduleParts.join(' '), ['ms-2']);
+                        }
+
+                        if (race?.raceDetails && race.raceDetails.trim().length > 0) {
+                            appendSpan(race.raceDetails.trim(), ['ms-2']);
+                        }
+
+                        const bookParts = [];
+                        const backText = formatPercentage(race?.backBookPercentage);
+                        if (backText) {
+                            bookParts.push(`Back ${backText}`);
+                        }
+
+                        const layText = formatPercentage(race?.layBookPercentage);
+                        if (layText) {
+                            bookParts.push(`Lay ${layText}`);
+                        }
+
+                        if (bookParts.length > 0) {
+                            appendSpan(`Book: ${bookParts.join(' / ')}`, ['ms-2']);
+                        }
+                    }
+
+                    const refreshButton = card.querySelector('.refresh-race-btn');
+                    if (refreshButton) {
+                        const url = race?.raceUrl ?? '';
+                        refreshButton.dataset.raceUrl = url;
+                        refreshButton.disabled = !url;
+                    }
+                };
+
+                const renderRaceRows = (card, race) => {
+                    const tbody = card.querySelector('tbody');
+                    if (!tbody) {
+                        return;
+                    }
+
+                    tbody.innerHTML = '';
+
+                    const runners = Array.isArray(race?.runners) ? [...race.runners] : [];
+                    runners.sort((a, b) => {
+                        const clothA = Number.isFinite(a?.clothNumber) ? a.clothNumber : Number.MAX_SAFE_INTEGER;
+                        const clothB = Number.isFinite(b?.clothNumber) ? b.clothNumber : Number.MAX_SAFE_INTEGER;
+                        if (clothA !== clothB) {
+                            return clothA - clothB;
+                        }
+
+                        const horseA = (a?.horseName ?? '').toString();
+                        const horseB = (b?.horseName ?? '').toString();
+                        return horseA.localeCompare(horseB);
+                    });
+
+                    runners.forEach(runner => {
+                        const row = document.createElement('tr');
+
+                        const appendCell = (text, className) => {
+                            const cell = document.createElement('td');
+                            if (className) {
+                                cell.className = className;
+                            }
+                            cell.textContent = text;
+                            row.appendChild(cell);
+                            return cell;
+                        };
+
+                        appendCell(Number.isFinite(runner?.clothNumber) ? runner.clothNumber.toString() : '-');
+                        appendCell(Number.isFinite(runner?.draw) ? runner.draw.toString() : '-');
+
+                        const horseCell = document.createElement('td');
+                        const horseName = document.createElement('div');
+                        horseName.className = 'fw-semibold';
+                        horseName.textContent = runner?.horseName ?? '';
+                        horseCell.appendChild(horseName);
+
+                        if (runner?.selectionId) {
+                            const selection = document.createElement('div');
+                            selection.className = 'text-muted small';
+                            selection.textContent = `Selection ID: ${runner.selectionId}`;
+                            horseCell.appendChild(selection);
+                        }
+
+                        if (runner?.featureValues && typeof runner.featureValues === 'object' && Object.keys(runner.featureValues).length > 0) {
+                            const details = document.createElement('details');
+                            details.className = 'small mt-1';
+
+                            const summary = document.createElement('summary');
+                            summary.className = 'text-muted';
+                            summary.textContent = 'Feature inputs';
+                            details.appendChild(summary);
+
+                            const dl = document.createElement('dl');
+                            dl.className = 'row mb-0';
+
+                            Object.keys(runner.featureValues)
+                                .sort((a, b) => a.localeCompare(b))
+                                .forEach(key => {
+                                    const value = runner.featureValues[key];
+                                    const dt = document.createElement('dt');
+                                    dt.className = 'col-sm-5';
+                                    dt.textContent = key;
+
+                                    const dd = document.createElement('dd');
+                                    dd.className = 'col-sm-7';
+                                    let valueText;
+                                    if (value === null || typeof value === 'undefined') {
+                                        valueText = '-';
+                                    } else if (typeof value === 'number' && isFinite(value)) {
+                                        valueText = value.toLocaleString();
+                                    } else {
+                                        valueText = value.toString();
+                                    }
+                                    dd.textContent = valueText;
+
+                                    dl.appendChild(dt);
+                                    dl.appendChild(dd);
+                                });
+
+                            details.appendChild(dl);
+                            horseCell.appendChild(details);
+                        }
+
+                        row.appendChild(horseCell);
+
+                        appendCell(runner?.jockeyName ?? '');
+                        appendCell(Number.isFinite(runner?.historicalRaceCount)
+                            ? runner.historicalRaceCount.toLocaleString(undefined, { maximumFractionDigits: 0 })
+                            : '-', 'text-end');
+
+                        appendCell(typeof runner?.marketDecimalOdds === 'number'
+                            ? formatDecimal(runner.marketDecimalOdds)
+                            : '-', 'text-end');
+
+                        const aiProbCell = appendCell('-', 'text-end');
+                        if (typeof runner?.aiProbability === 'number') {
+                            const display = formatProbabilityPercent(runner.aiProbability);
+                            if (display !== '-') {
+                                const span = document.createElement('span');
+                                span.textContent = display;
+                                const tooltip = buildProbabilityTooltip(runner.aiProbability);
+                                if (tooltip) {
+                                    span.title = tooltip;
+                                }
+                                aiProbCell.textContent = '';
+                                aiProbCell.appendChild(span);
+                            } else {
+                                aiProbCell.textContent = display;
+                            }
+                        }
+
+                        appendCell(typeof runner?.aiDecimalOdds === 'number'
+                            ? formatDecimal(runner.aiDecimalOdds)
+                            : '-', 'text-end');
+
+                        const marketPercent = typeof runner?.marketProbability === 'number'
+                            ? formatPercentage(runner.marketProbability * 100)
+                            : null;
+                        appendCell(marketPercent ?? '-', 'text-end');
+
+                        const diffPercent = typeof runner?.differential === 'number'
+                            ? formatPercentage(runner.differential * 100)
+                            : null;
+                        appendCell(diffPercent ?? '-', 'text-end');
+
+                        const kelly = resolveKellyData(typeof runner?.kellyFraction === 'number' ? runner.kellyFraction : NaN);
+                        appendCell(kelly.text, 'text-end');
+
+                        const stakeInfo = resolveStakeData(typeof runner?.suggestedStake === 'number' ? runner.suggestedStake : NaN);
+                        const stakeCell = document.createElement('td');
+                        stakeCell.className = 'text-end';
+                        const stakeSpan = document.createElement('span');
+                        stakeSpan.className = 'stake-value';
+                        stakeSpan.dataset.defaultStake = stakeInfo.dataStake;
+                        stakeSpan.dataset.kellyFraction = kelly.data;
+                        stakeSpan.textContent = stakeInfo.text;
+                        stakeCell.appendChild(stakeSpan);
+                        row.appendChild(stakeCell);
+
+                        tbody.appendChild(row);
+                    });
+                };
+
+                const updateRaceCard = (marketId, race) => {
+                    if (!marketId) {
+                        return;
+                    }
+
+                    const card = document.querySelector(`.card[data-market-id="${marketId}"]`);
+                    if (!card) {
+                        return;
+                    }
+
+                    if (race?.marketId) {
+                        card.dataset.marketId = race.marketId;
+                        const refreshButton = card.querySelector('.refresh-race-btn');
+                        if (refreshButton) {
+                            refreshButton.dataset.marketId = race.marketId;
+                        }
+                    }
+
+                    updateRaceMetadata(card, race);
+                    renderRaceRows(card, race);
+                };
 
                 refreshButtons.forEach(button => {
                     button.addEventListener('click', async () => {
@@ -388,8 +743,9 @@ else
                             }
 
                             const payload = await response.json();
-                            if (payload?.success) {
-                                window.location.reload();
+                            if (payload?.success && payload?.race) {
+                                const market = payload.race.marketId ?? marketId;
+                                updateRaceCard(market, payload.race);
                                 return;
                             }
 
@@ -400,7 +756,7 @@ else
                             alert('Unable to refresh the market odds for this race. Please try again.');
                         } finally {
                             button.innerHTML = originalHtml;
-                            button.disabled = false;
+                            button.disabled = !button.dataset.raceUrl;
                         }
                     });
                 });
