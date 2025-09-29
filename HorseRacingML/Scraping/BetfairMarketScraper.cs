@@ -44,9 +44,9 @@ namespace HorseRacingML.Scraping
             _useMarketFallbackForAiDegeneracy = useMarketFallbackForAiDegeneracy;
         }
         public HyperparameterSummary? LoadedHyperparameters => _loadedHyperparameters;
-        public IReadOnlyList<RaceDayReport> ScrapeOpenRaceTabsForReport(IWebDriver driver)
+        public IReadOnlyList<RaceDayReport> ScrapeOpenRaceTabsForReport(IWebDriver driver, IEnumerable<string>? handlesToProcess = null)
         {
-            var result = ScrapeOpenRaceTabsInternal(driver, executeBets: false, captureReport: true);
+            var result = ScrapeOpenRaceTabsInternal(driver, executeBets: false, captureReport: true, handlesToProcess: handlesToProcess);
             PopulateWinnerProbabilities(result.Races);
             return result.Races;
         }
@@ -443,10 +443,10 @@ namespace HorseRacingML.Scraping
                 return null;
             }
         }
-        private BetfairScrapeResult ScrapeOpenRaceTabsInternal(IWebDriver driver, bool executeBets, bool captureReport)
+        private BetfairScrapeResult ScrapeOpenRaceTabsInternal(IWebDriver driver, bool executeBets, bool captureReport, IEnumerable<string>? handlesToProcess = null)
         {
             var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10)); // short explicit wait
-            var handles = driver.WindowHandles.ToList(); // collect tab handles
+            var handles = handlesToProcess?.ToList() ?? driver.WindowHandles.ToList(); // collect tab handles
             var weightPath = ResolveAiWeightPath(); // resolve AI weights path
             _loadedHyperparameters = null;
 
@@ -471,7 +471,7 @@ namespace HorseRacingML.Scraping
             {
                 driver.SwitchTo().Window(handle); // switch tab
                 Console.WriteLine($"Processing tab: {driver.Url}"); // log url
-
+                var raceUrl = driver.Url;
                 if (!driver.Url.Contains("/horse-racing/", StringComparison.OrdinalIgnoreCase))
                 {
                     Console.WriteLine("\tSkipping non-racing tab"); // skip non-racing
@@ -569,7 +569,8 @@ namespace HorseRacingML.Scraping
                         EventDateText = string.IsNullOrWhiteSpace(eventDateText) ? null : eventDateText.Trim(), // raw text
                         RaceDetails = string.IsNullOrWhiteSpace(raceDetailsText) ? null : raceDetailsText.Trim(), // details
                         BackBookPercentage = backBookPercentage, // %
-                        LayBookPercentage = layBookPercentage // %
+                        LayBookPercentage = layBookPercentage, // %
+                        RaceUrl = string.IsNullOrWhiteSpace(raceUrl) ? null : raceUrl.Trim() // url
                     }; // init screen row
 
                     lock (_repoLock) { _repo.InsertRaceScreen(screen); } // persist
@@ -888,6 +889,7 @@ namespace HorseRacingML.Scraping
                         string.IsNullOrWhiteSpace(raceDetailsText) ? null : raceDetailsText.Trim(),
                         backBookPercentage,
                         layBookPercentage,
+                         raceUrl,
                         flows
                     ); // build report
 
@@ -966,6 +968,7 @@ namespace HorseRacingML.Scraping
             string? raceDetails,
             decimal? backBookPercentage,
             decimal? layBookPercentage,
+            string? raceUrl,
             IEnumerable<RunnerFlow> flows)
         {
             var report = new RaceDayReport
@@ -978,7 +981,8 @@ namespace HorseRacingML.Scraping
                 OffTime = offTime,
                 RaceDetails = string.IsNullOrWhiteSpace(raceDetails) ? null : raceDetails.Trim(),
                 BackBookPercentage = backBookPercentage,
-                LayBookPercentage = layBookPercentage
+                LayBookPercentage = layBookPercentage,
+                RaceUrl = string.IsNullOrWhiteSpace(raceUrl) ? null : raceUrl.Trim()
             };
 
             foreach (var flow in flows)

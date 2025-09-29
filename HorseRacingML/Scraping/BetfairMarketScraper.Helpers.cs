@@ -1181,7 +1181,7 @@ namespace HorseRacingML.Scraping
             return byte.TryParse(text, out var v) ? v : (byte?)null;
         }
 
-        private static string? ExtractMarketId(string url)
+        internal static string? ExtractMarketId(string url)
         {
             // Betfair have changed their URL structure over time.  In some cases the
             // market id appears in a traditional "market/1.234" or "marketId="

@@ -149,48 +149,42 @@ else
             bookParts.Add($"Lay {race.LayBookPercentage.Value.ToString("0.##", CultureInfo.CurrentCulture)}%");
         }
 
-        var orderedRunners = (race.Runners ?? Enumerable.Empty<RunnerDayReport>())
-            .OrderByDescending(r => r.Differential ?? double.NegativeInfinity)
-            .ToList();
-
-        <div class="card mb-4 race-card" data-race-index="@raceIndex">
+        <div class="card mb-4" data-market-id="@race.MarketId">
             <div class="card-header bg-light">
-                <h2 class="h5 mb-1">@raceTitle</h2>
-                <div class="small text-muted">
-                    @if (venueParts.Count > 0)
-                    {
-                        <span>@string.Join(" - ", venueParts)</span>
-                    }
+                <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+                    <div>
+                        <h2 class="h5 mb-1 mb-sm-0">@raceTitle</h2>
+                        <div class="small text-muted">
+                            @if (venueParts.Count > 0)
+                            {
+                                <span>@string.Join(" - ", venueParts)</span>
+                            }
 
-                    @if (scheduleParts.Count > 0)
-                    {
-                        <span class="ms-2">@string.Join(" ", scheduleParts)</span>
-                    }
+                            @if (scheduleParts.Count > 0)
+                            {
+                                <span class="ms-2">@string.Join(" ", scheduleParts)</span>
+                            }
 
-                    @if (!string.IsNullOrWhiteSpace(race.RaceDetails))
-                    {
-                        <span class="ms-2">@race.RaceDetails</span>
-                    }
+                            @if (!string.IsNullOrWhiteSpace(race.RaceDetails))
+                            {
+                                <span class="ms-2">@race.RaceDetails</span>
+                            }
 
-                    @if (bookParts.Count > 0)
-                    {
-                        <span class="ms-2">Book: @string.Join(" / ", bookParts)</span>
-                    }
-                </div>
-                <div class="mt-2">
-                    <label class="form-label mb-1" for="stakeOverride_@raceIndex">
-                        Stake override (applies to this race and subsequent races)
-                    </label>
-                    <div class="input-group input-group-sm" style="max-width: 220px;">
-                        <span class="input-group-text">Stake</span>
-                        <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            class="form-control stake-override"
-                            id="stakeOverride_@raceIndex"
-                            data-race-index="@raceIndex"
-                            placeholder="Use default" />
+                            @if (bookParts.Count > 0)
+                            {
+                                <span class="ms-2">Book: @string.Join(" / ", bookParts)</span>
+                            }
+                        </div>
+                    </div>
+                    <div class="text-end">
+                        <button
+                            type="button"
+                            class="btn btn-sm btn-outline-secondary refresh-race-btn"
+                            data-market-id="@race.MarketId"
+                            data-race-url="@race.RaceUrl"
+                            @(string.IsNullOrWhiteSpace(race.RaceUrl) ? "disabled" : string.Empty)>
+                            Refresh market odds
+                        </button>
                     </div>
                 </div>
             </div>
@@ -334,102 +328,77 @@ else
     <script>
         (function () {
             const saveButton = document.getElementById('saveReportButton');
-            if (!saveButton) {
-                return;
-            }
+            if (saveButton) {
+                saveButton.addEventListener('click', function () {
+                    const fullHtml = '<!DOCTYPE html>' + document.documentElement.outerHTML;
+                    const blob = new Blob([fullHtml], { type: 'text/html' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    const ts = new Date().toISOString().replace(/[:.]/g, '-');
 
-            saveButton.addEventListener('click', function () {
-                const fullHtml = '<!DOCTYPE html>' + document.documentElement.outerHTML;
-                const blob = new Blob([fullHtml], { type: 'text/html' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                const ts = new Date().toISOString().replace(/[:.]/g, '-');
+                    a.href = url;
+                    a.download = `day-report-${ts}.html`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
 
-                a.href = url;
-                a.download = `day-report-${ts}.html`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-
-                setTimeout(() => URL.revokeObjectURL(url), 1000);
-            });
-
-            const raceCards = Array.from(document.querySelectorAll('.race-card'));
-            const stakeInputs = Array.from(document.querySelectorAll('.stake-override'));
-
-            function formatStake(value) {
-                if (!Number.isFinite(value)) {
-                    return '-';
-                }
-
-                return value.toLocaleString(undefined, {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2
+                    setTimeout(() => URL.revokeObjectURL(url), 1000);
                 });
             }
 
-            function applyStakeOverrides() {
-                const overrides = stakeInputs
-                    .map(input => {
-                        const raceIndex = Number.parseInt(input.dataset.raceIndex ?? '', 10);
-                        if (!Number.isFinite(raceIndex)) {
-                            return null;
+            const refreshButtons = document.querySelectorAll('.refresh-race-btn');
+            if (refreshButtons.length > 0) {
+                const refreshEndpoint = '@Url.Action("RefreshRaceOdds")';
+
+                refreshButtons.forEach(button => {
+                    button.addEventListener('click', async () => {
+                        if (button.disabled) {
+                            return;
                         }
 
-                        const rawValue = Number.parseFloat(input.value);
-                        if (!Number.isFinite(rawValue) || rawValue < 0) {
-                            return { raceIndex, value: null };
+                        const raceUrl = button.dataset.raceUrl;
+                        const marketId = button.dataset.marketId;
+
+                        if (!raceUrl) {
+                            alert('No market URL is available for this race.');
+                            return;
                         }
 
-                        return { raceIndex, value: rawValue };
-                    })
-                    .filter(override => override !== null)
-                    .sort((a, b) => a.raceIndex - b.raceIndex);
+                        const originalHtml = button.innerHTML;
+                        button.disabled = true;
+                        button.innerText = 'Refreshing…';
 
-                raceCards.forEach(card => {
-                    const cardIndex = Number.parseInt(card.dataset.raceIndex ?? '', 10);
-                    if (!Number.isFinite(cardIndex)) {
-                        return;
-                    }
+                        try {
+                            const response = await fetch(refreshEndpoint, {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({ raceUrl, marketId })
+                            });
 
-                    let applied = null;
-                    overrides.forEach(override => {
-                        if (override && override.value !== null && override.raceIndex <= cardIndex) {
-                            applied = override.value;
-                        }
-                    });
-
-                    card.querySelectorAll('.stake-value').forEach(span => {
-                        const defaultStakeRaw = span.dataset.defaultStake;
-
-                        if (applied !== null) {
-                            const kellyFractionRaw = span.dataset.kellyFraction;
-                            if (kellyFractionRaw) {
-                                const fraction = Number.parseFloat(kellyFractionRaw);
-                                if (Number.isFinite(fraction) && fraction >= 0) {
-                                    span.textContent = formatStake(applied * fraction);
-                                    return;
-                                }
+                            if (!response.ok) {
+                                throw new Error(`Request failed with status ${response.status}`);
                             }
-                        }
 
-                        if (defaultStakeRaw) {
-                            const defaultValue = Number.parseFloat(defaultStakeRaw);
-                            span.textContent = Number.isFinite(defaultValue)
-                                ? formatStake(defaultValue)
-                                : '-';
-                        } else {
-                            span.textContent = '-';
+                            const payload = await response.json();
+                            if (payload?.success) {
+                                window.location.reload();
+                                return;
+                            }
+
+                            const message = payload?.message ?? 'Failed to refresh market odds.';
+                            alert(message);
+                        } catch (error) {
+                            console.error('Refresh request failed', error);
+                            alert('Unable to refresh the market odds for this race. Please try again.');
+                        } finally {
+                            button.innerHTML = originalHtml;
+                            button.disabled = false;
                         }
                     });
                 });
             }
-
-            stakeInputs.forEach(input => {
-                input.addEventListener('input', applyStakeOverrides);
-            });
-
-            applyStakeOverrides();
         })();
     </script>
 }

@@ -126,7 +126,33 @@ namespace HorseRacingML.Controllers
             _status.Update($"Day report generated at {DateTime.Now:G}.");
             return View(report);
         }
+        [HttpPost]
+        public async Task<IActionResult> RefreshRaceOdds(
+                    [FromBody] RefreshRaceRequest request,
+                    [FromServices] BetfairNavigationService betfair,
+                    [FromServices] HyperparameterTrainer trainer)
+        {
+            if (request == null || string.IsNullOrWhiteSpace(request.RaceUrl))
+            {
+                return BadRequest(new { success = false, message = "Race URL is required." });
+            }
 
+            try
+            {
+                var refreshed = await betfair.RefreshRaceAsync(request.RaceUrl, _repository, trainer);
+                if (refreshed == null)
+                {
+                    return NotFound(new { success = false, message = "Unable to refresh market data for the selected race." });
+                }
+
+                return Json(new { success = true, race = refreshed });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to refresh race odds for URL {RaceUrl}.", request.RaceUrl);
+                return StatusCode(500, new { success = false, message = "An unexpected error occurred while refreshing the race." });
+            }
+        }
         public IActionResult Privacy()
         {
             return View();

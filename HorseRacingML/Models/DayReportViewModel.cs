@@ -25,6 +25,7 @@ namespace HorseRacingML.Models
         public decimal? LayBookPercentage { get; set; }
         public List<RunnerDayReport> Runners { get; set; } = new();
         public int? UpcomingRaceId { get; set; }
+        public string? RaceUrl { get; set; }
     }
 
     public class RunnerDayReport

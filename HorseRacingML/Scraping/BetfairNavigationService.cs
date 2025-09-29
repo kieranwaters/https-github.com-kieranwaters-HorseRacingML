@@ -11,6 +11,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using System.Linq;
 
 namespace HorseRacingML.Scraping
 {
@@ -47,7 +48,111 @@ namespace HorseRacingML.Scraping
 
             _driver = new ChromeDriver(options);
         }
+        public async Task<RaceDayReport?> RefreshRaceAsync(
+            string raceUrl,
+            RacingRepository repo,
+            HyperparameterTrainer trainer)
+        {
+            if (string.IsNullOrWhiteSpace(raceUrl))
+            {
+                return null;
+            }
 
+            await LoginAsync();
+
+            var priorHandles = _driver.WindowHandles.ToList();
+            var priorHandleSet = new HashSet<string>(priorHandles);
+            var newHandles = new List<string>();
+            var openedNewTab = false;
+
+            try
+            {
+                try
+                {
+                    ((IJavaScriptExecutor)_driver).ExecuteScript("window.open(arguments[0],'_blank');", raceUrl);
+                    await Task.Delay(500);
+                    newHandles = _driver.WindowHandles
+                        .Where(h => !priorHandleSet.Contains(h))
+                        .ToList();
+                    openedNewTab = newHandles.Count > 0;
+                }
+                catch (Exception)
+                {
+                    newHandles.Clear();
+                }
+
+                if (!openedNewTab)
+                {
+                    _driver.Navigate().GoToUrl(raceUrl);
+                    await Task.Delay(500);
+                    var current = _driver.CurrentWindowHandle;
+                    if (!string.IsNullOrWhiteSpace(current))
+                    {
+                        newHandles = new List<string> { current };
+                    }
+                }
+
+                if (newHandles.Count == 0)
+                {
+                    return null;
+                }
+
+                var bankroll = GetEffectiveBankroll();
+                var scraper = new BetfairMarketScraper(
+                    repo,
+                    trainer,
+                    bankroll,
+                    _maxKellyFraction,
+                    _useMarketFallbackForAiDegeneracy);
+                var races = scraper.ScrapeOpenRaceTabsForReport(_driver, newHandles);
+
+                var targetMarketId = BetfairMarketScraper.ExtractMarketId(raceUrl);
+                RaceDayReport? refreshed = null;
+                if (!string.IsNullOrWhiteSpace(targetMarketId))
+                {
+                    refreshed = races.FirstOrDefault(r =>
+                        string.Equals(r.MarketId, targetMarketId, StringComparison.OrdinalIgnoreCase));
+                }
+
+                return refreshed ?? races.FirstOrDefault();
+            }
+            finally
+            {
+                if (openedNewTab)
+                {
+                    foreach (var handle in newHandles)
+                    {
+                        try
+                        {
+                            _driver.SwitchTo().Window(handle);
+                            _driver.Close();
+                        }
+                        catch (WebDriverException)
+                        {
+                            // Ignore failures when closing transient tabs.
+                        }
+                    }
+
+                    var fallback = priorHandles.FirstOrDefault(h => _driver.WindowHandles.Contains(h));
+                    if (!string.IsNullOrEmpty(fallback))
+                    {
+                        _driver.SwitchTo().Window(fallback);
+                    }
+                    else if (_driver.WindowHandles.Count > 0)
+                    {
+                        _driver.SwitchTo().Window(_driver.WindowHandles[0]);
+                    }
+                }
+                else if (priorHandles.Count > 0)
+                {
+                    var current = priorHandles[0];
+                    if (_driver.WindowHandles.Contains(current))
+                    {
+                        _driver.SwitchTo().Window(current);
+                    }
+                }
+            }
+        }
         public IWebDriver Driver => _driver;
 
         public IReadOnlyList<BetRecommendation> ScrapeOpenRaceTabs(RacingRepository repo, HyperparameterTrainer trainer)

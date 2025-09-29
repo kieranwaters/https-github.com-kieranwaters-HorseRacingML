@@ -476,13 +476,12 @@ WHERE h.Name IN @Names;";
         public void InsertRaceScreen(RaceScreen screen)
         {
             const string sql = @"
-INSERT INTO RaceScreen(MarketId, RaceDate, OffTime, Title, VenueName, VenueCountry, EventDateText, RaceDetails, BackBookPercentage, LayBookPercentage)
-VALUES(@MarketId, @RaceDate, @OffTime, @Title, @VenueName, @VenueCountry, @EventDateText, @RaceDetails, @BackBookPercentage, @LayBookPercentage);";
+INSERT INTO RaceScreen(MarketId, RaceDate, OffTime, Title, VenueName, VenueCountry, EventDateText, RaceDetails, BackBookPercentage, LayBookPercentage, RaceUrl)
+VALUES(@MarketId, @RaceDate, @OffTime, @Title, @VenueName, @VenueCountry, @EventDateText, @RaceDetails, @BackBookPercentage, @LayBookPercentage, @RaceUrl);";
             using var conn = OpenConnection();
             EnsureRaceScreenTableExists(conn);
             conn.Execute(sql, screen);
         }
-
         public void InsertRunnerFlow(RunnerFlow flow)
         {
             const string sql = @"
@@ -529,11 +528,19 @@ BEGIN
         EventDateText    NVARCHAR(128) NULL,
         RaceDetails      NVARCHAR(MAX) NULL,
         BackBookPercentage DECIMAL(9,2) NULL,
-        LayBookPercentage  DECIMAL(9,2) NULL
+        LayBookPercentage  DECIMAL(9,2) NULL,
+        RaceUrl           NVARCHAR(1024) NULL
     );
 END";
 
                 conn.Execute(sql);
+                const string addColumnSql = @"
+IF COL_LENGTH('dbo.RaceScreen', 'RaceUrl') IS NULL
+BEGIN
+    ALTER TABLE dbo.RaceScreen ADD RaceUrl NVARCHAR(1024) NULL;
+END";
+
+                conn.Execute(addColumnSql);
                 _raceScreenTableEnsured = true;
             }
         }
