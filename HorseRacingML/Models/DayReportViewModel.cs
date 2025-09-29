@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using HorseRacingML.ML;
 
 namespace HorseRacingML.Models
 {
@@ -7,6 +8,7 @@ namespace HorseRacingML.Models
     {
         public DateTime GeneratedAt { get; set; }
         public decimal Bankroll { get; set; }
+        public HyperparameterSummary? AiHyperparameters { get; set; }
         public List<RaceDayReport> Races { get; set; } = new();
     }
 

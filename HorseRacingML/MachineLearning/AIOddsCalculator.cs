@@ -29,6 +29,7 @@ namespace HorseRacingML.ML
         private readonly double[] _legacyWeights;
         private readonly double _legacyBias;
         private readonly string _modelStatus;
+        private HyperparameterSummary? _hyperparameters;
 
         private static readonly DateTime BaseDate = new DateTime(2005, 1, 1);
 
@@ -322,7 +323,7 @@ namespace HorseRacingML.ML
         public string ModelStatus => _modelStatus;
 
         public bool HasTrainedModel => _hasTrainedModel;
-
+        public HyperparameterSummary? Hyperparameters => _hyperparameters;
         public bool HasLegacyModel => _legacyWeights.Length > 0;
         private Dictionary<string, object?> BuildRawFeatureMap(RunnerFlow flow)
         {
@@ -408,6 +409,7 @@ namespace HorseRacingML.ML
             model.Metadata.StringMaps ??= new Dictionary<string, Dictionary<string, int>>();
 
             _metadata = model.Metadata;
+            _hyperparameters = model.Hyperparameters;
             _mean = model.Normalization?.Mean?.Select(f => (double)f).ToArray();
             _std = model.Normalization?.StdDev?.Select(f => (double)f).ToArray();
             if (_metadata.Keys.Count == 0 || _mean == null || _std == null)

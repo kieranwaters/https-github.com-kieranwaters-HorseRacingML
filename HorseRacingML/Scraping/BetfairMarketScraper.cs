@@ -27,6 +27,7 @@ namespace HorseRacingML.Scraping
         private decimal _availableBankroll;
         private int _betSlipSelectionsFilled;
         private const string MarketHeaderXPath = "/html/body/ui-view/div/div/div[2]/div/ui-view/div/div/div[1]/div[1]/div/bf-sports-header/div/div/div/div[1]/div/span[1]";
+        private HyperparameterSummary? _loadedHyperparameters;
         public BetfairMarketScraper(
             IRacingRepository repo,
             HyperparameterTrainer trainer,
@@ -42,6 +43,7 @@ namespace HorseRacingML.Scraping
             _betSlipSelectionsFilled = 0;
             _useMarketFallbackForAiDegeneracy = useMarketFallbackForAiDegeneracy;
         }
+        public HyperparameterSummary? LoadedHyperparameters => _loadedHyperparameters;
         public IReadOnlyList<RaceDayReport> ScrapeOpenRaceTabsForReport(IWebDriver driver)
         {
             var result = ScrapeOpenRaceTabsInternal(driver, executeBets: false, captureReport: true);
@@ -446,6 +448,7 @@ namespace HorseRacingML.Scraping
             var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10)); // short explicit wait
             var handles = driver.WindowHandles.ToList(); // collect tab handles
             var weightPath = ResolveAiWeightPath(); // resolve AI weights path
+            _loadedHyperparameters = null;
 
             if (File.Exists(weightPath))
             {
@@ -459,6 +462,7 @@ namespace HorseRacingML.Scraping
 
             var aiCalculator = new AIOddsCalculator(weightPath); // init AI calc
             Console.WriteLine($"\tAI model status: {aiCalculator.ModelStatus}"); // log model status
+            _loadedHyperparameters = aiCalculator.Hyperparameters;
 
             var result = new BetfairScrapeResult(); // aggregate result
             var recommendations = new List<BetRecommendation>(); // all bet recs

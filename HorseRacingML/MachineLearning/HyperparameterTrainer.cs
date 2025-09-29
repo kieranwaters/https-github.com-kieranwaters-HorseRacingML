@@ -493,7 +493,16 @@ namespace HorseRacingML.ML
             var featureKeys = dataset.FeatureKeys;
             var featureDims = dataset.FeatureDimensions;
             var stringMaps = dataset.StringMaps;
-
+            var trainedAtUtc = DateTime.UtcNow;
+            if (param.RunDate != default)
+            {
+                trainedAtUtc = param.RunDate.Kind switch
+                {
+                    DateTimeKind.Unspecified => DateTime.SpecifyKind(param.RunDate, DateTimeKind.Utc),
+                    DateTimeKind.Utc => param.RunDate,
+                    _ => param.RunDate.ToUniversalTime()
+                };
+            }
             var model = new TrainedModel
             {
                 HiddenLayers = hiddenLayers,
@@ -510,6 +519,18 @@ namespace HorseRacingML.ML
                 {
                     Mean = (float[])means.Clone(),
                     StdDev = (float[])stdDevs.Clone()
+                },
+                Hyperparameters = new HyperparameterSummary
+                {
+                    Layers = param.Layers,
+                    Units = param.Units,
+                    Dropout = param.Dropout,
+                    LearningRate = param.LearningRate,
+                    Epochs = param.Epochs,
+                    BatchSize = param.BatchSize,
+                    Folds = param.Folds,
+                    Fold = param.Fold,
+                    TrainedAtUtc = trainedAtUtc
                 }
             };
 

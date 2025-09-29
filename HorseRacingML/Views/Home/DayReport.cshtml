@@ -1,7 +1,9 @@
-﻿@model HorseRacingML.Models.DayReportViewModel
+﻿﻿
+@model HorseRacingML.Models.DayReportViewModel
 @using System.Collections.Generic
 @using System.Globalization
 @using System.Linq
+@using HorseRacingML.ML
 @{
     ViewData["Title"] = "Day Report";
     var generatedLocal = Model.GeneratedAt.ToLocalTime();
@@ -45,6 +47,44 @@
 
         return value.ToString("P6", culture);
     }
+
+    string BuildHyperparameterSummary(HyperparameterSummary summary, CultureInfo culture)
+    {
+        var segments = new List<string>
+        {
+            $"Layers: {summary.Layers}",
+            $"Units: {summary.Units}",
+            $"Dropout: {summary.Dropout.ToString("0.###", culture)}",
+            $"Learning rate: {summary.LearningRate.ToString("0.#####", culture)}",
+            $"Epochs: {summary.Epochs}",
+            $"Batch size: {summary.BatchSize}",
+            $"Folds: {summary.Folds}"
+        };
+
+        if (summary.Fold.HasValue)
+        {
+            segments.Add($"Fold: {summary.Fold.Value}");
+        }
+
+        return string.Join(" | ", segments);
+    }
+
+    string? BuildHyperparameterTimestamp(HyperparameterSummary summary, CultureInfo culture)
+    {
+        if (!summary.TrainedAtUtc.HasValue)
+        {
+            return null;
+        }
+
+        var utc = summary.TrainedAtUtc.Value;
+        if (utc.Kind == DateTimeKind.Unspecified)
+        {
+            utc = DateTime.SpecifyKind(utc, DateTimeKind.Utc);
+        }
+
+        var local = utc.Kind == DateTimeKind.Utc ? utc.ToLocalTime() : utc;
+        return local.ToString("f", culture);
+    }
 }
 
 <div class="d-flex justify-content-between align-items-center mb-3">
@@ -54,6 +94,18 @@
             Generated @generatedLocal.ToString("f", CultureInfo.CurrentCulture)
             <span class="ms-2">Bankroll: @bankrollText</span>
         </p>
+        @if (Model.AiHyperparameters != null)
+        {
+            var summaryText = BuildHyperparameterSummary(Model.AiHyperparameters, CultureInfo.CurrentCulture);
+            var trainedText = BuildHyperparameterTimestamp(Model.AiHyperparameters, CultureInfo.CurrentCulture);
+            <div class="text-muted small mt-1">
+                <span>AI hyperparameters: @summaryText</span>
+                @if (!string.IsNullOrEmpty(trainedText))
+                {
+                    <span class="ms-2">Trained @trainedText</span>
+                }
+            </div>
+        }
     </div>
     <button type="button" id="saveReportButton" class="btn btn-outline-primary">Save Report</button>
 </div>

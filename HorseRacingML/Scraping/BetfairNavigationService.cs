@@ -396,6 +396,7 @@ namespace HorseRacingML.Scraping
             {
                 GeneratedAt = DateTime.UtcNow,
                 Bankroll = bankroll,
+                AiHyperparameters = scraper.LoadedHyperparameters,
                 Races = new List<RaceDayReport>(races)
             };
         }
