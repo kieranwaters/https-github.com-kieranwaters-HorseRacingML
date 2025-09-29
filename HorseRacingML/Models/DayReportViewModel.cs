@@ -39,6 +39,7 @@ namespace HorseRacingML.Models
         public double? Differential { get; set; }
         public decimal? KellyFraction { get; set; }
         public decimal? SuggestedStake { get; set; }
+        public int? HistoricalRaceCount { get; set; }
         public Dictionary<string, object?> FeatureValues { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     }
 }

@@ -1031,8 +1031,61 @@ namespace HorseRacingML.Scraping
                     runner.SuggestedStake = BettingMath.CalculateSequentialStake(_bankroll, kelly);
                 }
             }
-
+            if (flow.FeatureValues != null &&
+               flow.FeatureValues.TryGetValue("CareerStarts", out var historyValue))
+            {
+                runner.HistoricalRaceCount = TryConvertToInt32(historyValue);
+            }
             return runner;
+        }
+        private static int? TryConvertToInt32(object? value)
+        {
+            if (value == null)
+            {
+                return null;
+            }
+
+            switch (value)
+            {
+                case int i:
+                    return i;
+                case long l when l <= int.MaxValue && l >= int.MinValue:
+                    return (int)l;
+                case short s:
+                    return s;
+                case byte b:
+                    return b;
+                case sbyte sb:
+                    return sb;
+                case ushort us when us <= int.MaxValue:
+                    return (int)us;
+                case uint ui when ui <= int.MaxValue:
+                    return (int)ui;
+                case float f when !float.IsNaN(f) && f <= int.MaxValue && f >= int.MinValue:
+                    return (int)Math.Round(f);
+                case double d when !double.IsNaN(d) && d <= int.MaxValue && d >= int.MinValue:
+                    return (int)Math.Round(d);
+                case decimal m when m <= int.MaxValue && m >= int.MinValue:
+                    return (int)Math.Round(m);
+                case string s when int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedInvariant):
+                    return parsedInvariant;
+                case string s when int.TryParse(s, NumberStyles.Integer, CultureInfo.CurrentCulture, out var parsedCurrent):
+                    return parsedCurrent;
+            }
+
+            if (value is IConvertible convertible)
+            {
+                try
+                {
+                    return convertible.ToInt32(CultureInfo.InvariantCulture);
+                }
+                catch
+                {
+                    // ignored
+                }
+            }
+
+            return null;
         }
         private void PopulateFeatureVectors(
           DateTime? raceDate,

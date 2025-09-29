@@ -134,6 +134,7 @@ else
                                 <th scope="col">Draw</th>
                                 <th scope="col">Horse</th>
                                 <th scope="col">Jockey</th>
+                                <th scope="col" class="text-end">Hist. Races</th>
                                 <th scope="col" class="text-end">Market Odds</th>
                                 <th scope="col" class="text-end">AI Win %</th>
                                 <th scope="col" class="text-end">AI Odds</th>
@@ -153,6 +154,10 @@ else
                                 var draw = runner.Draw.HasValue
                                     ? runner.Draw.Value.ToString(CultureInfo.CurrentCulture)
                                     : "-";
+                                     var historyCount = runner.HistoricalRaceCount.HasValue
+                                    ? runner.HistoricalRaceCount.Value.ToString("N0", CultureInfo.CurrentCulture)
+                                    : "-";
+
 
                                 var marketOdds = runner.MarketDecimalOdds.HasValue
                                     ? runner.MarketDecimalOdds.Value.ToString("0.00", CultureInfo.CurrentCulture)
@@ -222,6 +227,7 @@ else
                                         }
                                     </td>
                                     <td>@runner.JockeyName</td>
+                                     <td class="text-end">@historyCount</td>
                                     <td class="text-end">@marketOdds</td>
                                     <td class="text-end">
                                         @if (runner.AiProbability.HasValue)
