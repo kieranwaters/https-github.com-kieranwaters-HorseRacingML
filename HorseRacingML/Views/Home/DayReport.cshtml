@@ -116,8 +116,9 @@
 }
 else
 {
-    foreach (var race in Model.Races)
+    for (var raceIndex = 0; raceIndex < Model.Races.Count; raceIndex++)
     {
+        var race = Model.Races[raceIndex];
         var raceTitle = string.IsNullOrWhiteSpace(race.RaceTitle)
             ? "Unknown Race"
             : race.RaceTitle;
@@ -152,7 +153,7 @@ else
             .OrderByDescending(r => r.Differential ?? double.NegativeInfinity)
             .ToList();
 
-        <div class="card mb-4">
+        <div class="card mb-4 race-card" data-race-index="@raceIndex">
             <div class="card-header bg-light">
                 <h2 class="h5 mb-1">@raceTitle</h2>
                 <div class="small text-muted">
@@ -175,6 +176,22 @@ else
                     {
                         <span class="ms-2">Book: @string.Join(" / ", bookParts)</span>
                     }
+                </div>
+                <div class="mt-2">
+                    <label class="form-label mb-1" for="stakeOverride_@raceIndex">
+                        Stake override (applies to this race and subsequent races)
+                    </label>
+                    <div class="input-group input-group-sm" style="max-width: 220px;">
+                        <span class="input-group-text">Stake</span>
+                        <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            class="form-control stake-override"
+                            id="stakeOverride_@raceIndex"
+                            data-race-index="@raceIndex"
+                            placeholder="Use default" />
+                    </div>
                 </div>
             </div>
             <div class="card-body">
@@ -206,7 +223,7 @@ else
                                 var draw = runner.Draw.HasValue
                                     ? runner.Draw.Value.ToString(CultureInfo.CurrentCulture)
                                     : "-";
-                                     var historyCount = runner.HistoricalRaceCount.HasValue
+                                var historyCount = runner.HistoricalRaceCount.HasValue
                                     ? runner.HistoricalRaceCount.Value.ToString("N0", CultureInfo.CurrentCulture)
                                     : "-";
 
@@ -246,6 +263,9 @@ else
                                 var stake = runner.SuggestedStake.HasValue && runner.SuggestedStake.Value > 0
                                     ? runner.SuggestedStake.Value.ToString("0.00", CultureInfo.CurrentCulture)
                                     : "-";
+                                var stakeData = runner.SuggestedStake.HasValue && runner.SuggestedStake.Value > 0
+                                    ? runner.SuggestedStake.Value.ToString("0.00", CultureInfo.InvariantCulture)
+                                    : string.Empty;
 
                                 <tr>
                                     <td>@cloth</td>
@@ -295,7 +315,9 @@ else
                                     <td class="text-end">@marketProb</td>
                                     <td class="text-end">@diff</td>
                                     <td class="text-end">@kelly</td>
-                                    <td class="text-end">@stake</td>
+                                    <td class="text-end">
+                                        <span class="stake-value" data-default-stake="@stakeData">@stake</span>
+                                    </td>
                                 </tr>
                             }
                         </tbody>
@@ -329,6 +351,77 @@ else
 
                 setTimeout(() => URL.revokeObjectURL(url), 1000);
             });
+
+            const raceCards = Array.from(document.querySelectorAll('.race-card'));
+            const stakeInputs = Array.from(document.querySelectorAll('.stake-override'));
+
+            function formatStake(value) {
+                if (!Number.isFinite(value)) {
+                    return '-';
+                }
+
+                return value.toLocaleString(undefined, {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                });
+            }
+
+            function applyStakeOverrides() {
+                const overrides = stakeInputs
+                    .map(input => {
+                        const raceIndex = Number.parseInt(input.dataset.raceIndex ?? '', 10);
+                        if (!Number.isFinite(raceIndex)) {
+                            return null;
+                        }
+
+                        const rawValue = Number.parseFloat(input.value);
+                        if (!Number.isFinite(rawValue) || rawValue < 0) {
+                            return { raceIndex, value: null };
+                        }
+
+                        return { raceIndex, value: rawValue };
+                    })
+                    .filter(override => override !== null)
+                    .sort((a, b) => a.raceIndex - b.raceIndex);
+
+                raceCards.forEach(card => {
+                    const cardIndex = Number.parseInt(card.dataset.raceIndex ?? '', 10);
+                    if (!Number.isFinite(cardIndex)) {
+                        return;
+                    }
+
+                    let applied = null;
+                    overrides.forEach(override => {
+                        if (override && override.value !== null && override.raceIndex <= cardIndex) {
+                            applied = override.value;
+                        }
+                    });
+
+                    card.querySelectorAll('.stake-value').forEach(span => {
+                        const defaultStakeRaw = span.dataset.defaultStake;
+
+                        if (applied !== null) {
+                            span.textContent = formatStake(applied);
+                            return;
+                        }
+
+                        if (defaultStakeRaw) {
+                            const defaultValue = Number.parseFloat(defaultStakeRaw);
+                            span.textContent = Number.isFinite(defaultValue)
+                                ? formatStake(defaultValue)
+                                : '-';
+                        } else {
+                            span.textContent = '-';
+                        }
+                    });
+                });
+            }
+
+            stakeInputs.forEach(input => {
+                input.addEventListener('input', applyStakeOverrides);
+            });
+
+            applyStakeOverrides();
         })();
     </script>
 }

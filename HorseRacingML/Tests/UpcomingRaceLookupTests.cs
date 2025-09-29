@@ -146,7 +146,10 @@ namespace HorseRacingML.Tests
                     string.Equals(r.Title ?? string.Empty, raceTitle ?? string.Empty, StringComparison.OrdinalIgnoreCase) &&
                     string.Equals(r.VenueName ?? string.Empty, venueName ?? string.Empty, StringComparison.OrdinalIgnoreCase));
             }
-
+            public int? GetHistoricalRaceCountByHorseName(string? horseName)
+            {
+                return null;
+            }
             public UpcomingRace? GetUpcomingRaceByMarketId(string? marketId)
             {
                 if (string.IsNullOrWhiteSpace(marketId))
