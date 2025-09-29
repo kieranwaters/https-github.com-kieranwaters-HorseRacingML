@@ -106,16 +106,8 @@ namespace HorseRacingML.Scraping
                 }
                 else
                 {
-                    var upcomingRecord = TryResolveUpcomingRace(race);
-                    if (upcomingRecord != null)
-                    {
-                        race.UpcomingRaceId = upcomingRecord.UpcomingRaceId;
-                        Console.WriteLine($"\t[DayReport] Using upcoming race {upcomingRecord.UpcomingRaceId} (market {upcomingRecord.MarketId}) for probability alignment.");
-                    }
-                    else
-                    {
-                        Console.WriteLine($"	[DayReport] Race {raceName} is upcoming; recorded upcoming race id {upcomingId?.ToString() ?? "n/a"}. Using saved AI probabilities for reporting.");
-                    }
+                    var upcomingId = race.UpcomingRaceId?.ToString() ?? "n/a";
+                    Console.WriteLine($"\t[DayReport] Race {raceName} is upcoming; recorded upcoming race id {upcomingId}. Using saved AI probabilities for reporting.");
                 }
 
                 foreach (var runner in race.Runners)
