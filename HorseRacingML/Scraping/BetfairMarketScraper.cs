@@ -1045,7 +1045,52 @@ namespace HorseRacingML.Scraping
                 runner.HistoricalRaceCount = TryConvertToInt32(historyValue);
                 flow.HistoricalRaceCount = runner.HistoricalRaceCount;
             }
+            else
+            {
+                var resolvedHistoryCount = ResolveHistoricalRaceCount(flow);
+                if (resolvedHistoryCount.HasValue)
+                {
+                    runner.HistoricalRaceCount = resolvedHistoryCount;
+                    flow.HistoricalRaceCount = resolvedHistoryCount;
+
+                    if (runner.FeatureValues == null)
+                    {
+                        runner.FeatureValues = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+                    }
+
+                    runner.FeatureValues["CareerStarts"] = resolvedHistoryCount.Value;
+
+                    if (flow.FeatureValues == null)
+                    {
+                        flow.FeatureValues = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+                    }
+
+                    flow.FeatureValues["CareerStarts"] = resolvedHistoryCount.Value;
+                }
+            }
             return runner;
+        }
+        private int? ResolveHistoricalRaceCount(RunnerFlow flow)
+        {
+            if (flow == null)
+            {
+                return null;
+            }
+
+            if (!string.IsNullOrWhiteSpace(flow.HorseName))
+            {
+                try
+                {
+                    return _repo.GetHistoricalRaceCountByHorseName(flow.HorseName);
+                }
+                catch (Exception ex)
+                {
+                    var identifier = flow.HorseName ?? flow.SelectionId ?? "unknown";
+                    Console.Error.WriteLine($"\tFailed to resolve historical race count for {identifier}: {ex.Message}");
+                }
+            }
+
+            return null;
         }
         private static int? TryConvertToInt32(object? value)
         {

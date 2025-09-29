@@ -11,5 +11,6 @@ namespace HorseRacingML.Data
         int UpsertUpcomingRace(UpcomingRace race);
         UpcomingRace? FindUpcomingRace(DateTime raceDate, string? raceTitle, string? venueName);
         UpcomingRace? GetUpcomingRaceByMarketId(string? marketId);
+        int? GetHistoricalRaceCountByHorseName(string? horseName);
     }
 }

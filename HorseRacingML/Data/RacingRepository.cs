@@ -326,6 +326,41 @@ END";
 
             bulk.WriteToServer(table);
         }
+        public int? GetHistoricalRaceCountByHorseName(string? horseName)
+        {
+            if (string.IsNullOrWhiteSpace(horseName))
+            {
+                return null;
+            }
+
+            var trimmed = horseName.Trim();
+            var normalized = RemoveBracketedText(trimmed);
+
+            var candidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (!string.IsNullOrEmpty(trimmed))
+            {
+                candidates.Add(trimmed);
+            }
+
+            if (!string.IsNullOrEmpty(normalized))
+            {
+                candidates.Add(normalized);
+            }
+
+            if (candidates.Count == 0)
+            {
+                return null;
+            }
+
+            const string sql = @"
+SELECT COUNT(*)
+FROM RunnerResult rr
+INNER JOIN Horse h ON h.HorseId = rr.HorseId
+WHERE h.Name IN @Names;";
+
+            using var conn = OpenConnection();
+            return conn.QuerySingle<int>(sql, new { Names = candidates.ToArray() });
+        }
         public UpcomingRace? GetUpcomingRaceByMarketId(string? marketId)
         {
             if (string.IsNullOrWhiteSpace(marketId))
