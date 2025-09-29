@@ -1677,10 +1677,9 @@ namespace HorseRacingML.ML
                         row["JockeyId"] = jockeyId.Value;
                     }
                 }
-
+                PopulateRunnerDefaults(conn, upcoming, runnerColumns, row, horseId);
                 rows.Add(row);
             }
-            PopulateRunnerDefaults(conn, upcoming, runnerColumns, row, horseId);
             return rows;
         }
         private void PopulateRunnerDefaults(

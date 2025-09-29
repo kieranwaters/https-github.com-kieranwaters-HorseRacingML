@@ -266,7 +266,9 @@ else
                                 var stakeData = runner.SuggestedStake.HasValue && runner.SuggestedStake.Value > 0
                                     ? runner.SuggestedStake.Value.ToString("0.00", CultureInfo.InvariantCulture)
                                     : string.Empty;
-
+                                    var kellyData = runner.KellyFraction.HasValue
+                                    ? runner.KellyFraction.Value.ToString("0.######", CultureInfo.InvariantCulture)
+                                    : string.Empty;
                                 <tr>
                                     <td>@cloth</td>
                                     <td>@draw</td>
@@ -316,7 +318,7 @@ else
                                     <td class="text-end">@diff</td>
                                     <td class="text-end">@kelly</td>
                                     <td class="text-end">
-                                        <span class="stake-value" data-default-stake="@stakeData">@stake</span>
+                                        <span class="stake-value" data-default-stake="@stakeData" data-kelly-fraction="@kellyData">@stake</span>
                                     </td>
                                 </tr>
                             }
@@ -401,8 +403,14 @@ else
                         const defaultStakeRaw = span.dataset.defaultStake;
 
                         if (applied !== null) {
-                            span.textContent = formatStake(applied);
-                            return;
+                            const kellyFractionRaw = span.dataset.kellyFraction;
+                            if (kellyFractionRaw) {
+                                const fraction = Number.parseFloat(kellyFractionRaw);
+                                if (Number.isFinite(fraction) && fraction >= 0) {
+                                    span.textContent = formatStake(applied * fraction);
+                                    return;
+                                }
+                            }
                         }
 
                         if (defaultStakeRaw) {
