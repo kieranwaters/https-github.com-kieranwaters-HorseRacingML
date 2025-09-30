@@ -1602,6 +1602,9 @@ namespace HorseRacingML.ML
             var rows = new List<Dictionary<string, object?>>(flows.Count);
             var (courseId, courseName) = ResolveCourse(conn, upcoming);
             int runnerCount = flows.Count;
+            var validFlows = new List<RunnerFlow>(flows.Count);
+            var horseNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var jockeyNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var flow in flows)
             {
@@ -1615,7 +1618,28 @@ namespace HorseRacingML.ML
                 {
                     continue;
                 }
+                validFlows.Add(flow);
+                if (!horseNames.ContainsKey(horseName))
+                {
+                    horseNames[horseName] = horseName;
+                }
 
+                if (!string.IsNullOrWhiteSpace(flow.JockeyName) && !jockeyNames.ContainsKey(flow.JockeyName!))
+                {
+                    jockeyNames[flow.JockeyName!] = flow.JockeyName!;
+                }
+            }
+
+            var horseNameList = horseNames.Values.ToList();
+            var jockeyNameList = jockeyNames.Values.ToList();
+            var lookupData = LoadRunnerLookupData(conn, upcoming, runnerColumns, horseNameList, jockeyNameList);
+            var horseIdLookup = lookupData.HorseIds;
+            var jockeyIdLookup = lookupData.JockeyIds;
+            var runnerSnapshots = lookupData.RunnerSnapshots;
+
+            foreach (var flow in validFlows)
+            {
+                var horseName = flow.HorseName;
                 var row = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
                 {
                     ["RaceId"] = raceId,
@@ -1666,108 +1690,153 @@ namespace HorseRacingML.ML
                 row["TrainerId"] = null;
                 row["TrainerName"] = null;
 
-                var horseId = ResolveHorseId(conn, horseName);
-                row["HorseId"] = horseId;
-
-                if (!string.IsNullOrWhiteSpace(flow.JockeyName))
+                if (horseIdLookup.TryGetValue(horseName, out var horseId))
                 {
-                    var jockeyId = ResolveJockeyId(conn, flow.JockeyName!);
-                    if (jockeyId.HasValue)
+                    row["HorseId"] = horseId;
+                }
+                else
+                {
+                    Console.WriteLine($"\t\tNo match found in Horse.Name for '{horseName}'; using synthetic horse identifier.");
+                    row["HorseId"] = GenerateSyntheticId("horse:" + horseName);
+                }
+
+                if (!string.IsNullOrWhiteSpace(flow.JockeyName) &&
+                    jockeyIdLookup.TryGetValue(flow.JockeyName!, out var jockeyId))
+                {
+                    row["JockeyId"] = jockeyId;
+                }
+                else if (!string.IsNullOrWhiteSpace(flow.JockeyName))
+                {
+                    Console.WriteLine($"\t\tNo match found in Jockey.Name for '{flow.JockeyName}'; jockey history will be unavailable.");
+                }
+
+                if (runnerColumns != null &&
+                    row.TryGetValue("HorseId", out var horseIdObj) &&
+                    horseIdObj is int resolvedHorseId &&
+                    runnerSnapshots.TryGetValue(resolvedHorseId, out var snapshot))
+                {
+                    if (row["TrainerId"] == null && snapshot.TrainerId.HasValue)
                     {
-                        row["JockeyId"] = jockeyId.Value;
+                        row["TrainerId"] = snapshot.TrainerId.Value;
+                    }
+
+                    if (row["TrainerName"] == null && !string.IsNullOrWhiteSpace(snapshot.TrainerName))
+                    {
+                        row["TrainerName"] = snapshot.TrainerName;
+                    }
+
+                    if (row["Age"] == null && snapshot.Age.HasValue)
+                    {
+                        row["Age"] = Convert.ToInt32(snapshot.Age.Value);
+                    }
+
+                    if (row["WeightLbs"] == null && snapshot.WeightLbs.HasValue)
+                    {
+                        row["WeightLbs"] = Convert.ToInt32(snapshot.WeightLbs.Value);
+                    }
+
+                    if (row["WeightText"] == null && snapshot.WeightText != null)
+                    {
+                        row["WeightText"] = snapshot.WeightText;
+                    }
+
+                    if (snapshot.OfficialRating.HasValue)
+                    {
+                        row["OfficialRating"] = Convert.ToInt32(snapshot.OfficialRating.Value);
                     }
                 }
-                PopulateRunnerDefaults(conn, upcoming, runnerColumns, row, horseId);
                 rows.Add(row);
             }
             return rows;
         }
-        private void PopulateRunnerDefaults(
-            SqlConnection conn,
-            UpcomingRace upcoming,
-            IReadOnlyCollection<string> runnerColumns,
-            Dictionary<string, object?> row,
-            int horseId)
+        internal List<Dictionary<string, object?>> TestBuildUpcomingRaceRows(
+           SqlConnection conn,
+           UpcomingRace upcoming,
+           IReadOnlyList<RunnerFlow> flows,
+           int raceId,
+           IReadOnlyCollection<string> runnerColumns) =>
+           BuildUpcomingRaceRows(conn, upcoming, flows, raceId, runnerColumns);
+
+        protected virtual RunnerLookupData LoadRunnerLookupData(
+             SqlConnection conn,
+             UpcomingRace upcoming,
+             IReadOnlyCollection<string> runnerColumns,
+             IReadOnlyCollection<string> horseNames,
+             IReadOnlyCollection<string> jockeyNames)
         {
-            if (runnerColumns == null)
+            var horseIdLookup = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            if (horseNames.Count > 0)
             {
-                return;
+                const string horseSql = "SELECT Name, MIN(HorseId) AS HorseId FROM Horse WHERE Name IN @Names GROUP BY Name";
+                foreach (var (name, horseId) in conn.Query<(string Name, int HorseId)>(horseSql, new { Names = horseNames }))
+                {
+                    horseIdLookup[name] = horseId;
+                }
             }
 
-            string weightTextColumn = runnerColumns.Contains("WeightText")
-                ? "rr.WeightText AS WeightText"
-                : "CAST(NULL AS nvarchar(50)) AS WeightText";
-            string officialRatingColumn = runnerColumns.Contains("OfficialRating")
-                ? "rr.OfficialRating AS OfficialRating"
-                : "CAST(NULL AS smallint) AS OfficialRating";
-            string ageColumn = runnerColumns.Contains("Age")
-                ? "rr.Age AS Age"
-                : "CAST(NULL AS smallint) AS Age";
-            string weightLbsColumn = runnerColumns.Contains("WeightLbs")
-                ? "rr.WeightLbs AS WeightLbs"
-                : "CAST(NULL AS smallint) AS WeightLbs";
-
-            const string trainerNameSelect = "t.Name AS TrainerName";
-
-            string sql = $@"SELECT TOP (1)
-                                        rr.TrainerId,
-                                        {trainerNameSelect},
-                                        {ageColumn},
-                                        {weightLbsColumn},
-                                        {weightTextColumn},
-                                        {officialRatingColumn}
-                                  FROM RunnerResult rr
-                                  JOIN Race r ON r.RaceId = rr.RaceId
-                                  LEFT JOIN Trainer t ON rr.TrainerId = t.TrainerId
-                                  WHERE rr.HorseId = @HorseId AND r.RaceDate < @TargetDate
-                                  ORDER BY r.RaceDate DESC, rr.RunnerResultId DESC";
-
-            var snapshot = conn.QuerySingleOrDefault(sql, new
+            var jockeyIdLookup = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            if (jockeyNames.Count > 0)
             {
-                HorseId = horseId,
-                TargetDate = upcoming.RaceDate.Date
-            });
-
-            if (snapshot == null)
-            {
-                return;
+                const string jockeySql = "SELECT Name, MIN(JockeyId) AS JockeyId FROM Jockey WHERE Name IN @Names GROUP BY Name";
+                foreach (var (name, jockeyId) in conn.Query<(string Name, int JockeyId)>(jockeySql, new { Names = jockeyNames }))
+                {
+                    jockeyIdLookup[name] = jockeyId;
+                }
             }
 
-            var dict = (IDictionary<string, object?>)snapshot;
-
-            if (row["TrainerId"] == null && dict.TryGetValue("TrainerId", out var trainerIdObj) && trainerIdObj != null)
+            var runnerSnapshots = new Dictionary<int, RunnerSnapshot>();
+            var knownHorseIds = horseIdLookup.Values.Distinct().ToList();
+            if (knownHorseIds.Count > 0)
             {
-                row["TrainerId"] = Convert.ToInt32(trainerIdObj);
+                string weightTextColumn = runnerColumns.Contains("WeightText")
+                    ? "rr.WeightText"
+                    : "CAST(NULL AS nvarchar(50))";
+                string officialRatingColumn = runnerColumns.Contains("OfficialRating")
+                    ? "rr.OfficialRating"
+                    : "CAST(NULL AS smallint)";
+                string ageColumn = runnerColumns.Contains("Age")
+                    ? "rr.Age"
+                    : "CAST(NULL AS smallint)";
+                string weightLbsColumn = runnerColumns.Contains("WeightLbs")
+                    ? "rr.WeightLbs"
+                    : "CAST(NULL AS smallint)";
+
+                string snapshotSql = $@"SELECT ranked.HorseId,
+                                                ranked.TrainerId,
+                                                t.Name AS TrainerName,
+                                                ranked.Age,
+                                                ranked.WeightLbs,
+                                                ranked.WeightText,
+                                                ranked.OfficialRating
+                                         FROM (
+                                              SELECT rr.HorseId,
+                                                     rr.TrainerId,
+                                                     {ageColumn} AS Age,
+                                                     {weightLbsColumn} AS WeightLbs,
+                                                     {weightTextColumn} AS WeightText,
+                                                     {officialRatingColumn} AS OfficialRating,
+                                                     ROW_NUMBER() OVER (PARTITION BY rr.HorseId ORDER BY r.RaceDate DESC, rr.RunnerResultId DESC) AS RowNum
+                                              FROM RunnerResult rr
+                                              JOIN Race r ON r.RaceId = rr.RaceId
+                                              WHERE rr.HorseId IN @HorseIds AND r.RaceDate < @TargetDate
+                                         ) ranked
+                                         LEFT JOIN Trainer t ON ranked.TrainerId = t.TrainerId
+                                         WHERE ranked.RowNum = 1";
+
+                foreach (var snapshot in conn.Query<RunnerSnapshot>(snapshotSql, new
+                {
+                    HorseIds = knownHorseIds,
+                    TargetDate = upcoming.RaceDate.Date
+                }))
+                {
+                    runnerSnapshots[snapshot.HorseId] = snapshot;
+                }
             }
 
-            if (row["TrainerName"] == null &&
-                dict.TryGetValue("TrainerName", out var trainerNameObj) && trainerNameObj is string trainerName)
-            {
-                row["TrainerName"] = trainerName;
-            }
-
-            if (row["Age"] == null && dict.TryGetValue("Age", out var ageObj) && ageObj != null)
-            {
-                row["Age"] = Convert.ToInt32(ageObj);
-            }
-
-            if (row["WeightLbs"] == null && dict.TryGetValue("WeightLbs", out var weightObj) && weightObj != null)
-            {
-                row["WeightLbs"] = Convert.ToInt32(weightObj);
-            }
-
-            if (row["WeightText"] == null && dict.TryGetValue("WeightText", out var weightTextObj) && weightTextObj is string weightText)
-            {
-                row["WeightText"] = weightText;
-            }
-
-            if (dict.TryGetValue("OfficialRating", out var ratingObj) && ratingObj != null)
-            {
-                row["OfficialRating"] = Convert.ToInt32(ratingObj);
-            }
+            return new RunnerLookupData(horseIdLookup, jockeyIdLookup, runnerSnapshots);
         }
 
-        private (int CourseId, string? CourseName) ResolveCourse(SqlConnection conn, UpcomingRace upcoming)
+        protected virtual (int CourseId, string? CourseName) ResolveCourse(SqlConnection conn, UpcomingRace upcoming)
         {
             if (!string.IsNullOrWhiteSpace(upcoming.VenueName))
             {
@@ -1817,31 +1886,6 @@ namespace HorseRacingML.ML
             int syntheticCourseId = GenerateSyntheticId("course:" + (upcoming.VenueName ?? upcoming.MarketId ?? string.Empty));
             return (syntheticCourseId, upcoming.VenueName);
         }
-
-        private int ResolveHorseId(SqlConnection conn, string horseName)
-        {
-            const string sql = "SELECT TOP (1) HorseId FROM Horse WHERE Name = @Name ORDER BY HorseId";
-            var existing = conn.QuerySingleOrDefault<int?>(sql, new { Name = horseName });
-            if (existing.HasValue)
-            {
-                return existing.Value;
-            }
-            Console.WriteLine($"\t\tNo match found in Horse.Name for '{horseName}'; using synthetic horse identifier.");
-            return GenerateSyntheticId("horse:" + horseName);
-        }
-
-        private int? ResolveJockeyId(SqlConnection conn, string jockeyName)
-        {
-            const string sql = "SELECT TOP (1) JockeyId FROM Jockey WHERE Name = @Name ORDER BY JockeyId";
-            var existing = conn.QuerySingleOrDefault<int?>(sql, new { Name = jockeyName });
-            if (existing.HasValue)
-            {
-                return existing.Value;
-            }
-            Console.WriteLine($"\t\tNo match found in Jockey.Name for '{jockeyName}'; jockey history will be unavailable.");
-            return null;
-        }
-
         private static int GenerateSyntheticId(string value)
         {
             if (string.IsNullOrWhiteSpace(value))
@@ -1868,6 +1912,33 @@ namespace HorseRacingML.ML
             lower = System.Text.RegularExpressions.Regex.Replace(lower, "[^a-z0-9]+", " ");
             lower = System.Text.RegularExpressions.Regex.Replace(lower, "\\s+", " ").Trim();
             return lower;
+        }
+        protected sealed class RunnerLookupData
+        {
+            public RunnerLookupData(
+                Dictionary<string, int> horseIds,
+                Dictionary<string, int> jockeyIds,
+                Dictionary<int, RunnerSnapshot> runnerSnapshots)
+            {
+                HorseIds = horseIds ?? throw new ArgumentNullException(nameof(horseIds));
+                JockeyIds = jockeyIds ?? throw new ArgumentNullException(nameof(jockeyIds));
+                RunnerSnapshots = runnerSnapshots ?? throw new ArgumentNullException(nameof(runnerSnapshots));
+            }
+
+            public Dictionary<string, int> HorseIds { get; }
+            public Dictionary<string, int> JockeyIds { get; }
+            public Dictionary<int, RunnerSnapshot> RunnerSnapshots { get; }
+        }
+
+        protected sealed class RunnerSnapshot
+        {
+            public int HorseId { get; set; }
+            public int? TrainerId { get; set; }
+            public string? TrainerName { get; set; }
+            public short? Age { get; set; }
+            public short? WeightLbs { get; set; }
+            public string? WeightText { get; set; }
+            public short? OfficialRating { get; set; }
         }
     }
 }

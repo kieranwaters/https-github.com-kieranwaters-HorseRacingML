@@ -8,6 +8,7 @@ using Microsoft.Extensions.Configuration;
 using System.Linq;
 using PreparedDataset = HorseRacingML.ML.HyperparameterTrainer.TrainingDataset.PreparedDataset;
 using PreparedRace = HorseRacingML.ML.HyperparameterTrainer.TrainingDataset.PreparedDataset.PreparedRace;
+using Microsoft.Data.SqlClient;
 
 namespace HorseRacingML.Tests
 {
@@ -57,6 +58,89 @@ namespace HorseRacingML.Tests
                 venueName: "Ascot");
 
             Assert.False(shouldUse);
+        }
+        [Fact]
+        public void BuildUpcomingRaceRows_UsesBatchedLookupsWhenAvailable()
+        {
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:HorseRacingDb"] = "Server=(local);Database=HorseRacingMLTest;Trusted_Connection=True;"
+                })
+                .Build();
+
+            var trainer = new BatchedLookupTrainer(configuration);
+            var upcoming = new UpcomingRace
+            {
+                RaceDate = new DateTime(2024, 8, 21),
+                MarketId = "1.555",
+                Title = "Summer Stakes",
+                VenueName = "Test Course",
+                VenueCountry = "GB",
+                RaceType = "Handicap",
+                Class = "Class 2",
+                AgeRestriction = "3yo+",
+                Surface = "Turf",
+                Going = "Good",
+                DistanceYards = 1760,
+                DistanceText = "1m",
+                RunnerCount = 12,
+                ScheduledOff = new TimeSpan(15, 0, 0)
+            };
+
+            var flows = new List<RunnerFlow>
+            {
+                new RunnerFlow
+                {
+                    HorseName = "Known Runner",
+                    JockeyName = "Known Jockey",
+                    ClothNumber = 1,
+                    Draw = 3,
+                    SelectionId = 101
+                },
+                new RunnerFlow
+                {
+                    HorseName = "Unknown Runner",
+                    JockeyName = "Unknown Jockey",
+                    ClothNumber = 2,
+                    Draw = 7,
+                    SelectionId = 202
+                }
+            };
+
+            var runnerColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "WeightText",
+                "OfficialRating",
+                "Age",
+                "WeightLbs"
+            };
+
+            var rows = trainer.TestBuildUpcomingRaceRows(conn: null!, upcoming, flows, raceId: 999, runnerColumns);
+
+            Assert.Equal(2, rows.Count);
+
+            var knownRow = Assert.Single(rows.Where(r => string.Equals((string?)r["HorseName"], "Known Runner", StringComparison.OrdinalIgnoreCase)));
+            var unknownRow = Assert.Single(rows.Where(r => string.Equals((string?)r["HorseName"], "Unknown Runner", StringComparison.OrdinalIgnoreCase)));
+
+            Assert.Equal(999, Assert.IsType<int>(knownRow["RaceId"]));
+            Assert.Equal(42, Assert.IsType<int>(knownRow["HorseId"]));
+            Assert.Equal(9, Assert.IsType<int>(knownRow["JockeyId"]));
+            Assert.Equal(77, Assert.IsType<int>(knownRow["TrainerId"]));
+            Assert.Equal("Sample Trainer", Assert.IsType<string>(knownRow["TrainerName"]));
+            Assert.Equal(5, Assert.IsType<int>(knownRow["Age"]));
+            Assert.Equal(126, Assert.IsType<int>(knownRow["WeightLbs"]));
+            Assert.Equal("9-0", Assert.IsType<string>(knownRow["WeightText"]));
+            Assert.Equal(101, Assert.IsType<int>(knownRow["OfficialRating"]));
+
+            Assert.NotEqual(42, Assert.IsType<int>(unknownRow["HorseId"]));
+            Assert.False(unknownRow.ContainsKey("JockeyId"));
+            Assert.Null(unknownRow["TrainerId"]);
+            Assert.Null(unknownRow["TrainerName"]);
+            Assert.Null(unknownRow["Age"]);
+            Assert.Null(unknownRow["WeightLbs"]);
+            Assert.Null(unknownRow["WeightText"]);
+            Assert.Null(unknownRow["OfficialRating"]);
         }
         [Fact]
         public void LoadFeatureLookup_UsesPersistedUpcomingRaceMetadata()
@@ -243,6 +327,53 @@ namespace HorseRacingML.Tests
             public override PreparedRace? PrepareUpcomingRace(UpcomingRace upcoming, IReadOnlyList<RunnerFlow> flows)
             {
                 return _upcomingRace;
+            }
+        }
+        private sealed class BatchedLookupTrainer : HorseRacingML.ML.HyperparameterTrainer
+        {
+            private readonly RunnerLookupData _lookupData;
+
+            public BatchedLookupTrainer(IConfiguration configuration)
+                : base(configuration)
+            {
+                var horseIds = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["Known Runner"] = 42
+                };
+                var jockeyIds = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["Known Jockey"] = 9
+                };
+                var snapshots = new Dictionary<int, RunnerSnapshot>
+                {
+                    [42] = new RunnerSnapshot
+                    {
+                        HorseId = 42,
+                        TrainerId = 77,
+                        TrainerName = "Sample Trainer",
+                        Age = (short)5,
+                        WeightLbs = (short)126,
+                        WeightText = "9-0",
+                        OfficialRating = (short)101
+                    }
+                };
+
+                _lookupData = new RunnerLookupData(horseIds, jockeyIds, snapshots);
+            }
+
+            protected override RunnerLookupData LoadRunnerLookupData(
+                SqlConnection conn,
+                UpcomingRace upcoming,
+                IReadOnlyCollection<string> runnerColumns,
+                IReadOnlyCollection<string> horseNames,
+                IReadOnlyCollection<string> jockeyNames)
+            {
+                return _lookupData;
+            }
+
+            protected override (int CourseId, string? CourseName) ResolveCourse(SqlConnection conn, UpcomingRace upcoming)
+            {
+                return (555, upcoming.VenueName);
             }
         }
     }
