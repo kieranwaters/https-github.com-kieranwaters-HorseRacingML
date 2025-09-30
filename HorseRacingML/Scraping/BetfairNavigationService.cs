@@ -27,6 +27,7 @@ namespace HorseRacingML.Scraping
         private decimal _bankroll;
         private readonly decimal? _maxKellyFraction;
         private readonly bool _useMarketFallbackForAiDegeneracy;
+        private readonly decimal _kellyDampener;
         private static readonly Regex NonNumericCharactersRegex = new("[^0-9.,-]", RegexOptions.Compiled);
 
         public BetfairNavigationService(IConfiguration config)
@@ -37,7 +38,15 @@ namespace HorseRacingML.Scraping
             _bankroll = _configuredBankroll;
             _maxKellyFraction = config.GetValue<decimal?>("Betting:MaxKellyFraction");
             _useMarketFallbackForAiDegeneracy = config.GetValue<bool?>("Betting:UseMarketFallbackForAiDegeneracy") ?? true;
-
+            _kellyDampener = config.GetValue<decimal?>("Betting:KellyDampener") ?? 1m;
+            if (_kellyDampener <= 0m)
+            {
+                _kellyDampener = 1m;
+            }
+            else if (_kellyDampener > 1m)
+            {
+                _kellyDampener = 1m;
+            }
             var options = new ChromeOptions();
             options.AddArguments(
                 "--disable-extensions",
@@ -103,6 +112,7 @@ namespace HorseRacingML.Scraping
                     trainer,
                     bankroll,
                     _maxKellyFraction,
+                    _kellyDampener,
                     _useMarketFallbackForAiDegeneracy);
                 var races = scraper.ScrapeOpenRaceTabsForReport(_driver, newHandles);
 
@@ -163,6 +173,7 @@ namespace HorseRacingML.Scraping
                 trainer,
                 bankroll,
                 _maxKellyFraction,
+                _kellyDampener,
                 _useMarketFallbackForAiDegeneracy);
             return scraper.ScrapeOpenRaceTabs(_driver);
         }
@@ -496,6 +507,7 @@ namespace HorseRacingML.Scraping
                 trainer,
                 bankroll,
                 _maxKellyFraction,
+                 _kellyDampener,
                 _useMarketFallbackForAiDegeneracy);
             var races = scraper.ScrapeOpenRaceTabsForReport(_driver);
             var orderedRaces = races

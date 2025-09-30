@@ -149,7 +149,13 @@ namespace HorseRacingML.Tests
             public void InsertRunnerFlow(RunnerFlow flow)
             {
             }
-
+            public void InsertRunnerFlows(IEnumerable<RunnerFlow> flows)
+            {
+                if (flows is null)
+                {
+                    throw new ArgumentNullException(nameof(flows));
+                }
+            }
             public int UpsertUpcomingRace(UpcomingRace race)
             {
                 return 0;

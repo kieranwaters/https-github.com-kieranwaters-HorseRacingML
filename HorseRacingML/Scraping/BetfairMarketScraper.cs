@@ -24,6 +24,7 @@ namespace HorseRacingML.Scraping
         private readonly decimal _bankroll;
         private readonly decimal? _maxKellyFraction;
         private readonly bool _useMarketFallbackForAiDegeneracy;
+        private readonly decimal _kellyDampener;
         private readonly Dictionary<RacePreparationKey, FeatureLookup> _featureLookupCache = new();
         private readonly object _featureLookupCacheLock = new();
         private decimal _availableBankroll;
@@ -35,6 +36,7 @@ namespace HorseRacingML.Scraping
             HyperparameterTrainer trainer,
             decimal bankroll,
             decimal? maxKellyFraction = null,
+            decimal? kellyDampener = null,
             bool useMarketFallbackForAiDegeneracy = true)
         {
             _repo = repo ?? throw new ArgumentNullException(nameof(repo));
@@ -43,6 +45,9 @@ namespace HorseRacingML.Scraping
             _availableBankroll = bankroll;
             _maxKellyFraction = maxKellyFraction;
             _betSlipSelectionsFilled = 0;
+            _kellyDampener = (kellyDampener.HasValue && kellyDampener.Value > 0m)
+                ? (kellyDampener.Value > 1m ? 1m : kellyDampener.Value)
+                : 1m;
             _useMarketFallbackForAiDegeneracy = useMarketFallbackForAiDegeneracy;
         }
         public HyperparameterSummary? LoadedHyperparameters => _loadedHyperparameters;
@@ -898,7 +903,7 @@ namespace HorseRacingML.Scraping
                     result.Races.Add(report); // collect report
                 }
 
-                var raceRecommendations = CreateRecommendations(flows, marketId, title, venueName, parsedRaceDate)
+                var raceRecommendations = CreateRecommendations(flows, marketId, title, venueName, parsedRaceDate, executeBets)
                     .OrderByDescending(r => r.Differential)
                     .ThenByDescending(r => r.KellyFraction)
                     .ToList(); // rank recs
@@ -1589,7 +1594,8 @@ namespace HorseRacingML.Scraping
             string marketId,
             string? raceTitle,
             string? venueName,
-            DateTime? raceDate)
+            DateTime? raceDate,
+            bool applyKellyDampener)
         {
             if (_availableBankroll <= 0m)
             {
@@ -1633,6 +1639,15 @@ namespace HorseRacingML.Scraping
                 }
 
                 var kellyFraction = CalculateKellyFraction(aiProbability, (double)decimalOdds);
+                if (applyKellyDampener && _kellyDampener < 1m)
+                {
+                    kellyFraction *= _kellyDampener;
+                }
+
+                if (kellyFraction > 1m)
+                {
+                    kellyFraction = 1m;
+                }
                 if (kellyFraction <= 0)
                 {
                     Console.WriteLine($"\t\tRejected {identifier}: Kelly fraction {kellyFraction.ToString("0.####", CultureInfo.InvariantCulture)} is non-positive.");
