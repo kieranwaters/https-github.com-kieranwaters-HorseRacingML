@@ -232,6 +232,7 @@ else
                                 <th scope="col">Jockey</th>
                                 <th scope="col" class="text-end">Hist. Races</th>
                                 <th scope="col" class="text-end">Market Odds</th>
+                                <th scope="col" class="text-end">Lay Odds</th>
                                 <th scope="col" class="text-end">AI Win %</th>
                                 <th scope="col" class="text-end">AI Odds</th>
                                 <th scope="col" class="text-end">Market Win %</th>
@@ -257,6 +258,9 @@ else
 
                                 var marketOdds = runner.MarketDecimalOdds.HasValue
                                     ? runner.MarketDecimalOdds.Value.ToString("0.00", CultureInfo.CurrentCulture)
+                                    : "-";
+                                var layOdds = runner.LayDecimalOdds.HasValue
+                                    ? runner.LayDecimalOdds.Value.ToString("0.00", CultureInfo.CurrentCulture)
                                     : "-";
 
                                 string aiProb;
@@ -330,6 +334,7 @@ else
                                     <td>@runner.JockeyName</td>
                                      <td class="text-end">@historyCount</td>
                                     <td class="text-end">@marketOdds</td>
+                                    <td class="text-end">@layOdds</td>
                                     <td class="text-end">
                                         @if (runner.AiProbability.HasValue)
                                         {
@@ -770,6 +775,10 @@ else
 
                         appendCell(typeof runner?.marketDecimalOdds === 'number'
                             ? formatDecimal(runner.marketDecimalOdds)
+                            : '-', 'text-end');
+
+                        appendCell(typeof runner?.layDecimalOdds === 'number'
+                            ? formatDecimal(runner.layDecimalOdds)
                             : '-', 'text-end');
 
                         const aiProbCell = appendCell('-', 'text-end');

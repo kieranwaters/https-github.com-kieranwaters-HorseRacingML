@@ -1073,7 +1073,10 @@ namespace HorseRacingML.Scraping
                     runner.MarketProbability = 1.0 / (double)flow.BackPrice1.Value;
                 }
             }
-
+            if (flow.LayPrice1.HasValue && flow.LayPrice1.Value > 0m)
+            {
+                runner.LayDecimalOdds = flow.LayPrice1.Value;
+            }
             if (flow.AiOdds.HasValue && double.IsFinite(flow.AiOdds.Value) && flow.AiOdds.Value > 0)
             {
                 runner.AiProbability = flow.AiOdds.Value;
