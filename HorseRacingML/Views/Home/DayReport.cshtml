@@ -110,6 +110,33 @@
     </div>
     <button type="button" id="saveReportButton" class="btn btn-outline-primary">Save Report</button>
 </div>
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="row g-2 align-items-end">
+            <div class="col-sm-6 col-md-4 col-lg-3">
+                <label for="kellyBankrollInput" class="form-label mb-1">Kelly bankroll override</label>
+                <input type="number"
+                       class="form-control form-control-sm"
+                       id="kellyBankrollInput"
+                       placeholder="Enter bankroll"
+                       step="0.01"
+                       min="0"
+                       inputmode="decimal"
+                       data-report-bankroll="@Model.Bankroll.ToString("0.##", CultureInfo.InvariantCulture)" />
+                <div class="form-text">Kelly stakes update immediately when this override is set.</div>
+                <div class="invalid-feedback">Enter a positive bankroll to apply the override.</div>
+            </div>
+            <div class="col-auto d-flex flex-wrap gap-2">
+                <button type="button" id="kellyBankrollUseReport" class="btn btn-outline-secondary btn-sm">
+                    Use report bankroll (@bankrollText)
+                </button>
+                <button type="button" id="kellyBankrollReset" class="btn btn-outline-secondary btn-sm">
+                    Clear override
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 
 @if (Model.Races == null || Model.Races.Count == 0)
 {
@@ -464,6 +491,111 @@ else
                         data: value.toFixed(6)
                     };
                 };
+                let customKellyBankroll = null;
+
+                const formatStakeAmount = (value) => {
+                    if (typeof value !== 'number' || !isFinite(value) || value <= 0) {
+                        return null;
+                    }
+
+                    return formatDecimal(value);
+                };
+
+                const updateStakeDisplays = () => {
+                    const stakeElements = document.querySelectorAll('.stake-value');
+                    stakeElements.forEach(element => {
+                        const defaultStakeRaw = element.dataset.defaultStake ?? '';
+                        const kellyFractionRaw = element.dataset.kellyFraction ?? '';
+
+                        if (customKellyBankroll !== null) {
+                            const fraction = Number.parseFloat(kellyFractionRaw);
+                            if (Number.isFinite(fraction) && fraction > 0) {
+                                const computedStake = customKellyBankroll * fraction;
+                                const formattedComputed = formatStakeAmount(computedStake);
+                                if (formattedComputed) {
+                                    element.textContent = formattedComputed;
+                                    return;
+                                }
+                            }
+                        }
+
+                        if (defaultStakeRaw) {
+                            const defaultStake = Number.parseFloat(defaultStakeRaw);
+                            const formattedDefault = formatStakeAmount(defaultStake);
+                            if (formattedDefault) {
+                                element.textContent = formattedDefault;
+                                return;
+                            }
+                        }
+
+                        element.textContent = '-';
+                    });
+                };
+
+                const setCustomKellyBankroll = (value) => {
+                    if (Number.isFinite(value) && value > 0) {
+                        customKellyBankroll = value;
+                    } else {
+                        customKellyBankroll = null;
+                    }
+
+                    updateStakeDisplays();
+                };
+
+                const bankrollInput = document.getElementById('kellyBankrollInput');
+                const applyReportBankrollButton = document.getElementById('kellyBankrollUseReport');
+                const resetBankrollButton = document.getElementById('kellyBankrollReset');
+
+                const handleBankrollInput = () => {
+                    if (!bankrollInput) {
+                        return;
+                    }
+
+                    const raw = bankrollInput.value.trim();
+                    if (raw.length === 0) {
+                        bankrollInput.classList.remove('is-invalid');
+                        setCustomKellyBankroll(null);
+                        return;
+                    }
+
+                    const parsed = Number.parseFloat(raw);
+                    if (!Number.isFinite(parsed) || parsed <= 0) {
+                        bankrollInput.classList.add('is-invalid');
+                        setCustomKellyBankroll(null);
+                        return;
+                    }
+
+                    bankrollInput.classList.remove('is-invalid');
+                    setCustomKellyBankroll(parsed);
+                };
+
+                if (bankrollInput) {
+                    bankrollInput.addEventListener('input', handleBankrollInput);
+                    bankrollInput.addEventListener('change', handleBankrollInput);
+                }
+
+                if (applyReportBankrollButton && bankrollInput) {
+                    applyReportBankrollButton.addEventListener('click', () => {
+                        const defaultValue = bankrollInput.dataset.reportBankroll ?? '';
+                        if (defaultValue.length === 0) {
+                            return;
+                        }
+
+                        bankrollInput.value = defaultValue;
+                        bankrollInput.dispatchEvent(new Event('input', { bubbles: true }));
+                        bankrollInput.focus();
+                        bankrollInput.select();
+                    });
+                }
+
+                if (resetBankrollButton && bankrollInput) {
+                    resetBankrollButton.addEventListener('click', () => {
+                        bankrollInput.value = '';
+                        bankrollInput.classList.remove('is-invalid');
+                        setCustomKellyBankroll(null);
+                        bankrollInput.focus();
+                    });
+                }
 
                 const updateRaceMetadata = (card, race) => {
                     const title = card.querySelector('h2.h5');
@@ -687,6 +819,7 @@ else
 
                         tbody.appendChild(row);
                     });
+                    updateStakeDisplays();
                 };
 
                 const updateRaceCard = (marketId, race) => {
@@ -761,6 +894,7 @@ else
                     });
                 });
             }
+            updateStakeDisplays();
         })();
     </script>
 }
