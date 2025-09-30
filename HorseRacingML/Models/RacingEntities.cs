@@ -115,6 +115,7 @@ namespace HorseRacingML.Models
         public Dictionary<string, object?>? FeatureValues { get; set; }
         public bool HasPreparedFeatures { get; set; }
         public int? HistoricalRaceCount { get; set; }
+        public bool AiProbabilityMarketDerived { get; set; }
     }
     public class UpcomingRace
     {

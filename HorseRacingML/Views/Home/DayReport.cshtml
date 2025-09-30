@@ -365,6 +365,10 @@ else
                                         {
                                             @aiProb
                                         }
+                                        @if (runner.AiProbabilityMarketDerived)
+                                        {
+                                            <div class="text-warning small">Market-derived fallback</div>
+                                        }
                                     </td>
                                     <td class="text-end">@aiOdds</td>
                                     <td class="text-end">@marketProb</td>

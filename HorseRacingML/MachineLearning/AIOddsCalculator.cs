@@ -197,6 +197,10 @@ namespace HorseRacingML.ML
 
             if (TryCalculateWithTrainedModel(flow, out var probability))
             {
+                if (flow != null)
+                {
+                    flow.AiProbabilityMarketDerived = false;
+                }
                 return probability;
             }
 
@@ -206,7 +210,10 @@ namespace HorseRacingML.ML
                 {
                     LogFallback(flow, "falling back to legacy odds");
                 }
-
+                if (flow != null)
+                {
+                    flow.AiProbabilityMarketDerived = true;
+                }
                 return legacyProbability.Value;
             }
 
@@ -215,7 +222,10 @@ namespace HorseRacingML.ML
             {
                 LogFallback(flow, "falling back to legacy odds");
             }
-
+            if (flow != null)
+            {
+                flow.AiProbabilityMarketDerived = true;
+            }
             return fallback;
         }
         private double? TryCalculateLegacyProbability(RunnerFlow flow)

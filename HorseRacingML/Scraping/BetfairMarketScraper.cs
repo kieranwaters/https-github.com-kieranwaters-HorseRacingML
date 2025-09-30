@@ -830,10 +830,12 @@ namespace HorseRacingML.Scraping
                         if (double.IsFinite(probability) && probability > 0 && probability <= 1)
                         {
                             rf.AiOdds = probability;
+                            rf.AiProbabilityMarketDerived = false;
                         }
                         else
                         {
                             rf.AiOdds = null;
+                            rf.AiProbabilityMarketDerived = false;
                             var probabilityText = double.IsFinite(probability)
                                 ? probability.ToString("0.####", CultureInfo.InvariantCulture)
                                 : "non-finite";
@@ -843,6 +845,7 @@ namespace HorseRacingML.Scraping
                     catch (Exception ex)
                     {
                         rf.AiOdds = null; // set null on fail
+                        rf.AiProbabilityMarketDerived = false;
                         Console.Error.WriteLine($"\tFailed to calculate AI odds for selection {rfIdentifier} in market {marketId}: {ex.Message}"); // log
                     }
                     string aiText;
@@ -1082,7 +1085,7 @@ namespace HorseRacingML.Scraping
                 runner.AiProbability = flow.AiOdds.Value;
                 runner.AiDecimalOdds = BettingMath.CalculateAiDecimalOdds(flow.AiOdds.Value);
             }
-
+            runner.AiProbabilityMarketDerived = flow.AiProbabilityMarketDerived;
             if (runner.AiProbability.HasValue && runner.MarketProbability.HasValue)
             {
                 runner.Differential = runner.AiProbability.Value - runner.MarketProbability.Value;

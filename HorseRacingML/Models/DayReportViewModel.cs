@@ -47,5 +47,6 @@ namespace HorseRacingML.Models
         public decimal? LayKellyFraction { get; set; }
         public decimal? LaySuggestedStake { get; set; }
         public Dictionary<string, object?> FeatureValues { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+        public bool AiProbabilityMarketDerived { get; set; }
     }
 }

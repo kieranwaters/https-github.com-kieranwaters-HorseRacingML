@@ -601,11 +601,13 @@ namespace HorseRacingML.Scraping
                         if (flow.BackPrice1.HasValue && flow.BackPrice1.Value > 1m)
                         {
                             flow.AiOdds = 1.0 / (double)flow.BackPrice1.Value;
+                            flow.AiProbabilityMarketDerived = true;
                             anyFallbackApplied = true;
                         }
                         else
                         {
                             flow.AiOdds = null;
+                            flow.AiProbabilityMarketDerived = false;
                         }
                     }
 
@@ -697,6 +699,7 @@ namespace HorseRacingML.Scraping
                 else
                 {
                     flow.AiOdds = null;
+                    flow.AiProbabilityMarketDerived = false;
                 }
             }
 
