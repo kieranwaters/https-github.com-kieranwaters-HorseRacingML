@@ -202,38 +202,47 @@ namespace HorseRacingML.Scraping
             }
 
             UpcomingRace? upcoming = null;
-            try
+            var persistedAccepted = false;
+
+            if (persistedUpcoming != null)
             {
-                upcoming = _repo.FindUpcomingRace(raceDate.Value, raceTitle, venueName);
-                if (upcoming != null)
+                if (ShouldUseUpcomingCandidate(persistedUpcoming, marketId, raceTitle, venueName))
                 {
-                    Console.WriteLine($"	Located UpcomingRaces row: UpcomingRaceId={upcoming.UpcomingRaceId}, MarketId={upcoming.MarketId ?? "<null>"}.");
+                    upcoming = persistedUpcoming;
+                    persistedAccepted = true;
                 }
                 else
                 {
-                    Console.WriteLine($"	No UpcomingRaces row matched date/title/venue search (RaceDate, Title, VenueName).");
+                    Console.WriteLine($"	Persisted upcoming race metadata for market {persistedUpcoming.MarketId ?? marketId ?? "<unknown>"} rejected due to metadata misalignment with scraped race (Title/VenueName).");
                 }
             }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine($"	Failed to query upcoming race metadata: {ex.Message}");
-            }
 
-            if (upcoming != null &&
-                !ShouldUseUpcomingCandidate(upcoming, marketId, raceTitle, venueName))
+            if (upcoming == null)
             {
-                Console.WriteLine($"	UpcomingRaces row {upcoming.UpcomingRaceId} rejected due to metadata misalignment with scraped race (Title/VenueName).");
-                upcoming = null;
-            }
+                try
+                {
+                    upcoming = _repo.FindUpcomingRace(raceDate.Value, raceTitle, venueName);
+                    if (upcoming != null)
+                    {
+                        Console.WriteLine($"	Located UpcomingRaces row: UpcomingRaceId={upcoming.UpcomingRaceId}, MarketId={upcoming.MarketId ?? "<null>"}.");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"	No UpcomingRaces row matched date/title/venue search (RaceDate, Title, VenueName).");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"	Failed to query upcoming race metadata: {ex.Message}");
+                }
 
-            if (upcoming == null &&
-                persistedUpcoming != null &&
-                ShouldUseUpcomingCandidate(persistedUpcoming, marketId, raceTitle, venueName))
-            {
-                upcoming = persistedUpcoming;
-                Console.WriteLine($"	Using persisted upcoming race metadata for market {persistedUpcoming.MarketId ?? marketId ?? "<unknown>"}.");
+                if (upcoming != null &&
+                    !ShouldUseUpcomingCandidate(upcoming, marketId, raceTitle, venueName))
+                {
+                    Console.WriteLine($"	UpcomingRaces row {upcoming.UpcomingRaceId} rejected due to metadata misalignment with scraped race (Title/VenueName).");
+                    upcoming = null;
+                }
             }
-
             if (upcoming == null)
             {
                 upcoming = BuildSyntheticUpcomingRace(
@@ -257,7 +266,14 @@ namespace HorseRacingML.Scraping
             }
             else
             {
-                Console.WriteLine($"	Using UpcomingRaces metadata from repository for market {upcoming.MarketId ?? marketId ?? "<unknown>"}.");
+                if (persistedAccepted)
+                {
+                    Console.WriteLine($"	Using persisted upcoming race metadata for market {upcoming.MarketId ?? marketId ?? "<unknown>"}.");
+                }
+                else
+                {
+                    Console.WriteLine($"	Using UpcomingRaces metadata from repository for market {upcoming.MarketId ?? marketId ?? "<unknown>"}.");
+                }
             }
 
             try
