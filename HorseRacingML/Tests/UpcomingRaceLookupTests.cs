@@ -491,7 +491,9 @@ namespace HorseRacingML.Tests
             {
                 return _lookupData;
             }
-
+            public void InsertRunnerFlows(IEnumerable<RunnerFlow> flows)
+            {
+            }
             protected override (int CourseId, string? CourseName) ResolveCourse(SqlConnection conn, UpcomingRace upcoming)
             {
                 return (555, upcoming.VenueName);

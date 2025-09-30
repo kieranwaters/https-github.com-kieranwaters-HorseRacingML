@@ -169,6 +169,9 @@ namespace HorseRacingML.Tests
             {
                 return new TrainingDataset.PreparedDataset(new List<TrainingDataset.PreparedDataset.PreparedRace>());
             }
+            public void InsertRunnerFlows(IEnumerable<RunnerFlow> flows)
+            {
+            }
 
             public override IReadOnlyList<PreparedRace?> PrepareUpcomingRaces(
                 IReadOnlyList<(UpcomingRace upcoming, IReadOnlyList<RunnerFlow> flows)> requests)

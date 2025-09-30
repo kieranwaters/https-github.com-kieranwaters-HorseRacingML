@@ -9,6 +9,7 @@ namespace HorseRacingML.Data
         void ClearDayReportTables();
         void InsertRaceScreen(RaceScreen screen);
         void InsertRunnerFlow(RunnerFlow flow);
+        void InsertRunnerFlows(IEnumerable<RunnerFlow> flows);
         int UpsertUpcomingRace(UpcomingRace race);
         UpcomingRace? FindUpcomingRace(DateTime raceDate, string? raceTitle, string? venueName);
         UpcomingRace? GetUpcomingRaceByMarketId(string? marketId);

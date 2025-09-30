@@ -936,17 +936,24 @@ namespace HorseRacingML.Scraping
                     }
                 }
 
-                foreach (var inner in flows) // persist each flow
+                try
                 {
-                    try
+                    lock (_repoLock)
                     {
-                        lock (_repoLock) { _repo.InsertRunnerFlow(inner); } // save flow
+                        _repo.InsertRunnerFlows(flows);
+                    }
+
+                    foreach (var inner in flows)
+                    {
                         var innerIdentifier = !string.IsNullOrWhiteSpace(inner.HorseName)
                             ? inner.HorseName!.Trim()
                             : (!string.IsNullOrWhiteSpace(inner.SelectionId) ? inner.SelectionId! : "unknown");
                         Console.WriteLine($"\tInserted runner {innerIdentifier} for market {marketId}"); // log ok
                     }
-                    catch (Exception ex)
+                }
+                catch (Exception ex)
+                {
+                    foreach (var inner in flows)
                     {
                         var innerIdentifier = !string.IsNullOrWhiteSpace(inner.HorseName)
                             ? inner.HorseName!.Trim()

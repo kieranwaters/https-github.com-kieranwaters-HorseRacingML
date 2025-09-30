@@ -11,6 +11,8 @@ using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Collections.Generic;
 using System.Threading;
+using System.Globalization;
+using System.Text;
 
 namespace HorseRacingML.Data
 {
@@ -49,6 +51,88 @@ namespace HorseRacingML.Data
             var finalConn = new SqlConnection(_connectionString);
             finalConn.Open();
             return finalConn;
+        }
+        public void InsertRunnerFlow(RunnerFlow flow)
+        {
+            if (flow is null)
+            {
+                throw new ArgumentNullException(nameof(flow));
+            }
+
+            InsertRunnerFlows(new[] { flow });
+        }
+
+        public void InsertRunnerFlows(IEnumerable<RunnerFlow> flows)
+        {
+            if (flows is null)
+            {
+                throw new ArgumentNullException(nameof(flows));
+            }
+
+            var flowList = flows.ToList();
+            if (flowList.Any(f => f is null))
+            {
+                throw new ArgumentException("Flow collection cannot contain null entries.", nameof(flows));
+            }
+            if (flowList.Count == 0)
+            {
+                return;
+            }
+
+            const string header = @"INSERT INTO RunnerFlow(MarketId, SelectionId, ClothNumber, Draw, HorseName, JockeyName, BackPrice1, BackPrice2, BackPrice3, LayPrice1, LayPrice2, LayPrice3, AiOdds)
+VALUES";
+
+            var sqlBuilder = new StringBuilder(header.Length + flowList.Count * 128);
+            sqlBuilder.Append(header);
+
+            var parameters = new DynamicParameters();
+
+            for (var i = 0; i < flowList.Count; i++)
+            {
+                var flow = flowList[i];
+                var suffix = i.ToString(CultureInfo.InvariantCulture);
+
+                sqlBuilder.Append("(@MarketId").Append(suffix)
+                    .Append(", @SelectionId").Append(suffix)
+                    .Append(", @ClothNumber").Append(suffix)
+                    .Append(", @Draw").Append(suffix)
+                    .Append(", @HorseName").Append(suffix)
+                    .Append(", @JockeyName").Append(suffix)
+                    .Append(", @BackPrice1").Append(suffix)
+                    .Append(", @BackPrice2").Append(suffix)
+                    .Append(", @BackPrice3").Append(suffix)
+                    .Append(", @LayPrice1").Append(suffix)
+                    .Append(", @LayPrice2").Append(suffix)
+                    .Append(", @LayPrice3").Append(suffix)
+                    .Append(", @AiOdds").Append(suffix)
+                    .Append(')');
+
+                if (i < flowList.Count - 1)
+                {
+                    sqlBuilder.Append(", ");
+                }
+
+                parameters.Add($"MarketId{suffix}", flow.MarketId);
+                parameters.Add($"SelectionId{suffix}", flow.SelectionId);
+                parameters.Add($"ClothNumber{suffix}", flow.ClothNumber);
+                parameters.Add($"Draw{suffix}", flow.Draw);
+                parameters.Add($"HorseName{suffix}", flow.HorseName);
+                parameters.Add($"JockeyName{suffix}", flow.JockeyName);
+                parameters.Add($"BackPrice1{suffix}", flow.BackPrice1);
+                parameters.Add($"BackPrice2{suffix}", flow.BackPrice2);
+                parameters.Add($"BackPrice3{suffix}", flow.BackPrice3);
+                parameters.Add($"LayPrice1{suffix}", flow.LayPrice1);
+                parameters.Add($"LayPrice2{suffix}", flow.LayPrice2);
+                parameters.Add($"LayPrice3{suffix}", flow.LayPrice3);
+                parameters.Add($"AiOdds{suffix}", flow.AiOdds);
+            }
+
+            using var conn = OpenConnection();
+            EnsureRunnerFlowTableExists(conn);
+
+            using var transaction = conn.BeginTransaction();
+            conn.Execute(sqlBuilder.ToString(), parameters, transaction);
+            transaction.Commit();
         }
         public int UpsertUpcomingRace(UpcomingRace race)
         {
@@ -530,15 +614,6 @@ VALUES(@MarketId, @RaceDate, @OffTime, @Title, @VenueName, @VenueCountry, @Event
             using var conn = OpenConnection();
             EnsureRaceScreenTableExists(conn);
             conn.Execute(sql, screen);
-        }
-        public void InsertRunnerFlow(RunnerFlow flow)
-        {
-            const string sql = @"
-INSERT INTO RunnerFlow(MarketId, SelectionId, ClothNumber, Draw, HorseName, JockeyName, BackPrice1, BackPrice2, BackPrice3, LayPrice1, LayPrice2, LayPrice3, AiOdds)
-VALUES(@MarketId, @SelectionId, @ClothNumber, @Draw, @HorseName, @JockeyName, @BackPrice1, @BackPrice2, @BackPrice3, @LayPrice1, @LayPrice2, @LayPrice3, @AiOdds);";
-            using var conn = OpenConnection();
-            EnsureRunnerFlowTableExists(conn);
-            conn.Execute(sql, flow);
         }
         private static string? NormalizeGoing(string? going)
         {
