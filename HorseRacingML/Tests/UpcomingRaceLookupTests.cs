@@ -141,15 +141,6 @@ namespace HorseRacingML.Tests
             Assert.Null(unknownRow["WeightText"]);
             Assert.Null(unknownRow["OfficialRating"]);
         }
-        public IReadOnlyDictionary<string, int> GetHistoricalRaceCountsByHorseNames(IEnumerable<string> horseNames)
-        {
-            if (horseNames == null)
-            {
-                throw new ArgumentNullException(nameof(horseNames));
-            }
-
-            return new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        }
         [Fact]
         public void LoadFeatureLookup_UsesPersistedUpcomingRaceMetadata()
         {
@@ -244,6 +235,15 @@ namespace HorseRacingML.Tests
             public int? GetHistoricalRaceCountByHorseName(string? horseName)
             {
                 return null;
+            }
+            public IReadOnlyDictionary<string, int> GetHistoricalRaceCountsByHorseNames(IEnumerable<string> horseNames)
+            {
+                if (horseNames == null)
+                {
+                    throw new ArgumentNullException(nameof(horseNames));
+                }
+
+                return new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             }
             public UpcomingRace? GetUpcomingRaceByMarketId(string? marketId)
             {

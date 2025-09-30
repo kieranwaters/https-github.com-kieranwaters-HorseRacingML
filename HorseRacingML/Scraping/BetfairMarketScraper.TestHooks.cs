@@ -4,7 +4,9 @@ using HorseRacingML.Models;
 
 namespace HorseRacingML.Scraping
 {
-    internal RaceDayReport TestBuildRaceReport(
+    public partial class BetfairMarketScraper
+    {
+        internal RaceDayReport TestBuildRaceReport(
             string marketId,
             string? raceTitle,
             string? venueName,
@@ -30,8 +32,6 @@ namespace HorseRacingML.Scraping
             raceUrl,
             flows);
     }
-    public partial class BetfairMarketScraper
-    {
         internal Dictionary<string, object?>? TestLoadFeatures(
             DateTime? raceDate,
             string? raceTitle,
