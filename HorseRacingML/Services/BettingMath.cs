@@ -104,5 +104,70 @@ namespace HorseRacingML.Services
 
             return stake;
         }
+        public static decimal CalculateLayKellyFraction(double probability, double layDecimalOdds, decimal? maxFraction = null)
+        {
+            if (probability <= 0 || probability >= 1 || layDecimalOdds <= 1)
+            {
+                return 0m;
+            }
+
+            var fraction = 1.0 - (probability * layDecimalOdds);
+            if (!double.IsFinite(fraction))
+            {
+                return 0m;
+            }
+
+            var result = (decimal)fraction;
+            if (result <= 0m)
+            {
+                return 0m;
+            }
+
+            if (maxFraction.HasValue && result > maxFraction.Value)
+            {
+                result = maxFraction.Value;
+            }
+
+            if (result > 1m)
+            {
+                result = 1m;
+            }
+
+            return result;
+        }
+
+        public static decimal CalculateLayStake(decimal bankroll, decimal layKellyFraction, decimal layDecimalOdds)
+        {
+            if (bankroll <= 0m || layKellyFraction <= 0m || layDecimalOdds <= 1m)
+            {
+                return 0m;
+            }
+
+            var liability = bankroll * layKellyFraction;
+            if (liability <= 0m)
+            {
+                return 0m;
+            }
+
+            var profitMultiple = layDecimalOdds - 1m;
+            if (profitMultiple <= 0m)
+            {
+                return 0m;
+            }
+
+            var stake = liability / profitMultiple;
+            if (stake <= 0m)
+            {
+                return 0m;
+            }
+
+            stake = decimal.Round(stake, 2, MidpointRounding.ToZero);
+            if (stake <= 0m)
+            {
+                return 0m;
+            }
+
+            return stake;
+        }
     }
 }

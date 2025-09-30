@@ -287,20 +287,41 @@ else
                                     ? (runner.Differential.Value * 100).ToString("0.##", CultureInfo.CurrentCulture) + "%"
                                     : "-";
 
-                                var kelly = runner.KellyFraction.HasValue
-                                    ? (runner.KellyFraction.Value * 100).ToString("0.##", CultureInfo.CurrentCulture) + "%"
-                                    : "-";
+                               var hasBackEdge = runner.KellyFraction.HasValue && runner.KellyFraction.Value > 0;
+                                var hasLayEdge = runner.LayKellyFraction.HasValue && runner.LayKellyFraction.Value > 0;
+                                var rowClass = hasBackEdge
+                                    ? "runner-edge-back"
+                                    : hasLayEdge
+                                        ? "runner-edge-lay"
+                                        : string.Empty;
 
-                                var stake = runner.SuggestedStake.HasValue && runner.SuggestedStake.Value > 0
-                                    ? runner.SuggestedStake.Value.ToString("0.00", CultureInfo.CurrentCulture)
+                                var displayedKelly = hasBackEdge
+                                    ? (runner.KellyFraction!.Value * 100).ToString("0.##", CultureInfo.CurrentCulture) + "%"
+                                    : hasLayEdge
+                                        ? "Lay " + (runner.LayKellyFraction!.Value * 100).ToString("0.##", CultureInfo.CurrentCulture) + "%"
+                                        : "-";
+                                var kellyData = hasBackEdge
+                                    ? runner.KellyFraction!.Value.ToString("0.######", CultureInfo.InvariantCulture)
+                                    : hasLayEdge
+                                        ? runner.LayKellyFraction!.Value.ToString("0.######", CultureInfo.InvariantCulture)
+                                        : string.Empty;
+
+                                var useLayRecommendation = !hasBackEdge && hasLayEdge;
+                                var displayedStakeValue = useLayRecommendation ? runner.LaySuggestedStake : runner.SuggestedStake;
+                                var stakeType = useLayRecommendation ? "lay" : hasBackEdge ? "back" : "none";
+                                var layOddsData = useLayRecommendation && runner.LayDecimalOdds.HasValue
+                                    ? runner.LayDecimalOdds.Value.ToString("0.########", CultureInfo.InvariantCulture)
+                                    : string.Empty;
+
+                                var displayedStake = displayedStakeValue.HasValue && displayedStakeValue.Value > 0
+                                    ? (useLayRecommendation
+                                        ? "Lay " + displayedStakeValue.Value.ToString("0.00", CultureInfo.CurrentCulture)
+                                        : displayedStakeValue.Value.ToString("0.00", CultureInfo.CurrentCulture))
                                     : "-";
-                                var stakeData = runner.SuggestedStake.HasValue && runner.SuggestedStake.Value > 0
-                                    ? runner.SuggestedStake.Value.ToString("0.00", CultureInfo.InvariantCulture)
+                                var stakeData = displayedStakeValue.HasValue && displayedStakeValue.Value > 0
+                                    ? displayedStakeValue.Value.ToString("0.00", CultureInfo.InvariantCulture)
                                     : string.Empty;
-                                    var kellyData = runner.KellyFraction.HasValue
-                                    ? runner.KellyFraction.Value.ToString("0.######", CultureInfo.InvariantCulture)
-                                    : string.Empty;
-                                <tr>
+                                <tr class="@rowClass">
                                     <td>@cloth</td>
                                     <td>@draw</td>
                                     <td>
@@ -348,9 +369,9 @@ else
                                     <td class="text-end">@aiOdds</td>
                                     <td class="text-end">@marketProb</td>
                                     <td class="text-end">@diff</td>
-                                    <td class="text-end">@kelly</td>
+                                   <td class="text-end">@displayedKelly</td>
                                     <td class="text-end">
-                                        <span class="stake-value" data-default-stake="@stakeData" data-kelly-fraction="@kellyData">@stake</span>
+                                        <span class="stake-value" data-default-stake="@stakeData" data-kelly-fraction="@kellyData" data-stake-type="@stakeType" data-lay-odds="@layOddsData">@displayedStake</span>
                                     </td>
                                 </tr>
                             }
@@ -474,29 +495,13 @@ else
                     });
                 };
 
-                const resolveStakeData = (value) => {
-                    if (typeof value !== 'number' || !isFinite(value) || value <= 0) {
-                        return { text: '-', dataStake: '' };
+               const formatKellyPercent = (fraction) => {
+                    if (typeof fraction !== 'number' || !isFinite(fraction) || fraction <= 0) {
+                        return null;
                     }
 
-                    return {
-                        text: formatDecimal(value),
-                        dataStake: value.toFixed(2)
-                    };
+                    return (fraction * 100).toLocaleString(undefined, { maximumFractionDigits: 2 }) + '%';
                 };
-
-                const resolveKellyData = (value) => {
-                    if (typeof value !== 'number' || !isFinite(value)) {
-                        return { text: '-', data: '' };
-                    }
-
-                    const fraction = value * 100;
-                    return {
-                        text: fraction.toLocaleString(undefined, { maximumFractionDigits: 2 }) + '%',
-                        data: value.toFixed(6)
-                    };
-                };
-                let customKellyBankroll = null;
 
                 const formatStakeAmount = (value) => {
                     if (typeof value !== 'number' || !isFinite(value) || value <= 0) {
@@ -506,17 +511,89 @@ else
                     return formatDecimal(value);
                 };
 
+                const formatStakeDisplay = (value, stakeType) => {
+                    const formatted = formatStakeAmount(value);
+                    if (!formatted) {
+                        return null;
+                    }
+
+                    return stakeType === 'lay' ? `Lay ${formatted}` : formatted;
+                };
+
+                const resolveBettingRecommendation = (runner) => {
+                    const hasBack = typeof runner?.kellyFraction === 'number' && runner.kellyFraction > 0;
+                    if (hasBack) {
+                        const stakeValue = typeof runner?.suggestedStake === 'number' && runner.suggestedStake > 0
+                            ? runner.suggestedStake
+                            : NaN;
+                        const kellyPercent = formatKellyPercent(runner.kellyFraction);
+                        return {
+                            type: 'back',
+                            rowClass: 'runner-edge-back',
+                            kellyText: kellyPercent ?? '-',
+                            kellyData: runner.kellyFraction.toFixed(6),
+                            stakeText: formatStakeDisplay(stakeValue, 'back') ?? '-',
+                            stakeData: Number.isFinite(stakeValue) && stakeValue > 0 ? stakeValue.toFixed(2) : '',
+                            layOddsData: ''
+                        };
+                    }
+
+                    const hasLay = typeof runner?.layKellyFraction === 'number' && runner.layKellyFraction > 0;
+                    if (hasLay) {
+                        const stakeValue = typeof runner?.laySuggestedStake === 'number' && runner.laySuggestedStake > 0
+                            ? runner.laySuggestedStake
+                            : NaN;
+                        const layOdds = typeof runner?.layDecimalOdds === 'number' && runner.layDecimalOdds > 1
+                            ? runner.layDecimalOdds
+                            : NaN;
+                        const kellyPercent = formatKellyPercent(runner.layKellyFraction);
+                        const kellyText = kellyPercent ? `Lay ${kellyPercent}` : 'Lay -';
+                        return {
+                            type: 'lay',
+                            rowClass: 'runner-edge-lay',
+                            kellyText,
+                            kellyData: runner.layKellyFraction.toFixed(6),
+                            stakeText: formatStakeDisplay(stakeValue, 'lay') ?? '-',
+                            stakeData: Number.isFinite(stakeValue) && stakeValue > 0 ? stakeValue.toFixed(2) : '',
+                            layOddsData: Number.isFinite(layOdds) ? layOdds.toString() : ''
+                        };
+                    }
+
+                    return {
+                        type: 'none',
+                        rowClass: '',
+                        kellyText: '-',
+                        kellyData: '',
+                        stakeText: '-',
+                        stakeData: '',
+                        layOddsData: ''
+                    };
+                };
+                let customKellyBankroll = null;
+
+
                 const updateStakeDisplays = () => {
                     const stakeElements = document.querySelectorAll('.stake-value');
                     stakeElements.forEach(element => {
                         const defaultStakeRaw = element.dataset.defaultStake ?? '';
                         const kellyFractionRaw = element.dataset.kellyFraction ?? '';
-
+                        const stakeTypeRaw = element.dataset.stakeType ?? '';
+                        const stakeType = stakeTypeRaw === 'lay' ? 'lay' : stakeTypeRaw === 'none' ? 'none' : 'back';
                         if (customKellyBankroll !== null) {
                             const fraction = Number.parseFloat(kellyFractionRaw);
                             if (Number.isFinite(fraction) && fraction > 0) {
-                                const computedStake = customKellyBankroll * fraction;
-                                const formattedComputed = formatStakeAmount(computedStake);
+                                let computedStake = customKellyBankroll * fraction;
+                                if (stakeType === 'lay') {
+                                    const layOdds = Number.parseFloat(element.dataset.layOdds ?? '');
+                                    if (!Number.isFinite(layOdds) || layOdds <= 1) {
+                                        computedStake = NaN;
+                                    } else {
+                                        const liability = customKellyBankroll * fraction;
+                                        computedStake = liability / (layOdds - 1);
+                                    }
+                                }
+
+                                const formattedDefault = formatStakeDisplay(defaultStake, stakeType);
                                 if (formattedComputed) {
                                     element.textContent = formattedComputed;
                                     return;
@@ -812,17 +889,21 @@ else
                             : null;
                         appendCell(diffPercent ?? '-', 'text-end');
 
-                        const kelly = resolveKellyData(typeof runner?.kellyFraction === 'number' ? runner.kellyFraction : NaN);
-                        appendCell(kelly.text, 'text-end');
+                        const betting = resolveBettingRecommendation(runner);
+                        if (betting.rowClass) {
+                            row.classList.add(betting.rowClass);
+                        }
 
-                        const stakeInfo = resolveStakeData(typeof runner?.suggestedStake === 'number' ? runner.suggestedStake : NaN);
+                        appendCell(betting.kellyText, 'text-end');
                         const stakeCell = document.createElement('td');
                         stakeCell.className = 'text-end';
                         const stakeSpan = document.createElement('span');
                         stakeSpan.className = 'stake-value';
-                        stakeSpan.dataset.defaultStake = stakeInfo.dataStake;
-                        stakeSpan.dataset.kellyFraction = kelly.data;
-                        stakeSpan.textContent = stakeInfo.text;
+     stakeSpan.dataset.defaultStake = betting.stakeData;
+                        stakeSpan.dataset.kellyFraction = betting.kellyData;
+                        stakeSpan.dataset.stakeType = betting.type;
+                        stakeSpan.dataset.layOdds = betting.layOddsData;
+                        stakeSpan.textContent = betting.stakeText;
                         stakeCell.appendChild(stakeSpan);
                         row.appendChild(stakeCell);
 

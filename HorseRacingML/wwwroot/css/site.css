@@ -18,5 +18,13 @@ html {
 }
 
 body {
-  margin-bottom: 60px;
+    margin-bottom: 60px;
+}
+
+.table tr.runner-edge-back > * {
+    background-color: #e6f4ea;
+}
+
+.table tr.runner-edge-lay > * {
+    background-color: #f9e2e4;
 }

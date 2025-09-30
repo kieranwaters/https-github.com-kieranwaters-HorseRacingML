@@ -1100,6 +1100,27 @@ namespace HorseRacingML.Scraping
                     runner.SuggestedStake = BettingMath.CalculateSequentialStake(_bankroll, kelly);
                 }
             }
+            if (runner.AiProbability.HasValue && runner.LayDecimalOdds.HasValue && runner.LayDecimalOdds.Value > 1m)
+            {
+                var layKelly = BettingMath.CalculateLayKellyFraction(
+                    runner.AiProbability.Value,
+                    (double)runner.LayDecimalOdds.Value,
+                    _maxKellyFraction);
+
+                if (layKelly > 0m)
+                {
+                    runner.LayKellyFraction = layKelly;
+
+                    if (_bankroll > 0m)
+                    {
+                        var layStake = BettingMath.CalculateLayStake(_bankroll, layKelly, runner.LayDecimalOdds.Value);
+                        if (layStake > 0m)
+                        {
+                            runner.LaySuggestedStake = layStake;
+                        }
+                    }
+                }
+            }
             if (flow.HistoricalRaceCount.HasValue)
             {
                 runner.HistoricalRaceCount = flow.HistoricalRaceCount;

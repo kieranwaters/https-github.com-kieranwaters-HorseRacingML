@@ -44,6 +44,8 @@ namespace HorseRacingML.Models
         public decimal? SuggestedStake { get; set; }
         public decimal? LayDecimalOdds { get; set; }
         public int? HistoricalRaceCount { get; set; }
+        public decimal? LayKellyFraction { get; set; }
+        public decimal? LaySuggestedStake { get; set; }
         public Dictionary<string, object?> FeatureValues { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     }
 }
