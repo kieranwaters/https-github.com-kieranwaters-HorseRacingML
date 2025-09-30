@@ -329,7 +329,13 @@ namespace HorseRacingML.Tests
             public void InsertRunnerFlow(RunnerFlow flow)
             {
             }
-
+            public void InsertRunnerFlows(IEnumerable<RunnerFlow> flows)
+            {
+                if (flows is null)
+                {
+                    throw new ArgumentNullException(nameof(flows));
+                }
+            }
             public int UpsertUpcomingRace(UpcomingRace race)
             {
                 if (race is null)
@@ -386,6 +392,37 @@ namespace HorseRacingML.Tests
         {
             private readonly PreparedRace? _upcomingRace;
             private readonly PreparedDataset _dataset;
+            public FakeTrainer(IConfiguration configuration, PreparedRace? upcomingRace)
+                : base(configuration)
+            {
+                _upcomingRace = upcomingRace;
+                var races = upcomingRace is null
+                    ? new List<PreparedRace>()
+                    : new List<PreparedRace> { upcomingRace };
+                _dataset = new PreparedDataset(races);
+            }
+
+            public override PreparedDataset PrepareDataset(
+                ISet<int>? includeRaceIds = null,
+                ISet<int>? stateRaceWhitelist = null,
+                bool includeIdentifiers = false)
+            {
+                return _dataset;
+            }
+
+            public override PreparedRace? PrepareUpcomingRace(UpcomingRace upcoming, IReadOnlyList<RunnerFlow> flows)
+            {
+                if (upcoming is null)
+                {
+                    throw new ArgumentNullException(nameof(upcoming));
+                }
+                if (flows is null)
+                {
+                    throw new ArgumentNullException(nameof(flows));
+                }
+
+                return _upcomingRace;
+            }
 
             public override IReadOnlyList<PreparedRace?> PrepareUpcomingRaces(
                 IReadOnlyList<(UpcomingRace upcoming, IReadOnlyList<RunnerFlow> flows)> requests)
@@ -394,7 +431,10 @@ namespace HorseRacingML.Tests
                 {
                     throw new ArgumentNullException(nameof(requests));
                 }
-
+                if (requests.Count == 0)
+                {
+                    return Array.Empty<PreparedRace?>();
+                }
                 var results = new PreparedRace?[requests.Count];
                 for (int i = 0; i < results.Length; i++)
                 {
@@ -447,7 +487,16 @@ namespace HorseRacingML.Tests
 
             public override PreparedRace? PrepareUpcomingRace(UpcomingRace upcoming, IReadOnlyList<RunnerFlow> flows)
             {
-                return _upcomingRace;
+                if (upcoming is null)
+                {
+                    throw new ArgumentNullException(nameof(upcoming));
+                }
+                if (flows is null)
+                {
+                    throw new ArgumentNullException(nameof(flows));
+                }
+
+                return _preparedRace;
             }
         }
         private sealed class BatchedLookupTrainer : HorseRacingML.ML.HyperparameterTrainer
@@ -491,6 +540,7 @@ namespace HorseRacingML.Tests
             {
                 return _lookupData;
             }
+
             public void InsertRunnerFlows(IEnumerable<RunnerFlow> flows)
             {
             }

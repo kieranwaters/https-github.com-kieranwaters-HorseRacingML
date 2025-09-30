@@ -52,7 +52,13 @@ namespace HorseRacingML.Tests
 
             Assert.Equal(new[] { "Alpha Runner", "Beta Runner (IRE)" }, repo.LastBulkNames);
         }
-
+        public void InsertRunnerFlows(IEnumerable<RunnerFlow> flows)
+        {
+            if (flows is null)
+            {
+                throw new ArgumentNullException(nameof(flows));
+            }
+        }
         [Fact]
         public void BuildRaceReport_FallsBackToSingleLookup_WhenPrefetchMissing()
         {
