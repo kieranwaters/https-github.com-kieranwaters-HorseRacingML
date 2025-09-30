@@ -1595,37 +1595,13 @@ namespace HorseRacingML.ML
             };
 
             var featureState = new FeatureEngineeringState(this, identifierKeys);
-            var (sql, runnerColumns, featureState) = BuildUpcomingPreparationContext(conn);
-
-            var sorted = valid
-                .OrderBy(v => v.Upcoming.RaceDate.Date)
-                .ToList();
-
-            var maxTargetDate = sorted[^1].Upcoming.RaceDate.Date;
-
-            var historicalRecords = conn.Query(sql, new { TargetDate = maxTargetDate }, commandTimeout: 6000, buffered: false);
-            var historicalRaces = MaterializeHistoricalRaces(historicalRecords);
-
-            int historyIndex = 0;
-            foreach (var entry in sorted)
-            {
-                var targetDate = entry.Upcoming.RaceDate.Date;
-                while (historyIndex < historicalRaces.Count && historicalRaces[historyIndex].RaceDate < targetDate)
-                {
-                    featureState.ProcessRace(historicalRaces[historyIndex].Rows, includeRace: false, updateState: true);
-                    historyIndex++;
-                }
-
-                var prepared = PrepareUpcomingRaceFromState(conn, entry.Upcoming, entry.Flows, runnerColumns, featureState);
-                results[entry.Index] = prepared;
-            }
-
-            return results;
+            return (sql, runnerColumns, featureState);
         }
 
-        private (string Sql, HashSet<string> RunnerColumns, FeatureEngineeringState FeatureState) BuildUpcomingPreparationContext(SqlConnection conn)
+        private List<(DateTime RaceDate, List<Dictionary<string, object?>> Rows)> MaterializeHistoricalRaces(IEnumerable<object> records)
         {
-            var currentRows = new List<Dictionary<string, object?>>();
+            var races = new List<(DateTime RaceDate, List<Dictionary<string, object?>> Rows)>();
+            var currentRows = new List<Dictionary<string, object?>>(capacity: 32);
             int? currentRaceId = null;
             DateTime? currentRaceDate = null;
 
@@ -1635,7 +1611,7 @@ namespace HorseRacingML.ML
                 {
                     continue;
                 }
-                
+
                 var source = (IDictionary<string, object?>)record;
                 var row = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
                 foreach (var kvp in source)
@@ -1660,7 +1636,7 @@ namespace HorseRacingML.ML
                         races.Add((currentRaceDate.Value, currentRows));
                     }
 
-                    currentRows = new List<Dictionary<string, object?>>();
+                    currentRows = new List<Dictionary<string, object?>>(currentRows.Count);
                 }
 
                 currentRows.Add(row);
