@@ -544,7 +544,22 @@ END";
                 _raceScreenTableEnsured = true;
             }
         }
+        public void ClearDayReportTables()
+        {
+            using var conn = OpenConnection();
 
+            EnsureRaceScreenTableExists(conn);
+            EnsureRunnerFlowTableExists(conn);
+            EnsureUpcomingRaceTableExists(conn);
+
+            using var transaction = conn.BeginTransaction();
+
+            conn.Execute("DELETE FROM RunnerFlow;", transaction: transaction);
+            conn.Execute("DELETE FROM RaceScreen;", transaction: transaction);
+            conn.Execute("DELETE FROM UpcomingRaces;", transaction: transaction);
+
+            transaction.Commit();
+        }
         private static void EnsureRunnerFlowTableExists(IDbConnection conn)
         {
             if (_runnerFlowTableEnsured) return;

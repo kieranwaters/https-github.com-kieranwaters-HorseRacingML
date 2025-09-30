@@ -489,6 +489,7 @@ namespace HorseRacingML.Scraping
         }
         public DayReportViewModel GenerateDayReport(RacingRepository repo, HyperparameterTrainer trainer)
         {
+            repo.ClearDayReportTables();
             var bankroll = GetEffectiveBankroll();
             var scraper = new BetfairMarketScraper(
                 repo,

@@ -137,7 +137,10 @@ namespace HorseRacingML.Tests
             private int _nextId = 1;
 
             public bool FindUpcomingRaceCalled { get; private set; }
-
+            public void ClearDayReportTables()
+            {
+                _upcomingByMarket.Clear();
+            }
             public UpcomingRace? FindUpcomingRace(DateTime raceDate, string? raceTitle, string? venueName)
             {
                 FindUpcomingRaceCalled = true;

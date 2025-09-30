@@ -6,6 +6,7 @@ namespace HorseRacingML.Data
 {
     public interface IRacingRepository
     {
+        void ClearDayReportTables();
         void InsertRaceScreen(RaceScreen screen);
         void InsertRunnerFlow(RunnerFlow flow);
         int UpsertUpcomingRace(UpcomingRace race);
