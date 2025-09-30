@@ -78,13 +78,13 @@ namespace HorseRacingML.Tests
                 VenueName = "Test Course",
                 VenueCountry = "GB",
                 RaceType = "Handicap",
-                Class = "Class 2",
+                Class = (byte)2,
                 AgeRestriction = "3yo+",
                 Surface = "Turf",
                 Going = "Good",
                 DistanceYards = 1760,
                 DistanceText = "1m",
-                RunnerCount = 12,
+                RunnerCount = (byte)12,
                 ScheduledOff = new TimeSpan(15, 0, 0)
             };
 
@@ -96,7 +96,7 @@ namespace HorseRacingML.Tests
                     JockeyName = "Known Jockey",
                     ClothNumber = 1,
                     Draw = 3,
-                    SelectionId = 101
+                    SelectionId = "101"
                 },
                 new RunnerFlow
                 {
@@ -104,10 +104,9 @@ namespace HorseRacingML.Tests
                     JockeyName = "Unknown Jockey",
                     ClothNumber = 2,
                     Draw = 7,
-                    SelectionId = 202
+                    SelectionId = "202"
                 }
             };
-
             var runnerColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
                 "WeightText",
