@@ -7,6 +7,7 @@ using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
+using Xunit;
 using PreparedDataset = HorseRacingML.ML.HyperparameterTrainer.TrainingDataset.PreparedDataset;
 using PreparedRace = HorseRacingML.ML.HyperparameterTrainer.TrainingDataset.PreparedDataset.PreparedRace;
 
@@ -1438,10 +1439,77 @@ namespace HorseRacingML.ML
             {
                 return null;
             }
+            var results = PrepareUpcomingRaces(new[] { (upcoming, flows) });
+            return results.Count > 0 ? results[0] : null;
+        }
+
+        public virtual IReadOnlyList<PreparedRace?> PrepareUpcomingRaces(IReadOnlyList<(UpcomingRace upcoming, IReadOnlyList<RunnerFlow> flows)> requests)
+        {
+            if (requests is null)
+                throw new ArgumentNullException(nameof(requests));
+
+            if (requests.Count == 0)
+            {
+                return Array.Empty<PreparedRace?>();
+            }
+
+            var results = new PreparedRace?[requests.Count];
+            var valid = new List<(int Index, UpcomingRace Upcoming, IReadOnlyList<RunnerFlow> Flows)>(requests.Count);
+            for (int i = 0; i < requests.Count; i++)
+            {
+                var (upcoming, flows) = requests[i];
+                if (upcoming == null)
+                {
+                    results[i] = null;
+                    continue;
+                }
+
+                if (flows == null || flows.Count == 0)
+                {
+                    results[i] = null;
+                    continue;
+                }
+
+                valid.Add((i, upcoming, flows));
+            }
+
+            if (valid.Count == 0)
+            {
+                return results;
+            }
 
             using var conn = new SqlConnection(_connectionString);
             conn.Open();
+            var (sql, runnerColumns, featureState) = BuildUpcomingPreparationContext(conn);
 
+            var sorted = valid
+                .OrderBy(v => v.Upcoming.RaceDate.Date)
+                .ToList();
+
+            var maxTargetDate = sorted[^1].Upcoming.RaceDate.Date;
+
+            var historicalRecords = conn.Query(sql, new { TargetDate = maxTargetDate }, commandTimeout: 6000, buffered: false);
+            var historicalRaces = MaterializeHistoricalRaces(historicalRecords);
+
+            int historyIndex = 0;
+            foreach (var entry in sorted)
+            {
+                var targetDate = entry.Upcoming.RaceDate.Date;
+                while (historyIndex < historicalRaces.Count && historicalRaces[historyIndex].RaceDate < targetDate)
+                {
+                    featureState.ProcessRace(historicalRaces[historyIndex].Rows, includeRace: false, updateState: true);
+                    historyIndex++;
+                }
+
+                var prepared = PrepareUpcomingRaceFromState(conn, entry.Upcoming, entry.Flows, runnerColumns, featureState);
+                results[entry.Index] = prepared;
+            }
+
+            return results;
+        }
+
+        private (string Sql, HashSet<string> RunnerColumns, FeatureEngineeringState FeatureState) BuildUpcomingPreparationContext(SqlConnection conn)
+        {
             var raceColumns = PreparedDataset.LoadColumnNames(conn, "Race");
             var runnerColumns = PreparedDataset.LoadColumnNames(conn, "RunnerResult");
             string scheduledOffColumn = raceColumns.Contains("ScheduledOff")
@@ -1527,11 +1595,47 @@ namespace HorseRacingML.ML
             };
 
             var featureState = new FeatureEngineeringState(this, identifierKeys);
+            var (sql, runnerColumns, featureState) = BuildUpcomingPreparationContext(conn);
 
+            var sorted = valid
+                .OrderBy(v => v.Upcoming.RaceDate.Date)
+                .ToList();
+
+            var maxTargetDate = sorted[^1].Upcoming.RaceDate.Date;
+
+            var historicalRecords = conn.Query(sql, new { TargetDate = maxTargetDate }, commandTimeout: 6000, buffered: false);
+            var historicalRaces = MaterializeHistoricalRaces(historicalRecords);
+
+            int historyIndex = 0;
+            foreach (var entry in sorted)
+            {
+                var targetDate = entry.Upcoming.RaceDate.Date;
+                while (historyIndex < historicalRaces.Count && historicalRaces[historyIndex].RaceDate < targetDate)
+                {
+                    featureState.ProcessRace(historicalRaces[historyIndex].Rows, includeRace: false, updateState: true);
+                    historyIndex++;
+                }
+
+                var prepared = PrepareUpcomingRaceFromState(conn, entry.Upcoming, entry.Flows, runnerColumns, featureState);
+                results[entry.Index] = prepared;
+            }
+
+            return results;
+        }
+
+        private (string Sql, HashSet<string> RunnerColumns, FeatureEngineeringState FeatureState) BuildUpcomingPreparationContext(SqlConnection conn)
+        {
             var currentRows = new List<Dictionary<string, object?>>();
             int? currentRaceId = null;
-            foreach (var record in conn.Query(sql, new { TargetDate = upcoming.RaceDate.Date }, commandTimeout: 6000, buffered: false))
+            DateTime? currentRaceDate = null;
+
+            foreach (var record in records)
             {
+                if (record is null)
+                {
+                    continue;
+                }
+                
                 var source = (IDictionary<string, object?>)record;
                 var row = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
                 foreach (var kvp in source)
@@ -1543,25 +1647,42 @@ namespace HorseRacingML.ML
                 {
                     continue;
                 }
+                if (!row.TryGetValue("RaceDate", out var raceDateObj) || raceDateObj is not DateTime raceDateValue)
+                {
+                    continue;
+                }
 
+                var raceDate = raceDateValue.Date;
                 if (currentRaceId.HasValue && raceId != currentRaceId.Value)
                 {
-                    if (currentRows.Count > 0)
+                    if (currentRows.Count > 0 && currentRaceDate.HasValue)
                     {
-                        featureState.ProcessRace(currentRows, includeRace: false, updateState: true);
+                        races.Add((currentRaceDate.Value, currentRows));
                     }
+
                     currentRows = new List<Dictionary<string, object?>>();
                 }
 
                 currentRows.Add(row);
                 currentRaceId = raceId;
+                currentRaceDate = raceDate;
             }
 
-            if (currentRaceId.HasValue && currentRows.Count > 0)
+            if (currentRows.Count > 0 && currentRaceDate.HasValue)
             {
-                featureState.ProcessRace(currentRows, includeRace: false, updateState: true);
+                races.Add((currentRaceDate.Value, currentRows));
             }
 
+            return races;
+        }
+
+        private PreparedRace? PrepareUpcomingRaceFromState(
+            SqlConnection conn,
+            UpcomingRace upcoming,
+            IReadOnlyList<RunnerFlow> flows,
+            IReadOnlyCollection<string> runnerColumns,
+            FeatureEngineeringState featureState)
+        {
             var syntheticRaceId = CreateSyntheticRaceId(upcoming);
             var syntheticRows = BuildUpcomingRaceRows(conn, upcoming, flows, syntheticRaceId, runnerColumns);
             if (syntheticRows.Count == 0)

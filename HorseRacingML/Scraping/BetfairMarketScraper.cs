@@ -24,6 +24,8 @@ namespace HorseRacingML.Scraping
         private readonly decimal _bankroll;
         private readonly decimal? _maxKellyFraction;
         private readonly bool _useMarketFallbackForAiDegeneracy;
+        private readonly Dictionary<RacePreparationKey, FeatureLookup> _featureLookupCache = new();
+        private readonly object _featureLookupCacheLock = new();
         private decimal _availableBankroll;
         private int _betSlipSelectionsFilled;
         private const string MarketHeaderXPath = "/html/body/ui-view/div/div/div[2]/div/ui-view/div/div/div[1]/div[1]/div/bf-sports-header/div/div/div/div[1]/div/span[1]";
@@ -275,23 +277,49 @@ namespace HorseRacingML.Scraping
                     Console.WriteLine($"	Using UpcomingRaces metadata from repository for market {upcoming.MarketId ?? marketId ?? "<unknown>"}.");
                 }
             }
+            var cacheKey = new RacePreparationKey(
+                upcoming.RaceDate.Date,
+                upcoming.Title ?? raceTitle,
+                upcoming.VenueName ?? venueName,
+                upcoming.VenueCountry ?? venueCountry);
+
+            lock (_featureLookupCacheLock)
+            {
+                if (_featureLookupCache.TryGetValue(cacheKey, out var cachedLookup))
+                {
+                    Console.WriteLine(
+                        $"  Using cached synthetic feature rows for upcoming race {upcoming.MarketId ?? marketId ?? "<unknown"}.");
+                    return cachedLookup;
+                }
+            }
 
             try
             {
-                var prepared = _trainer.PrepareUpcomingRace(upcoming, flows);
+                var preparedResults = _trainer.PrepareUpcomingRaces(new[] { (upcoming, flows) });
+                var prepared = preparedResults.Count > 0 ? preparedResults[0] : null;
                 if (prepared == null)
                 {
-                    Console.WriteLine("	Synthetic feature preparation for upcoming race returned no rows.");
+                    Console.WriteLine("\tSynthetic feature preparation for upcoming race returned no rows.");
+                    lock (_featureLookupCacheLock)
+                    {
+                        _featureLookupCache[cacheKey] = FeatureLookup.Empty;
+                    }
                     return FeatureLookup.Empty;
                 }
 
                 Console.WriteLine(
-                    $"	Loaded synthetic feature rows for upcoming race {upcoming.MarketId}; runner count={prepared.Rows.Count}.");
-                return FeatureLookup.FromPreparedRace(prepared);
+                    $"  Loaded synthetic feature rows for upcoming race {upcoming.MarketId}; runner count={prepared.Rows.Count}.");
+                var lookup = FeatureLookup.FromPreparedRace(prepared);
+                lock (_featureLookupCacheLock)
+                {
+                    _featureLookupCache[cacheKey] = lookup;
+                }
+
+                return lookup;
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"	Failed to build synthetic feature vector for upcoming race {upcoming.MarketId}:{ex.Message}");
+                Console.Error.WriteLine($"      Failed to build synthetic feature vector for upcoming race {upcoming.MarketId}:{ex.Message}");
                 return FeatureLookup.Empty;
             }
         }
@@ -434,7 +462,10 @@ namespace HorseRacingML.Scraping
             var aiCalculator = new AIOddsCalculator(weightPath); // init AI calc
             Console.WriteLine($"\tAI model status: {aiCalculator.ModelStatus}"); // log model status
             _loadedHyperparameters = aiCalculator.Hyperparameters;
-
+            lock (_featureLookupCacheLock)
+            {
+                _featureLookupCache.Clear();
+            }
             var result = new BetfairScrapeResult(); // aggregate result
             var recommendations = new List<BetRecommendation>(); // all bet recs
 
@@ -1371,7 +1402,43 @@ namespace HorseRacingML.Scraping
                 LayBookPercentage = layBookPercentage
             };
         }
+        private readonly struct RacePreparationKey : IEquatable<RacePreparationKey>
+        {
+            public RacePreparationKey(DateTime raceDate, string? title, string? venue, string? country)
+            {
+                RaceDate = raceDate.Date;
+                TitleKey = RacingRepository.NormalizeLookupKey(title);
+                VenueKey = RacingRepository.NormalizeLookupKey(venue);
+                CountryKey = string.IsNullOrWhiteSpace(country)
+                    ? string.Empty
+                    : country.Trim().ToUpperInvariant();
+            }
 
+            public DateTime RaceDate { get; }
+            public string TitleKey { get; }
+            public string VenueKey { get; }
+            public string CountryKey { get; }
+
+            public bool Equals(RacePreparationKey other)
+            {
+                return RaceDate == other.RaceDate &&
+                    string.Equals(TitleKey, other.TitleKey, StringComparison.Ordinal) &&
+                    string.Equals(VenueKey, other.VenueKey, StringComparison.Ordinal) &&
+                    string.Equals(CountryKey, other.CountryKey, StringComparison.Ordinal);
+            }
+
+            public override bool Equals(object? obj) => obj is RacePreparationKey other && Equals(other);
+
+            public override int GetHashCode()
+            {
+                var hash = new HashCode();
+                hash.Add(RaceDate);
+                hash.Add(TitleKey, StringComparer.Ordinal);
+                hash.Add(VenueKey, StringComparer.Ordinal);
+                hash.Add(CountryKey, StringComparer.Ordinal);
+                return hash.ToHashCode();
+            }
+        }
         private sealed class BetfairScrapeResult
         {
             public List<BetRecommendation> Recommendations { get; } = new();

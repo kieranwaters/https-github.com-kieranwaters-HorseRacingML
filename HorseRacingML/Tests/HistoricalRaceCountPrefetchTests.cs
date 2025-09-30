@@ -5,6 +5,7 @@ using HorseRacingML.Models;
 using HorseRacingML.Scraping;
 using Microsoft.Extensions.Configuration;
 using Xunit;
+using PreparedRace = HorseRacingML.ML.HyperparameterTrainer.TrainingDataset.PreparedDataset.PreparedRace;
 
 namespace HorseRacingML.Tests
 {
@@ -169,11 +170,15 @@ namespace HorseRacingML.Tests
                 return new TrainingDataset.PreparedDataset(new List<TrainingDataset.PreparedDataset.PreparedRace>());
             }
 
-            public override TrainingDataset.PreparedDataset.PreparedRace? PrepareUpcomingRace(
-                UpcomingRace upcoming,
-                IReadOnlyList<RunnerFlow> flows)
+            public override IReadOnlyList<PreparedRace?> PrepareUpcomingRaces(
+                IReadOnlyList<(UpcomingRace upcoming, IReadOnlyList<RunnerFlow> flows)> requests)
             {
-                return null;
+                if (requests is null)
+                {
+                    throw new ArgumentNullException(nameof(requests));
+                }
+
+                return new PreparedRace?[requests.Count];
             }
         }
     }

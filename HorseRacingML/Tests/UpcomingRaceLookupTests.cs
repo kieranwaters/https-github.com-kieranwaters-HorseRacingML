@@ -232,6 +232,73 @@ namespace HorseRacingML.Tests
                     string.Equals(r.Title ?? string.Empty, raceTitle ?? string.Empty, StringComparison.OrdinalIgnoreCase) &&
                     string.Equals(r.VenueName ?? string.Empty, venueName ?? string.Empty, StringComparison.OrdinalIgnoreCase));
             }
+            [Fact]
+            public void LoadFeatureLookup_CachesPreparedRaceByMetadata()
+            {
+                var raceDate = new DateTime(2024, 9, 10);
+                var configuration = new ConfigurationBuilder()
+                    .AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["ConnectionStrings:HorseRacingDb"] = "Server=(local);Database=HorseRacingMLTest;Trusted_Connection=True;"
+                    })
+                    .Build();
+
+                var trainer = new CountingTrainer(configuration);
+                var repo = new InMemoryRacingRepository();
+                var scraper = new BetfairMarketScraper(repo, trainer, bankroll: 25m);
+                var flows = new List<RunnerFlow>
+            {
+                new RunnerFlow
+                {
+                    HorseName = "Cached Runner",
+                    ClothNumber = 1,
+                    SelectionId = "111"
+                }
+            };
+
+                var upcoming = new UpcomingRace
+                {
+                    MarketId = "1.456789",
+                    RaceDate = raceDate,
+                    Title = "Cache Test Stakes",
+                    VenueName = "CacheVille",
+                    RunnerCount = (byte)flows.Count
+                };
+
+                repo.UpsertUpcomingRace(upcoming);
+
+                var features1 = scraper.TestLoadFeatures(
+                    raceDate,
+                    upcoming.Title,
+                    upcoming.VenueName,
+                    venueCountry: null,
+                    scheduledOff: null,
+                    raceDetails: null,
+                    backBookPercentage: null,
+                    layBookPercentage: null,
+                    marketId: upcoming.MarketId,
+                    flows: flows,
+                    preparedRows: null,
+                    persistedUpcoming: upcoming);
+
+                var features2 = scraper.TestLoadFeatures(
+                    raceDate,
+                    upcoming.Title,
+                    upcoming.VenueName,
+                    venueCountry: null,
+                    scheduledOff: null,
+                    raceDetails: null,
+                    backBookPercentage: null,
+                    layBookPercentage: null,
+                    marketId: upcoming.MarketId,
+                    flows: flows,
+                    preparedRows: null,
+                    persistedUpcoming: upcoming);
+
+                Assert.NotNull(features1);
+                Assert.NotNull(features2);
+                Assert.Equal(1, trainer.PrepareCalls);
+            }
             public int? GetHistoricalRaceCountByHorseName(string? horseName)
             {
                 return null;
@@ -320,16 +387,62 @@ namespace HorseRacingML.Tests
             private readonly PreparedRace? _upcomingRace;
             private readonly PreparedDataset _dataset;
 
-            public FakeTrainer(IConfiguration configuration, PreparedRace? upcomingRace)
+            public override IReadOnlyList<PreparedRace?> PrepareUpcomingRaces(
+                IReadOnlyList<(UpcomingRace upcoming, IReadOnlyList<RunnerFlow> flows)> requests)
+            {
+                if (requests is null)
+                {
+                    throw new ArgumentNullException(nameof(requests));
+                }
+
+                var results = new PreparedRace?[requests.Count];
+                for (int i = 0; i < results.Length; i++)
+                {
+                    results[i] = _upcomingRace;
+                }
+
+                return results;
+            }
+        }
+        private sealed class CountingTrainer : HorseRacingML.ML.HyperparameterTrainer
+        {
+            private readonly PreparedRace _preparedRace;
+
+            public CountingTrainer(IConfiguration configuration)
                 : base(configuration)
             {
-                _upcomingRace = upcomingRace;
-                _dataset = new PreparedDataset(new List<PreparedRace>());
+                var row = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["HorseName"] = "Cached Runner",
+                    ["SaddleclothNumber"] = 1,
+                    ["CareerStarts"] = 3
+                };
+                _preparedRace = new PreparedRace(777, new List<Dictionary<string, object?>>(new[] { row }));
             }
+
+            public int PrepareCalls { get; private set; }
 
             public override PreparedDataset PrepareDataset(ISet<int>? includeRaceIds = null, ISet<int>? stateRaceWhitelist = null, bool includeIdentifiers = false)
             {
-                return _dataset;
+                return new PreparedDataset(new List<PreparedRace>());
+            }
+
+            public override IReadOnlyList<PreparedRace?> PrepareUpcomingRaces(
+                IReadOnlyList<(UpcomingRace upcoming, IReadOnlyList<RunnerFlow> flows)> requests)
+            {
+                if (requests is null)
+                {
+                    throw new ArgumentNullException(nameof(requests));
+                }
+
+                PrepareCalls++;
+                var results = new PreparedRace?[requests.Count];
+                for (int i = 0; i < results.Length; i++)
+                {
+                    results[i] = _preparedRace;
+                }
+
+                return results;
             }
 
             public override PreparedRace? PrepareUpcomingRace(UpcomingRace upcoming, IReadOnlyList<RunnerFlow> flows)
