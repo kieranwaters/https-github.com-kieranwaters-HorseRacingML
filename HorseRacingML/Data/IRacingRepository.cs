@@ -13,5 +13,6 @@ namespace HorseRacingML.Data
         UpcomingRace? FindUpcomingRace(DateTime raceDate, string? raceTitle, string? venueName);
         UpcomingRace? GetUpcomingRaceByMarketId(string? marketId);
         int? GetHistoricalRaceCountByHorseName(string? horseName);
+        IReadOnlyDictionary<string, int> GetHistoricalRaceCountsByHorseNames(IEnumerable<string> horseNames);
     }
 }

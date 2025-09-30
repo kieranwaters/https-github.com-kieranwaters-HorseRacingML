@@ -4,6 +4,32 @@ using HorseRacingML.Models;
 
 namespace HorseRacingML.Scraping
 {
+    internal RaceDayReport TestBuildRaceReport(
+            string marketId,
+            string? raceTitle,
+            string? venueName,
+            string? venueCountry,
+            DateTime? raceDate,
+            TimeSpan? offTime,
+            string? raceDetails,
+            decimal? backBookPercentage,
+            decimal? layBookPercentage,
+            string? raceUrl,
+            IEnumerable<RunnerFlow> flows)
+    {
+        return BuildRaceReport(
+            marketId,
+            raceTitle,
+            venueName,
+            venueCountry,
+            raceDate,
+            offTime,
+            raceDetails,
+            backBookPercentage,
+            layBookPercentage,
+            raceUrl,
+            flows);
+    }
     public partial class BetfairMarketScraper
     {
         internal Dictionary<string, object?>? TestLoadFeatures(

@@ -328,25 +328,7 @@ END";
         }
         public int? GetHistoricalRaceCountByHorseName(string? horseName)
         {
-            if (string.IsNullOrWhiteSpace(horseName))
-            {
-                return null;
-            }
-
-            var trimmed = horseName.Trim();
-            var normalized = RemoveBracketedText(trimmed);
-
-            var candidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            if (!string.IsNullOrEmpty(trimmed))
-            {
-                candidates.Add(trimmed);
-            }
-
-            if (!string.IsNullOrEmpty(normalized))
-            {
-                candidates.Add(normalized);
-            }
-
+            var candidates = BuildHistoricalNameCandidates(horseName);
             if (candidates.Count == 0)
             {
                 return null;
@@ -361,6 +343,73 @@ WHERE h.Name IN @Names;";
             using var conn = OpenConnection();
             return conn.QuerySingle<int>(sql, new { Names = candidates.ToArray() });
         }
+
+        public IReadOnlyDictionary<string, int> GetHistoricalRaceCountsByHorseNames(IEnumerable<string> horseNames)
+        {
+            if (horseNames == null)
+            {
+                throw new ArgumentNullException(nameof(horseNames));
+            }
+
+            var candidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var name in horseNames)
+            {
+                foreach (var candidate in BuildHistoricalNameCandidates(name))
+                {
+                    candidates.Add(candidate);
+                }
+            }
+
+            if (candidates.Count == 0)
+            {
+                return new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            }
+
+            const string sql = @"
+SELECT h.Name,
+       COUNT(*) AS RaceCount
+FROM RunnerResult rr
+INNER JOIN Horse h ON h.HorseId = rr.HorseId
+WHERE h.Name IN @Names
+GROUP BY h.Name;";
+
+            using var conn = OpenConnection();
+            var rows = conn.Query(sql, new { Names = candidates.ToArray() });
+
+            var results = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            foreach (var row in rows)
+            {
+                var name = (string)row.Name;
+                var count = (int)row.RaceCount;
+                results[name] = count;
+            }
+
+            return results;
+        }
+        internal static IReadOnlyCollection<string> BuildHistoricalNameCandidates(string? horseName)
+        {
+            var candidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            if (string.IsNullOrWhiteSpace(horseName))
+            {
+                return candidates;
+            }
+
+            var trimmed = horseName.Trim();
+            if (!string.IsNullOrEmpty(trimmed))
+            {
+                candidates.Add(trimmed);
+            }
+
+            var normalized = RemoveBracketedText(trimmed);
+            if (!string.IsNullOrEmpty(normalized))
+            {
+                candidates.Add(normalized);
+            }
+
+            return candidates;
+        }
+
         public UpcomingRace? GetUpcomingRaceByMarketId(string? marketId)
         {
             if (string.IsNullOrWhiteSpace(marketId))

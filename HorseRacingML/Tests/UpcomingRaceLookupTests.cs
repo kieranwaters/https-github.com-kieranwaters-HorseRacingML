@@ -141,6 +141,15 @@ namespace HorseRacingML.Tests
             Assert.Null(unknownRow["WeightText"]);
             Assert.Null(unknownRow["OfficialRating"]);
         }
+        public IReadOnlyDictionary<string, int> GetHistoricalRaceCountsByHorseNames(IEnumerable<string> horseNames)
+        {
+            if (horseNames == null)
+            {
+                throw new ArgumentNullException(nameof(horseNames));
+            }
+
+            return new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        }
         [Fact]
         public void LoadFeatureLookup_UsesPersistedUpcomingRaceMetadata()
         {

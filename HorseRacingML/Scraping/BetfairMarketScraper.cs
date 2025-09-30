@@ -956,15 +956,59 @@ namespace HorseRacingML.Scraping
                 RaceUrl = string.IsNullOrWhiteSpace(raceUrl) ? null : raceUrl.Trim()
             };
 
-            foreach (var flow in flows)
+            var runnerList = flows as IList<RunnerFlow> ?? flows.ToList();
+
+            IReadOnlyDictionary<string, int>? prefetchedCounts = null;
+            try
             {
-                report.Runners.Add(CreateRunnerReport(flow));
+                var missingNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var flow in runnerList)
+                {
+                    if (flow == null)
+                    {
+                        continue;
+                    }
+
+                    if (flow.HistoricalRaceCount.HasValue)
+                    {
+                        continue;
+                    }
+
+                    if (flow.FeatureValues != null &&
+                        flow.FeatureValues.TryGetValue("CareerStarts", out var existingValue) &&
+                        TryConvertToInt32(existingValue).HasValue)
+                    {
+                        continue;
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(flow.HorseName))
+                    {
+                        missingNames.Add(flow.HorseName);
+                    }
+                }
+
+                if (missingNames.Count > 0)
+                {
+                    prefetchedCounts = _repo.GetHistoricalRaceCountsByHorseNames(missingNames);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"\tFailed to prefetch historical race counts: {ex.Message}");
+            }
+
+            foreach (var flow in runnerList)
+            {
+                report.Runners.Add(CreateRunnerReport(flow, prefetchedCounts));
             }
 
             return report;
         }
 
-        private RunnerDayReport CreateRunnerReport(RunnerFlow flow)
+
+        private RunnerDayReport CreateRunnerReport(
+            RunnerFlow flow,
+            IReadOnlyDictionary<string, int>? prefetchedCounts)
         {
             var runner = new RunnerDayReport
             {
@@ -1022,7 +1066,8 @@ namespace HorseRacingML.Scraping
             }
             else
             {
-                var resolvedHistoryCount = ResolveHistoricalRaceCount(flow);
+                var resolvedHistoryCount = ResolveHistoricalRaceCountFromPrefetch(flow, prefetchedCounts)
+                   ?? ResolveHistoricalRaceCount(flow);
                 if (resolvedHistoryCount.HasValue)
                 {
                     runner.HistoricalRaceCount = resolvedHistoryCount;
@@ -1044,6 +1089,30 @@ namespace HorseRacingML.Scraping
                 }
             }
             return runner;
+        }
+        private static int? ResolveHistoricalRaceCountFromPrefetch(
+            RunnerFlow flow,
+            IReadOnlyDictionary<string, int>? prefetchedCounts)
+        {
+            if (prefetchedCounts == null || prefetchedCounts.Count == 0)
+            {
+                return null;
+            }
+
+            if (flow == null || string.IsNullOrWhiteSpace(flow.HorseName))
+            {
+                return null;
+            }
+
+            foreach (var candidate in RacingRepository.BuildHistoricalNameCandidates(flow.HorseName))
+            {
+                if (prefetchedCounts.TryGetValue(candidate, out var count))
+                {
+                    return count;
+                }
+            }
+
+            return null;
         }
         private int? ResolveHistoricalRaceCount(RunnerFlow flow)
         {

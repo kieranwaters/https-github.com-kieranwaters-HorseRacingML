@@ -498,13 +498,59 @@ namespace HorseRacingML.Scraping
                 _maxKellyFraction,
                 _useMarketFallbackForAiDegeneracy);
             var races = scraper.ScrapeOpenRaceTabsForReport(_driver);
+            var orderedRaces = races
+                .OrderBy(r => GetRaceScheduleSortKey(r))
+                .ThenBy(r => r.RaceTitle ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(r => r.MarketId, StringComparer.Ordinal)
+                .ToList();
             return new DayReportViewModel
             {
                 GeneratedAt = DateTime.UtcNow,
                 Bankroll = bankroll,
                 AiHyperparameters = scraper.LoadedHyperparameters,
-                Races = new List<RaceDayReport>(races)
+                Races = orderedRaces
             };
+        }
+
+        private static DateTime GetRaceScheduleSortKey(RaceDayReport race)
+        {
+            var schedule = GetRaceScheduleDateTime(race);
+            if (!schedule.HasValue)
+            {
+                return DateTime.MaxValue;
+            }
+
+            var value = schedule.Value;
+            return value.Kind == DateTimeKind.Unspecified
+                ? DateTime.SpecifyKind(value, DateTimeKind.Utc)
+                : value.ToUniversalTime();
+        }
+
+        private static DateTime? GetRaceScheduleDateTime(RaceDayReport race)
+        {
+            if (race == null)
+            {
+                return null;
+            }
+
+            if (race.RaceDate.HasValue)
+            {
+                var date = race.RaceDate.Value;
+
+                if (race.OffTime.HasValue)
+                {
+                    return date.Date.Add(race.OffTime.Value);
+                }
+
+                return date;
+            }
+
+            if (race.OffTime.HasValue)
+            {
+                return DateTime.Today.Add(race.OffTime.Value);
+            }
+
+            return null;
         }
         public async Task OpenHorseRaceMeetingsInNewTabsAsync(int delayBetweenTabsMs = 0)
         {
