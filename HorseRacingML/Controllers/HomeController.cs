@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using HorseRacingML.ML;
 using System.Globalization;
 using System.Linq;
+using System;
 
 namespace HorseRacingML.Controllers
 {
@@ -33,6 +34,86 @@ namespace HorseRacingML.Controllers
                 LogLoss = logLoss
             };
             return View(model);
+        }
+        public async Task<IActionResult> DayReport(
+            [FromServices] BetfairNavigationService betfair,
+            [FromServices] HyperparameterTrainer trainer)
+        {
+            await betfair.LoginAsync();
+            await betfair.OpenHorseRaceMeetingsInNewTabsAsync();
+
+            var report = betfair.GenerateDayReport(_repository, trainer);
+            var usedNextDay = false;
+
+            if (ShouldLoadNextDaySchedule(report))
+            {
+                _logger.LogInformation("Day report contains only USA races; attempting to load the next day's schedule.");
+                var switched = await betfair.TrySelectHorseRacingDayAsync(1);
+                if (switched)
+                {
+                    await betfair.OpenHorseRaceMeetingsInNewTabsAsync(closeExistingRaceTabs: true);
+                    var nextDayReport = betfair.GenerateDayReport(_repository, trainer);
+                    if (nextDayReport?.Races?.Count > 0)
+                    {
+                        report = nextDayReport;
+                        usedNextDay = true;
+                    }
+                    else
+                    {
+                        _logger.LogWarning("Next day schedule did not produce any races; retaining USA schedule report.");
+                    }
+                }
+                else
+                {
+                    _logger.LogWarning("Unable to switch Betfair schedule to the next day; retaining USA schedule report.");
+                }
+            }
+
+            var statusMessage = usedNextDay
+                ? $"Day report (next day schedule) generated at {DateTime.Now:G}."
+                : $"Day report generated at {DateTime.Now:G}.";
+            _status.Update(statusMessage);
+            return View(report);
+        }
+        private static bool ShouldLoadNextDaySchedule(DayReportViewModel? report)
+        {
+            if (report?.Races == null || report.Races.Count == 0)
+            {
+                return false;
+            }
+
+            var hasRace = false;
+            foreach (var race in report.Races)
+            {
+                if (race == null)
+                {
+                    continue;
+                }
+
+                hasRace = true;
+                if (!IsUsRace(race))
+                {
+                    return false;
+                }
+            }
+
+            return hasRace;
+        }
+
+        private static bool IsUsRace(RaceDayReport? race)
+        {
+            var country = race?.VenueCountry;
+            if (string.IsNullOrWhiteSpace(country))
+            {
+                return false;
+            }
+
+            var normalized = country.Trim();
+            return normalized.Equals("USA", StringComparison.OrdinalIgnoreCase) ||
+                   normalized.Equals("US", StringComparison.OrdinalIgnoreCase) ||
+                   normalized.Equals("U.S.A.", StringComparison.OrdinalIgnoreCase) ||
+                   normalized.Equals("United States", StringComparison.OrdinalIgnoreCase) ||
+                   normalized.Equals("United States Of America", StringComparison.OrdinalIgnoreCase);
         }
         public async Task<IActionResult> AutomateBets(
             [FromServices] BetfairNavigationService betfair,
@@ -70,28 +151,7 @@ namespace HorseRacingML.Controllers
             }
             return RedirectToAction("Index");
         }
-        [HttpGet]
-        //public IActionResult ScrapeRaceResults([FromServices] RaceResultsScraper scraper)
-        //{
-        //    var startDate = new DateTime(2025, 9, 15);
-        //    var endDate = new DateTime(2025, 9, 21);
-
-        //    _status.Update($"Scraping results from {startDate:yyyy-MM-dd} to {endDate:yyyy-MM-dd} started at {DateTime.Now:G}");
-        //    Task.Run(() =>
-        //    {
-        //        try
-        //        {
-        //            scraper.Scrape(startDate, endDate);
-        //            _status.Update($"Scraping completed at {DateTime.Now:G}");
-        //        }
-        //        catch (Exception ex)
-        //        {
-        //            _status.Update($"Scraping failed: {ex.Message}");
-        //        }
-        //    });
-        //    TempData["Message"] = $"Scraping of race results from {startDate:dd/MM/yy} to {endDate:dd/MM/yy} has started.";
-        //    return RedirectToAction("Index");
-        //}
+        
         public IActionResult ScrapeRaceResults([FromServices] RaceResultsScraper scraper)
         {
             _status.Update($"Scraping started at {DateTime.Now:G}");
@@ -115,16 +175,6 @@ namespace HorseRacingML.Controllers
         {
             ViewData["StatusMessage"] = _status.Message;
             return View();
-        }
-        public async Task<IActionResult> DayReport(
-            [FromServices] BetfairNavigationService betfair,
-            [FromServices] HyperparameterTrainer trainer)
-        {
-            await betfair.LoginAsync();
-            await betfair.OpenHorseRaceMeetingsInNewTabsAsync();
-            var report = betfair.GenerateDayReport(_repository, trainer);
-            _status.Update($"Day report generated at {DateTime.Now:G}.");
-            return View(report);
         }
         [HttpPost]
         public async Task<IActionResult> RefreshRaceOdds(

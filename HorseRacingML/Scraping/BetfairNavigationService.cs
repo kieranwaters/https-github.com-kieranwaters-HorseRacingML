@@ -28,6 +28,7 @@ namespace HorseRacingML.Scraping
         private readonly decimal? _maxKellyFraction;
         private readonly bool _useMarketFallbackForAiDegeneracy;
         private readonly decimal _kellyDampener;
+        private readonly string _primaryWindowHandle;
         private static readonly Regex NonNumericCharactersRegex = new("[^0-9.,-]", RegexOptions.Compiled);
 
         public BetfairNavigationService(IConfiguration config)
@@ -56,6 +57,7 @@ namespace HorseRacingML.Scraping
                 "--disable-dev-shm-usage");
 
             _driver = new ChromeDriver(options);
+            _primaryWindowHandle = _driver.CurrentWindowHandle;
         }
         public async Task<RaceDayReport?> RefreshRaceAsync(
             string raceUrl,
@@ -515,6 +517,7 @@ namespace HorseRacingML.Scraping
                 .ThenBy(r => r.RaceTitle ?? string.Empty, StringComparer.OrdinalIgnoreCase)
                 .ThenBy(r => r.MarketId, StringComparer.Ordinal)
                 .ToList();
+            ReturnToPrimaryWindow();
             return new DayReportViewModel
             {
                 GeneratedAt = DateTime.UtcNow,
@@ -523,7 +526,285 @@ namespace HorseRacingML.Scraping
                 Races = orderedRaces
             };
         }
+        public async Task OpenHorseRaceMeetingsInNewTabsAsync(int delayBetweenTabsMs = 0, bool closeExistingRaceTabs = true)
+        {
+            if (closeExistingRaceTabs)
+            {
+                CloseAdditionalRaceTabs();
+            }
 
+            ReturnToPrimaryWindow();
+
+            var wait = new WebDriverWait(_driver, TimeSpan.FromSeconds(20));
+            wait.Until(d =>
+                ((IJavaScriptExecutor)d).ExecuteScript("return document.readyState").ToString() == "complete");
+            wait.Until(d => d.FindElements(By.CssSelector("a,button")).Count > 0);
+
+            static bool Is24HourTime(string s)
+            {
+                if (string.IsNullOrWhiteSpace(s))
+                {
+                    return false;
+                }
+
+                var trimmed = s.Trim();
+                return DateTime.TryParseExact(
+                    trimmed,
+                    new[] { "H:mm", "HH:mm" },
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.None,
+                    out _);
+            }
+
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var scrollRoot = (IWebElement)((IJavaScriptExecutor)_driver)
+                .ExecuteScript("return document.scrollingElement||document.body");
+
+            for (int pass = 0; pass < 6; pass++)
+            {
+                var candidates = _driver.FindElements(By.CssSelector("a,button"));
+                foreach (var el in candidates)
+                {
+                    try
+                    {
+                        if (!el.Displayed)
+                        {
+                            continue;
+                        }
+
+                        var textValue = el.Text;
+                        if (string.IsNullOrWhiteSpace(textValue))
+                        {
+                            textValue = el.GetAttribute("innerText");
+                        }
+
+                        textValue = textValue?.Trim() ?? string.Empty;
+                        if (!Is24HourTime(textValue))
+                        {
+                            continue;
+                        }
+
+                        var href = (string?)((IJavaScriptExecutor)_driver).ExecuteScript(
+                            "const n=arguments[0];return (n.closest&&n.closest('a')&&n.closest('a').href)||n.href||null;",
+                            el);
+                        if (string.IsNullOrWhiteSpace(href))
+                        {
+                            continue;
+                        }
+
+                        if (!href.Contains("/horse-racing/", StringComparison.OrdinalIgnoreCase))
+                        {
+                            continue;
+                        }
+
+                        seen.Add(href);
+                    }
+                    catch (StaleElementReferenceException)
+                    {
+                        continue;
+                    }
+                }
+
+                ((IJavaScriptExecutor)_driver).ExecuteScript(
+                    "arguments[0].scrollTop=arguments[0].scrollTop+Math.min(1200,window.innerHeight);",
+                    scrollRoot);
+                await Task.Delay(150);
+            }
+
+            if (seen.Count == 0)
+            {
+                var links = _driver.FindElements(By.CssSelector("a[href*='/horse-racing/']"));
+                foreach (var anchor in links)
+                {
+                    var href = anchor.GetAttribute("href");
+                    if (!string.IsNullOrWhiteSpace(href))
+                    {
+                        seen.Add(href);
+                    }
+                }
+            }
+
+            foreach (var url in seen)
+            {
+                ((IJavaScriptExecutor)_driver).ExecuteScript("window.open(arguments[0],'_blank');", url);
+                if (delayBetweenTabsMs > 0)
+                {
+                    await Task.Delay(delayBetweenTabsMs);
+                }
+            }
+        }
+
+        public async Task<bool> TrySelectHorseRacingDayAsync(int daysFromToday)
+        {
+            if (daysFromToday == 0)
+            {
+                return true;
+            }
+
+            if (daysFromToday < 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(daysFromToday), "Day offset cannot be negative.");
+            }
+
+            ReturnToPrimaryWindow();
+
+            var wait = new WebDriverWait(_driver, TimeSpan.FromSeconds(10));
+            var targetDate = DateTime.Today.AddDays(daysFromToday);
+            var searchTerms = new List<string>();
+
+            if (daysFromToday == 1)
+            {
+                searchTerms.Add("tomorrow");
+            }
+
+            searchTerms.Add(targetDate.ToString("ddd dd MMM", CultureInfo.InvariantCulture));
+            searchTerms.Add(targetDate.ToString("ddd d MMM", CultureInfo.InvariantCulture));
+            searchTerms.Add(targetDate.ToString("dd MMM", CultureInfo.InvariantCulture));
+            searchTerms.Add(targetDate.ToString("d MMM", CultureInfo.InvariantCulture));
+            searchTerms.Add(targetDate.ToString("dd MMMM", CultureInfo.InvariantCulture));
+            searchTerms.Add(targetDate.ToString("d MMMM", CultureInfo.InvariantCulture));
+            searchTerms.Add(targetDate.ToString("dddd", CultureInfo.InvariantCulture));
+            searchTerms.Add(targetDate.ToString("ddd", CultureInfo.InvariantCulture));
+
+            var selectors = new List<By>();
+            var seenSelectors = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var term in searchTerms.Where(t => !string.IsNullOrWhiteSpace(t)))
+            {
+                var trimmed = term.Trim();
+                var lower = trimmed.ToLowerInvariant();
+
+                string BuildContainsXPath(string node) =>
+                    $"//{node}[contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{lower}')]";
+
+                foreach (var node in new[] { "button", "a", "span", "div" })
+                {
+                    var xpath = BuildContainsXPath(node);
+                    if (seenSelectors.Add(xpath))
+                    {
+                        selectors.Add(By.XPath(xpath));
+                    }
+                }
+
+                var roleXPath =
+                    $"//*[@role='button' and contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{lower}')]";
+                if (seenSelectors.Add(roleXPath))
+                {
+                    selectors.Add(By.XPath(roleXPath));
+                }
+            }
+
+            var isoDate = targetDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            foreach (var selector in new[]
+            {
+                $"[data-day='{isoDate}']",
+                $"[data-date='{isoDate}']",
+                $"[data-testid='day-{isoDate}']",
+                $"button[aria-label*='{isoDate}']",
+                $"a[aria-label*='{isoDate}']"
+            })
+            {
+                if (seenSelectors.Add(selector))
+                {
+                    selectors.Add(By.CssSelector(selector));
+                }
+            }
+
+            foreach (var selector in selectors)
+            {
+                try
+                {
+                    var element = wait.Until(driver =>
+                    {
+                        var elements = driver.FindElements(selector);
+                        foreach (var candidate in elements)
+                        {
+                            if (candidate.Displayed)
+                            {
+                                return candidate;
+                            }
+                        }
+
+                        return null;
+                    });
+
+                    if (element == null)
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        var clickable = wait.Until(ExpectedConditions.ElementToBeClickable(selector));
+                        clickable.Click();
+                    }
+                    catch (WebDriverException)
+                    {
+                        try
+                        {
+                            ((IJavaScriptExecutor)_driver).ExecuteScript("arguments[0].click();", element);
+                        }
+                        catch (Exception)
+                        {
+                            continue;
+                        }
+                    }
+
+                    await Task.Delay(750);
+                    return true;
+                }
+                catch (WebDriverTimeoutException)
+                {
+                    continue;
+                }
+            }
+
+            return false;
+        }
+
+        private void CloseAdditionalRaceTabs()
+        {
+            var handles = _driver.WindowHandles.ToList();
+            foreach (var handle in handles)
+            {
+                if (string.Equals(handle, _primaryWindowHandle, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    _driver.SwitchTo().Window(handle);
+                    _driver.Close();
+                }
+                catch (WebDriverException)
+                {
+                    // Ignore failures when closing extraneous tabs.
+                }
+            }
+
+            ReturnToPrimaryWindow();
+        }
+
+        private void ReturnToPrimaryWindow()
+        {
+            try
+            {
+                if (!string.IsNullOrEmpty(_primaryWindowHandle) &&
+                    _driver.WindowHandles.Contains(_primaryWindowHandle))
+                {
+                    _driver.SwitchTo().Window(_primaryWindowHandle);
+                }
+                else if (_driver.WindowHandles.Count > 0)
+                {
+                    _driver.SwitchTo().Window(_driver.WindowHandles[0]);
+                }
+            }
+            catch (WebDriverException)
+            {
+                // Ignore if the window cannot be focused; caller will handle subsequent failures.
+            }
+        }
         private static DateTime GetRaceScheduleSortKey(RaceDayReport race)
         {
             var schedule = GetRaceScheduleDateTime(race);
@@ -564,24 +845,6 @@ namespace HorseRacingML.Scraping
 
             return null;
         }
-        public async Task OpenHorseRaceMeetingsInNewTabsAsync(int delayBetweenTabsMs = 0)
-        {
-            var wait = new WebDriverWait(_driver, TimeSpan.FromSeconds(20)); wait.Until(d => ((IJavaScriptExecutor)d).ExecuteScript("return document.readyState").ToString() == "complete"); wait.Until(d => d.FindElements(By.CssSelector("a,button")).Count > 0); bool Is24HourTime(string s) { if (string.IsNullOrWhiteSpace(s)) return false; var t = s.Trim(); return DateTime.TryParseExact(t, new[] { "H:mm", "HH:mm" }, CultureInfo.InvariantCulture, DateTimeStyles.None, out _); } // filter by 24h times
-            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase); // dedupe hrefs
-            var scrollRoot = (IWebElement)((IJavaScriptExecutor)_driver).ExecuteScript("return document.scrollingElement||document.body"); // scrollable root
-            for (int pass = 0; pass < 6; pass++)
-            {
-                var candidates = _driver.FindElements(By.CssSelector("a,button")); foreach (var el in candidates) { try { if (!el.Displayed) continue; string txt = el.Text; if (string.IsNullOrWhiteSpace(txt)) txt = el.GetAttribute("innerText"); txt = txt?.Trim() ?? string.Empty; if (!Is24HourTime(txt)) continue; var href = (string)((IJavaScriptExecutor)_driver).ExecuteScript("const n=arguments[0];return (n.closest&&n.closest('a')&&n.closest('a').href)||n.href||null;", el); if (string.IsNullOrWhiteSpace(href)) continue; if (!href.Contains("/horse-racing/", StringComparison.OrdinalIgnoreCase)) continue; seen.Add(href); } catch (StaleElementReferenceException) { continue; } } // collect time links on page
-            ((IJavaScriptExecutor)_driver).ExecuteScript("arguments[0].scrollTop=arguments[0].scrollTop+Math.min(1200,window.innerHeight);", scrollRoot); await Task.Delay(150);
-            } // light scroll to load lazy content
-            if (seen.Count == 0)
-            { // fallback to any horse-racing links if no time-labelled buttons found
-                var links = _driver.FindElements(By.CssSelector("a[href*='/horse-racing/']")); foreach (var a in links) { var href = a.GetAttribute("href"); if (!string.IsNullOrWhiteSpace(href)) seen.Add(href); }
-            }
-            foreach (var url in seen) { ((IJavaScriptExecutor)_driver).ExecuteScript("window.open(arguments[0],'_blank');", url); if (delayBetweenTabsMs > 0) await Task.Delay(delayBetweenTabsMs); }
-            await Task.CompletedTask;
-        }
-
         public void Dispose()
         {
             _driver.Quit();
