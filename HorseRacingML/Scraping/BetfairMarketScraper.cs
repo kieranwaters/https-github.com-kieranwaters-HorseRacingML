@@ -1843,6 +1843,85 @@ namespace HorseRacingML.Scraping
                 {
                     return false;
                 }
+                bool IsBackAllContext(IWebElement el)
+                {
+                    IWebElement? current = el;
+                    for (var depth = 0; depth < 6 && current != null; depth++)
+                    {
+                        try
+                        {
+                            var classAttribute = current.GetAttribute("class");
+                            if (!string.IsNullOrWhiteSpace(classAttribute))
+                            {
+                                var lowered = classAttribute.ToLowerInvariant();
+                                if (lowered.Contains("back-all"))
+                                {
+                                    return true;
+                                }
+
+                                if (lowered.Contains("bet-buttons") &&
+                                    lowered.Contains("back-cell") &&
+                                    lowered.Contains("last-back-cell"))
+                                {
+                                    return true;
+                                }
+                            }
+
+                            var betType = current.GetAttribute("bet-type");
+                            if (!string.IsNullOrWhiteSpace(betType) &&
+                                betType.Equals("back", StringComparison.OrdinalIgnoreCase))
+                            {
+                                var handicap = current.GetAttribute("bet-handicap");
+                                if (string.IsNullOrWhiteSpace(handicap) ||
+                                    handicap.Equals("0", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    return true;
+                                }
+                            }
+
+                            current = TryFindElement(current, By.XPath(".."));
+                        }
+                        catch (Exception)
+                        {
+                            break;
+                        }
+                    }
+
+                    return false;
+                }
+
+                bool IsBackButton(IWebElement el)
+                {
+                    try
+                    {
+                        var classAttribute = el.GetAttribute("class");
+                        if (!string.IsNullOrWhiteSpace(classAttribute))
+                        {
+                            var lowered = classAttribute.ToLowerInvariant();
+                            if (lowered.Contains("lay"))
+                            {
+                                return false;
+                            }
+
+                            if (lowered.Contains("back"))
+                            {
+                                return true;
+                            }
+                        }
+
+                        var typeAttribute = el.GetAttribute("type");
+                        if (!string.IsNullOrWhiteSpace(typeAttribute) &&
+                            typeAttribute.Equals("back", StringComparison.OrdinalIgnoreCase))
+                        {
+                            return true;
+                        }
+                    }
+                    catch (Exception)
+                    {
+                    }
+
+                    return string.Equals(el.TagName, "button", StringComparison.OrdinalIgnoreCase);
+                }
 
                 string? ReadText(IWebElement el)
                 {

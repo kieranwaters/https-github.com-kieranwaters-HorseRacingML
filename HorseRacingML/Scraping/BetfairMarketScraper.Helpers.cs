@@ -271,6 +271,27 @@ namespace HorseRacingML.Scraping
 
             const matchesBackAll = el => {
                 if (!el) { return false; }
+const hasBackAllContext = target => {
+                    if (!target) { return false; }
+                    const classAttr = (target.getAttribute && (target.getAttribute('class') || '') || '').toLowerCase();
+                    if (classAttr.includes('back-all')) { return true; }
+                    if (classAttr.includes('lay')) { return false; }
+
+                    if (target.closest) {
+                        const cell = target.closest('td.bet-buttons.back-cell.last-back-cell');
+                        if (cell) { return true; }
+
+                        const betTypeHolder = target.closest('[bet-type]');
+                        if (betTypeHolder) {
+                            const betType = (betTypeHolder.getAttribute('bet-type') || '').toLowerCase();
+                            const handicap = (betTypeHolder.getAttribute('bet-handicap') || '').toLowerCase();
+                            if (betType === 'back' && (!handicap || handicap === '0')) {
+                                return true; }
+                        }
+                    }
+
+                    return false;
+                };
 
                 const read = target => {
                     if (!target) { return ''; }
@@ -295,8 +316,15 @@ namespace HorseRacingML.Scraping
                     if (read(label).includes('back all')) { return true; }
                 }
 
+                if (hasBackAllContext(el)) {
+                    const buttonClass = (el.getAttribute && (el.getAttribute('class') || '') || '').toLowerCase();
+                    if (!buttonClass.includes('lay')) { return true; }
+                }
+
                 return false;
             };
+
+            const buttonSelectors = 'button, [role=""button""], .bet-button, ours-price-button button, td.bet-buttons.back-cell.last-back-cell > ours-price-button > button, td.bet-buttons.back-cell.last-back-cell ours-price-button button, td[bet-type=""back""] ours-price-button button';
 
             const buttonSelectors = 'button, [role=""button""], .bet-button, ours-price-button button, td.bet-buttons.back-cell.last-back-cell > ours-price-button > button, td.bet-buttons.back-cell.last-back-cell ours-price-button button';
             const buttons = Array.from(runnerRow.querySelectorAll(buttonSelectors));
