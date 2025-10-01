@@ -298,7 +298,7 @@ namespace HorseRacingML.Scraping
                 return false;
             };
 
-            const buttonSelectors = 'button, [role=""button""], .bet-button, ours-price-button button';
+            const buttonSelectors = 'button, [role=""button""], .bet-button, ours-price-button button, td.bet-buttons.back-cell.last-back-cell > ours-price-button > button, td.bet-buttons.back-cell.last-back-cell ours-price-button button';
             const buttons = Array.from(runnerRow.querySelectorAll(buttonSelectors));
 
             for (const btn of buttons) {
@@ -313,6 +313,38 @@ namespace HorseRacingML.Scraping
                     nestedButton.click();
                     return true;
                 }
+            }
+
+            const resolveAbsoluteBackAllButton = () => {
+                const tableRow = runnerRow.closest('tr');
+                if (!tableRow) { return null; }
+                const parent = tableRow.parentElement;
+                if (!parent) { return null; }
+                const rows = Array.from(parent.children);
+                const index = rows.indexOf(tableRow);
+                if (index < 0) { return null; }
+                const nth = index + 1;
+                const absoluteBase = `#main-wrapper > div > div.scrollable-panes-height-taker > div > ui-view > div > div > div.bf-col-xxl-17-24.bf-col-xl-16-24.bf-col-lg-16-24.bf-col-md-15-24.bf-col-sm-14-24.bf-col-14-24.center-column.bfMarketSettingsSpace.bf-module-loading.nested-scrollable-pane-parent.market-settings-space > div.scrollable-panes-height-taker.height-taker-helper > div > div.bf-row.main-mv-container > div > bf-main-market > bf-main-marketview > div > div.main-mv-runners-list-wrapper > bf-marketview-runners-list.runners-list-unpinned > div > div > div > table > tbody > tr:nth-child(${nth}) > td.bet-buttons.back-cell.last-back-cell > ours-price-button`;
+                const candidates = [
+                    `${absoluteBase} > button`,
+                    `${absoluteBase}:nth-of-type(1) > button`,
+                    `${absoluteBase}:nth-of-type(2) > button`,
+                    `${absoluteBase}:nth-of-type(3) > button`
+                ];
+                for (const selector of candidates) {
+                    const candidate = document.querySelector(selector);
+                    if (matchesBackAll(candidate)) {
+                        return candidate;
+                    }
+                }
+                return null;
+            };
+
+            const absoluteButton = resolveAbsoluteBackAllButton();
+            if (absoluteButton) {
+                absoluteButton.scrollIntoView({ block: 'center' });
+                absoluteButton.click();
+                return true;
             }
 
             const fallback = Array.from(runnerRow.querySelectorAll('*'))

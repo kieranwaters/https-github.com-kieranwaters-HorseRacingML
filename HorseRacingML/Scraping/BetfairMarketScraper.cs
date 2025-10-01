@@ -1942,6 +1942,8 @@ namespace HorseRacingML.Scraping
                 By.CssSelector("button[title*='back all' i]"),
                 By.CssSelector("ours-price-button button[data-testid*='back-all']"),
                 By.CssSelector("td:nth-of-type(4) ours-price-button button"),
+                By.CssSelector("td.bet-buttons.back-cell.last-back-cell > ours-price-button > button"),
+                By.CssSelector("td.bet-buttons.back-cell.last-back-cell ours-price-button button"),
                 By.CssSelector("[data-testid='back-all'] button"),
                 By.CssSelector("[data-testid*='back-all'] button"),
                 By.CssSelector("button.back-all"),
