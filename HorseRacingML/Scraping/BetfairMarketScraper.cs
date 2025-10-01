@@ -1837,37 +1837,142 @@ namespace HorseRacingML.Scraping
         }
         private static IWebElement? FindBackAllButton(IWebElement row)
         {
+            static bool MatchesBackAll(IWebElement element)
+            {
+                if (element == null)
+                {
+                    return false;
+                }
+
+                string? ReadText(IWebElement el)
+                {
+                    var text = el.Text;
+                    if (!string.IsNullOrWhiteSpace(text))
+                    {
+                        return text;
+                    }
+
+                    var textContent = el.GetAttribute("textContent");
+                    if (!string.IsNullOrWhiteSpace(textContent))
+                    {
+                        return textContent;
+                    }
+
+                    var innerText = el.GetAttribute("innerText");
+                    return !string.IsNullOrWhiteSpace(innerText) ? innerText : null;
+                }
+
+                bool TextContainsBackAll(string? value)
+                {
+                    return !string.IsNullOrWhiteSpace(value) &&
+                        value.IndexOf("back all", StringComparison.OrdinalIgnoreCase) >= 0;
+                }
+
+                if (TextContainsBackAll(ReadText(element)))
+                {
+                    return true;
+                }
+
+                foreach (var attribute in new[] { "aria-label", "title", "data-testid", "data-trackid", "data-action" })
+                {
+                    if (TextContainsBackAll(element.GetAttribute(attribute)))
+                    {
+                        return true;
+                    }
+                    var attributeValue = element.GetAttribute(attribute);
+                    if (!string.IsNullOrWhiteSpace(attributeValue) &&
+                        attributeValue.IndexOf("back-all", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        return true;
+                    }
+                }
+
+                try
+                {
+                    var labelCandidates = element.FindElements(By.CssSelector("label, span, strong, div, p"));
+                    foreach (var label in labelCandidates)
+                    {
+                        if (!ReferenceEquals(label, element) && TextContainsBackAll(ReadText(label)))
+                        {
+                            return true;
+                        }
+                    }
+                }
+                catch (Exception)
+                {
+                }
+
+                return false;
+            }
+
+            IWebElement? ValidateCandidate(IWebElement? candidate)
+            {
+                if (candidate == null)
+                {
+                    return null;
+                }
+
+                if (MatchesBackAll(candidate))
+                {
+                    return candidate;
+                }
+
+                try
+                {
+                    var nestedButton = TryFindElement(candidate, By.TagName("button"));
+                    if (nestedButton != null && !ReferenceEquals(nestedButton, candidate) && MatchesBackAll(nestedButton))
+                    {
+                        return nestedButton;
+                    }
+                }
+                catch (Exception)
+                {
+                }
+
+                return null;
+            }
+
             var selectors = new[]
             {
                 By.CssSelector("button[data-testid='back-all']"),
+                By.CssSelector("button[data-testid='button-back-all']"),
+                By.CssSelector("button[data-testid='back-all-button']"),
+                By.CssSelector("button[data-testid*='back-all']"),
+                By.CssSelector("button[aria-label*='back all' i]"),
+                By.CssSelector("button[title*='back all' i]"),
+                By.CssSelector("ours-price-button button[data-testid*='back-all']"),
+                By.CssSelector("td:nth-of-type(4) ours-price-button button"),
+                By.CssSelector("[data-testid='back-all'] button"),
+                By.CssSelector("[data-testid*='back-all'] button"),
                 By.CssSelector("button.back-all"),
                 By.CssSelector("button.back-all-button"),
-                By.CssSelector("button[class*='back-all']")
+                By.CssSelector("button[class*='back-all']"),
             };
 
             foreach (var selector in selectors)
             {
-                var button = TryFindElement(row, selector);
-                if (button != null)
+                try
                 {
-                    return button;
+                    var button = ValidateCandidate(TryFindElement(row, selector));
+                    if (button != null)
+                    {
+                        return button;
+                    }
+                }
+                catch (Exception)
+                {
                 }
             }
 
             try
             {
-                var buttons = row.FindElements(By.TagName("button"));
-                foreach (var candidate in buttons)
+                var candidates = row.FindElements(By.CssSelector("ours-price-button button, button, [role='button'], .bet-button"));
+                foreach (var candidate in candidates)
                 {
-                    var text = candidate.Text;
-                    if (string.IsNullOrWhiteSpace(text))
+                    var validated = ValidateCandidate(candidate);
+                    if (validated != null)
                     {
-                        text = candidate.GetAttribute("textContent");
-                    }
-
-                    if (!string.IsNullOrWhiteSpace(text) && text.IndexOf("back all", StringComparison.OrdinalIgnoreCase) >= 0)
-                    {
-                        return candidate;
+                        return validated;
                     }
                 }
             }
@@ -1877,6 +1982,7 @@ namespace HorseRacingML.Scraping
 
             return null;
         }
+        
         private void PopulateBetSlipStakes(
             IWebDriver driver,
             IReadOnlyList<BetRecommendation> recommendations,

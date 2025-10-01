@@ -120,7 +120,21 @@ namespace HorseRacingML.Controllers
             [FromServices] HyperparameterTrainer trainer)
         {
             await betfair.LoginAsync();
-            await betfair.OpenHorseRaceMeetingsInNewTabsAsync();
+            var raceWindow = TimeSpan.FromHours(2);
+            var refreshLeadTime = TimeSpan.FromMinutes(20);
+            var cycleStartUtc = DateTime.UtcNow;
+            await betfair.OpenHorseRaceMeetingsInNewTabsAsync(
+                closeExistingRaceTabs: true,
+                raceWindow: raceWindow,
+                windowReferenceUtc: cycleStartUtc);
+            var recommendations = betfair.ScrapeOpenRaceTabs(_repository, trainer);
+            var cycleEndUtc = DateTime.UtcNow;
+            var initialDelay = raceWindow - refreshLeadTime - (cycleEndUtc - cycleStartUtc);
+            if (initialDelay < TimeSpan.Zero)
+            {
+                initialDelay = TimeSpan.Zero;
+            }
+            betfair.StartAutomatedBettingLoop(_repository, trainer, raceWindow, refreshLeadTime, initialDelay);
             var recommendations = betfair.ScrapeOpenRaceTabs(_repository, trainer);
             if (recommendations.Count > 0)
             {

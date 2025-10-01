@@ -261,7 +261,79 @@ namespace HorseRacingML.Scraping
 
             return total;
         }
+        private static bool TryClickBackAllViaScript(IJavaScriptExecutor js, IWebElement row)
+        {
+            try
+            {
+                var result = js.ExecuteScript(@"
+            const runnerRow = arguments[0];
+            if (!runnerRow) { return false; }
 
+            const matchesBackAll = el => {
+                if (!el) { return false; }
+
+                const read = target => {
+                    if (!target) { return ''; }
+                    const text = (target.textContent || '').toLowerCase();
+                    if (text.includes('back all')) { return 'back all'; }
+                    const aria = (target.getAttribute && (target.getAttribute('aria-label') || '') || '').toLowerCase();
+                    if (aria.includes('back all')) { return 'back all'; }
+                    const title = (target.getAttribute && (target.getAttribute('title') || '') || '').toLowerCase();
+                    if (title.includes('back all')) { return 'back all'; }
+                    const testId = (target.getAttribute && (target.getAttribute('data-testid') || '') || '').toLowerCase();
+                    if (testId.includes('back-all')) { return 'back all'; }
+                    const dataTrack = (target.getAttribute && (target.getAttribute('data-trackid') || '') || '').toLowerCase();
+                    if (dataTrack.includes('back all') || dataTrack.includes('back-all')) { return 'back all'; }
+                    return text;
+                };
+
+                const text = read(el);
+                if (text && text.includes('back all')) { return true; }
+
+                const labels = Array.from(el.querySelectorAll ? el.querySelectorAll('label, span, strong, div, p') : []);
+                for (const label of labels) {
+                    if (read(label).includes('back all')) { return true; }
+                }
+
+                return false;
+            };
+
+            const buttonSelectors = 'button, [role=""button""], .bet-button, ours-price-button button';
+            const buttons = Array.from(runnerRow.querySelectorAll(buttonSelectors));
+
+            for (const btn of buttons) {
+                if (matchesBackAll(btn)) {
+                    btn.scrollIntoView({ block: 'center' });
+                    btn.click();
+                    return true;
+                }
+                const nestedButton = btn.querySelector ? btn.querySelector('button') : null;
+                if (nestedButton && matchesBackAll(nestedButton)) {
+                    nestedButton.scrollIntoView({ block: 'center' });
+                    nestedButton.click();
+                    return true;
+                }
+            }
+
+            const fallback = Array.from(runnerRow.querySelectorAll('*'))
+                .find(matchesBackAll);
+
+            if (fallback) {
+                fallback.scrollIntoView({ block: 'center' });
+                fallback.click();
+                return true;
+            }
+
+            return false;
+        ", row);
+
+                return result is bool success && success;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
         private static string? TryDetectRaceType(IEnumerable<string> tokens, string? title)
         {
             foreach (var token in tokens)
@@ -445,47 +517,6 @@ namespace HorseRacingML.Scraping
                 el.dispatchEvent(new Event('change', { bubbles: true }));
             ", input, text);
         }
-
-
-        private static bool TryClickBackAllViaScript(IJavaScriptExecutor js, IWebElement row)
-        {
-            try
-            {
-                var result = js.ExecuteScript(@"
-            const runnerRow = arguments[0];
-            if (!runnerRow) { return false; }
-
-            const toLower = el => (el.textContent || '').trim().toLowerCase();
-            const buttons = Array.from(runnerRow.querySelectorAll('button, [role=""button""], .bet-button'));
-
-            for (const btn of buttons) {
-                if (toLower(btn).includes('back all')) {
-                    btn.scrollIntoView({ block: 'center' });
-                    btn.click();
-                    return true;
-                }
-            }
-
-            const fallback = Array.from(runnerRow.querySelectorAll('*'))
-                .find(el => toLower(el).includes('back all'));
-
-            if (fallback) {
-                fallback.scrollIntoView({ block: 'center' });
-                fallback.click();
-                return true;
-            }
-
-            return false;
-        ", row);
-
-                return result is bool success && success;
-            }
-            catch (Exception)
-            {
-                return false;
-            }
-        }
-
         private static IWebElement? TryFindElement(ISearchContext context, By by)
         {
             try

@@ -12,6 +12,7 @@ using System.Globalization;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Linq;
+using System.Threading;
 
 namespace HorseRacingML.Scraping
 {
@@ -30,6 +31,9 @@ namespace HorseRacingML.Scraping
         private readonly decimal _kellyDampener;
         private readonly string _primaryWindowHandle;
         private static readonly Regex NonNumericCharactersRegex = new("[^0-9.,-]", RegexOptions.Compiled);
+        private readonly object _automationLock = new();
+        private CancellationTokenSource? _automationCancellation;
+        private Task? _automationTask;
 
         public BetfairNavigationService(IConfiguration config)
         {
@@ -526,7 +530,11 @@ namespace HorseRacingML.Scraping
                 Races = orderedRaces
             };
         }
-        public async Task OpenHorseRaceMeetingsInNewTabsAsync(int delayBetweenTabsMs = 0, bool closeExistingRaceTabs = true)
+        public async Task OpenHorseRaceMeetingsInNewTabsAsync(
+            int delayBetweenTabsMs = 0,
+            bool closeExistingRaceTabs = true,
+            TimeSpan? raceWindow = null,
+            DateTime? windowReferenceUtc = null)
         {
             if (closeExistingRaceTabs)
             {
@@ -556,7 +564,60 @@ namespace HorseRacingML.Scraping
                     out _);
             }
 
-            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            static DateTime? TryResolveRaceDateTime(string? text, DateTime reference)
+            {
+                if (string.IsNullOrWhiteSpace(text))
+                {
+                    return null;
+                }
+
+                var trimmed = text.Trim();
+                if (!TimeSpan.TryParseExact(
+                        trimmed,
+                        new[] { @"h\:mm", @"hh\:mm" },
+                        CultureInfo.InvariantCulture,
+                        out var timeOfDay))
+                {
+                    if (!DateTime.TryParseExact(
+                            trimmed,
+                            new[] { "H:mm", "HH:mm" },
+                            CultureInfo.InvariantCulture,
+                            DateTimeStyles.None,
+                            out var parsedDateTime))
+                    {
+                        return null;
+                    }
+
+                    timeOfDay = parsedDateTime.TimeOfDay;
+                }
+
+                var candidate = reference.Date.Add(timeOfDay);
+
+                if (candidate < reference.AddMinutes(-5))
+                {
+                    candidate = candidate.AddDays(1);
+                }
+
+                return candidate;
+            }
+
+            DateTime windowReferenceLocal = DateTime.Now;
+            DateTime windowStart = DateTime.MinValue;
+            DateTime windowEnd = DateTime.MaxValue;
+            if (raceWindow.HasValue)
+            {
+                var reference = windowReferenceUtc?.ToLocalTime() ?? DateTime.Now;
+                windowReferenceLocal = reference;
+                windowStart = reference;
+                windowEnd = reference.Add(raceWindow.Value);
+            }
+
+            var seen = raceWindow.HasValue
+                ? null
+                : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var windowCandidates = raceWindow.HasValue
+                ? new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase)
+                : null;
             var scrollRoot = (IWebElement)((IJavaScriptExecutor)_driver)
                 .ExecuteScript("return document.scrollingElement||document.body");
 
@@ -597,7 +658,31 @@ namespace HorseRacingML.Scraping
                             continue;
                         }
 
-                        seen.Add(href);
+                        if (raceWindow.HasValue)
+                        {
+                            var raceTime = TryResolveRaceDateTime(textValue, windowReferenceLocal);
+                            if (!raceTime.HasValue)
+                            {
+                                continue;
+                            }
+
+                            if (raceTime.Value < windowStart || raceTime.Value > windowEnd)
+                            {
+                                continue;
+                            }
+
+                            if (windowCandidates != null)
+                            {
+                                if (!windowCandidates.TryGetValue(href, out var existing) || raceTime.Value < existing)
+                                {
+                                    windowCandidates[href] = raceTime.Value;
+                                }
+                            }
+                        }
+                        else
+                        {
+                            seen!.Add(href);
+                        }
                     }
                     catch (StaleElementReferenceException)
                     {
@@ -611,7 +696,7 @@ namespace HorseRacingML.Scraping
                 await Task.Delay(150);
             }
 
-            if (seen.Count == 0)
+            if (!raceWindow.HasValue && seen!.Count == 0)
             {
                 var links = _driver.FindElements(By.CssSelector("a[href*='/horse-racing/']"));
                 foreach (var anchor in links)
@@ -624,7 +709,22 @@ namespace HorseRacingML.Scraping
                 }
             }
 
-            foreach (var url in seen)
+            IEnumerable<string> urlsToOpen;
+            if (raceWindow.HasValue)
+            {
+                urlsToOpen = (windowCandidates != null && windowCandidates.Count > 0)
+                    ? windowCandidates
+                        .OrderBy(kvp => kvp.Value)
+                        .Select(kvp => kvp.Key)
+                        .ToList()
+                    : Array.Empty<string>();
+            }
+            else
+            {
+                urlsToOpen = seen!;
+            }
+
+            foreach (var url in urlsToOpen)
             {
                 ((IJavaScriptExecutor)_driver).ExecuteScript("window.open(arguments[0],'_blank');", url);
                 if (delayBetweenTabsMs > 0)
@@ -633,7 +733,138 @@ namespace HorseRacingML.Scraping
                 }
             }
         }
+        public void StartAutomatedBettingLoop(
+            RacingRepository repo,
+            HyperparameterTrainer trainer,
+            TimeSpan raceWindow,
+            TimeSpan refreshLeadTime,
+            TimeSpan initialDelay)
+        {
+            if (repo == null)
+            {
+                throw new ArgumentNullException(nameof(repo));
+            }
 
+            if (trainer == null)
+            {
+                throw new ArgumentNullException(nameof(trainer));
+            }
+
+            if (refreshLeadTime < TimeSpan.Zero)
+            {
+                refreshLeadTime = TimeSpan.Zero;
+            }
+
+            if (raceWindow <= TimeSpan.Zero)
+            {
+                throw new ArgumentOutOfRangeException(nameof(raceWindow), "Race window must be positive.");
+            }
+
+            if (initialDelay < TimeSpan.Zero)
+            {
+                initialDelay = TimeSpan.Zero;
+            }
+
+            lock (_automationLock)
+            {
+                StopAutomatedBettingLoop();
+
+                var cts = new CancellationTokenSource();
+                _automationCancellation = cts;
+                var token = cts.Token;
+
+                _automationTask = Task.Run(
+                    () => RunAutomatedBettingLoopAsync(repo, trainer, raceWindow, refreshLeadTime, initialDelay, token),
+                    token);
+            }
+        }
+
+        public void StopAutomatedBettingLoop()
+        {
+            lock (_automationLock)
+            {
+                var cts = _automationCancellation;
+                if (cts != null)
+                {
+                    try
+                    {
+                        cts.Cancel();
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                        // Ignore if already disposed.
+                    }
+
+                    cts.Dispose();
+                }
+
+                _automationCancellation = null;
+                _automationTask = null;
+            }
+        }
+
+        private async Task RunAutomatedBettingLoopAsync(
+            RacingRepository repo,
+            HyperparameterTrainer trainer,
+            TimeSpan raceWindow,
+            TimeSpan refreshLeadTime,
+            TimeSpan initialDelay,
+            CancellationToken cancellationToken)
+        {
+            if (initialDelay > TimeSpan.Zero)
+            {
+                try
+                {
+                    await Task.Delay(initialDelay, cancellationToken);
+                }
+                catch (TaskCanceledException)
+                {
+                    return;
+                }
+            }
+
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                var cycleStartUtc = DateTime.UtcNow;
+
+                try
+                {
+                    await OpenHorseRaceMeetingsInNewTabsAsync(
+                        closeExistingRaceTabs: true,
+                        raceWindow: raceWindow,
+                        windowReferenceUtc: cycleStartUtc);
+
+                    ScrapeOpenRaceTabs(repo, trainer);
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"[Automation] Failed to process betting cycle: {ex.Message}");
+                }
+
+                var cycleEndUtc = DateTime.UtcNow;
+                var targetInterval = raceWindow - refreshLeadTime;
+                if (targetInterval <= TimeSpan.Zero)
+                {
+                    continue;
+                }
+
+                var elapsed = cycleEndUtc - cycleStartUtc;
+                var delay = targetInterval - elapsed;
+                if (delay < TimeSpan.Zero)
+                {
+                    delay = TimeSpan.Zero;
+                }
+
+                try
+                {
+                    await Task.Delay(delay, cancellationToken);
+                }
+                catch (TaskCanceledException)
+                {
+                    break;
+                }
+            }
+        }
         public async Task<bool> TrySelectHorseRacingDayAsync(int daysFromToday)
         {
             if (daysFromToday == 0)
@@ -847,6 +1078,7 @@ namespace HorseRacingML.Scraping
         }
         public void Dispose()
         {
+            StopAutomatedBettingLoop();
             _driver.Quit();
             _driver.Dispose();
         }
