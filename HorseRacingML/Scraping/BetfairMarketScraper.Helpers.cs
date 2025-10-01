@@ -425,12 +425,27 @@ namespace HorseRacingML.Scraping
             js.ExecuteScript(@"const el = arguments[0];
                 const value = arguments[1];
                 if (!el) { return; }
+
+                const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+                const nativeNumberValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'valueAsNumber')?.set;
+
                 el.focus();
-                el.value = value;
+
+                if (nativeInputValueSetter) {
+                    nativeInputValueSetter.call(el, value);
+                } else {
+                    el.value = value;
+                }
+
+                if (nativeNumberValueSetter && !Number.isNaN(Number(value))) {
+                    nativeNumberValueSetter.call(el, Number(value));
+                }
+
                 el.dispatchEvent(new Event('input', { bubbles: true }));
                 el.dispatchEvent(new Event('change', { bubbles: true }));
             ", input, text);
         }
+
 
         private static bool TryClickBackAllViaScript(IJavaScriptExecutor js, IWebElement row)
         {
