@@ -127,7 +127,6 @@ namespace HorseRacingML.Controllers
                 closeExistingRaceTabs: true,
                 raceWindow: raceWindow,
                 windowReferenceUtc: cycleStartUtc);
-            var recommendations = betfair.ScrapeOpenRaceTabs(_repository, trainer);
             var cycleEndUtc = DateTime.UtcNow;
             var initialDelay = raceWindow - refreshLeadTime - (cycleEndUtc - cycleStartUtc);
             if (initialDelay < TimeSpan.Zero)
