@@ -207,7 +207,8 @@ namespace HorseRacingML.Scraping
 
             var strategies = new Func<IWebDriver, IWebElement?>[]
             {
-                drv => FindDisplayedElement(drv, By.XPath("/html/body/ui-view/div/div/div[1]/div[1]/div/bf-ssc-header/div/div/div/div/div/table/tbody/tr/td[4]/div/div/div/form/div[3]/div[1]/table/tbody/tr[1]/td[2]")),
+                 drv => FindDisplayedElement(drv, By.XPath("/html/body/ui-view/div/div/div[1]/div[1]/div/bf-ssc-header/div/div/div/div/div/div/table/tbody/tr/td[4]/div/div/div/form/div[3]/div[1]/table/tbody/tr[1]/td[2]")),
+                drv => FindDisplayedElement(drv, By.CssSelector("td.ssc-wla[rel='main']")),
                 drv => FindDisplayedElement(drv, By.CssSelector("#ssc-wallet-balance-value")),
                 drv => FindDisplayedElement(drv, By.CssSelector("span.ssc-wallet__balance-value"))
             };
