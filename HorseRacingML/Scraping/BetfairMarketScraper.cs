@@ -33,6 +33,8 @@ namespace HorseRacingML.Scraping
         private decimal _availableBankroll;
         private int _betSlipSelectionsFilled;
         private const string MarketHeaderXPath = "/html/body/ui-view/div/div/div[2]/div/ui-view/div/div/div[1]/div[1]/div/bf-sports-header/div/div/div/div[1]/div/span[1]";
+        private const string PlaceBetsButtonSelector = "#main-wrapper > div > div.scrollable-panes-height-taker > div > ui-view > div > div > div.bf-col-xxl-7-24.bf-col-xl-8-24.bf-col-lg-8-24.bf-col-md-9-24.bf-col-sm-10-24.bf-col-10-24.right-side-column > div > div > bf-aside > div > div.bf-row.aside-top-row.no-bottom-gutter > div > betslip > div > bf-tabs > section > div:nth-child(2) > div > div > section > potentials > section > form > betslip-potentials-footer > footer > div.potentials-footer__actions > div > highlighted-button > ours-button > button";
+        private const string ConfirmBetsButtonSelector = "#main-wrapper > div > div.scrollable-panes-height-taker > div > ui-view > div > div > div.bf-col-xxl-7-24.bf-col-xl-8-24.bf-col-lg-8-24.bf-col-md-9-24.bf-col-sm-10-24.bf-col-10-24.right-side-column > div > div > bf-aside > div > div.bf-row.aside-top-row.no-bottom-gutter > div > betslip > div > bf-tabs > section > div:nth-child(2) > div > div > section > confirmation > section > betslip-confirmation-footer > footer > div.confirmation-footer__actions > highlighted-button > ours-button > button";
         private HyperparameterSummary? _loadedHyperparameters;
         public BetfairMarketScraper(
             IRacingRepository repo,
@@ -2287,7 +2289,147 @@ namespace HorseRacingML.Scraping
             }
 
             _betSlipSelectionsFilled += available.Count;
+            if (available.Count > 0 && TrySubmitBetSlip(driver))
+            {
+                _betSlipSelectionsFilled = 0;
+            }
         }
+
+        private bool TrySubmitBetSlip(IWebDriver driver)
+        {
+            if (driver == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                var placeClicked = TryClickBetSlipButton(driver, PlaceBetsButtonSelector, "Place bets", TimeSpan.FromSeconds(3));
+                if (!placeClicked)
+                {
+                    return false;
+                }
+
+                var confirmClicked = TryClickBetSlipButton(driver, ConfirmBetsButtonSelector, "Confirm bets", TimeSpan.FromSeconds(8));
+                if (!confirmClicked)
+                {
+                    Console.WriteLine("\tConfirm bets button not clicked; verify slip manually.");
+                }
+
+                return confirmClicked;
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"\tUnexpected error while submitting bet slip: {ex.Message}");
+                return false;
+            }
+        }
+
+        private bool TryClickBetSlipButton(IWebDriver driver, string selector, string description, TimeSpan timeout)
+        {
+            if (driver == null)
+            {
+                return false;
+            }
+
+            IWebElement? button = WaitForDisplayedElement(driver, selector, timeout);
+            if (button == null)
+            {
+                Console.WriteLine($"\t{description} button not found within {timeout.TotalSeconds:0.#}s.");
+                return false;
+            }
+
+            var js = driver as IJavaScriptExecutor;
+            try
+            {
+                js?.ExecuteScript("arguments[0].scrollIntoView({block:'center'});", button);
+            }
+            catch (Exception)
+            {
+            }
+
+            for (var attempt = 0; attempt < 2; attempt++)
+            {
+                try
+                {
+                    button.Click();
+                    Console.WriteLine($"\tClicked {description} button.");
+                    return true;
+                }
+                catch (StaleElementReferenceException)
+                {
+                    button = WaitForDisplayedElement(driver, selector, TimeSpan.FromSeconds(1));
+                    if (button == null)
+                    {
+                        break;
+                    }
+                }
+                catch (ElementClickInterceptedException)
+                {
+                    Thread.Sleep(TimeSpan.FromMilliseconds(200));
+                }
+                catch (Exception)
+                {
+                    break;
+                }
+            }
+
+            if (js != null && button != null)
+            {
+                try
+                {
+                    js.ExecuteScript("arguments[0].click();", button);
+                    Console.WriteLine($"\tClicked {description} button via JavaScript.");
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"\tFailed to click {description} button via JavaScript: {ex.Message}");
+                }
+            }
+
+            Console.WriteLine($"\tUnable to click {description} button.");
+            return false;
+        }
+
+        private static IWebElement? WaitForDisplayedElement(IWebDriver driver, string selector, TimeSpan timeout)
+        {
+            if (driver == null)
+            {
+                return null;
+            }
+
+            var wait = new WebDriverWait(driver, timeout);
+            wait.IgnoreExceptionTypes(typeof(NoSuchElementException), typeof(StaleElementReferenceException));
+
+            try
+            {
+                return wait.Until(d =>
+                {
+                    try
+                    {
+                        var elements = d.FindElements(By.CssSelector(selector));
+                        foreach (var element in elements)
+                        {
+                            if (element.Displayed && element.Enabled)
+                            {
+                                return element;
+                            }
+                        }
+
+                        return null;
+                    }
+                    catch (StaleElementReferenceException)
+                    {
+                        return null;
+                    }
+                });
+            }
+            catch (WebDriverTimeoutException)
+            {
+                return null;
+            }
+         }
         private decimal CalculateStakeWithLimits(decimal bankroll, decimal kellyFraction)
         {
             var stake = BettingMath.CalculateSequentialStake(bankroll, kellyFraction);
