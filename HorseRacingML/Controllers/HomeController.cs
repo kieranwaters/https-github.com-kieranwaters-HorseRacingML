@@ -168,53 +168,13 @@ namespace HorseRacingML.Controllers
                    normalized.Equals("United States", StringComparison.OrdinalIgnoreCase) ||
                    normalized.Equals("United States Of America", StringComparison.OrdinalIgnoreCase);
         }
-        public async Task<IActionResult> AutomateBets(
+        public IActionResult AutomateBets(
             [FromServices] BetfairNavigationService betfair,
             [FromServices] HyperparameterTrainer trainer)
         {
-            await betfair.LoginAsync();
-            var raceWindow = TimeSpan.FromHours(2);
-            var refreshLeadTime = TimeSpan.FromMinutes(20);
-            var cycleStartUtc = DateTime.UtcNow;
-            await betfair.OpenHorseRaceMeetingsInNewTabsAsync(
-                closeExistingRaceTabs: true,
-                raceWindow: raceWindow,
-                windowReferenceUtc: cycleStartUtc);
-            var cycleEndUtc = DateTime.UtcNow;
-            var initialDelay = raceWindow - refreshLeadTime - (cycleEndUtc - cycleStartUtc);
-            if (initialDelay < TimeSpan.Zero)
-            {
-                initialDelay = TimeSpan.Zero;
-            }
-            betfair.StartAutomatedBettingLoop(_repository, trainer, raceWindow, refreshLeadTime, initialDelay);
-            var recommendations = betfair.ScrapeOpenRaceTabs(_repository, trainer);
-            string message;
-            if (recommendations.Count > 0)
-            {
-                var best = recommendations
-                    .OrderByDescending(r => r.Differential)
-                    .ThenByDescending(r => r.KellyFraction)
-                    .First();
+            const string startingMessage = "Starting automated betting process...";
+            _status.Update(startingMessage);
 
-                var horse = string.IsNullOrWhiteSpace(best.HorseName) ? "selection" : best.HorseName;
-                var race = string.IsNullOrWhiteSpace(best.RaceTitle) ? "race" : best.RaceTitle;
-                var venue = string.IsNullOrWhiteSpace(best.VenueName) ? string.Empty : $" at {best.VenueName}";
-                var odds = best.DecimalOdds.ToString("0.00", CultureInfo.InvariantCulture);
-                var aiProb = (best.AiProbability * 100).ToString("0.##", CultureInfo.InvariantCulture);
-                var aiReturn = best.AiDecimalOdds.ToString("0.00", CultureInfo.InvariantCulture);
-                var marketProb = (best.MarketProbability * 100).ToString("0.##", CultureInfo.InvariantCulture);
-                var diff = (best.Differential * 100).ToString("0.##", CultureInfo.InvariantCulture);
-                var stake = best.Stake.ToString("0.##", CultureInfo.InvariantCulture);
-                var kelly = (best.KellyFraction * 100m).ToString("0.##", CultureInfo.InvariantCulture);
-
-                message = $"Best value bet: {horse}{venue} ({race})  odds {odds}, AI win {aiProb}% (AI return {aiReturn}) vs market {marketProb}% (diff {diff}%). Kelly stake {stake} ({kelly}% bankroll).";
-                _status.Update(message);
-            }
-            else
-            {
-                message = "No positive expected value opportunities were found while scanning markets.";
-                _status.Update(message);
-            }
             var snapshot = _automationSettings.GetSnapshot();
             var model = new AutomateBetsViewModel
             {
@@ -226,8 +186,63 @@ namespace HorseRacingML.Controllers
                     : (decimal?)null,
                 MaxStakeAmount = snapshot.MaxStakeFixedAmount,
                 StatusMessage = _status.Message,
-                BannerMessage = message
+                BannerMessage = startingMessage
             };
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await betfair.LoginAsync();
+                    var raceWindow = TimeSpan.FromHours(2);
+                    var refreshLeadTime = TimeSpan.FromMinutes(20);
+                    var cycleStartUtc = DateTime.UtcNow;
+                    await betfair.OpenHorseRaceMeetingsInNewTabsAsync(
+                        closeExistingRaceTabs: true,
+                        raceWindow: raceWindow,
+                        windowReferenceUtc: cycleStartUtc);
+                    var cycleEndUtc = DateTime.UtcNow;
+                    var initialDelay = raceWindow - refreshLeadTime - (cycleEndUtc - cycleStartUtc);
+                    if (initialDelay < TimeSpan.Zero)
+                    {
+                        initialDelay = TimeSpan.Zero;
+                    }
+
+                    betfair.StartAutomatedBettingLoop(_repository, trainer, raceWindow, refreshLeadTime, initialDelay);
+                    var recommendations = betfair.ScrapeOpenRaceTabs(_repository, trainer);
+                    string message;
+                    if (recommendations.Count > 0)
+                    {
+                        var best = recommendations
+                            .OrderByDescending(r => r.Differential)
+                            .ThenByDescending(r => r.KellyFraction)
+                            .First();
+
+                        var horse = string.IsNullOrWhiteSpace(best.HorseName) ? "selection" : best.HorseName;
+                        var race = string.IsNullOrWhiteSpace(best.RaceTitle) ? "race" : best.RaceTitle;
+                        var venue = string.IsNullOrWhiteSpace(best.VenueName) ? string.Empty : $" at {best.VenueName}";
+                        var odds = best.DecimalOdds.ToString("0.00", CultureInfo.InvariantCulture);
+                        var aiProb = (best.AiProbability * 100).ToString("0.##", CultureInfo.InvariantCulture);
+                        var aiReturn = best.AiDecimalOdds.ToString("0.00", CultureInfo.InvariantCulture);
+                        var marketProb = (best.MarketProbability * 100).ToString("0.##", CultureInfo.InvariantCulture);
+                        var diff = (best.Differential * 100).ToString("0.##", CultureInfo.InvariantCulture);
+                        var stake = best.Stake.ToString("0.##", CultureInfo.InvariantCulture);
+                        var kelly = (best.KellyFraction * 100m).ToString("0.##", CultureInfo.InvariantCulture);
+
+                        message = $"Best value bet: {horse}{venue} ({race})  odds {odds}, AI win {aiProb}% (AI return {aiReturn}) vs market {marketProb}% (diff {diff}%). Kelly stake {stake} ({kelly}% bankroll).";
+                    }
+                    else
+                    {
+                        message = "No positive expected value opportunities were found while scanning markets.";
+                    }
+
+                    _status.Update(message);
+                }
+                catch (Exception ex)
+                {
+                    _status.Update($"Failed to start automated betting: {ex.Message}");
+                }
+            });
 
             return View(model);
         }
