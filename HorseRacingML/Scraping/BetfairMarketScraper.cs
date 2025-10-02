@@ -1665,10 +1665,127 @@ namespace HorseRacingML.Scraping
             {
                 return Enumerable.Empty<BetRecommendation>();
             }
+            var flowList = flows as IList<RunnerFlow> ?? flows.ToList();
+            if (flowList.Count == 0)
+            {
+                return Enumerable.Empty<BetRecommendation>();
+            }
+
+            IReadOnlyDictionary<string, int>? prefetchedCounts = null;
+            try
+            {
+                var missingNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var flow in flowList)
+                {
+                    if (flow == null)
+                    {
+                        continue;
+                    }
+
+                    if (flow.HistoricalRaceCount.HasValue)
+                    {
+                        continue;
+                    }
+
+                    if (flow.FeatureValues != null &&
+                        flow.FeatureValues.TryGetValue("CareerStarts", out var existingValue) &&
+                        TryConvertToInt32(existingValue).HasValue)
+                    {
+                        continue;
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(flow.HorseName))
+                    {
+                        missingNames.Add(flow.HorseName);
+                    }
+                }
+
+                if (missingNames.Count > 0)
+                {
+                    prefetchedCounts = _repo.GetHistoricalRaceCountsByHorseNames(missingNames);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"\tFailed to prefetch historical race counts: {ex.Message}");
+            }
+
+            foreach (var flow in flowList)
+            {
+                if (flow == null)
+                {
+                    continue;
+                }
+
+                if (flow.HistoricalRaceCount.HasValue)
+                {
+                    continue;
+                }
+
+                int? resolvedFromFeatures = null;
+                if (flow.FeatureValues != null &&
+                    flow.FeatureValues.TryGetValue("CareerStarts", out var historyValue))
+                {
+                    resolvedFromFeatures = TryConvertToInt32(historyValue);
+                }
+
+                if (resolvedFromFeatures.HasValue)
+                {
+                    flow.HistoricalRaceCount = resolvedFromFeatures;
+                    continue;
+                }
+
+                var resolvedHistoryCount = ResolveHistoricalRaceCountFromPrefetch(flow, prefetchedCounts)
+                    ?? ResolveHistoricalRaceCount(flow);
+
+                if (resolvedHistoryCount.HasValue)
+                {
+                    flow.HistoricalRaceCount = resolvedHistoryCount;
+
+                    if (flow.FeatureValues == null)
+                    {
+                        flow.FeatureValues = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+                    }
+
+                    flow.FeatureValues["CareerStarts"] = resolvedHistoryCount.Value;
+                }
+            }
+
+            RunnerFlow? zeroHistoryRunner = null;
+            foreach (var flow in flowList)
+            {
+                if (flow == null)
+                {
+                    continue;
+                }
+
+                int? historyCount = flow.HistoricalRaceCount;
+                if (!historyCount.HasValue &&
+                    flow.FeatureValues != null &&
+                    flow.FeatureValues.TryGetValue("CareerStarts", out var historyValue))
+                {
+                    historyCount = TryConvertToInt32(historyValue);
+                }
+
+                if (historyCount.HasValue && historyCount.Value <= 0)
+                {
+                    zeroHistoryRunner = flow;
+                    break;
+                }
+            }
+
+            if (zeroHistoryRunner != null)
+            {
+                var identifier = !string.IsNullOrWhiteSpace(zeroHistoryRunner.HorseName)
+                    ? zeroHistoryRunner.HorseName!.Trim()
+                    : (zeroHistoryRunner.SelectionId ?? "unknown");
+                Console.WriteLine($"\tSkipping market {marketId}: runner {identifier} has zero recorded historical races; skipping bets for this race.");
+                return Enumerable.Empty<BetRecommendation>();
+            }
 
             var recommendations = new List<BetRecommendation>();
 
-            foreach (var flow in flows)
+            foreach (var flow in flowList)
             {
                 var identifier = !string.IsNullOrWhiteSpace(flow.HorseName)
                     ? flow.HorseName!
