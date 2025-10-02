@@ -42,15 +42,7 @@ namespace HorseRacingML.Scraping
             _configuredBankroll = config.GetValue<decimal?>("Betting:Bankroll") ?? 100m;
             _bankroll = _configuredBankroll;
             _useMarketFallbackForAiDegeneracy = config.GetValue<bool?>("Betting:UseMarketFallbackForAiDegeneracy") ?? true;
-            automationSettings = automationSettings ?? throw new ArgumentNullException(nameof(automationSettings));
-            if (_kellyDampener <= 0m)
-            {
-                _kellyDampener = 1m;
-            }
-            else if (_kellyDampener > 1m)
-            {
-                _kellyDampener = 1m;
-            }
+            _automationSettings = automationSettings ?? throw new ArgumentNullException(nameof(automationSettings));
             var options = new ChromeOptions();
             options.AddArguments(
                 "--disable-extensions",

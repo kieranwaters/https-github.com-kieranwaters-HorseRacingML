@@ -40,7 +40,10 @@ namespace HorseRacingML.Scraping
             decimal bankroll,
             decimal? maxKellyFraction = null,
             decimal? kellyDampener = null,
-            bool useMarketFallbackForAiDegeneracy = true)
+           bool useMarketFallbackForAiDegeneracy = true,
+            MaxStakeMode maxStakeMode = MaxStakeMode.None,
+            decimal? maxStakePercentOfBankroll = null,
+            decimal? maxStakeFixedAmount = null)
         {
             _repo = repo ?? throw new ArgumentNullException(nameof(repo));
             _trainer = trainer ?? throw new ArgumentNullException(nameof(trainer));
@@ -52,6 +55,32 @@ namespace HorseRacingML.Scraping
                 ? (kellyDampener.Value > 1m ? 1m : kellyDampener.Value)
                 : 1m;
             _useMarketFallbackForAiDegeneracy = useMarketFallbackForAiDegeneracy;
+            _maxStakeMode = maxStakeMode;
+            _maxStakePercentOfBankroll = maxStakePercentOfBankroll;
+            _maxStakeFixedAmount = maxStakeFixedAmount;
+        }
+
+        public BetfairMarketScraper(
+            IRacingRepository repo,
+            HyperparameterTrainer trainer,
+            decimal bankroll,
+            AutomationSettingsSnapshot settings,
+            bool useMarketFallbackForAiDegeneracy = true)
+            : this(
+                repo,
+                trainer,
+                bankroll,
+                settings?.MaxKellyFraction,
+                settings?.KellyDampener,
+                useMarketFallbackForAiDegeneracy,
+                settings?.MaxStakeMode ?? MaxStakeMode.None,
+                settings?.MaxStakePercentOfBankroll,
+                settings?.MaxStakeFixedAmount)
+        {
+            if (settings == null)
+            {
+                throw new ArgumentNullException(nameof(settings));
+            }
         }
         public HyperparameterSummary? LoadedHyperparameters => _loadedHyperparameters;
         public IReadOnlyList<RaceDayReport> ScrapeOpenRaceTabsForReport(IWebDriver driver, IEnumerable<string>? handlesToProcess = null)
