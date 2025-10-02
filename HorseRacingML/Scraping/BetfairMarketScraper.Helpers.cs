@@ -558,7 +558,8 @@ const hasBackAllContext = target => {
 
                 const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
                 const nativeNumberValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'valueAsNumber')?.set;
-
+const typeAttr = (el.getAttribute('type') || '').toLowerCase();
+                const supportsNumberSetter = ['number', 'range', 'time', 'datetime-local', 'month', 'week'].includes(typeAttr);
                 el.focus();
 
                 if (nativeInputValueSetter) {
@@ -567,8 +568,12 @@ const hasBackAllContext = target => {
                     el.value = value;
                 }
 
-                if (nativeNumberValueSetter && !Number.isNaN(Number(value))) {
-                    nativeNumberValueSetter.call(el, Number(value));
+                if (supportsNumberSetter && nativeNumberValueSetter && !Number.isNaN(Number(value))) {
+                    try {
+                        nativeNumberValueSetter.call(el, Number(value));
+                    } catch (err) {
+                        // Some input types (e.g. Betfair text inputs) reject valueAsNumber; ignore.
+                    }
                 }
 
                 el.dispatchEvent(new Event('input', { bubbles: true }));
