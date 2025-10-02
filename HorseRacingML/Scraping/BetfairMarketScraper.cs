@@ -843,7 +843,10 @@ namespace HorseRacingML.Scraping
                     preparedRows: null,
                     persistedUpcoming: persistedUpcoming); // build features
 
-                foreach (var rf in flows) // process each runner
+                var flowsSnapshot = flows.ToList(); // snapshot for safe iteration
+                var hasAnyBackPrice = flowsSnapshot.Any(f => f.BackPrice1.HasValue); // detect available prices
+
+                foreach (var rf in flowsSnapshot) // process each runner
                 {
                     if (rf.FeatureValues != null && !rf.FeatureValues.ContainsKey("RunnerCount") && rows.Count > 0)
                     {
@@ -852,6 +855,12 @@ namespace HorseRacingML.Scraping
                     var rfIdentifier = !string.IsNullOrWhiteSpace(rf.HorseName)
                         ? rf.HorseName!
                         : (rf.SelectionId ?? "unknown");
+                    if (hasAnyBackPrice && !rf.BackPrice1.HasValue)
+                    {
+                        Console.WriteLine($"\t\tNo back price available for {rfIdentifier}; assuming this runner is a non-runner and excluding it from analysis.");
+                        flows.Remove(rf); // drop non-runner from active list
+                        continue; // skip downstream processing
+                    }
                     if (rf.FeatureValues != null)
                     {
                         if (rf.BackPrice1.HasValue) { rf.FeatureValues["BackPrice1"] = rf.BackPrice1.Value; } // copy b1
