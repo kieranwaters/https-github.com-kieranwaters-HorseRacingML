@@ -13,6 +13,7 @@ builder.Services.AddScoped<RacingRepository>(sp =>
     new RacingRepository(builder.Configuration.GetConnectionString("HorseRacingDb")!));
 
 // TensorFlow trainer for running models on the GPU
+builder.Services.AddSingleton<AutomationSettingsService>();
 builder.Services.AddSingleton<HyperparameterTrainer>();
 builder.Services.AddSingleton<BetfairNavigationService>();
 builder.Services.AddTransient<RaceResultsScraper>();

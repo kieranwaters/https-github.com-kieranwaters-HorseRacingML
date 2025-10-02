@@ -25,6 +25,9 @@ namespace HorseRacingML.Scraping
         private readonly decimal? _maxKellyFraction;
         private readonly bool _useMarketFallbackForAiDegeneracy;
         private readonly decimal _kellyDampener;
+        private readonly MaxStakeMode _maxStakeMode;
+        private readonly decimal? _maxStakePercentOfBankroll;
+        private readonly decimal? _maxStakeFixedAmount;
         private readonly Dictionary<RacePreparationKey, FeatureLookup> _featureLookupCache = new();
         private readonly object _featureLookupCacheLock = new();
         private decimal _availableBankroll;
@@ -135,8 +138,12 @@ namespace HorseRacingML.Scraping
                         var kelly = BettingMath.CalculateKellyFraction(runner.AiProbability.Value, (double)runner.MarketDecimalOdds.Value, _maxKellyFraction);
                         runner.KellyFraction = kelly;
                         runner.SuggestedStake = (kelly > 0m && _bankroll > 0m)
-                            ? BettingMath.CalculateSequentialStake(_bankroll, kelly)
+                           ? CalculateStakeWithLimits(_bankroll, kelly)
                             : (decimal?)null;
+                        if (runner.SuggestedStake <= 0m)
+                        {
+                            runner.SuggestedStake = null;
+                        }
                     }
                     else
                     {
@@ -1100,7 +1107,8 @@ namespace HorseRacingML.Scraping
                 runner.KellyFraction = kelly;
                 if (kelly > 0m && _bankroll > 0m)
                 {
-                    runner.SuggestedStake = BettingMath.CalculateSequentialStake(_bankroll, kelly);
+                    var stake = CalculateStakeWithLimits(_bankroll, kelly);
+                    runner.SuggestedStake = stake > 0m ? stake : null;
                 }
             }
             if (runner.AiProbability.HasValue && runner.LayDecimalOdds.HasValue && runner.LayDecimalOdds.Value > 1m)
@@ -1737,7 +1745,7 @@ namespace HorseRacingML.Scraping
                 }
 
                 Console.WriteLine($"\tSizing stake for {identifier}: bankroll {_availableBankroll.ToString("0.##", CultureInfo.InvariantCulture)}, Kelly {recommendation.KellyFraction.ToString("0.####", CultureInfo.InvariantCulture)}");
-                var stake = CalculateSequentialStake(_availableBankroll, recommendation.KellyFraction);
+                var stake = CalculateStakeWithLimits(_availableBankroll, recommendation.KellyFraction);
                 if (stake <= 0m)
                 {
                     Console.WriteLine($"\t\tSequential Kelly returned zero stake for {identifier}; check rounding or Kelly cap constraints.");
@@ -2111,7 +2119,7 @@ namespace HorseRacingML.Scraping
             for (var i = 0; i < available.Count && i < recommendations.Count; i++)
             {
                 var recommendation = recommendations[i];
-                var stake = CalculateSequentialStake(remainingPot, recommendation.KellyFraction);
+                var stake = CalculateStakeWithLimits(remainingPot, recommendation.KellyFraction);
                 var input = available[i];
                 var identifier = recommendation.HorseName ?? recommendation.SelectionId ?? "unknown";
                 Console.WriteLine($"\tBet slip allocation for {identifier}: remaining pot {remainingPot.ToString("0.##", CultureInfo.InvariantCulture)}, stake {stake.ToString("0.##", CultureInfo.InvariantCulture)}");
@@ -2134,7 +2142,73 @@ namespace HorseRacingML.Scraping
 
             _betSlipSelectionsFilled += available.Count;
         }
-        
+        private decimal CalculateStakeWithLimits(decimal bankroll, decimal kellyFraction)
+        {
+            var stake = BettingMath.CalculateSequentialStake(bankroll, kellyFraction);
+            if (stake <= 0m)
+            {
+                return 0m;
+            }
+
+            var maxStake = DetermineMaxStake(bankroll);
+            if (maxStake.HasValue && maxStake.Value > 0m && stake > maxStake.Value)
+            {
+                stake = maxStake.Value;
+            }
+
+            if (stake > bankroll)
+            {
+                stake = bankroll;
+            }
+
+            if (stake < 0m)
+            {
+                stake = 0m;
+            }
+
+            return decimal.Round(stake, 2, MidpointRounding.ToZero);
+        }
+
+        private decimal? DetermineMaxStake(decimal bankroll)
+        {
+            decimal? raw = _maxStakeMode switch
+            {
+                MaxStakeMode.PercentageOfBankroll when _maxStakePercentOfBankroll.HasValue && _maxStakePercentOfBankroll.Value > 0m
+                    => bankroll * _maxStakePercentOfBankroll.Value,
+                MaxStakeMode.FixedAmount when _maxStakeFixedAmount.HasValue && _maxStakeFixedAmount.Value > 0m
+                    => _maxStakeFixedAmount.Value,
+                _ => null
+            };
+
+            if (!raw.HasValue)
+            {
+                return null;
+            }
+
+            var capped = raw.Value;
+            if (capped > bankroll)
+            {
+                capped = bankroll;
+            }
+
+            if (capped <= 0m)
+            {
+                return null;
+            }
+
+            var rounded = decimal.Round(capped, 2, MidpointRounding.ToZero);
+            if (rounded <= 0m)
+            {
+                return null;
+            }
+
+            if (rounded < 1m && bankroll >= 1m)
+            {
+                rounded = 1m;
+            }
+
+            return rounded;
+        }
         private decimal CalculateKellyFraction(double probability, double decimalOdds)
         {
             if (probability <= 0 || probability >= 1 || decimalOdds <= 1)

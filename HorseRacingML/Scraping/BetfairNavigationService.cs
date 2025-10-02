@@ -13,6 +13,7 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Linq;
 using System.Threading;
+using HorseRacingML.Services;
 
 namespace HorseRacingML.Scraping
 {
@@ -26,24 +27,22 @@ namespace HorseRacingML.Scraping
         private readonly IWebDriver _driver;
         private readonly decimal _configuredBankroll;
         private decimal _bankroll;
-        private readonly decimal? _maxKellyFraction;
         private readonly bool _useMarketFallbackForAiDegeneracy;
-        private readonly decimal _kellyDampener;
+        private readonly AutomationSettingsService _automationSettings;
         private readonly string _primaryWindowHandle;
         private static readonly Regex NonNumericCharactersRegex = new("[^0-9.,-]", RegexOptions.Compiled);
         private readonly object _automationLock = new();
         private CancellationTokenSource? _automationCancellation;
         private Task? _automationTask;
 
-        public BetfairNavigationService(IConfiguration config)
+        public BetfairNavigationService(IConfiguration config, AutomationSettingsService automationSettings)
         {
             _username = config["Betfair:Username"] ?? HardCodedUsername;
             _password = config["Betfair:Password"] ?? HardCodedPassword;
             _configuredBankroll = config.GetValue<decimal?>("Betting:Bankroll") ?? 100m;
             _bankroll = _configuredBankroll;
-            _maxKellyFraction = config.GetValue<decimal?>("Betting:MaxKellyFraction");
             _useMarketFallbackForAiDegeneracy = config.GetValue<bool?>("Betting:UseMarketFallbackForAiDegeneracy") ?? true;
-            _kellyDampener = config.GetValue<decimal?>("Betting:KellyDampener") ?? 1m;
+            automationSettings = automationSettings ?? throw new ArgumentNullException(nameof(automationSettings));
             if (_kellyDampener <= 0m)
             {
                 _kellyDampener = 1m;
@@ -113,12 +112,12 @@ namespace HorseRacingML.Scraping
                 }
 
                 var bankroll = GetEffectiveBankroll();
+                var settings = _automationSettings.GetSnapshot();
                 var scraper = new BetfairMarketScraper(
                     repo,
                     trainer,
                     bankroll,
-                    _maxKellyFraction,
-                    _kellyDampener,
+                    settings,
                     _useMarketFallbackForAiDegeneracy);
                 var races = scraper.ScrapeOpenRaceTabsForReport(_driver, newHandles);
 
@@ -174,12 +173,12 @@ namespace HorseRacingML.Scraping
         public IReadOnlyList<BetRecommendation> ScrapeOpenRaceTabs(RacingRepository repo, HyperparameterTrainer trainer)
         {
             var bankroll = GetEffectiveBankroll();
+            var settings = _automationSettings.GetSnapshot();
             var scraper = new BetfairMarketScraper(
                 repo,
                 trainer,
                 bankroll,
-                _maxKellyFraction,
-                _kellyDampener,
+                settings,
                 _useMarketFallbackForAiDegeneracy);
             return scraper.ScrapeOpenRaceTabs(_driver);
         }
@@ -509,12 +508,12 @@ namespace HorseRacingML.Scraping
         {
             repo.ClearDayReportTables();
             var bankroll = GetEffectiveBankroll();
+            var settings = _automationSettings.GetSnapshot();
             var scraper = new BetfairMarketScraper(
                 repo,
                 trainer,
                 bankroll,
-                _maxKellyFraction,
-                 _kellyDampener,
+                settings,
                 _useMarketFallbackForAiDegeneracy);
             var races = scraper.ScrapeOpenRaceTabsForReport(_driver);
             var orderedRaces = races

@@ -5,6 +5,7 @@ using HorseRacingML.Models;
 using HorseRacingML.Scraping;
 using Microsoft.Extensions.Configuration;
 using Xunit;
+using HorseRacingML.Services;
 using PreparedRace = HorseRacingML.ML.HyperparameterTrainer.TrainingDataset.PreparedDataset.PreparedRace;
 
 namespace HorseRacingML.Tests
@@ -23,7 +24,8 @@ namespace HorseRacingML.Tests
                 }
             };
 
-            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), bankroll: 100m);
+            var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
+            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), bankroll: 100m, settings);
             var flows = new List<RunnerFlow>
             {
                 new RunnerFlow { HorseName = "Alpha Runner" },
@@ -79,7 +81,8 @@ namespace HorseRacingML.Tests
                 }
             };
 
-            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), bankroll: 50m);
+            var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
+            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), bankroll: 50m, settings);
             var flows = new List<RunnerFlow>
             {
                 new RunnerFlow { HorseName = "Known Runner" },

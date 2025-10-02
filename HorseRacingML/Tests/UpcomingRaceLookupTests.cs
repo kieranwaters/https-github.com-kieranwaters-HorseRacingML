@@ -9,6 +9,7 @@ using System.Linq;
 using PreparedDataset = HorseRacingML.ML.HyperparameterTrainer.TrainingDataset.PreparedDataset;
 using PreparedRace = HorseRacingML.ML.HyperparameterTrainer.TrainingDataset.PreparedDataset.PreparedRace;
 using Microsoft.Data.SqlClient;
+using HorseRacingML.Services;
 
 namespace HorseRacingML.Tests
 {
@@ -164,7 +165,8 @@ namespace HorseRacingML.Tests
                 .Build();
             var trainer = new FakeTrainer(configuration, preparedRace);
 
-            var scraper = new BetfairMarketScraper(repo, trainer, bankroll: 100m);
+            var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
+            var scraper = new BetfairMarketScraper(repo, trainer, bankroll: 100m, settings);
             var flows = new List<RunnerFlow>
             {
                 new RunnerFlow
@@ -245,7 +247,8 @@ namespace HorseRacingML.Tests
 
                 var trainer = new CountingTrainer(configuration);
                 var repo = new InMemoryRacingRepository();
-                var scraper = new BetfairMarketScraper(repo, trainer, bankroll: 25m);
+                var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
+                var scraper = new BetfairMarketScraper(repo, trainer, bankroll: 25m, settings);
                 var flows = new List<RunnerFlow>
             {
                 new RunnerFlow

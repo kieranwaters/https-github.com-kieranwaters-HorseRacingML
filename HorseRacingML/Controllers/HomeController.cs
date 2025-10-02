@@ -17,12 +17,65 @@ namespace HorseRacingML.Controllers
         private readonly ILogger<HomeController> _logger;
         private readonly RacingRepository _repository;
         private readonly ScrapingStatusService _status;
+        private readonly AutomationSettingsService _automationSettings;
 
-        public HomeController(ILogger<HomeController> logger, RacingRepository repository, ScrapingStatusService status)
+        public HomeController(
+           ILogger<HomeController> logger,
+           RacingRepository repository,
+           ScrapingStatusService status,
+           AutomationSettingsService automationSettings)
         {
             _logger = logger;
             _repository = repository;
             _status = status;
+            _automationSettings = automationSettings;
+        }
+        [HttpGet]
+        public IActionResult GetAutomationSettings()
+        {
+            var snapshot = _automationSettings.GetSnapshot();
+            return Json(new
+            {
+                success = true,
+                settings = new
+                {
+                    kellyDampener = snapshot.KellyDampener,
+                    maxKellyFraction = snapshot.MaxKellyFraction,
+                    maxStakeMode = snapshot.MaxStakeMode.ToString(),
+                    maxStakePercent = snapshot.MaxStakePercentOfBankroll,
+                    maxStakeAmount = snapshot.MaxStakeFixedAmount
+                }
+            });
+        }
+
+        [HttpPost]
+        public IActionResult UpdateAutomationSettings([FromBody] UpdateAutomationSettingsRequest? request)
+        {
+            if (request == null)
+            {
+                return BadRequest(new { success = false, message = "A request payload is required." });
+            }
+
+            var update = new AutomationSettingsUpdate(
+                request.KellyDampener,
+                request.MaxKellyFraction,
+                request.MaxStakeMode,
+                request.MaxStakeMode == MaxStakeMode.PercentageOfBankroll ? request.MaxStakePercent : null,
+                request.MaxStakeMode == MaxStakeMode.FixedAmount ? request.MaxStakeAmount : null);
+
+            var snapshot = _automationSettings.UpdateSettings(update);
+            return Json(new
+            {
+                success = true,
+                settings = new
+                {
+                    kellyDampener = snapshot.KellyDampener,
+                    maxKellyFraction = snapshot.MaxKellyFraction,
+                    maxStakeMode = snapshot.MaxStakeMode.ToString(),
+                    maxStakePercent = snapshot.MaxStakePercentOfBankroll,
+                    maxStakeAmount = snapshot.MaxStakeFixedAmount
+                }
+            });
         }
         public IActionResult CalculateFavouritesAccuracy()
         {
@@ -135,6 +188,7 @@ namespace HorseRacingML.Controllers
             }
             betfair.StartAutomatedBettingLoop(_repository, trainer, raceWindow, refreshLeadTime, initialDelay);
             var recommendations = betfair.ScrapeOpenRaceTabs(_repository, trainer);
+            string message;
             if (recommendations.Count > 0)
             {
                 var best = recommendations
@@ -153,18 +207,31 @@ namespace HorseRacingML.Controllers
                 var stake = best.Stake.ToString("0.##", CultureInfo.InvariantCulture);
                 var kelly = (best.KellyFraction * 100m).ToString("0.##", CultureInfo.InvariantCulture);
 
-                var message = $"Best value bet: {horse}{venue} ({race})  odds {odds}, AI win {aiProb}% (AI return {aiReturn}) vs market {marketProb}% (diff {diff}%). Kelly stake {stake} ({kelly}% bankroll).";
+                message = $"Best value bet: {horse}{venue} ({race})  odds {odds}, AI win {aiProb}% (AI return {aiReturn}) vs market {marketProb}% (diff {diff}%). Kelly stake {stake} ({kelly}% bankroll).";
                 _status.Update(message);
             }
             else
             {
-                const string message = "No positive expected value opportunities were found while scanning markets.";
-                TempData["Message"] = message;
+                message = "No positive expected value opportunities were found while scanning markets.";
                 _status.Update(message);
             }
-            return RedirectToAction("Index");
+            var snapshot = _automationSettings.GetSnapshot();
+            var model = new AutomateBetsViewModel
+            {
+                KellyDampener = snapshot.KellyDampener,
+                MaxKellyFraction = snapshot.MaxKellyFraction,
+                MaxStakeMode = snapshot.MaxStakeMode,
+                MaxStakePercent = snapshot.MaxStakePercentOfBankroll.HasValue
+                    ? snapshot.MaxStakePercentOfBankroll.Value * 100m
+                    : (decimal?)null,
+                MaxStakeAmount = snapshot.MaxStakeFixedAmount,
+                StatusMessage = _status.Message,
+                BannerMessage = message
+            };
+
+            return View(model);
         }
-        
+
         public IActionResult ScrapeRaceResults([FromServices] RaceResultsScraper scraper)
         {
             _status.Update($"Scraping started at {DateTime.Now:G}");

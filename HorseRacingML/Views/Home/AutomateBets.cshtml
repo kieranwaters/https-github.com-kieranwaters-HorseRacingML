@@ -1,0 +1,273 @@
+﻿@model HorseRacingML.Models.AutomateBetsViewModel
+@using HorseRacingML.Services
+@using System.Globalization
+@using System.Text.Json
+
+@{
+    ViewData["Title"] = "Automate Bets";
+    var culture = CultureInfo.CurrentCulture;
+    var currencySymbol = culture.NumberFormat.CurrencySymbol;
+    var initialSettingsJson = JsonSerializer.Serialize(new
+    {
+        kellyDampener = Model.KellyDampener,
+        maxKellyFraction = Model.MaxKellyFraction,
+        maxStakeMode = Model.MaxStakeMode.ToString(),
+        maxStakePercent = Model.MaxStakePercent.HasValue ? Model.MaxStakePercent.Value / 100m : (decimal?)null,
+        maxStakeAmount = Model.MaxStakeAmount
+    });
+    string FormatNumber(decimal? value, string format) => value.HasValue ? value.Value.ToString(format, CultureInfo.InvariantCulture) : string.Empty;
+}
+
+<div class="container py-4">
+    <h1 class="mb-3">Automate Bets</h1>
+
+    @if (!string.IsNullOrWhiteSpace(Model.BannerMessage))
+    {
+        <div class="alert alert-info" role="status">@Model.BannerMessage</div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(Model.StatusMessage))
+    {
+        <div class="alert alert-secondary" role="status">@Model.StatusMessage</div>
+    }
+
+    <div class="card mb-4">
+        <div class="card-body">
+            <p class="mb-0">The automated betting loop is running in the background. Adjust the parameters below to tune staking in real time.</p>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-body">
+            <form id="automationSettingsForm" class="row g-4" autocomplete="off">
+                <div class="col-lg-4">
+                    <label for="kellyDampenerInput" class="form-label">Kelly dampener</label>
+                    <input type="number"
+                           id="kellyDampenerInput"
+                           class="form-control"
+                           min="0"
+                           max="1"
+                           step="0.01"
+                           value="@Model.KellyDampener.ToString("0.###", CultureInfo.InvariantCulture)" />
+                    <div class="form-text">Scale Kelly stakes between 0 (disable staking) and 1 (full Kelly stake).</div>
+                </div>
+                <div class="col-lg-8">
+                    <label class="form-label d-block">Maximum bet size</label>
+                    <div class="form-check">
+                        <input class="form-check-input"
+                               type="radio"
+                               name="maxStakeMode"
+                               id="maxStakeModeNone"
+                               value="@MaxStakeMode.None"
+                               @(Model.MaxStakeMode == MaxStakeMode.None ? "checked" : string.Empty)>
+                        <label class="form-check-label" for="maxStakeModeNone">No additional cap</label>
+                    </div>
+                    <div class="form-check mt-2">
+                        <input class="form-check-input"
+                               type="radio"
+                               name="maxStakeMode"
+                               id="maxStakeModePercent"
+                               value="@MaxStakeMode.PercentageOfBankroll"
+                               @(Model.MaxStakeMode == MaxStakeMode.PercentageOfBankroll ? "checked" : string.Empty)>
+                        <label class="form-check-label" for="maxStakeModePercent">Limit to a percentage of bankroll</label>
+                        <div class="mt-2 ms-4">
+                            <div class="input-group input-group-sm">
+                                <input type="number"
+                                       class="form-control"
+                                       id="maxStakePercentInput"
+                                       min="0"
+                                       step="0.1"
+                                       max="100"
+                                       value="@FormatNumber(Model.MaxStakePercent, "0.##")"
+                                       @(Model.MaxStakeMode == MaxStakeMode.PercentageOfBankroll ? string.Empty : "disabled") />
+                                <span class="input-group-text">%</span>
+                            </div>
+                            <div class="form-text">Cap each selection to this percentage of the live bankroll.</div>
+                        </div>
+                    </div>
+                    <div class="form-check mt-2">
+                        <input class="form-check-input"
+                               type="radio"
+                               name="maxStakeMode"
+                               id="maxStakeModeFixed"
+                               value="@MaxStakeMode.FixedAmount"
+                               @(Model.MaxStakeMode == MaxStakeMode.FixedAmount ? "checked" : string.Empty)>
+                        <label class="form-check-label" for="maxStakeModeFixed">Limit to a fixed cash amount</label>
+                        <div class="mt-2 ms-4">
+                            <div class="input-group input-group-sm">
+                                <span class="input-group-text">@currencySymbol</span>
+                                <input type="number"
+                                       class="form-control"
+                                       id="maxStakeAmountInput"
+                                       min="0"
+                                       step="0.01"
+                                       value="@FormatNumber(Model.MaxStakeAmount, "0.##")"
+                                       @(Model.MaxStakeMode == MaxStakeMode.FixedAmount ? string.Empty : "disabled") />
+                            </div>
+                            <div class="form-text">Cap each selection to this cash amount regardless of bankroll size.</div>
+                        </div>
+                    </div>
+                </div>
+            </form>
+            <div id="automationSettingsFeedback" class="mt-3 small text-muted"></div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            const state = JSON.parse('@Html.Raw(initialSettingsJson)');
+            const kellyInput = document.getElementById('kellyDampenerInput');
+            const percentInput = document.getElementById('maxStakePercentInput');
+            const amountInput = document.getElementById('maxStakeAmountInput');
+            const modeInputs = Array.from(document.querySelectorAll('input[name="maxStakeMode"]'));
+            const feedback = document.getElementById('automationSettingsFeedback');
+            let debounceHandle = null;
+
+            function parseNumber(value) {
+                if (value === null || value === undefined || value === '') {
+                    return null;
+                }
+                const parsed = Number.parseFloat(value);
+                return Number.isFinite(parsed) ? parsed : null;
+            }
+
+            function trimDecimals(value, digits) {
+                if (value === null || value === undefined || !Number.isFinite(value)) {
+                    return '';
+                }
+                const fixed = Number(value).toFixed(digits);
+                return fixed.replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1');
+            }
+
+            function updateFieldValues() {
+                kellyInput.value = trimDecimals(state.kellyDampener ?? 0, 3);
+                if (state.maxStakePercent !== null && state.maxStakePercent !== undefined) {
+                    percentInput.value = trimDecimals(state.maxStakePercent * 100, 2);
+                } else {
+                    percentInput.value = '';
+                }
+                if (state.maxStakeAmount !== null && state.maxStakeAmount !== undefined) {
+                    amountInput.value = trimDecimals(state.maxStakeAmount, 2);
+                } else {
+                    amountInput.value = '';
+                }
+            }
+
+            function updateModeInputs() {
+                const mode = state.maxStakeMode || '@MaxStakeMode.None';
+                modeInputs.forEach(radio => {
+                    radio.checked = radio.value === mode;
+                });
+                percentInput.disabled = mode !== '@MaxStakeMode.PercentageOfBankroll';
+                amountInput.disabled = mode !== '@MaxStakeMode.FixedAmount';
+            }
+
+            function setFeedback(message, isError) {
+                if (!feedback) {
+                    return;
+                }
+
+                feedback.textContent = message || '';
+                feedback.classList.toggle('text-danger', !!isError);
+                feedback.classList.toggle('text-muted', !isError);
+            }
+
+            function applyServerSnapshot(snapshot) {
+                if (!snapshot) {
+                    return;
+                }
+
+                if (snapshot.kellyDampener !== undefined) {
+                    state.kellyDampener = Number(snapshot.kellyDampener);
+                }
+                state.maxKellyFraction = snapshot.maxKellyFraction !== undefined && snapshot.maxKellyFraction !== null
+                    ? Number(snapshot.maxKellyFraction)
+                    : null;
+                if (snapshot.maxStakeMode) {
+                    state.maxStakeMode = snapshot.maxStakeMode;
+                }
+                state.maxStakePercent = snapshot.maxStakePercent !== undefined && snapshot.maxStakePercent !== null
+                    ? Number(snapshot.maxStakePercent)
+                    : null;
+                state.maxStakeAmount = snapshot.maxStakeAmount !== undefined && snapshot.maxStakeAmount !== null
+                    ? Number(snapshot.maxStakeAmount)
+                    : null;
+
+                updateFieldValues();
+                updateModeInputs();
+            }
+
+            function sendUpdate() {
+                const payload = {
+                    kellyDampener: state.kellyDampener,
+                    maxKellyFraction: state.maxKellyFraction,
+                    maxStakeMode: state.maxStakeMode,
+                    maxStakePercent: state.maxStakeMode === '@MaxStakeMode.PercentageOfBankroll' ? state.maxStakePercent : null,
+                    maxStakeAmount: state.maxStakeMode === '@MaxStakeMode.FixedAmount' ? state.maxStakeAmount : null
+                };
+
+                fetch('@Url.Action("UpdateAutomationSettings")', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                })
+                    .then(response => response.ok ? response.json() : Promise.reject(new Error('Failed to update settings')))
+                    .then(json => {
+                        if (json && json.success && json.settings) {
+                            applyServerSnapshot(json.settings);
+                            setFeedback('Settings updated.', false);
+                        } else {
+                            setFeedback('Unable to update settings. Try again.', true);
+                        }
+                    })
+                    .catch(error => {
+                        console.error(error);
+                        setFeedback('Unable to update settings. Try again.', true);
+                    });
+            }
+
+            function scheduleUpdate() {
+                if (debounceHandle) {
+                    window.clearTimeout(debounceHandle);
+                }
+                debounceHandle = window.setTimeout(sendUpdate, 350);
+            }
+
+            kellyInput.addEventListener('input', () => {
+                const parsed = parseNumber(kellyInput.value);
+                state.kellyDampener = parsed === null ? 0 : Math.min(Math.max(parsed, 0), 1);
+                scheduleUpdate();
+            });
+
+            percentInput.addEventListener('input', () => {
+                const parsed = parseNumber(percentInput.value);
+                state.maxStakePercent = parsed === null ? null : Math.max(parsed, 0) / 100;
+                scheduleUpdate();
+            });
+
+            amountInput.addEventListener('input', () => {
+                const parsed = parseNumber(amountInput.value);
+                state.maxStakeAmount = parsed === null ? null : Math.max(parsed, 0);
+                scheduleUpdate();
+            });
+
+            modeInputs.forEach(radio => {
+                radio.addEventListener('change', () => {
+                    if (radio.checked) {
+                        state.maxStakeMode = radio.value;
+                        updateModeInputs();
+                        scheduleUpdate();
+                    }
+                });
+            });
+
+            applyServerSnapshot(state);
+            setFeedback('', false);
+        })();
+    </script>
+}

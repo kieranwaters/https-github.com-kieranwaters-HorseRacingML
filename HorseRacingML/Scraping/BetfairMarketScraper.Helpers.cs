@@ -325,8 +325,6 @@ const hasBackAllContext = target => {
             };
 
             const buttonSelectors = 'button, [role=""button""], .bet-button, ours-price-button button, td.bet-buttons.back-cell.last-back-cell > ours-price-button > button, td.bet-buttons.back-cell.last-back-cell ours-price-button button, td[bet-type=""back""] ours-price-button button';
-
-            const buttonSelectors = 'button, [role=""button""], .bet-button, ours-price-button button, td.bet-buttons.back-cell.last-back-cell > ours-price-button > button, td.bet-buttons.back-cell.last-back-cell ours-price-button button';
             const buttons = Array.from(runnerRow.querySelectorAll(buttonSelectors));
 
             for (const btn of buttons) {
@@ -592,41 +590,6 @@ const hasBackAllContext = target => {
                 return null;
             }
         }
-
-        private static decimal CalculateSequentialStake(decimal bankroll, decimal kellyFraction)
-        {
-            if (bankroll <= 0m || kellyFraction <= 0m)
-            {
-                return 0m;
-            }
-
-            var stake = bankroll * kellyFraction;
-            if (stake <= 0m)
-            {
-                return 0m;
-            }
-
-            if (stake > bankroll)
-            {
-                stake = bankroll;
-            }
-
-            stake = decimal.Round(stake, 2, MidpointRounding.ToZero);
-            if (stake < 1m)
-            {
-                if (bankroll >= 1m)
-                {
-                    stake = 1m;
-                }
-                else
-                {
-                    return 0m;
-                }
-            }
-
-            return stake;
-        }
-
         private static decimal CalculateAiDecimalOdds(double aiProbability)
         {
             if (aiProbability <= 0)
