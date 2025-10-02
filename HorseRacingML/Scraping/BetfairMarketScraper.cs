@@ -36,6 +36,14 @@ namespace HorseRacingML.Scraping
         private const string PlaceBetsButtonSelector = "#main-wrapper > div > div.scrollable-panes-height-taker > div > ui-view > div > div > div.bf-col-xxl-7-24.bf-col-xl-8-24.bf-col-lg-8-24.bf-col-md-9-24.bf-col-sm-10-24.bf-col-10-24.right-side-column > div > div > bf-aside > div > div.bf-row.aside-top-row.no-bottom-gutter > div > betslip > div > bf-tabs > section > div:nth-child(2) > div > div > section > potentials > section > form > betslip-potentials-footer > footer > div.potentials-footer__actions > div > highlighted-button > ours-button > button";
         private const string ConfirmBetsButtonSelector = "#main-wrapper > div > div.scrollable-panes-height-taker > div > ui-view > div > div > div.bf-col-xxl-7-24.bf-col-xl-8-24.bf-col-lg-8-24.bf-col-md-9-24.bf-col-sm-10-24.bf-col-10-24.right-side-column > div > div > bf-aside > div > div.bf-row.aside-top-row.no-bottom-gutter > div > betslip > div > bf-tabs > section > div:nth-child(2) > div > div > section > confirmation > section > betslip-confirmation-footer > footer > div.confirmation-footer__actions > highlighted-button > ours-button > button";
         private HyperparameterSummary? _loadedHyperparameters;
+        private static readonly string[] SelectionIdAttributes =
+        {
+            "data-selection-id",
+            "data-selection-key",
+            "data-selection-uid",
+            "data-selectionid",
+            "data-runner-id"
+        };
         public BetfairMarketScraper(
             IRacingRepository repo,
             HyperparameterTrainer trainer,
@@ -692,13 +700,12 @@ namespace HorseRacingML.Scraping
                 }
                 var flows = new List<RunnerFlow>(); // collect runner flows
                 var runnerEntries = new List<(IWebElement Row, RunnerFlow Flow)>(); // row→flow mapping
-                var selectionIdAttributes = new[] { "data-selection-id", "data-selection-key", "data-selection-uid", "data-selectionid", "data-runner-id" }; // possible id attrs
-
+                
                 foreach (var row in rows)
                 {
                     string? selectionId = null; // selection id holder
 
-                    foreach (var attribute in selectionIdAttributes)
+                    foreach (var attribute in SelectionIdAttributes)
                     {
                         selectionId = row.GetAttribute(attribute); // read attr
                         if (!string.IsNullOrEmpty(selectionId)) { break; } // found
@@ -706,7 +713,7 @@ namespace HorseRacingML.Scraping
 
                     if (string.IsNullOrEmpty(selectionId))
                     {
-                        foreach (var attribute in selectionIdAttributes)
+                        foreach (var attribute in SelectionIdAttributes)
                         {
                             try
                             {
@@ -970,6 +977,13 @@ namespace HorseRacingML.Scraping
 
                     if (raceRecommendations.Count > 0)
                     {
+                        if (!TryRefreshRunnerEntriesForBetting(driver, marketId, flows, out var refreshedEntries))
+                        {
+                            Console.Error.WriteLine($"\tSkipping bet execution for market {marketId} because the refreshed runner list could not be resolved.");
+                            continue;
+                        }
+
+                        runnerEntries = refreshedEntries;
                         var bankrollBeforeClicks = _availableBankroll; // snapshot bankroll
                         var clickedRecommendations = ExecuteBackAllClicks(driver, runnerEntries, raceRecommendations); // click bets
 
@@ -1020,6 +1034,192 @@ namespace HorseRacingML.Scraping
 
             result.Recommendations.AddRange(recommendations.OrderByDescending(r => r.Differential).ThenByDescending(r => r.KellyFraction)); // finalize ordering
             return result; // done
+        }
+        private bool TryRefreshRunnerEntriesForBetting(
+            IWebDriver driver,
+            string marketId,
+            IReadOnlyList<RunnerFlow> flows,
+            out List<(IWebElement Row, RunnerFlow Flow)> refreshedEntries)
+        {
+            refreshedEntries = new List<(IWebElement Row, RunnerFlow Flow)>();
+
+            if (driver == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                driver.Navigate().Refresh();
+                Console.WriteLine($"\tRefreshed Betfair market {marketId} before executing bets to reload stake defaults.");
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"\tFailed to refresh market {marketId} before executing bets: {ex.Message}");
+                return false;
+            }
+
+            var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10));
+            try
+            {
+                wait.Until(d => d.FindElements(By.CssSelector(".runner-line")).Count > 0);
+            }
+            catch (WebDriverTimeoutException)
+            {
+                Console.Error.WriteLine($"\tTimed out waiting for runner rows after refreshing market {marketId}.");
+                return false;
+            }
+
+            var rows = driver.FindElements(By.CssSelector(".runner-line"));
+            if (rows.Count == 0)
+            {
+                Console.Error.WriteLine($"\tNo runner rows found after refreshing market {marketId}.");
+                return false;
+            }
+
+            var bySelectionId = new Dictionary<string, RunnerFlow>(StringComparer.OrdinalIgnoreCase);
+            var byHorseName = new Dictionary<string, RunnerFlow>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var flow in flows)
+            {
+                if (flow == null)
+                {
+                    continue;
+                }
+
+                if (!string.IsNullOrWhiteSpace(flow.SelectionId))
+                {
+                    var key = flow.SelectionId!.Trim();
+                    if (key.Length > 0 && !bySelectionId.ContainsKey(key))
+                    {
+                        bySelectionId[key] = flow;
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(flow.HorseName))
+                {
+                    var key = flow.HorseName!.Trim();
+                    if (key.Length > 0 && !byHorseName.ContainsKey(key))
+                    {
+                        byHorseName[key] = flow;
+                    }
+                }
+            }
+
+            foreach (var row in rows)
+            {
+                var selectionId = ExtractSelectionIdFromRow(row);
+                RunnerFlow? matched = null;
+
+                if (!string.IsNullOrWhiteSpace(selectionId) && bySelectionId.TryGetValue(selectionId, out var flowById))
+                {
+                    matched = flowById;
+                }
+                else
+                {
+                    var horseName = TryExtractRunnerName(row);
+                    if (!string.IsNullOrWhiteSpace(horseName) && byHorseName.TryGetValue(horseName, out var flowByName))
+                    {
+                        matched = flowByName;
+                    }
+                }
+
+                if (matched != null)
+                {
+                    refreshedEntries.Add((row, matched));
+                }
+            }
+
+            if (refreshedEntries.Count == 0)
+            {
+                Console.Error.WriteLine($"\tUnable to match refreshed runner rows to existing flows for market {marketId}.");
+                return false;
+            }
+
+            return true;
+        }
+
+        private static string? ExtractSelectionIdFromRow(IWebElement row)
+        {
+            if (row == null)
+            {
+                return null;
+            }
+
+            foreach (var attribute in SelectionIdAttributes)
+            {
+                try
+                {
+                    var value = row.GetAttribute(attribute);
+                    if (!string.IsNullOrWhiteSpace(value))
+                    {
+                        return value.Trim();
+                    }
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            foreach (var attribute in SelectionIdAttributes)
+            {
+                try
+                {
+                    var child = TryFindElement(row, By.CssSelector($"[{attribute}]"));
+                    if (child != null)
+                    {
+                        var value = child.GetAttribute(attribute);
+                        if (!string.IsNullOrWhiteSpace(value))
+                        {
+                            return value.Trim();
+                        }
+                    }
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            return null;
+        }
+
+        private static string? TryExtractRunnerName(IWebElement row)
+        {
+            if (row == null)
+            {
+                return null;
+            }
+
+            var selectors = new[]
+            {
+                ".name .runner-name",
+                "[data-testid='runner-name']",
+                ".runner-name",
+                ".name"
+            };
+
+            foreach (var selector in selectors)
+            {
+                try
+                {
+                    var element = TryFindElement(row, By.CssSelector(selector));
+                    if (element == null)
+                    {
+                        continue;
+                    }
+
+                    var text = element.Text;
+                    if (!string.IsNullOrWhiteSpace(text))
+                    {
+                        return text.Trim();
+                    }
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            return null;
         }
 
         private RaceDayReport BuildRaceReport(
