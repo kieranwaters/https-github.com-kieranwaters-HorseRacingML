@@ -14,6 +14,7 @@ using System.Threading.Tasks;
 using System.Linq;
 using System.Threading;
 using HorseRacingML.Services;
+using System.Collections;
 
 namespace HorseRacingML.Scraping
 {
@@ -34,6 +35,8 @@ namespace HorseRacingML.Scraping
         private readonly object _automationLock = new();
         private CancellationTokenSource? _automationCancellation;
         private Task? _automationTask;
+        private readonly Dictionary<string, string?> _raceGoingByMarketId = new(StringComparer.OrdinalIgnoreCase);
+        private readonly object _raceGoingLock = new();
 
         public BetfairNavigationService(IConfiguration config, AutomationSettingsService automationSettings)
         {
@@ -110,7 +113,8 @@ namespace HorseRacingML.Scraping
                     trainer,
                     bankroll,
                     settings,
-                    _useMarketFallbackForAiDegeneracy);
+                    _useMarketFallbackForAiDegeneracy,
+                    GetRaceGoingSnapshot());
                 var races = scraper.ScrapeOpenRaceTabsForReport(_driver, newHandles);
 
                 var targetMarketId = BetfairMarketScraper.ExtractMarketId(raceUrl);
@@ -171,7 +175,8 @@ namespace HorseRacingML.Scraping
                 trainer,
                 bankroll,
                 settings,
-                _useMarketFallbackForAiDegeneracy);
+                _useMarketFallbackForAiDegeneracy,
+                GetRaceGoingSnapshot());
             return scraper.ScrapeOpenRaceTabs(_driver);
         }
 
@@ -498,6 +503,8 @@ namespace HorseRacingML.Scraping
         }
         public DayReportViewModel GenerateDayReport(RacingRepository repo, HyperparameterTrainer trainer)
         {
+            ReturnToPrimaryWindow();
+            CaptureRaceGoingFromSchedule();
             repo.ClearDayReportTables();
             var bankroll = GetEffectiveBankroll();
             var settings = _automationSettings.GetSnapshot();
@@ -506,7 +513,8 @@ namespace HorseRacingML.Scraping
                 trainer,
                 bankroll,
                 settings,
-                _useMarketFallbackForAiDegeneracy);
+                _useMarketFallbackForAiDegeneracy,
+                GetRaceGoingSnapshot());
             var races = scraper.ScrapeOpenRaceTabsForReport(_driver);
             var orderedRaces = races
                 .OrderBy(r => GetRaceScheduleSortKey(r))
@@ -539,7 +547,7 @@ namespace HorseRacingML.Scraping
             wait.Until(d =>
                 ((IJavaScriptExecutor)d).ExecuteScript("return document.readyState").ToString() == "complete");
             wait.Until(d => d.FindElements(By.CssSelector("a,button")).Count > 0);
-
+            CaptureRaceGoingFromSchedule();
             static bool Is24HourTime(string s)
             {
                 if (string.IsNullOrWhiteSpace(s))
@@ -649,7 +657,15 @@ namespace HorseRacingML.Scraping
                         {
                             continue;
                         }
-
+                        try
+                        {
+                            var going = ExtractGoingForElement(el);
+                            RecordRaceGoing(href, going);
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.Error.WriteLine($"[Navigation] Failed to record going for race link: {ex.Message}");
+                        }
                         if (raceWindow.HasValue)
                         {
                             var raceTime = TryResolveRaceDateTime(textValue, windowReferenceLocal);
@@ -696,6 +712,15 @@ namespace HorseRacingML.Scraping
                     var href = anchor.GetAttribute("href");
                     if (!string.IsNullOrWhiteSpace(href))
                     {
+                        try
+                        {
+                            var going = ExtractGoingForElement(anchor);
+                            RecordRaceGoing(href, going);
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.Error.WriteLine($"[Navigation] Failed to capture going from fallback link: {ex.Message}");
+                        }
                         seen.Add(href);
                     }
                 }
@@ -725,6 +750,13 @@ namespace HorseRacingML.Scraping
                 }
             }
         }
+        private IReadOnlyDictionary<string, string?> GetRaceGoingSnapshot() { lock (_raceGoingLock) { return new Dictionary<string, string?>(_raceGoingByMarketId, StringComparer.OrdinalIgnoreCase); } }
+        private void RecordRaceGoing(string? href, string? going) { if (string.IsNullOrWhiteSpace(href)) { return; } var marketId = BetfairMarketScraper.ExtractMarketId(href); if (string.IsNullOrWhiteSpace(marketId)) { return; } var trimmedGoing = string.IsNullOrWhiteSpace(going) ? null : going!.Trim(); lock (_raceGoingLock) { if (!string.IsNullOrEmpty(trimmedGoing)) { _raceGoingByMarketId[marketId] = trimmedGoing; } else if (!_raceGoingByMarketId.ContainsKey(marketId)) { _raceGoingByMarketId[marketId] = null; } } }
+        private void CaptureRaceGoingFromSchedule() { lock (_raceGoingLock) { _raceGoingByMarketId.Clear(); } try { var js = (IJavaScriptExecutor)_driver; const string script = @"
+const results=[];const textOrEmpty=node=>{if(!node)return '';const raw=node.textContent||node.innerText||'';return raw.trim();};const items=Array.from(document.querySelectorAll('li')).filter(li=>li.querySelector('.meeting-description'));for(const item of items){let href='';const anchor=item.querySelector(""a[href*='/horse-racing/']"");if(anchor&&anchor.href){href=anchor.href;}else{const button=item.querySelector('button');if(button){const link=button.closest(""a[href*='/horse-racing/']"");if(link&&link.href){href=link.href;}}}if(!href){continue;}const going=textOrEmpty(item.querySelector(""div.racetrack-conditions, .racetrack-conditions, [data-testid='racetrack-conditions']""));results.push({href,going});}return results;"; var raw = js.ExecuteScript(script); if (raw is IEnumerable<object> entries) { foreach (var entry in entries) { string? href = null; string? going = null; switch (entry) { case IReadOnlyDictionary<string, object?> dict: if (dict.TryGetValue("href", out var hrefValue)) { href = hrefValue?.ToString(); } if (dict.TryGetValue("going", out var goingValue)) { going = goingValue?.ToString(); } break; case IDictionary legacyDict: if (legacyDict.Contains("href")) { href = legacyDict["href"]?.ToString(); } if (legacyDict.Contains("going")) { going = legacyDict["going"]?.ToString(); } break; } RecordRaceGoing(href, going); } } } catch (Exception ex) { Console.Error.WriteLine($"[Navigation] Failed to capture going information from schedule: {ex.Message}"); } }
+        private string? ExtractGoingForElement(IWebElement element) { if (element == null) { return null; } try { var js = (IJavaScriptExecutor)_driver; const string script = @"
+const el=arguments[0];const selectors=['div.racetrack-conditions','.racetrack-conditions',""[data-testid='racetrack-conditions']""];const textOrEmpty=node=>{if(!node)return '';const raw=node.textContent||node.innerText||'';return raw.trim();};let current=el;while(current){for(const selector of selectors){const candidate=current.querySelector?current.querySelector(selector):null;if(candidate){const value=textOrEmpty(candidate);if(value){return value;}}}current=current.parentElement;}return '';"; var result = js.ExecuteScript(script, element); if (result is string text) { var trimmed = text.Trim(); return string.IsNullOrEmpty(trimmed) ? null : trimmed; } } catch (StaleElementReferenceException) { return null; } catch (Exception ex) { Console.Error.WriteLine($"[Navigation] Failed to extract going text: {ex.Message}"); } return null; }
+
         public void StartAutomatedBettingLoop(
             RacingRepository repo,
             HyperparameterTrainer trainer,

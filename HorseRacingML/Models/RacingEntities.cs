@@ -90,6 +90,7 @@ namespace HorseRacingML.Models
         public string? EventDateText { get; set; }
         public string? RaceDetails { get; set; }
         public string? RaceType { get; set; }
+        public string? Going { get; set; }
         public decimal? BackBookPercentage { get; set; }
         public decimal? LayBookPercentage { get; set; }
         public string? RaceUrl { get; set; }

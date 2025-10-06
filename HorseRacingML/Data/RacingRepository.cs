@@ -608,9 +608,15 @@ GROUP BY h.Name;";
         }
         public void InsertRaceScreen(RaceScreen screen)
         {
+            if (screen == null)
+            {
+                throw new ArgumentNullException(nameof(screen));
+            }
+
+            screen.Going = NormalizeGoing(screen.Going);
             const string sql = @"
-INSERT INTO RaceScreen(MarketId, RaceDate, OffTime, Title, VenueName, VenueCountry, EventDateText, RaceDetails, RaceType, BackBookPercentage, LayBookPercentage, RaceUrl)
-VALUES(@MarketId, @RaceDate, @OffTime, @Title, @VenueName, @VenueCountry, @EventDateText, @RaceDetails, @RaceType, @BackBookPercentage, @LayBookPercentage, @RaceUrl);";
+INSERT INTO RaceScreen(MarketId, RaceDate, OffTime, Title, VenueName, VenueCountry, EventDateText, RaceDetails, RaceType, Going, BackBookPercentage, LayBookPercentage, RaceUrl)
+VALUES(@MarketId, @RaceDate, @OffTime, @Title, @VenueName, @VenueCountry, @EventDateText, @RaceDetails, @RaceType, @Going, @BackBookPercentage, @LayBookPercentage, @RaceUrl);";
             using var conn = OpenConnection();
             EnsureRaceScreenTableExists(conn);
             conn.Execute(sql, screen);
@@ -652,6 +658,8 @@ BEGIN
         EventDateText    NVARCHAR(128) NULL,
         RaceDetails      NVARCHAR(MAX) NULL,
 RaceType         NVARCHAR(128) NULL,
+        Going            NVARCHAR(30)  NULL,
+RaceType         NVARCHAR(128) NULL,
         BackBookPercentage DECIMAL(9,2) NULL,
         LayBookPercentage  DECIMAL(9,2) NULL,
         RaceUrl           NVARCHAR(1024) NULL
@@ -673,6 +681,13 @@ BEGIN
 END";
 
                 conn.Execute(addRaceTypeSql);
+                const string addGoingSql = @"
+IF COL_LENGTH('dbo.RaceScreen', 'Going') IS NULL
+BEGIN
+    ALTER TABLE dbo.RaceScreen ADD Going NVARCHAR(30) NULL;
+END";
+
+                conn.Execute(addGoingSql);
                 _raceScreenTableEnsured = true;
             }
         }

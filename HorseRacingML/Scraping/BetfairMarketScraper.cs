@@ -28,6 +28,7 @@ namespace HorseRacingML.Scraping
         private readonly MaxStakeMode _maxStakeMode;
         private readonly decimal? _maxStakePercentOfBankroll;
         private readonly decimal? _maxStakeFixedAmount;
+        private readonly IReadOnlyDictionary<string, string?>? _raceGoingLookup;
         private readonly Dictionary<RacePreparationKey, FeatureLookup> _featureLookupCache = new();
         private readonly object _featureLookupCacheLock = new();
         private decimal _availableBankroll;
@@ -53,7 +54,8 @@ namespace HorseRacingML.Scraping
            bool useMarketFallbackForAiDegeneracy = true,
             MaxStakeMode maxStakeMode = MaxStakeMode.None,
             decimal? maxStakePercentOfBankroll = null,
-            decimal? maxStakeFixedAmount = null)
+            decimal? maxStakeFixedAmount = null,
+            IReadOnlyDictionary<string, string?>? raceGoingLookup = null)
         {
             _repo = repo ?? throw new ArgumentNullException(nameof(repo));
             _trainer = trainer ?? throw new ArgumentNullException(nameof(trainer));
@@ -68,6 +70,7 @@ namespace HorseRacingML.Scraping
             _maxStakeMode = maxStakeMode;
             _maxStakePercentOfBankroll = maxStakePercentOfBankroll;
             _maxStakeFixedAmount = maxStakeFixedAmount;
+            _raceGoingLookup = raceGoingLookup;
         }
 
         public BetfairMarketScraper(
@@ -75,7 +78,8 @@ namespace HorseRacingML.Scraping
             HyperparameterTrainer trainer,
             decimal bankroll,
             AutomationSettingsSnapshot settings,
-            bool useMarketFallbackForAiDegeneracy = true)
+            bool useMarketFallbackForAiDegeneracy = true,
+            IReadOnlyDictionary<string, string?>? raceGoingLookup = null)
             : this(
                 repo,
                 trainer,
@@ -85,7 +89,8 @@ namespace HorseRacingML.Scraping
                 useMarketFallbackForAiDegeneracy,
                 settings?.MaxStakeMode ?? MaxStakeMode.None,
                 settings?.MaxStakePercentOfBankroll,
-                settings?.MaxStakeFixedAmount)
+                settings?.MaxStakeFixedAmount,
+                raceGoingLookup)
         {
             if (settings == null)
             {
@@ -98,6 +103,30 @@ namespace HorseRacingML.Scraping
             var result = ScrapeOpenRaceTabsInternal(driver, executeBets: false, captureReport: true, handlesToProcess: handlesToProcess);
             PopulateWinnerProbabilities(result.Races);
             return result.Races;
+        }
+        private string? GetGoingForMarket(string? marketId)
+        {
+            if (string.IsNullOrWhiteSpace(marketId) || _raceGoingLookup == null)
+            {
+                return null;
+            }
+
+            var key = marketId.Trim();
+            if (key.Length == 0)
+            {
+                return null;
+            }
+
+            if (_raceGoingLookup.TryGetValue(key, out var going))
+            {
+                var trimmed = going?.Trim();
+                if (!string.IsNullOrEmpty(trimmed))
+                {
+                    return trimmed;
+                }
+            }
+
+            return null;
         }
         public void PopulateWinnerProbabilities(IEnumerable<RaceDayReport> races)
         {
@@ -307,6 +336,7 @@ namespace HorseRacingML.Scraping
                     scheduledOff,
                     raceDetails,
                     raceType,
+                    goingText,
                     backBookPercentage,
                     layBookPercentage,
                     marketId,
@@ -474,7 +504,7 @@ namespace HorseRacingML.Scraping
                     Class = metadata.Class,
                     AgeRestriction = metadata.AgeRestriction,
                     Surface = metadata.Surface,
-                    Going = metadata.Going,
+                    Going = string.IsNullOrWhiteSpace(race.Going) ? metadata.Going : race.Going!.Trim(),
                     DistanceYards = distanceYards,
                     DistanceText = metadata.DistanceText,
                     RunnerCount = runnerCount,
@@ -549,7 +579,7 @@ namespace HorseRacingML.Scraping
                     Console.Error.WriteLine($"\tFailed to extract market ID from URL: {driver.Url}"); // log failure
                     continue; // next tab
                 }
-
+                var goingText = GetGoingForMarket(marketId);
                 var title = ReadFirstNonEmptyText(driver,
                     "[data-testid='marketTitle']",
                     "[data-testid='market-title']",
@@ -625,6 +655,7 @@ namespace HorseRacingML.Scraping
                         EventDateText = string.IsNullOrWhiteSpace(eventDateText) ? null : eventDateText.Trim(), // raw text
                         RaceDetails = string.IsNullOrWhiteSpace(cleanedRaceDetails) ? null : cleanedRaceDetails.Trim(),
                         RaceType = string.IsNullOrWhiteSpace(raceTypeText) ? null : raceTypeText.Trim(),
+                        Going = string.IsNullOrWhiteSpace(goingText) ? null : goingText,
                         BackBookPercentage = backBookPercentage, // %
                         LayBookPercentage = layBookPercentage, // %
                         RaceUrl = string.IsNullOrWhiteSpace(raceUrl) ? null : raceUrl.Trim() // url
@@ -656,7 +687,8 @@ namespace HorseRacingML.Scraping
                         {
                             RaceTitle = title,
                             RaceDetails = string.IsNullOrWhiteSpace(cleanedRaceDetails) ? null : cleanedRaceDetails.Trim(),
-                            RaceType = string.IsNullOrWhiteSpace(raceTypeText) ? null : raceTypeText.Trim()
+                            RaceType = string.IsNullOrWhiteSpace(raceTypeText) ? null : raceTypeText.Trim(),
+                            Going = string.IsNullOrWhiteSpace(goingText) ? null : goingText
                         };
                         var metadata = ParseRaceMetadata(metadataSource);
 
@@ -681,7 +713,7 @@ namespace HorseRacingML.Scraping
                             Class = metadata.Class,
                             AgeRestriction = metadata.AgeRestriction,
                             Surface = metadata.Surface,
-                            Going = metadata.Going,
+                            Going = string.IsNullOrWhiteSpace(goingText) ? metadata.Going : goingText,
                             DistanceYards = distanceYards,
                             DistanceText = metadata.DistanceText,
                             RunnerCount = runnerCount,
@@ -958,6 +990,7 @@ namespace HorseRacingML.Scraping
                         offTime,
                         cleanedRaceDetails,
                         raceTypeText,
+                        goingText,
                         backBookPercentage,
                         layBookPercentage,
                         raceUrl,
@@ -1238,6 +1271,7 @@ namespace HorseRacingML.Scraping
             TimeSpan? offTime,
             string? raceDetails,
             string? raceType,
+            string? going,
             decimal? backBookPercentage,
             decimal? layBookPercentage,
             string? raceUrl,
@@ -1253,6 +1287,7 @@ namespace HorseRacingML.Scraping
                 OffTime = offTime,
                 RaceDetails = string.IsNullOrWhiteSpace(raceDetails) ? null : raceDetails.Trim(),
                 RaceType = string.IsNullOrWhiteSpace(raceType) ? null : raceType.Trim(),
+                Going = string.IsNullOrWhiteSpace(going) ? null : going.Trim(),
                 BackBookPercentage = backBookPercentage,
                 LayBookPercentage = layBookPercentage,
                 RaceUrl = string.IsNullOrWhiteSpace(raceUrl) ? null : raceUrl.Trim()
@@ -1646,6 +1681,7 @@ namespace HorseRacingML.Scraping
             TimeSpan? scheduledOff,
             string? raceDetails,
             string? raceType,
+            string? going,
             decimal? backBookPercentage,
             decimal? layBookPercentage,
             string? marketId,
@@ -1669,7 +1705,8 @@ namespace HorseRacingML.Scraping
             {
                 RaceTitle = raceTitle,
                 RaceDetails = string.IsNullOrWhiteSpace(raceDetails) ? null : raceDetails.Trim(),
-                RaceType = string.IsNullOrWhiteSpace(raceType) ? null : raceType.Trim()
+                RaceType = string.IsNullOrWhiteSpace(raceType) ? null : raceType.Trim(),
+                Going = string.IsNullOrWhiteSpace(going) ? null : going.Trim()
             };
             var parsedMetadata = ParseRaceMetadata(metadataSource);
 
@@ -1694,7 +1731,7 @@ namespace HorseRacingML.Scraping
                 Class = parsedMetadata.Class,
                 AgeRestriction = parsedMetadata.AgeRestriction,
                 Surface = parsedMetadata.Surface,
-                Going = parsedMetadata.Going,
+                Going = string.IsNullOrWhiteSpace(going) ? parsedMetadata.Going : going.Trim(),
                 DistanceYards = distanceYards,
                 DistanceText = parsedMetadata.DistanceText,
                 RunnerCount = runnerCount,

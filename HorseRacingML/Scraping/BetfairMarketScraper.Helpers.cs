@@ -141,6 +141,7 @@ namespace HorseRacingML.Scraping
             var tokens = EnumerateDetailTokens(race.RaceDetails)
                 .Concat(EnumerateDetailTokens(race.RaceTitle))
                 .Concat(EnumerateDetailTokens(race.RaceType))
+                .Concat(EnumerateDetailTokens(race.Going))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
