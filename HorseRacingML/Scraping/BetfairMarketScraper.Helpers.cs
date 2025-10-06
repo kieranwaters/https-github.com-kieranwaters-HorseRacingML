@@ -219,7 +219,66 @@ namespace HorseRacingML.Scraping
 
             return (typeSegment, string.IsNullOrWhiteSpace(remainder) ? null : remainder);
         }
-
+        private static readonly IReadOnlyDictionary<string, string> RaceTypeTokenMappings =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["handicap"] = "Handicap",
+                ["hcap"] = "Handicap",
+                ["hcp"] = "Handicap",
+                ["nursery"] = "Nursery",
+                ["novice"] = "Novice",
+                ["nov"] = "Novice",
+                ["stakes"] = "Stakes",
+                ["stks"] = "Stakes",
+                ["stk"] = "Stakes",
+                ["listed"] = "Listed",
+                ["maiden"] = "Maiden",
+                ["mdn"] = "Maiden",
+                ["claiming"] = "Claiming",
+                ["claim"] = "Claiming",
+                ["claimer"] = "Claiming",
+                ["clm"] = "Claiming",
+                ["selling"] = "Selling",
+                ["sell"] = "Selling",
+                ["allowance"] = "Allowance",
+                ["allow"] = "Allowance",
+                ["conditions"] = "Conditions",
+                ["condition"] = "Conditions",
+                ["apprentice"] = "Apprentice",
+                ["app"] = "Apprentice",
+                ["amateur"] = "Amateur",
+                ["mares"] = "Mares",
+                ["mare"] = "Mares",
+                ["fillies"] = "Fillies",
+                ["filly"] = "Fillies",
+                ["hurdle"] = "Hurdle",
+                ["hrd"] = "Hurdle",
+                ["hdle"] = "Hurdle",
+                ["chase"] = "Chase",
+                ["chs"] = "Chase",
+                ["ch"] = "Chase",
+                ["steeplechase"] = "Chase",
+                ["bumper"] = "NH Flat",
+                ["nhflat"] = "NH Flat",
+                ["nhf"] = "NH Flat",
+                ["inhf"] = "NH Flat",
+                ["flat"] = "Flat",
+                ["beg"] = "Beginners",
+                ["beginner"] = "Beginners",
+                ["beginners"] = "Beginners",
+                ["g1"] = "Group 1",
+                ["g2"] = "Group 2",
+                ["g3"] = "Group 3",
+                ["group1"] = "Group 1",
+                ["group2"] = "Group 2",
+                ["group3"] = "Group 3",
+                ["grade1"] = "Grade 1",
+                ["grade2"] = "Grade 2",
+                ["grade3"] = "Grade 3",
+                ["gr1"] = "Grade 1",
+                ["gr2"] = "Grade 2",
+                ["gr3"] = "Grade 3"
+            };
         private static IEnumerable<string> EnumerateDetailTokens(string? source)
         {
             if (string.IsNullOrWhiteSpace(source))
@@ -429,6 +488,34 @@ const hasBackAllContext = target => {
         }
         private static string? TryDetectRaceType(IEnumerable<string> tokens, string? title)
         {
+            static string? ComposeRaceType(IReadOnlyCollection<string> components)
+            {
+                if (components.Count == 0)
+                {
+                    return null;
+                }
+
+                return components.Count == 1
+                    ? components.First()
+                    : string.Join(" ", components);
+            }
+
+            var componentList = ExtractRaceTypeComponents(tokens);
+            var raceType = ComposeRaceType(componentList);
+            if (!string.IsNullOrEmpty(raceType))
+            {
+                return raceType;
+            }
+
+            if (!string.IsNullOrWhiteSpace(title))
+            {
+                var titleComponents = ExtractRaceTypeComponents(EnumerateDetailTokens(title));
+                raceType = ComposeRaceType(titleComponents);
+                if (!string.IsNullOrEmpty(raceType))
+                {
+                    return raceType;
+                }
+            }
             foreach (var token in tokens)
             {
                 var normalized = token.Trim().ToLowerInvariant();
@@ -454,6 +541,116 @@ const hasBackAllContext = target => {
             }
 
             return null;
+        }
+        private static IReadOnlyList<string> ExtractRaceTypeComponents(IEnumerable<string> source)
+        {
+            var results = new List<string>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var token in source)
+            {
+                if (string.IsNullOrWhiteSpace(token))
+                {
+                    continue;
+                }
+
+                foreach (var component in ExpandRaceTypeToken(token))
+                {
+                    if (seen.Add(component))
+                    {
+                        results.Add(component);
+                    }
+                }
+            }
+
+            return results;
+        }
+
+        private static IEnumerable<string> ExpandRaceTypeToken(string token)
+        {
+            if (string.IsNullOrWhiteSpace(token))
+            {
+                yield break;
+            }
+
+            var builder = new StringBuilder();
+
+            foreach (var c in token)
+            {
+                if (char.IsLetterOrDigit(c))
+                {
+                    builder.Append(c);
+                    continue;
+                }
+
+                if (builder.Length == 0)
+                {
+                    continue;
+                }
+
+                var part = builder.ToString();
+                builder.Clear();
+
+                if (TryMapRaceTypeToken(part, out var mapped))
+                {
+                    yield return mapped;
+                }
+            }
+
+            if (builder.Length > 0)
+            {
+                var part = builder.ToString();
+                if (TryMapRaceTypeToken(part, out var mapped))
+                {
+                    yield return mapped;
+                }
+            }
+
+            if (TryMapRaceTypeToken(token, out var entireTokenMapped))
+            {
+                yield return entireTokenMapped;
+            }
+        }
+
+        private static bool TryMapRaceTypeToken(string token, out string canonical)
+        {
+            canonical = string.Empty;
+            if (string.IsNullOrWhiteSpace(token))
+            {
+                return false;
+            }
+
+            var normalized = NormalizeRaceTypeToken(token);
+            if (string.IsNullOrEmpty(normalized))
+            {
+                return false;
+            }
+
+            if (RaceTypeTokenMappings.TryGetValue(normalized, out canonical!))
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        private static string NormalizeRaceTypeToken(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            var builder = new StringBuilder(value.Length);
+            foreach (var c in value)
+            {
+                if (char.IsLetterOrDigit(c))
+                {
+                    builder.Append(char.ToLowerInvariant(c));
+                }
+            }
+
+            return builder.ToString();
         }
 
         private static bool IsGoingToken(string token)
