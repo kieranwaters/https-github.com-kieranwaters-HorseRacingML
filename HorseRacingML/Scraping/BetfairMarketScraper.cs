@@ -236,6 +236,7 @@ namespace HorseRacingML.Scraping
             string? venueCountry,
             TimeSpan? scheduledOff,
             string? raceDetails,
+            string? raceType,
             decimal? backBookPercentage,
             decimal? layBookPercentage,
             string? marketId,
@@ -305,6 +306,7 @@ namespace HorseRacingML.Scraping
                     venueCountry,
                     scheduledOff,
                     raceDetails,
+                    raceType,
                     backBookPercentage,
                     layBookPercentage,
                     marketId,
@@ -608,7 +610,8 @@ namespace HorseRacingML.Scraping
                 var layBookPercentage = ParsePercentage(layBookText); // parse %
 
                 Console.WriteLine($"\tScraping market {marketId} - {title}"); // progress
-
+                var originalRaceDetails = string.IsNullOrWhiteSpace(raceDetailsText) ? null : raceDetailsText.Trim();
+                var (raceTypeText, cleanedRaceDetails) = SplitRaceTypeFromDetails(originalRaceDetails);
                 try
                 {
                     var screen = new RaceScreen
@@ -620,7 +623,8 @@ namespace HorseRacingML.Scraping
                         VenueName = venueName, // venue
                         VenueCountry = venueCountry, // country
                         EventDateText = string.IsNullOrWhiteSpace(eventDateText) ? null : eventDateText.Trim(), // raw text
-                        RaceDetails = string.IsNullOrWhiteSpace(raceDetailsText) ? null : raceDetailsText.Trim(), // details
+                        RaceDetails = string.IsNullOrWhiteSpace(cleanedRaceDetails) ? null : cleanedRaceDetails.Trim(),
+                        RaceType = string.IsNullOrWhiteSpace(raceTypeText) ? null : raceTypeText.Trim(),
                         BackBookPercentage = backBookPercentage, // %
                         LayBookPercentage = layBookPercentage, // %
                         RaceUrl = string.IsNullOrWhiteSpace(raceUrl) ? null : raceUrl.Trim() // url
@@ -651,7 +655,8 @@ namespace HorseRacingML.Scraping
                         var metadataSource = new RaceDayReport
                         {
                             RaceTitle = title,
-                            RaceDetails = raceDetailsText
+                            RaceDetails = string.IsNullOrWhiteSpace(cleanedRaceDetails) ? null : cleanedRaceDetails.Trim(),
+                            RaceType = string.IsNullOrWhiteSpace(raceTypeText) ? null : raceTypeText.Trim()
                         };
                         var metadata = ParseRaceMetadata(metadataSource);
 
@@ -671,7 +676,7 @@ namespace HorseRacingML.Scraping
                             VenueName = string.IsNullOrWhiteSpace(venueName) ? null : venueName.Trim(),
                             VenueCountry = string.IsNullOrWhiteSpace(venueCountry) ? null : venueCountry.Trim(),
                             Title = string.IsNullOrWhiteSpace(title) ? null : title.Trim(),
-                            RaceDetails = string.IsNullOrWhiteSpace(raceDetailsText) ? null : raceDetailsText.Trim(),
+                            RaceDetails = string.IsNullOrWhiteSpace(cleanedRaceDetails) ? null : cleanedRaceDetails.Trim(),
                             RaceType = metadata.RaceType,
                             Class = metadata.Class,
                             AgeRestriction = metadata.AgeRestriction,
@@ -841,7 +846,8 @@ namespace HorseRacingML.Scraping
                     venueName,
                     venueCountry,
                     offTime,
-                    raceDetailsText,
+                    cleanedRaceDetails,
+                    raceTypeText,
                     backBookPercentage,
                     layBookPercentage,
                     marketId,
@@ -950,10 +956,11 @@ namespace HorseRacingML.Scraping
                         venueCountry,
                         parsedRaceDate,
                         offTime,
-                        string.IsNullOrWhiteSpace(raceDetailsText) ? null : raceDetailsText.Trim(),
+                        cleanedRaceDetails,
+                        raceTypeText,
                         backBookPercentage,
                         layBookPercentage,
-                         raceUrl,
+                        raceUrl,
                         flows
                     ); // build report
 
@@ -1230,6 +1237,7 @@ namespace HorseRacingML.Scraping
             DateTime? raceDate,
             TimeSpan? offTime,
             string? raceDetails,
+            string? raceType,
             decimal? backBookPercentage,
             decimal? layBookPercentage,
             string? raceUrl,
@@ -1244,6 +1252,7 @@ namespace HorseRacingML.Scraping
                 RaceDate = raceDate,
                 OffTime = offTime,
                 RaceDetails = string.IsNullOrWhiteSpace(raceDetails) ? null : raceDetails.Trim(),
+                RaceType = string.IsNullOrWhiteSpace(raceType) ? null : raceType.Trim(),
                 BackBookPercentage = backBookPercentage,
                 LayBookPercentage = layBookPercentage,
                 RaceUrl = string.IsNullOrWhiteSpace(raceUrl) ? null : raceUrl.Trim()
@@ -1510,6 +1519,7 @@ namespace HorseRacingML.Scraping
           string? venueCountry,
           TimeSpan? scheduledOff,
           string? raceDetails,
+          string? raceType,
           decimal? backBookPercentage,
           decimal? layBookPercentage,
           string? marketId,
@@ -1530,6 +1540,7 @@ namespace HorseRacingML.Scraping
                 venueCountry,
                 scheduledOff,
                 raceDetails,
+                 raceType,
                 backBookPercentage,
                 layBookPercentage,
                 marketId,
@@ -1634,6 +1645,7 @@ namespace HorseRacingML.Scraping
             string? venueCountry,
             TimeSpan? scheduledOff,
             string? raceDetails,
+            string? raceType,
             decimal? backBookPercentage,
             decimal? layBookPercentage,
             string? marketId,
@@ -1656,7 +1668,8 @@ namespace HorseRacingML.Scraping
             var metadataSource = new RaceDayReport
             {
                 RaceTitle = raceTitle,
-                RaceDetails = raceDetails
+                RaceDetails = string.IsNullOrWhiteSpace(raceDetails) ? null : raceDetails.Trim(),
+                RaceType = string.IsNullOrWhiteSpace(raceType) ? null : raceType.Trim()
             };
             var parsedMetadata = ParseRaceMetadata(metadataSource);
 

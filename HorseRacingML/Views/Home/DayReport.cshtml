@@ -197,7 +197,10 @@ else
                             {
                                 <span class="ms-2">@string.Join(" ", scheduleParts)</span>
                             }
-
+                            @if (!string.IsNullOrWhiteSpace(race.RaceType))
+                            {
+                                <span class="ms-2">Type: @race.RaceType</span>
+                            }
                             @if (!string.IsNullOrWhiteSpace(race.RaceDetails))
                             {
                                 <span class="ms-2">@race.RaceDetails</span>

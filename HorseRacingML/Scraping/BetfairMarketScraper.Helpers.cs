@@ -18,6 +18,9 @@ namespace HorseRacingML.Scraping
         private static readonly Regex AgeRestrictionRegex = new("(?<value>[0-9]{1,2}\\s*(?:yo\\+?|yo|yrs?\\+?|years?\\+?))", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex MarketTitleExchangeSuffixRegex = new(@"\s*(?:[»|,-]\s*)?BetfairT?\s*Exchange.*$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex MarketTitleSiteSuffixRegex = new(@"\s*(?:[-–—]|\|)\s*Betfair.*$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex LeadingRaceTypeRegex = new(
+            @"^\s*(?<type>(?:[A-Za-z'\-]+(?:\s+[A-Za-z'\-]+)*)|(?:G[1-3])|(?:Group\s+[1-3])|(?:Grade\s+[1-3]))",
+            RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly string[] RaceTypeKeywords =
         {
             "handicap",
@@ -137,6 +140,7 @@ namespace HorseRacingML.Scraping
         {
             var tokens = EnumerateDetailTokens(race.RaceDetails)
                 .Concat(EnumerateDetailTokens(race.RaceTitle))
+                .Concat(EnumerateDetailTokens(race.RaceType))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
@@ -183,6 +187,37 @@ namespace HorseRacingML.Scraping
                 string.IsNullOrWhiteSpace(going) ? null : going.Trim(),
                 surface,
                 raceType);
+        }
+        private static (string? RaceTypeText, string? CleanedDetails) SplitRaceTypeFromDetails(string? raceDetails)
+        {
+            if (string.IsNullOrWhiteSpace(raceDetails))
+            {
+                return (null, null);
+            }
+
+            var trimmed = raceDetails.Trim();
+            if (trimmed.Length == 0)
+            {
+                return (null, null);
+            }
+
+            var match = LeadingRaceTypeRegex.Match(trimmed);
+            if (!match.Success)
+            {
+                return (null, trimmed);
+            }
+
+            var typeSegment = match.Groups["type"].Value.Trim();
+            if (string.IsNullOrEmpty(typeSegment))
+            {
+                return (null, trimmed);
+            }
+
+            var remainder = trimmed.Substring(match.Length);
+            remainder = remainder.TrimStart(' ', '\t', '-', '–', '—', '|', '/', ',', ';');
+            remainder = remainder.Trim();
+
+            return (typeSegment, string.IsNullOrWhiteSpace(remainder) ? null : remainder);
         }
 
         private static IEnumerable<string> EnumerateDetailTokens(string? source)
