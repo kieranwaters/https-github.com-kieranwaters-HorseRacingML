@@ -18,20 +18,56 @@ namespace HorseRacingML.Scraping
             decimal? layBookPercentage,
             string? raceUrl,
             IEnumerable<RunnerFlow> flows)
-    {
-        return BuildRaceReport(
-            marketId,
-            raceTitle,
-            venueName,
-            venueCountry,
-            raceDate,
-            offTime,
-            raceDetails,
-            backBookPercentage,
-            layBookPercentage,
-            raceUrl,
-            flows);
-    }
+        {
+            return TestBuildRaceReport(
+                marketId,
+                raceTitle,
+                venueName,
+                venueCountry,
+                raceDate,
+                offTime,
+                raceDetails,
+                backBookPercentage,
+                layBookPercentage,
+                raceUrl,
+                flows,
+                raceType: null);
+        }
+
+        internal RaceDayReport TestBuildRaceReport(
+            string marketId,
+            string? raceTitle,
+            string? venueName,
+            string? venueCountry,
+            DateTime? raceDate,
+            TimeSpan? offTime,
+            string? raceDetails,
+            decimal? backBookPercentage,
+            decimal? layBookPercentage,
+            string? raceUrl,
+            IEnumerable<RunnerFlow> flows,
+            string? raceType)
+        {
+            if (flows == null)
+            {
+                throw new ArgumentNullException(nameof(flows));
+            }
+
+            return BuildRaceReport(
+                marketId,
+                raceTitle,
+                venueName,
+                venueCountry,
+                raceDate,
+                offTime,
+                raceDetails,
+                raceType,
+                backBookPercentage,
+                layBookPercentage,
+                raceUrl,
+                flows);
+        }
+
         internal Dictionary<string, object?>? TestLoadFeatures(
             DateTime? raceDate,
             string? raceTitle,
@@ -46,6 +82,37 @@ namespace HorseRacingML.Scraping
             IReadOnlyList<IDictionary<string, object?>>? preparedRows,
             UpcomingRace? persistedUpcoming)
         {
+            return TestLoadFeatures(
+                raceDate,
+                raceTitle,
+                venueName,
+                venueCountry,
+                scheduledOff,
+                raceDetails,
+                backBookPercentage,
+                layBookPercentage,
+                marketId,
+                flows,
+                preparedRows,
+                persistedUpcoming,
+                raceType: null);
+        }
+
+        internal Dictionary<string, object?>? TestLoadFeatures(
+            DateTime? raceDate,
+            string? raceTitle,
+            string? venueName,
+            string? venueCountry,
+            TimeSpan? scheduledOff,
+            string? raceDetails,
+            decimal? backBookPercentage,
+            decimal? layBookPercentage,
+            string? marketId,
+            IReadOnlyList<RunnerFlow> flows,
+            IReadOnlyList<IDictionary<string, object?>>? preparedRows,
+            UpcomingRace? persistedUpcoming,
+            string? raceType)
+        {
             if (flows == null)
             {
                 throw new ArgumentNullException(nameof(flows));
@@ -58,6 +125,7 @@ namespace HorseRacingML.Scraping
                 venueCountry,
                 scheduledOff,
                 raceDetails,
+                raceType,
                 backBookPercentage,
                 layBookPercentage,
                 marketId,
