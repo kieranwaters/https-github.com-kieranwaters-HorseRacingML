@@ -657,9 +657,8 @@ BEGIN
         VenueCountry     NVARCHAR(128) NULL,
         EventDateText    NVARCHAR(128) NULL,
         RaceDetails      NVARCHAR(MAX) NULL,
-RaceType         NVARCHAR(128) NULL,
+        RaceType         NVARCHAR(128) NULL,
         Going            NVARCHAR(30)  NULL,
-RaceType         NVARCHAR(128) NULL,
         BackBookPercentage DECIMAL(9,2) NULL,
         LayBookPercentage  DECIMAL(9,2) NULL,
         RaceUrl           NVARCHAR(1024) NULL

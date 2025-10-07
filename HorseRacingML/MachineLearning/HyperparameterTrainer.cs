@@ -108,6 +108,7 @@ namespace HorseRacingML.ML
 
             var metadata = BuildFeatureMetadata(metadataSource, metadataRows);
             int featureCount = metadata.FeatureCount;
+            Console.WriteLine($"[AI] Prepared training dataset with {featureCount} features derived from {metadata.FeatureKeys.Count} source columns.");
             var trainRaces = EncodeRaces(trainingPrepared.Races, metadata.FeatureKeys, metadata.FeatureDimensions, metadata.StringMaps);
             var validationRaces = EncodeRaces(validationPrepared.Races, metadata.FeatureKeys, metadata.FeatureDimensions, metadata.StringMaps);
 

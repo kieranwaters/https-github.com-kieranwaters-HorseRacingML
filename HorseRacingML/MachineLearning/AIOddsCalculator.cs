@@ -63,6 +63,12 @@ namespace HorseRacingML.ML
 
             Dictionary<string, object?> rawFeatures = BuildRawFeatureMap(flow);
             LogDebug(flow, $"Built raw feature map with {rawFeatures.Count} entries");
+            if (_metadata != null)
+            {
+                LogDebug(flow,
+                    $"Feature metadata defines {_metadata.Keys.Count} raw keys expanding to {_featureCount} encoded dimensions");
+                LogMissingRawFeatures(flow, rawFeatures);
+            }
             var encoded = EncodeFeatures(rawFeatures);
             if (encoded == null || encoded.Length != _featureCount)
             {
@@ -162,6 +168,88 @@ namespace HorseRacingML.ML
 
             LogDebug(flow, $"Calculated probability {formattedProbability}");
             return true;
+        }
+        private void LogMissingRawFeatures(RunnerFlow flow, IReadOnlyDictionary<string, object?> raw)
+        {
+            if (flow == null || _metadata == null || raw == null)
+            {
+                return;
+            }
+
+            List<string>? missing = null;
+            foreach (var key in _metadata.Keys)
+            {
+                if (raw.TryGetValue(key, out var value) && value != null)
+                {
+                    continue;
+                }
+
+                missing ??= new List<string>();
+                missing.Add(key);
+            }
+
+            if (missing == null || missing.Count == 0)
+            {
+                return;
+            }
+
+            const int maxToShow = 20;
+            var preview = string.Join(", ", missing
+                .Take(maxToShow)
+                .Select(key =>
+                {
+                    var defaults = DescribeDefaultEncoding(key);
+                    return string.IsNullOrEmpty(defaults) ? key : $"{key} ({defaults})";
+                }));
+            if (missing.Count > maxToShow)
+            {
+                preview += $", … (+{missing.Count - maxToShow} more)";
+            }
+
+            LogDebug(flow,
+                $"Missing raw feature values for {missing.Count} feature keys: {preview}. Using model defaults for these features");
+        }
+
+        private string DescribeDefaultEncoding(string key)
+        {
+            if (_metadata == null || !_metadata.FeatureDimensions.TryGetValue(key, out var dim) || dim <= 0)
+            {
+                return string.Empty;
+            }
+
+            int baseDim = 1;
+            Dictionary<string, int>? map = null;
+            if (_metadata.StringMaps.TryGetValue(key, out var existingMap) && existingMap.Count > 0)
+            {
+                map = existingMap;
+                baseDim = Math.Max(1, existingMap.Count);
+            }
+
+            bool hasMissingIndicator = dim > baseDim;
+
+            if (map != null)
+            {
+                var hasUnknown = map.TryGetValue("__unknown__", out var unknownIndex) && unknownIndex >= 0 && unknownIndex < dim;
+                if (hasMissingIndicator)
+                {
+                    return hasUnknown
+                        ? $"raw null -> one-hot '__unknown__' bucket (index {unknownIndex}); missing indicator at index {baseDim} set to 1"
+                        : $"raw null -> all zeros; missing indicator at index {baseDim} set to 1";
+                }
+
+                return hasUnknown
+                    ? $"raw null -> one-hot '__unknown__' bucket (index {unknownIndex})"
+                    : "raw null -> all zeros (no '__unknown__' bucket)";
+            }
+
+            if (hasMissingIndicator)
+            {
+                return baseDim < dim
+                    ? $"raw null -> numeric 0 with missing indicator at index {baseDim} set to 1"
+                    : "raw null -> numeric 0";
+            }
+
+            return "raw null -> numeric 0";
         }
         private static void LogDebug(RunnerFlow flow, string message)
         {
