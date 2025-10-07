@@ -70,17 +70,23 @@ namespace HorseRacingML.ML
                 LogMissingRawFeatures(flow, rawFeatures);
             }
             var encoded = EncodeFeatures(rawFeatures);
-            if (encoded == null || encoded.Length != _featureCount)
+            if (encoded == null || encoded.Values.Length != _featureCount)
             {
                 LogFallback(flow, encoded == null
                     ? "feature encoding returned null"
-                    : $"feature encoding length mismatch (expected {_featureCount}, observed {encoded.Length})");
+                    : $"feature encoding length mismatch (expected {_featureCount}, observed {encoded.Values.Length})");
                 return false;
             }
             LogDebug(flow, $"Encoded feature vector length {_featureCount}");
             bool hasSignal = false;
-            foreach (var value in encoded)
+            for (int i = 0; i < encoded.Values.Length; i++)
             {
+                if (!encoded.Active[i])
+                {
+                    continue;
+                }
+
+                var value = encoded.Values[i];
                 if (double.IsFinite(value) && Math.Abs(value) > 1e-9)
                 {
                     hasSignal = true;
@@ -98,7 +104,13 @@ namespace HorseRacingML.ML
             bool loggedNonFiniteMean = false;
             for (int i = 0; i < _featureCount; i++)
             {
-                var value = encoded[i];
+                if (!encoded.Active[i])
+                {
+                    normalized[i] = 0d;
+                    continue;
+                }
+
+                var value = encoded.Values[i];
                 if (!double.IsFinite(value))
                 {
                     value = 0d;
@@ -207,8 +219,22 @@ namespace HorseRacingML.ML
             }
 
             LogDebug(flow,
-                $"Missing raw feature values for {missing.Count} feature keys: {preview}. Using model defaults for these features");
+                $"Missing raw feature values for {missing.Count} feature keys: {preview}. Those encoded dimensions will be suppressed");
         }
+
+        // Feature metadata is generated from the training pipeline and includes
+        // both the raw feature keys and how many encoded dimensions each key
+        // expands into (one-hot buckets, missing-value indicators, etc). During
+        // live scoring we might not have values for every key that appeared in
+        // training—especially for historic-only fields such as class, draw bias
+        // or derived pace figures. Historically the scorer mirrored the
+        // training-time convention of setting a dedicated "missing" indicator to
+        // 1 (or routing into the "__unknown__" one-hot bucket) whenever a raw
+        // value was unavailable. The current behaviour instead suppresses those
+        // encoded dimensions entirely so that downstream layers ignore the
+        // feature; all entries stay at 0 and are marked inactive so the
+        // normaliser and neural network weights do not use them.
+
 
         private string DescribeDefaultEncoding(string key)
         {
@@ -225,31 +251,15 @@ namespace HorseRacingML.ML
                 baseDim = Math.Max(1, existingMap.Count);
             }
 
-            bool hasMissingIndicator = dim > baseDim;
-
             if (map != null)
             {
                 var hasUnknown = map.TryGetValue("__unknown__", out var unknownIndex) && unknownIndex >= 0 && unknownIndex < dim;
-                if (hasMissingIndicator)
-                {
-                    return hasUnknown
-                        ? $"raw null -> one-hot '__unknown__' bucket (index {unknownIndex}); missing indicator at index {baseDim} set to 1"
-                        : $"raw null -> all zeros; missing indicator at index {baseDim} set to 1";
-                }
-
                 return hasUnknown
-                    ? $"raw null -> one-hot '__unknown__' bucket (index {unknownIndex})"
-                    : "raw null -> all zeros (no '__unknown__' bucket)";
+                    ? $"raw null -> feature omitted; no one-hot bucket selected and missing indicator remains 0"
+                    : "raw null -> feature omitted; all encoded dimensions forced to 0";
             }
 
-            if (hasMissingIndicator)
-            {
-                return baseDim < dim
-                    ? $"raw null -> numeric 0 with missing indicator at index {baseDim} set to 1"
-                    : "raw null -> numeric 0";
-            }
-
-            return "raw null -> numeric 0";
+            return "raw null -> feature omitted; all encoded dimensions forced to 0";
         }
         private static void LogDebug(RunnerFlow flow, string message)
         {
@@ -417,7 +427,17 @@ namespace HorseRacingML.ML
                 _modelStatus = $"Failed to parse weight file {Path.GetFileName(path)}; probabilities will default to zero.";
             }
         }
+        private sealed class EncodedVector
+        {
+            public EncodedVector(double[] values, bool[] active)
+            {
+                Values = values;
+                Active = active;
+            }
 
+            public double[] Values { get; }
+            public bool[] Active { get; }
+        }
         public string ModelStatus => _modelStatus;
 
         public bool HasTrainedModel => _hasTrainedModel;
@@ -533,8 +553,8 @@ namespace HorseRacingML.ML
 
             return true;
         }
-        
-        private double[]? EncodeFeatures(Dictionary<string, object?> raw)
+
+        private EncodedVector? EncodeFeatures(Dictionary<string, object?> raw)
         {
             if (_metadata == null)
             {
@@ -542,6 +562,7 @@ namespace HorseRacingML.ML
             }
 
             var vector = new double[_featureCount];
+            var active = new bool[_featureCount];
             int offset = 0;
             foreach (var key in _metadata.Keys)
             {
@@ -551,19 +572,20 @@ namespace HorseRacingML.ML
                 }
 
                 raw.TryGetValue(key, out var value);
-                var encoded = EncodeFeature(key, value, dim);
+                var encoded = EncodeFeature(key, value, dim, out var isPresent);
                 for (int i = 0; i < dim; i++)
                 {
                     vector[offset + i] = encoded[i];
+                    active[offset + i] = isPresent;
                 }
 
                 offset += dim;
             }
 
-            return vector;
+            return new EncodedVector(vector, active);
         }
 
-        private double[] EncodeFeature(string key, object? value, int dim)
+        private double[] EncodeFeature(string key, object? value, int dim, out bool isPresent)
         {
             int baseDim = 1;
             if (_metadata != null && _metadata.StringMaps.TryGetValue(key, out var map))
@@ -575,12 +597,11 @@ namespace HorseRacingML.ML
             if (value == null)
             {
                 var arr = new double[dim];
-                if (hasMissingIndicator && baseDim < dim)
-                {
-                    arr[baseDim] = 1d;
-                }
+                isPresent = false;
                 return arr;
             }
+
+            isPresent = true;
 
             double[] encoded;
             switch (value)

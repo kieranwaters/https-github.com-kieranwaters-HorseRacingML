@@ -135,7 +135,146 @@ namespace HorseRacingML.Scraping
             Console.Error.WriteLine($"\tAI weight file not found; expected locations include {fallback}");
             return fallback;
         }
+        private static void ApplyScrapedFeatureFallbacks(
+            Dictionary<string, object?> featureVector,
+            RunnerFlow flow,
+            DateTime? raceDate,
+            TimeSpan? scheduledOff,
+            string? raceTitle,
+            string? raceDetails,
+            string? raceType,
+            string? going,
+            string? venueName,
+            string? venueCountry,
+            decimal? backBookPercentage,
+            decimal? layBookPercentage,
+            IReadOnlyList<RunnerFlow>? flows)
+        {
+            if (featureVector == null)
+            {
+                return;
+            }
 
+            static bool HasMissingValue(Dictionary<string, object?> target, string key)
+            {
+                if (!target.TryGetValue(key, out var existing) || existing == null)
+                {
+                    return true;
+                }
+
+                if (existing is string s)
+                {
+                    return string.IsNullOrWhiteSpace(s);
+                }
+
+                return false;
+            }
+
+            void SetIfMissing(string key, object? value)
+            {
+                if (value == null)
+                {
+                    return;
+                }
+
+                if (HasMissingValue(featureVector, key))
+                {
+                    featureVector[key] = value;
+                }
+            }
+
+            if (flows != null && flows.Count > 0)
+            {
+                SetIfMissing("RunnerCount", Math.Min(flows.Count, byte.MaxValue));
+            }
+
+            if (backBookPercentage.HasValue)
+            {
+                SetIfMissing("BackBookPercentage", Convert.ToDouble(backBookPercentage.Value));
+            }
+
+            if (layBookPercentage.HasValue)
+            {
+                SetIfMissing("LayBookPercentage", Convert.ToDouble(layBookPercentage.Value));
+            }
+
+            if (flow?.Draw.HasValue == true)
+            {
+                SetIfMissing("Draw", flow.Draw.Value);
+                SetIfMissing("DrawMissing", false);
+            }
+            else
+            {
+                SetIfMissing("DrawMissing", true);
+            }
+
+            if (flow?.ClothNumber.HasValue == true)
+            {
+                SetIfMissing("SaddleclothMissing", false);
+            }
+            else
+            {
+                SetIfMissing("SaddleclothMissing", true);
+            }
+
+            var metadataSource = new RaceDayReport
+            {
+                RaceTitle = raceTitle,
+                RaceDetails = raceDetails,
+                RaceType = raceType,
+                Going = going,
+                VenueName = venueName,
+                VenueCountry = venueCountry
+            };
+
+            var parsed = ParseRaceMetadata(metadataSource);
+
+            SetIfMissing("Class", parsed.Class);
+            SetIfMissing("AgeRestriction", parsed.AgeRestriction);
+            SetIfMissing("RaceType", string.IsNullOrWhiteSpace(raceType) ? parsed.RaceType : raceType.Trim());
+            SetIfMissing("Going", string.IsNullOrWhiteSpace(going) ? parsed.Going : going.Trim());
+            SetIfMissing("Surface", parsed.Surface);
+            if (parsed.DistanceYards > 0)
+            {
+                SetIfMissing("DistanceYards", parsed.DistanceYards);
+            }
+            SetIfMissing("DistanceText", parsed.DistanceText);
+
+            if (raceDate.HasValue)
+            {
+                var date = raceDate.Value.Date;
+
+                if (scheduledOff.HasValue)
+                {
+                    var minutes = scheduledOff.Value.TotalMinutes;
+                    var timeAngle = 2d * Math.PI * minutes / (24d * 60d);
+                    SetIfMissing("TimeOfDaySin", Math.Sin(timeAngle));
+                    SetIfMissing("TimeOfDayCos", Math.Cos(timeAngle));
+                }
+                else
+                {
+                    SetIfMissing("TimeOfDaySin", 0d);
+                    SetIfMissing("TimeOfDayCos", 0d);
+                }
+
+                int month = date.Month;
+                var monthAngle = 2d * Math.PI * month / 12d;
+                SetIfMissing("RaceMonthSin", Math.Sin(monthAngle));
+                SetIfMissing("RaceMonthCos", Math.Cos(monthAngle));
+
+                int dayOfWeek = (int)date.DayOfWeek;
+                var dowAngle = 2d * Math.PI * dayOfWeek / 7d;
+                SetIfMissing("RaceDayOfWeekSin", Math.Sin(dowAngle));
+                SetIfMissing("RaceDayOfWeekCos", Math.Cos(dowAngle));
+
+                SetIfMissing("IsWeekend", date.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday);
+
+                int season = (month % 12) / 3;
+                var seasonAngle = 2d * Math.PI * season / 4d;
+                SetIfMissing("SeasonSin", Math.Sin(seasonAngle));
+                SetIfMissing("SeasonCos", Math.Cos(seasonAngle));
+            }
+        }
         private static ParsedRaceMetadata ParseRaceMetadata(RaceDayReport race)
         {
             var tokens = EnumerateDetailTokens(race.RaceDetails)

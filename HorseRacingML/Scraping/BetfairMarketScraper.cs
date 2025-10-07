@@ -1610,7 +1610,20 @@ DateTime? raceDate,
                 {
                     featureVector["RunnerCount"] = runnerCount;
                 }
-
+                ApplyScrapedFeatureFallbacks(
+                    featureVector,
+                    flow,
+                    raceDate,
+                    scheduledOff,
+                    raceTitle,
+                    raceDetails,
+                    raceType,
+                    going,
+                    venueName,
+                    venueCountry,
+                    backBookPercentage,
+                    layBookPercentage,
+                    flows);
                 if (featureVector.Count > 0)
                 {
                     flow.FeatureValues = featureVector;
