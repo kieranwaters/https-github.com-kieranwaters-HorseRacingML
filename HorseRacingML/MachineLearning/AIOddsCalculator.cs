@@ -447,7 +447,7 @@ namespace HorseRacingML.ML
                 }
             }
 
-            EnsureFeature("Draw", flow.Draw.HasValue ? (int)flow.Draw.Value : 0);
+            EnsureFeature("Draw", flow.Draw);
             EnsureFeature("DrawMissing", !flow.Draw.HasValue);
             EnsureFeature("SaddleclothMissing", !flow.ClothNumber.HasValue);
 
