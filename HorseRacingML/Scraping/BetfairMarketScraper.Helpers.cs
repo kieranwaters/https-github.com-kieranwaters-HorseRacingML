@@ -512,6 +512,111 @@ namespace HorseRacingML.Scraping
                 ["gr2"] = "Grade 2",
                 ["gr3"] = "Grade 3"
             };
+        private const string RunnerDetailsExpansionScript = @"
+            const row = arguments[0];
+            const index = arguments[1];
+            if (!row) { return false; }
+
+            const normalize = value => {
+                if (value === null || value === undefined) { return ''; }
+                return String(value).toLowerCase().trim();
+            };
+
+            const hasExpandedState = element => {
+                if (!element) { return false; }
+                const attributes = [
+                    element.getAttribute && element.getAttribute('aria-expanded'),
+                    element.getAttribute && element.getAttribute('data-state'),
+                    element.getAttribute && element.getAttribute('data-expanded'),
+                    element.getAttribute && element.getAttribute('data-open'),
+                    element.getAttribute && element.getAttribute('aria-pressed')
+                ].map(normalize);
+                if (attributes.includes('true') || attributes.includes('expanded') || attributes.includes('open')) { return true; }
+                const classAttr = normalize(element.getAttribute && element.getAttribute('class'));
+                if (classAttr.includes('expanded') || classAttr.includes('open') || classAttr.includes('active')) { return true; }
+                return false;
+            };
+
+            const hasVisibleDetails = element => {
+                if (!element) { return false; }
+                const detailSelectors = [
+                    '.runner-timeform-details',
+                    '.runner-timeform',
+                    '.timeform-expandable',
+                    '.runner-expanded-details',
+                    '.runner-info-expanded'
+                ];
+                for (const selector of detailSelectors) {
+                    const detail = element.querySelector && element.querySelector(selector);
+                    if (detail) {
+                        const style = window.getComputedStyle(detail);
+                        if (style && style.display !== 'none' && style.visibility !== 'hidden' && style.height !== '0px' && style.maxHeight !== '0px') {
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            };
+
+            const resolveIcon = () => {
+                const selectors = [
+                    '.runner-timeform-info-icon.runner-timeform-info-icon--clickable',
+                    '.runner-timeform-info-icon--clickable',
+                    '.runner-timeform-info-icon',
+                    '[data-testid=""runner-timeform-info-icon""]',
+                    '[data-test-id=""runner-timeform-info-icon""]',
+                    '.timeform-icon',
+                    '.details-icon'
+                ];
+                for (const selector of selectors) {
+                    const candidate = row.querySelector(selector);
+                    if (candidate) {
+                        const clickable = candidate.closest && candidate.closest('.runner-timeform-info-icon--clickable');
+                        return clickable || candidate;
+                    }
+                }
+                const svg = row.querySelector('.runner-timeform-info-icon svg, .runner-timeform-info-icon path');
+                if (svg) {
+                    const clickable = svg.closest && (svg.closest('.runner-timeform-info-icon--clickable') || svg.closest('.runner-timeform-info-icon'));
+                    if (clickable) { return clickable; }
+                    return svg;
+                }
+                if (typeof index === 'number' && Number.isFinite(index)) {
+                    const base = `#main-wrapper > div > div.scrollable-panes-height-taker > div > ui-view > div > div > div.bf-col-xxl-17-24.bf-col-xl-16-24.bf-col-lg-16-24.bf-col-md-15-24.bf-col-sm-14-24.bf-col-14-24.center-column.bfMarketSettingsSpace.bf-module-loading.nested-scrollable-pane-parent.market-settings-space > div.scrollable-panes-height-taker.height-taker-helper > div > div.bf-row.main-mv-container > div > bf-main-market > bf-main-marketview > div > div.main-mv-runners-list-wrapper > bf-marketview-runners-list.runners-list-unpinned > div > div > div > table > tbody > tr:nth-child(${index}) > td.new-runner-info.with-runner-timeform-info > div.runner-timeform-info-icon.runner-timeform-info-icon--clickable`;
+                    const absoluteSelectors = [base, `${base} > svg`, `${base} > svg > path`];
+                    for (const selector of absoluteSelectors) {
+                        const candidate = document.querySelector(selector);
+                        if (candidate) {
+                            const clickable = candidate.closest && candidate.closest('.runner-timeform-info-icon--clickable');
+                            return clickable || candidate;
+                        }
+                    }
+                }
+                return null;
+            };
+
+            const icon = resolveIcon();
+            if (!icon) { return false; }
+
+            const container = icon.closest && icon.closest('.new-runner-info, .runner-timeform-info, .runner-info, tr, td');
+            if (hasExpandedState(icon) || hasExpandedState(container) || hasVisibleDetails(container)) {
+                return true;
+            }
+
+            if (icon.scrollIntoView) {
+                icon.scrollIntoView({ block: 'center', inline: 'center' });
+            }
+
+            if (icon.dispatchEvent) {
+                icon.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+            }
+            if (icon.click) {
+                icon.click();
+            }
+
+            const expandedNow = hasExpandedState(icon) || hasExpandedState(container) || hasVisibleDetails(container);
+            return expandedNow;
+        ";
         private static IEnumerable<string> EnumerateDetailTokens(string? source)
         {
             if (string.IsNullOrWhiteSpace(source))
@@ -717,6 +822,104 @@ const hasBackAllContext = target => {
             catch (Exception)
             {
                 return false;
+            }
+        }
+        private static void ExpandRunnerTimeformDetails(IWebDriver driver, IReadOnlyList<IWebElement> runnerRows)
+        {
+            if (driver is not IJavaScriptExecutor js || runnerRows == null || runnerRows.Count == 0)
+            {
+                return;
+            }
+
+            for (var i = 0; i < runnerRows.Count; i++)
+            {
+                var row = runnerRows[i];
+                if (row == null)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    var result = js.ExecuteScript(RunnerDetailsExpansionScript, row, i + 1);
+                    var expanded = result is bool flag && flag;
+
+                    if (!expanded)
+                    {
+                        TryFallbackRunnerDetailsClick(js, row);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"\tFailed to expand runner details for row {i + 1}: {ex.Message}");
+                }
+            }
+        }
+
+        private static void TryFallbackRunnerDetailsClick(IJavaScriptExecutor js, IWebElement row)
+        {
+            if (row == null)
+            {
+                return;
+            }
+
+            try
+            {
+                IWebElement? target = row
+                    .FindElements(By.CssSelector(
+                        ".runner-timeform-info-icon--clickable, .runner-timeform-info-icon.runner-timeform-info-icon--clickable"))
+                    .FirstOrDefault();
+
+                if (target == null)
+                {
+                    var svgCandidate = row
+                        .FindElements(By.CssSelector(
+                            ".runner-timeform-info-icon svg, .runner-timeform-info-icon path"))
+                        .FirstOrDefault();
+
+                    if (svgCandidate != null)
+                    {
+                        IWebElement? clickable = null;
+                        try
+                        {
+                            clickable = svgCandidate.FindElement(By.XPath(
+                                "ancestor-or-self::*[contains(@class,'runner-timeform-info-icon--clickable')][1]"));
+                        }
+                        catch (NoSuchElementException)
+                        {
+                            try
+                            {
+                                clickable = svgCandidate.FindElement(By.XPath(".."));
+                            }
+                            catch (NoSuchElementException)
+                            {
+                                clickable = null;
+                            }
+                        }
+
+                        target = clickable ?? svgCandidate;
+                    }
+                }
+
+                if (target == null)
+                {
+                    return;
+                }
+
+                try
+                {
+                    target.Click();
+                }
+                catch (Exception)
+                {
+                    js.ExecuteScript(
+                        "if (arguments[0]) { arguments[0].dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window })); }",
+                        target);
+                }
+            }
+            catch (Exception)
+            {
+                // ignore fallback failures; details expansion is best-effort
             }
         }
         private static string? TryDetectRaceType(IEnumerable<string> tokens, string? title)

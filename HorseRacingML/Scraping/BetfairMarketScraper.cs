@@ -681,6 +681,7 @@ namespace HorseRacingML.Scraping
                 }
 
                 Console.WriteLine($"\tFound {rows.Count} runners for market {marketId}"); // log count
+                ExpandRunnerTimeformDetails(driver, rows); // ensure details expanded for all runners
                 UpcomingRace? persistedUpcoming = null;
                 if (parsedRaceDate.HasValue)
                 {
