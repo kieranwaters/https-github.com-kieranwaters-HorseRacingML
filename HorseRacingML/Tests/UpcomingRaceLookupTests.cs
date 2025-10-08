@@ -542,7 +542,8 @@ namespace HorseRacingML.Tests
                 UpcomingRace upcoming,
                 IReadOnlyCollection<string> runnerColumns,
                 IReadOnlyCollection<string> horseNames,
-                IReadOnlyCollection<string> jockeyNames)
+                IReadOnlyCollection<string> jockeyNames,
+                IReadOnlyCollection<int>? horseIdsFromFlows = null)
             {
                 return _lookupData;
             }

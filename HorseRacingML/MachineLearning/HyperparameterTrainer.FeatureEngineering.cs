@@ -1702,6 +1702,9 @@ namespace HorseRacingML.ML
             var validFlows = new List<RunnerFlow>(flows.Count);
             var horseNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             var jockeyNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var horseIdsByName = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            var horseIdsByFlow = new Dictionary<RunnerFlow, int>();
+            var explicitHorseIds = new HashSet<int>();
 
             foreach (var flow in flows)
             {
@@ -1720,6 +1723,18 @@ namespace HorseRacingML.ML
                 {
                     horseNames[horseName] = horseName;
                 }
+                if (flow.FeatureValues != null &&
+                    flow.FeatureValues.TryGetValue("HorseId", out var horseIdValue) &&
+                    PreparedDataset.TryConvertToInt32(horseIdValue, out var parsedHorseId) &&
+                    parsedHorseId > 0)
+                {
+                    horseIdsByFlow[flow] = parsedHorseId;
+                    explicitHorseIds.Add(parsedHorseId);
+                    if (!horseIdsByName.ContainsKey(horseName))
+                    {
+                        horseIdsByName[horseName] = parsedHorseId;
+                    }
+                }
 
                 if (!string.IsNullOrWhiteSpace(flow.JockeyName) && !jockeyNames.ContainsKey(flow.JockeyName!))
                 {
@@ -1729,14 +1744,19 @@ namespace HorseRacingML.ML
 
             var horseNameList = horseNames.Values.ToList();
             var jockeyNameList = jockeyNames.Values.ToList();
-            var lookupData = LoadRunnerLookupData(conn, upcoming, runnerColumns, horseNameList, jockeyNameList);
+            var lookupData = LoadRunnerLookupData(conn, upcoming, runnerColumns, horseNameList, jockeyNameList, explicitHorseIds);
             var horseIdLookup = lookupData.HorseIds;
             var jockeyIdLookup = lookupData.JockeyIds;
             var runnerSnapshots = lookupData.RunnerSnapshots;
 
+            foreach (var pair in horseIdsByName)
+            {
+                horseIdLookup[pair.Key] = pair.Value;
+            }
+
             foreach (var flow in validFlows)
             {
-                var horseName = flow.HorseName;
+                var horseName = flow.HorseName!;
                 var row = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
                 {
                     ["RaceId"] = raceId,
@@ -1787,9 +1807,19 @@ namespace HorseRacingML.ML
                 row["TrainerId"] = null;
                 row["TrainerName"] = null;
 
-                if (horseIdLookup.TryGetValue(horseName, out var horseId))
+                int? resolvedHorseId = null;
+                if (horseIdsByFlow.TryGetValue(flow, out var horseIdFromFlow))
                 {
-                    row["HorseId"] = horseId;
+                    resolvedHorseId = horseIdFromFlow;
+                }
+                else if (horseIdLookup.TryGetValue(horseName, out var horseIdFromLookup))
+                {
+                    resolvedHorseId = horseIdFromLookup;
+                }
+
+                if (resolvedHorseId.HasValue)
+                {
+                    row["HorseId"] = resolvedHorseId.Value;
                 }
                 else
                 {
@@ -1810,7 +1840,7 @@ namespace HorseRacingML.ML
                 if (runnerColumns != null &&
                     row.TryGetValue("HorseId", out var horseIdObj) &&
                     horseIdObj is int resolvedHorseId &&
-                    runnerSnapshots.TryGetValue(resolvedHorseId, out var snapshot))
+                    runnerSnapshots.TryGetValue((int)resolvedHorseId, out var snapshot))
                 {
                     if (row["TrainerId"] == null && snapshot.TrainerId.HasValue)
                     {
@@ -1859,7 +1889,8 @@ namespace HorseRacingML.ML
              UpcomingRace upcoming,
              IReadOnlyCollection<string> runnerColumns,
              IReadOnlyCollection<string> horseNames,
-             IReadOnlyCollection<string> jockeyNames)
+             IReadOnlyCollection<string> jockeyNames,
+             IReadOnlyCollection<int>? horseIdsFromFlows = null)
         {
             var horseIdLookup = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             if (horseNames.Count > 0)
@@ -1882,7 +1913,24 @@ namespace HorseRacingML.ML
             }
 
             var runnerSnapshots = new Dictionary<int, RunnerSnapshot>();
-            var knownHorseIds = horseIdLookup.Values.Distinct().ToList();
+            var knownHorseIds = new HashSet<int>();
+            foreach (var horseId in horseIdLookup.Values)
+            {
+                if (horseId > 0)
+                {
+                    knownHorseIds.Add(horseId);
+                }
+            }
+            if (horseIdsFromFlows != null)
+            {
+                foreach (var horseId in horseIdsFromFlows)
+                {
+                    if (horseId > 0)
+                    {
+                        knownHorseIds.Add(horseId);
+                    }
+                }
+            }
             if (knownHorseIds.Count > 0)
             {
                 string weightTextColumn = runnerColumns.Contains("WeightText")
@@ -1920,9 +1968,10 @@ namespace HorseRacingML.ML
                                          LEFT JOIN Trainer t ON ranked.TrainerId = t.TrainerId
                                          WHERE ranked.RowNum = 1";
 
+                var horseIdList = knownHorseIds.ToList();
                 foreach (var snapshot in conn.Query<RunnerSnapshot>(snapshotSql, new
                 {
-                    HorseIds = knownHorseIds,
+                    HorseIds = horseIdList,
                     TargetDate = upcoming.RaceDate.Date
                 }))
                 {
