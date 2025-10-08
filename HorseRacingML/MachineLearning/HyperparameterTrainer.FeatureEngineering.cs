@@ -1839,8 +1839,8 @@ namespace HorseRacingML.ML
 
                 if (runnerColumns != null &&
                     row.TryGetValue("HorseId", out var horseIdObj) &&
-                    horseIdObj is int resolvedHorseId &&
-                    runnerSnapshots.TryGetValue((int)resolvedHorseId, out var snapshot))
+                    horseIdObj is int horseIdFromRow &&
+                    runnerSnapshots.TryGetValue(horseIdFromRow, out var snapshot))
                 {
                     if (row["TrainerId"] == null && snapshot.TrainerId.HasValue)
                     {
