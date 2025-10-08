@@ -775,35 +775,142 @@ namespace HorseRacingML.Scraping
                     var js = (IJavaScriptExecutor)driver; // cast to JS
                     const string runnerExtractionScript = @"
         const row = arguments[0];
+        const selectionKey = arguments.length > 1 && arguments[1] ? String(arguments[1]) : '';
         const textOrEmpty = el => el && el.textContent ? el.textContent.trim() : '';
+        const normalizeSpaces = value => value ? value.replace(/\s+/g, ' ').trim() : '';
+        const escapeAttributeValue = value => {
+            const str = String(value || '');
+            if (window.CSS && CSS.escape) { return CSS.escape(str); }
+            return str.replace(/['\\]/g, '\\$&');
+        };
+        const detailRootSet = new Set();
+        const detailRoots = [];
+        const addRoot = node => {
+            if (!node || detailRootSet.has(node)) { return; }
+            detailRootSet.add(node);
+            detailRoots.push(node);
+            if (node.shadowRoot) { addRoot(node.shadowRoot); }
+            if (node.tagName === 'SLOT' && typeof node.assignedElements === 'function') {
+                const assigned = node.assignedElements();
+                if (assigned && assigned.length) {
+                    for (const child of assigned) { addRoot(child); }
+                }
+            }
+        };
+        const ascendAncestors = start => {
+            let current = start;
+            for (let depth = 0; depth < 10 && current; depth++) {
+                const parent = current.parentElement;
+                if (parent) {
+                    addRoot(parent);
+                    current = parent;
+                    continue;
+                }
+                if (typeof current.getRootNode === 'function') {
+                    const rootNode = current.getRootNode();
+                    if (rootNode && rootNode.host) {
+                        addRoot(rootNode.host);
+                        current = rootNode.host;
+                        continue;
+                    }
+                }
+                break;
+            }
+        };
+        const addRelated = node => {
+            if (!node) { return; }
+            addRoot(node);
+            ascendAncestors(node);
+        };
+        addRelated(row);
+        if (row.previousElementSibling) { addRelated(row.previousElementSibling); }
+        if (row.nextElementSibling) { addRelated(row.nextElementSibling); }
+        const tableRow = row.closest ? row.closest('tr') : null;
+        if (tableRow && tableRow.nextElementSibling) { addRelated(tableRow.nextElementSibling); }
+        if (selectionKey) {
+            const escapedKey = escapeAttributeValue(selectionKey);
+            const selectionAttributes = [
+                'data-selection-id',
+                'data-selection-key',
+                'data-selection-uid',
+                'data-selectionid',
+                'data-runner-id'
+            ];
+            for (const attr of selectionAttributes) {
+                const selector = `[${attr}='${escapedKey}']`;
+                const matches = document.querySelectorAll(selector);
+                if (!matches || matches.length === 0) { continue; }
+                matches.forEach(el => {
+                    addRelated(el);
+                    if (el.parentElement) { addRelated(el.parentElement); }
+                    if (el.previousElementSibling) { addRelated(el.previousElementSibling); }
+                    if (el.nextElementSibling) { addRelated(el.nextElementSibling); }
+                    if (el.closest) {
+                        const expanded = el.closest('.runner-expanded-details, .runner-info-expanded');
+                        if (expanded) { addRelated(expanded); }
+                    }
+                });
+            }
+        }
+        const queryWithin = (root, selector) => {
+            if (!root || !selector) { return null; }
+            if (root instanceof Element && root.matches(selector)) { return root; }
+            if (typeof root.querySelector === 'function') {
+                const direct = root.querySelector(selector);
+                if (direct) { return direct; }
+            }
+            if (typeof root.querySelectorAll !== 'function') { return null; }
+            const all = root.querySelectorAll('*');
+            for (const el of all) {
+                if (el.shadowRoot) {
+                    const shadowResult = queryWithin(el.shadowRoot, selector);
+                    if (shadowResult) { return shadowResult; }
+                }
+                if (el.tagName === 'SLOT' && typeof el.assignedElements === 'function') {
+                    const assigned = el.assignedElements();
+                    if (assigned && assigned.length) {
+                        for (const assignedEl of assigned) {
+                            const assignedResult = queryWithin(assignedEl, selector);
+                            if (assignedResult) { return assignedResult; }
+                        }
+                    }
+                }
+            }
+            return null;
+        };
         const queryText = selector => {
             if (!selector) { return ''; }
             const selectors = Array.isArray(selector) ? selector : [selector];
             for (const sel of selectors) {
                 if (!sel) { continue; }
-                const element = row.querySelector(sel);
-                if (element) {
-                    const text = textOrEmpty(element);
-                    if (text) { return text; }
+                for (const root of detailRoots) {
+                    const element = queryWithin(root, sel);
+                    if (element) {
+                        const text = textOrEmpty(element);
+                        if (text) { return text; }
+                    }
                 }
             }
             return '';
         };
-const normalizeSpaces = value => value ? value.replace(/\s+/g, ' ').trim() : '';
         const queryDetail = selectors => {
-            if (!Array.isArray(selectors)) { return ''; }
-            for (const selector of selectors) {
+            if (!selectors) { return ''; }
+            const values = Array.isArray(selectors) ? selectors : [selectors];
+            for (const selector of values) {
                 if (!selector) { continue; }
-                const el = row.querySelector(selector);
-                const text = textOrEmpty(el);
-                if (text) { return normalizeSpaces(text); }
+                for (const root of detailRoots) {
+                    const element = queryWithin(root, selector);
+                    if (!element) { continue; }
+                    const text = textOrEmpty(element);
+                    if (text) { return normalizeSpaces(text); }
+                }
             }
             return '';
         };
         const extractPriceText = raw => { if (!raw) { return ''; } const text = raw.trim(); if (!text) { return ''; } if (/^[£€$]/.test(text)) { return ''; } return text; };
         const extractPriceFromButton = raw => { if (!raw) { return ''; } const text = raw.trim(); if (!text) { return ''; } const tokens = text.split(/\s+/); for (const token of tokens) { if (!token || /^[£€$]/.test(token)) { continue; } if (/^[0-9]+(\.[0-9]+)?$/.test(token)) { return token; } } return extractPriceText(text); };
         const indexTokens = { 1: ['1','one'], 2: ['2','two'], 3: ['3','three'] };
-const ageWeightSelectors = [
+        const ageWeightSelectors = [
             '.runner-timeform-wrapper__horse-details .runner-timeform-wrapper__details.runner-timeform-wrapper__age-weight-rating',
             '.runner-timeform-wrapper__details.runner-timeform-wrapper__age-weight-rating',
             '.runner-expanded-details .runner-timeform-wrapper__details.runner-timeform-wrapper__age-weight-rating',
@@ -829,47 +936,7 @@ const ageWeightSelectors = [
             if (cell) {
                 const oursButtons = Array.from(cell.querySelectorAll('ours-price-button'));
                 if (oursButtons.length >= index) {
-                    const button = oursButtons[index - 1];
-                    const priceLabel = button.querySelector('button label:nth-of-type(1), button span:nth-of-type(1), .bet-button-price');
-                    if (priceLabel) { const text = extractPriceText(textOrEmpty(priceLabel)); if (text) { return text; } }
-                    const fallbackButtonText = extractPriceFromButton(textOrEmpty(button.querySelector('button')));
-                    if (fallbackButtonText) { return fallbackButtonText; }
-                }
-            }
-            const allButtons = Array.from(row.querySelectorAll('ours-price-button'));
-            const startIndex = type === 'lay' ? 3 : 0;
-            if (allButtons.length >= index + startIndex) {
-                const button = allButtons[startIndex + index - 1];
-                const priceLabel = button.querySelector('button label:nth-of-type(1), button span:nth-of-type(1), .bet-button-price');
-                if (priceLabel) { const text = extractPriceText(textOrEmpty(priceLabel)); if (text) { return text; } }
-                const fallbackButtonText = extractPriceFromButton(textOrEmpty(button.querySelector('button')));
-                if (fallbackButtonText) { return fallbackButtonText; }
-            }
-            return '';
-        };
-        const findPrice = (type, index) => {
-            const tokens = indexTokens[index] || [String(index)];
-            const selectors = [];
-            for (const token of tokens) {
-                selectors.push(`.bet-button.${type}-selection-button.${type}-${token} .bet-button-price`);
-                selectors.push(`.bet-button.price-button.${type}-${token} .bet-button-price`);
-                selectors.push(`.bet-button.${type}-cell.${type}-${token} .bet-button-price`);
-                selectors.push(`.bet-buttons-${type}-cell.${type}-${token} .bet-button-price`);
-                selectors.push(`.${type}-cell.${type}-${token} .bet-button-price`);
-                selectors.push(`.${type}-${token} .bet-button-price`);
-            }
-            const oursButtonPrice = findOursPriceButton(type, index);
-            if (oursButtonPrice) { return oursButtonPrice; }
-            const dataTestId = row.querySelector(`[data-testid='runner-${type}-${index}-price']`);
-            if (dataTestId) { const text = textOrEmpty(dataTestId); if (text) { return text; } }
-            for (const selector of selectors) {
-                const el = row.querySelector(selector);
-                if (el) { const text = textOrEmpty(el); if (text) { return text; } }
-            }
-            return '';
-        };
-        const result = {
-            cloth: queryText([
+@@ -873,56 +980,56 @@ const ageWeightSelectors = [
                 '.runner-number',
                 '.runner-numbers .runner-number',
                 '.runner-numbers .saddle-cloth',
@@ -895,12 +962,12 @@ const ageWeightSelectors = [
             if (!result[backKey] && fallbackPrices.length >= i) { result[backKey] = fallbackPrices[i - 1]; }
             if (!result[layKey] && fallbackPrices.length >= i + 3) { result[layKey] = fallbackPrices[i + 2]; }
         }
-result['ageWeight'] = queryDetail(ageWeightSelectors);
+        result['ageWeight'] = queryDetail(ageWeightSelectors);
         result['trainer'] = queryDetail(trainerSelectors);
         return result;
     ";
 
-                    var elementData = (IDictionary<string, object>)js.ExecuteScript(runnerExtractionScript, row); // execute script
+                    var elementData = (IDictionary<string, object>)js.ExecuteScript(runnerExtractionScript, row, selectionId ?? string.Empty); // execute script
                     string Get(string key) => elementData.TryGetValue(key, out var v) ? v?.ToString() ?? string.Empty : string.Empty; // helper
 
                     var runnerFlow = new RunnerFlow // create flow
