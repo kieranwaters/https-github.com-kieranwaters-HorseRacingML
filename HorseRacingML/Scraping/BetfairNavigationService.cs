@@ -35,6 +35,7 @@ namespace HorseRacingML.Scraping
         private static readonly Regex NonNumericCharactersRegex = new("[^0-9.,-]", RegexOptions.Compiled);
         private static readonly TimeSpan MinimumAutomationDelay = TimeSpan.FromSeconds(30);
         private static readonly TimeSpan MaximumAutomationDelay = TimeSpan.FromMinutes(1.5);
+        private static readonly Regex RaceTimeRegex = new(@"\b([01]?\d|2[0-3]):[0-5]\d\b", RegexOptions.Compiled);
         private readonly object _automationLock = new();
         private CancellationTokenSource? _automationCancellation;
         private Task? _automationTask;
@@ -690,38 +691,38 @@ namespace HorseRacingML.Scraping
                 ((IJavaScriptExecutor)d).ExecuteScript("return document.readyState").ToString() == "complete");
             wait.Until(d => d.FindElements(By.CssSelector("a,button")).Count > 0);
             CaptureRaceGoingFromSchedule();
-            static bool Is24HourTime(string s)
+            static string? ExtractTimeToken(string? value)
             {
-                if (string.IsNullOrWhiteSpace(s))
-                {
-                    return false;
-                }
-
-                var trimmed = s.Trim();
-                return DateTime.TryParseExact(
-                    trimmed,
-                    new[] { "H:mm", "HH:mm" },
-                    CultureInfo.InvariantCulture,
-                    DateTimeStyles.None,
-                    out _);
-            }
-
-            static DateTime? TryResolveRaceDateTime(string? text, DateTime reference)
-            {
-                if (string.IsNullOrWhiteSpace(text))
+                if (string.IsNullOrWhiteSpace(value))
                 {
                     return null;
                 }
 
-                var trimmed = text.Trim();
+                var match = RaceTimeRegex.Match(value);
+                return match.Success ? match.Value : null;
+            }
+
+            static bool Is24HourTime(string s)
+            {
+                return ExtractTimeToken(s) != null;
+            }
+
+            static DateTime? TryResolveRaceDateTime(string? text, DateTime reference)
+            {
+                var timeToken = ExtractTimeToken(text);
+                if (string.IsNullOrEmpty(timeToken))
+                {
+                    return null;
+                }
+
                 if (!TimeSpan.TryParseExact(
-                        trimmed,
+                        timeToken,
                         new[] { @"h\:mm", @"hh\:mm" },
                         CultureInfo.InvariantCulture,
                         out var timeOfDay))
                 {
                     if (!DateTime.TryParseExact(
-                            trimmed,
+                            timeToken,
                             new[] { "H:mm", "HH:mm" },
                             CultureInfo.InvariantCulture,
                             DateTimeStyles.None,
