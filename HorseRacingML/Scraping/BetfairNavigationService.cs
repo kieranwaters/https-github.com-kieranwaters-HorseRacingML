@@ -25,12 +25,13 @@ namespace HorseRacingML.Scraping
 
         private readonly string _username;
         private readonly string _password;
-        private readonly IWebDriver _driver;
+        private IWebDriver _driver;
         private readonly decimal _configuredBankroll;
         private decimal _bankroll;
         private readonly bool _useMarketFallbackForAiDegeneracy;
         private readonly AutomationSettingsService _automationSettings;
-        private readonly string _primaryWindowHandle;
+        private string _primaryWindowHandle;
+        private readonly object _driverLock = new();
         private static readonly Regex NonNumericCharactersRegex = new("[^0-9.,-]", RegexOptions.Compiled);
         private static readonly TimeSpan MinimumAutomationDelay = TimeSpan.FromSeconds(30);
         private static readonly TimeSpan MaximumAutomationDelay = TimeSpan.FromMinutes(1.5);
@@ -48,6 +49,12 @@ namespace HorseRacingML.Scraping
             _bankroll = _configuredBankroll;
             _useMarketFallbackForAiDegeneracy = config.GetValue<bool?>("Betting:UseMarketFallbackForAiDegeneracy") ?? true;
             _automationSettings = automationSettings ?? throw new ArgumentNullException(nameof(automationSettings));
+            _driver = CreateWebDriver();
+            _primaryWindowHandle = _driver.CurrentWindowHandle;
+        }
+
+        private IWebDriver CreateWebDriver()
+        {
             var options = new ChromeOptions();
             options.AddArguments(
                 "--disable-extensions",
@@ -56,9 +63,66 @@ namespace HorseRacingML.Scraping
                 "--no-sandbox",
                 "--disable-dev-shm-usage");
 
-            _driver = new ChromeDriver(options);
-            _primaryWindowHandle = _driver.CurrentWindowHandle;
+            return new ChromeDriver(options);
         }
+        private void ResetWebDriver()
+        {
+            lock (_driverLock)
+            {
+                try
+                {
+                    _driver.Quit();
+                }
+                catch (Exception)
+                {
+                    // Ignore failures while tearing down the previous session.
+                }
+
+                try
+                {
+                    _driver.Dispose();
+                }
+                catch (Exception)
+                {
+                    // Ignore failures while disposing the previous driver instance.
+                }
+
+                _driver = CreateWebDriver();
+                _primaryWindowHandle = _driver.CurrentWindowHandle;
+                _bankroll = _configuredBankroll;
+
+                lock (_raceGoingLock)
+                {
+                    _raceGoingByMarketId.Clear();
+                }
+            }
+        }
+
+        private static bool IsInvalidSessionException(Exception ex)
+        {
+            if (ex is WebDriverException webDriverException)
+            {
+                var message = webDriverException.Message ?? string.Empty;
+                if (message.IndexOf("invalid session id", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return true;
+                }
+            }
+
+            return ex.InnerException != null && IsInvalidSessionException(ex.InnerException);
+        }
+
+        private bool TryHandleInvalidSession(Exception ex)
+        {
+            if (!IsInvalidSessionException(ex))
+            {
+                return false;
+            }
+
+            ResetWebDriver();
+            return true;
+        }
+
         public async Task<RaceDayReport?> RefreshRaceAsync(
             string raceUrl,
             RacingRepository repo,
@@ -911,6 +975,7 @@ const el=arguments[0];const selectors=['div.racetrack-conditions','.racetrack-co
 
                 try
                 {
+                    await LoginAsync();
                     await OpenHorseRaceMeetingsInNewTabsAsync(
                         closeExistingRaceTabs: false,
                         raceWindow: raceWindow,
@@ -920,7 +985,14 @@ const el=arguments[0];const selectors=['div.racetrack-conditions','.racetrack-co
                 }
                 catch (Exception ex)
                 {
-                    Console.Error.WriteLine($"[Automation] Failed to process betting cycle: {ex.Message}");
+                    if (TryHandleInvalidSession(ex))
+                    {
+                        Console.Error.WriteLine("[Automation] Restarted browser session after it became invalid.");
+                    }
+                    else
+                    {
+                        Console.Error.WriteLine($"[Automation] Failed to process betting cycle: {ex.Message}");
+                    }
                 }
 
                 var cycleEndUtc = DateTime.UtcNow;
@@ -1226,8 +1298,26 @@ const el=arguments[0];const selectors=['div.racetrack-conditions','.racetrack-co
         public void Dispose()
         {
             StopAutomatedBettingLoop();
-            _driver.Quit();
-            _driver.Dispose();
+            lock (_driverLock)
+            {
+                try
+                {
+                    _driver.Quit();
+                }
+                catch (Exception)
+                {
+                    // Ignore cleanup errors while shutting down the driver.
+                }
+
+                try
+                {
+                    _driver.Dispose();
+                }
+                catch (Exception)
+                {
+                    // Ignore cleanup errors while shutting down the driver.
+                }
+            }
         }
     }
 }
