@@ -166,7 +166,10 @@ namespace HorseRacingML.Scraping
         }
         public IWebDriver Driver => _driver;
 
-        public IReadOnlyList<BetRecommendation> ScrapeOpenRaceTabs(RacingRepository repo, HyperparameterTrainer trainer)
+        public IReadOnlyList<BetRecommendation> ScrapeOpenRaceTabs(
+           RacingRepository repo,
+           HyperparameterTrainer trainer,
+           out IReadOnlyCollection<string> missingScrapeFields)
         {
             var bankroll = GetEffectiveBankroll();
             var settings = _automationSettings.GetSnapshot();
@@ -177,7 +180,9 @@ namespace HorseRacingML.Scraping
                 settings,
                 _useMarketFallbackForAiDegeneracy,
                 GetRaceGoingSnapshot());
-            return scraper.ScrapeOpenRaceTabs(_driver);
+            var recommendations = scraper.ScrapeOpenRaceTabs(_driver);
+            missingScrapeFields = scraper.MissingScrapeFieldDescriptions.ToArray();
+            return recommendations;
         }
 
         private decimal GetEffectiveBankroll()
@@ -858,7 +863,7 @@ const el=arguments[0];const selectors=['div.racetrack-conditions','.racetrack-co
                         raceWindow: raceWindow,
                         windowReferenceUtc: cycleStartUtc);
 
-                    ScrapeOpenRaceTabs(repo, trainer);
+                    ScrapeOpenRaceTabs(repo, trainer, out _);
                 }
                 catch (Exception ex)
                 {

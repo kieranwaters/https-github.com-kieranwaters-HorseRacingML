@@ -33,6 +33,7 @@ namespace HorseRacingML.Scraping
         private readonly object _featureLookupCacheLock = new();
         private decimal _availableBankroll;
         private int _betSlipSelectionsFilled;
+        private readonly HashSet<string> _missingScrapedFieldDescriptions = new(StringComparer.OrdinalIgnoreCase);
         private const string MarketHeaderXPath = "/html/body/ui-view/div/div/div[2]/div/ui-view/div/div/div[1]/div[1]/div/bf-sports-header/div/div/div/div[1]/div/span[1]";
         private const string PlaceBetsButtonSelector = "#main-wrapper > div > div.scrollable-panes-height-taker > div > ui-view > div > div > div.bf-col-xxl-7-24.bf-col-xl-8-24.bf-col-lg-8-24.bf-col-md-9-24.bf-col-sm-10-24.bf-col-10-24.right-side-column > div > div > bf-aside > div > div.bf-row.aside-top-row.no-bottom-gutter > div > betslip > div > bf-tabs > section > div:nth-child(2) > div > div > section > potentials > section > form > betslip-potentials-footer > footer > div.potentials-footer__actions > div > highlighted-button > ours-button > button";
         private const string ConfirmBetsButtonSelector = "#main-wrapper > div > div.scrollable-panes-height-taker > div > ui-view > div > div > div.bf-col-xxl-7-24.bf-col-xl-8-24.bf-col-lg-8-24.bf-col-md-9-24.bf-col-sm-10-24.bf-col-10-24.right-side-column > div > div > bf-aside > div > div.bf-row.aside-top-row.no-bottom-gutter > div > betslip > div > bf-tabs > section > div:nth-child(2) > div > div > section > confirmation > section > betslip-confirmation-footer > footer > div.confirmation-footer__actions > highlighted-button > ours-button > button";
@@ -104,6 +105,7 @@ namespace HorseRacingML.Scraping
             PopulateWinnerProbabilities(result.Races);
             return result.Races;
         }
+        public IReadOnlyCollection<string> MissingScrapeFieldDescriptions => _missingScrapedFieldDescriptions;
         private string? GetGoingForMarket(string? marketId)
         {
             if (string.IsNullOrWhiteSpace(marketId) || _raceGoingLookup == null)
@@ -1570,7 +1572,7 @@ DateTime? raceDate,
             {
                 return;
             }
-
+            var raceMissingFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var featureLookup = LoadFeatureLookup(
                 raceDate,
                 raceTitle,
@@ -1623,7 +1625,8 @@ DateTime? raceDate,
                     venueCountry,
                     backBookPercentage,
                     layBookPercentage,
-                    flows);
+                    flows,
+                    raceMissingFields);
                 if (featureVector.Count > 0)
                 {
                     flow.FeatureValues = featureVector;
@@ -1635,6 +1638,16 @@ DateTime? raceDate,
                 else
                 {
                     flow.HistoricalRaceCount = null;
+                }
+            }
+            if (raceMissingFields.Count > 0)
+            {
+                foreach (var entry in raceMissingFields)
+                {
+                    if (!string.IsNullOrWhiteSpace(entry))
+                    {
+                        _missingScrapedFieldDescriptions.Add(entry);
+                    }
                 }
             }
         }

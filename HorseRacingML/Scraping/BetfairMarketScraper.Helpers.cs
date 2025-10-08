@@ -148,7 +148,8 @@ namespace HorseRacingML.Scraping
             string? venueCountry,
             decimal? backBookPercentage,
             decimal? layBookPercentage,
-            IReadOnlyList<RunnerFlow>? flows)
+            IReadOnlyList<RunnerFlow>? flows,
+            ISet<string>? missingScrapeFields = null)
         {
             if (featureVector == null)
             {
@@ -183,19 +184,45 @@ namespace HorseRacingML.Scraping
                 }
             }
 
+            void MarkMissing(string description)
+            {
+                if (missingScrapeFields == null)
+                {
+                    return;
+                }
+
+                var trimmed = description?.Trim();
+                if (!string.IsNullOrEmpty(trimmed))
+                {
+                    missingScrapeFields.Add(trimmed);
+                }
+            }
+
             if (flows != null && flows.Count > 0)
             {
                 SetIfMissing("RunnerCount", Math.Min(flows.Count, byte.MaxValue));
+            }
+            else
+            {
+                MarkMissing("runner count");
             }
 
             if (backBookPercentage.HasValue)
             {
                 SetIfMissing("BackBookPercentage", Convert.ToDouble(backBookPercentage.Value));
             }
+            else
+            {
+                MarkMissing("back book percentage");
+            }
 
             if (layBookPercentage.HasValue)
             {
                 SetIfMissing("LayBookPercentage", Convert.ToDouble(layBookPercentage.Value));
+            }
+            else
+            {
+                MarkMissing("lay book percentage");
             }
 
             if (flow?.Draw.HasValue == true)
@@ -206,6 +233,7 @@ namespace HorseRacingML.Scraping
             else
             {
                 SetIfMissing("DrawMissing", true);
+                MarkMissing("draw number");
             }
 
             if (flow?.ClothNumber.HasValue == true)
@@ -215,6 +243,7 @@ namespace HorseRacingML.Scraping
             else
             {
                 SetIfMissing("SaddleclothMissing", true);
+                MarkMissing("saddlecloth number");
             }
 
             var metadataSource = new RaceDayReport
@@ -229,16 +258,74 @@ namespace HorseRacingML.Scraping
 
             var parsed = ParseRaceMetadata(metadataSource);
 
-            SetIfMissing("Class", parsed.Class);
-            SetIfMissing("AgeRestriction", parsed.AgeRestriction);
-            SetIfMissing("RaceType", string.IsNullOrWhiteSpace(raceType) ? parsed.RaceType : raceType.Trim());
-            SetIfMissing("Going", string.IsNullOrWhiteSpace(going) ? parsed.Going : going.Trim());
-            SetIfMissing("Surface", parsed.Surface);
+            if (parsed.Class.HasValue)
+            {
+                SetIfMissing("Class", parsed.Class);
+            }
+            else
+            {
+                MarkMissing("race class");
+            }
+
+            if (!string.IsNullOrWhiteSpace(parsed.AgeRestriction))
+            {
+                SetIfMissing("AgeRestriction", parsed.AgeRestriction);
+            }
+            else
+            {
+                MarkMissing("age restriction");
+            }
+
+            var resolvedRaceType = string.IsNullOrWhiteSpace(raceType)
+                ? parsed.RaceType
+                : raceType.Trim();
+            if (!string.IsNullOrWhiteSpace(resolvedRaceType))
+            {
+                SetIfMissing("RaceType", resolvedRaceType);
+            }
+            else
+            {
+                MarkMissing("race type");
+            }
+
+            var resolvedGoing = string.IsNullOrWhiteSpace(going)
+                ? parsed.Going
+                : going.Trim();
+            if (!string.IsNullOrWhiteSpace(resolvedGoing))
+            {
+                SetIfMissing("Going", resolvedGoing);
+            }
+            else
+            {
+                MarkMissing("going description");
+            }
+
+            if (!string.IsNullOrWhiteSpace(parsed.Surface))
+            {
+                SetIfMissing("Surface", parsed.Surface);
+            }
+            else
+            {
+                MarkMissing("surface type");
+            }
+
             if (parsed.DistanceYards > 0)
             {
                 SetIfMissing("DistanceYards", parsed.DistanceYards);
             }
-            SetIfMissing("DistanceText", parsed.DistanceText);
+            else
+            {
+                MarkMissing("race distance");
+            }
+
+            if (!string.IsNullOrWhiteSpace(parsed.DistanceText))
+            {
+                SetIfMissing("DistanceText", parsed.DistanceText);
+            }
+            else
+            {
+                MarkMissing("distance description");
+            }
 
             if (raceDate.HasValue)
             {
@@ -255,6 +342,7 @@ namespace HorseRacingML.Scraping
                 {
                     SetIfMissing("TimeOfDaySin", 0d);
                     SetIfMissing("TimeOfDayCos", 0d);
+                    MarkMissing("scheduled off time");
                 }
 
                 int month = date.Month;
@@ -274,7 +362,12 @@ namespace HorseRacingML.Scraping
                 SetIfMissing("SeasonSin", Math.Sin(seasonAngle));
                 SetIfMissing("SeasonCos", Math.Cos(seasonAngle));
             }
+            else
+            {
+                MarkMissing("race date");
+            }
         }
+        
         private static ParsedRaceMetadata ParseRaceMetadata(RaceDayReport race)
         {
             var tokens = EnumerateDetailTokens(race.RaceDetails)

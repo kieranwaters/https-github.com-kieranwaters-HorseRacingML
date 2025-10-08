@@ -209,7 +209,7 @@ namespace HorseRacingML.Controllers
                     }
 
                     betfair.StartAutomatedBettingLoop(_repository, trainer, raceWindow, refreshLeadTime, initialDelay);
-                    var recommendations = betfair.ScrapeOpenRaceTabs(_repository, trainer);
+                    var recommendations = betfair.ScrapeOpenRaceTabs(_repository, trainer, out var missingScrapeFields);
                     string message;
                     if (recommendations.Count > 0)
                     {
@@ -235,7 +235,22 @@ namespace HorseRacingML.Controllers
                     {
                         message = "No positive expected value opportunities were found while scanning markets.";
                     }
+                    if (missingScrapeFields != null && missingScrapeFields.Count > 0)
+                    {
+                        var ordered = missingScrapeFields
+                            .Where(s => !string.IsNullOrWhiteSpace(s))
+                            .Select(s => s.Trim())
+                            .Where(s => s.Length > 0)
+                            .Distinct(StringComparer.OrdinalIgnoreCase)
+                            .OrderBy(s => s, StringComparer.OrdinalIgnoreCase)
+                            .ToList();
 
+                        if (ordered.Count > 0)
+                        {
+                            var details = string.Join(", ", ordered);
+                            message += $" Some features were disabled because scraped data was unavailable for: {details}.";
+                        }
+                    }
                     _status.Update(message);
                 }
                 catch (Exception ex)
