@@ -2038,11 +2038,12 @@ DateTime? raceDate,
                 layBookPercentage,
                 marketId,
                 flows,
-                 preparedRows,
+                preparedRows,
                 persistedUpcoming);
             foreach (var flow in flows)
             {
-                var matchedFeatures = featureLookup.FindByHorse(flow.HorseName)
+                var matchedFeatures = featureLookup.FindBySelectionId(flow.SelectionId)
+                    ?? featureLookup.FindByHorse(flow.HorseName)
                     ?? featureLookup.FindBySaddlecloth(flow.ClothNumber);
                 var matchedPreparedRow = matchedFeatures != null;
 
@@ -2284,20 +2285,24 @@ DateTime? raceDate,
             private readonly Dictionary<string, Dictionary<string, object?>> _byHorse;
             private readonly Dictionary<int, Dictionary<string, object?>> _bySaddlecloth;
             private readonly IReadOnlyList<IDictionary<string, object?>> _rows;
+            private readonly Dictionary<string, Dictionary<string, object?>> _bySelectionId;
 
             private FeatureLookup(
                 Dictionary<string, Dictionary<string, object?>> byHorse,
                 Dictionary<int, Dictionary<string, object?>> bySaddlecloth,
+                Dictionary<string, Dictionary<string, object?>> bySelectionId,
                 IReadOnlyList<IDictionary<string, object?>> rows)
             {
                 _byHorse = byHorse;
                 _bySaddlecloth = bySaddlecloth;
+                _bySelectionId = bySelectionId;
                 _rows = rows;
             }
 
             public static FeatureLookup Empty { get; } = new FeatureLookup(
                 new Dictionary<string, Dictionary<string, object?>>(StringComparer.OrdinalIgnoreCase),
                 new Dictionary<int, Dictionary<string, object?>>(),
+                 new Dictionary<string, Dictionary<string, object?>>(StringComparer.OrdinalIgnoreCase),
                 Array.Empty<IDictionary<string, object?>>());
 
             public static FeatureLookup FromPreparedRace(PreparedRace race)
@@ -2307,6 +2312,7 @@ DateTime? raceDate,
 
                 var byHorse = new Dictionary<string, Dictionary<string, object?>>(StringComparer.OrdinalIgnoreCase);
                 var byCloth = new Dictionary<int, Dictionary<string, object?>>();
+                var bySelection = new Dictionary<string, Dictionary<string, object?>>(StringComparer.OrdinalIgnoreCase);
                 var rows = new List<IDictionary<string, object?>>(race.Rows.Count);
 
                 foreach (var row in race.Rows)
@@ -2327,9 +2333,16 @@ DateTime? raceDate,
                     {
                         byCloth[saddlecloth] = copy;
                     }
+                    var normalizedSelection = NormalizeSelectionId(row.TryGetValue("SelectionId", out var selectionObj)
+                             ? selectionObj
+                             : null);
+                    if (!string.IsNullOrEmpty(normalizedSelection) && !bySelection.ContainsKey(normalizedSelection))
+                    {
+                        bySelection[normalizedSelection] = copy;
+                    }
                 }
 
-                return new FeatureLookup(byHorse, byCloth, rows);
+                return new FeatureLookup(byHorse, byCloth, bySelection, rows);
             }
 
             public static FeatureLookup FromRows(IReadOnlyList<IDictionary<string, object?>> rows)
@@ -2344,6 +2357,7 @@ DateTime? raceDate,
 
                 var byHorse = new Dictionary<string, Dictionary<string, object?>>(StringComparer.OrdinalIgnoreCase);
                 var byCloth = new Dictionary<int, Dictionary<string, object?>>();
+                var bySelection = new Dictionary<string, Dictionary<string, object?>>(StringComparer.OrdinalIgnoreCase);
                 var copies = new List<IDictionary<string, object?>>(rows.Count);
 
                 foreach (var row in rows)
@@ -2371,6 +2385,13 @@ DateTime? raceDate,
                     {
                         byCloth[saddlecloth] = copy;
                     }
+                    var normalizedSelection = NormalizeSelectionId(copy.TryGetValue("SelectionId", out var selectionObj)
+                        ? selectionObj
+                        : null);
+                    if (!string.IsNullOrEmpty(normalizedSelection) && !bySelection.ContainsKey(normalizedSelection))
+                    {
+                        bySelection[normalizedSelection] = copy;
+                    }
                 }
 
                 if (copies.Count == 0)
@@ -2378,10 +2399,43 @@ DateTime? raceDate,
                     return Empty;
                 }
 
-                return new FeatureLookup(byHorse, byCloth, copies);
+                return new FeatureLookup(byHorse, byCloth, bySelection, copies);
+            }
+            public Dictionary<string, object?>? FindBySelectionId(string? selectionId)
+            {
+                var normalized = NormalizeSelectionId(selectionId);
+                if (string.IsNullOrEmpty(normalized))
+                {
+                    return null;
+                }
+
+                return _bySelectionId.TryGetValue(normalized, out var features) ? features : null;
             }
 
-            public Dictionary<string, object?>? FindByHorse(string? horseName)
+            private static string? NormalizeSelectionId(object? value)
+            {
+                if (value == null)
+                {
+                    return null;
+                }
+
+                if (value is string s)
+                {
+                    var trimmed = s.Trim();
+                    return trimmed.Length == 0 ? null : trimmed;
+                }
+
+                var text = Convert.ToString(value, CultureInfo.InvariantCulture);
+                if (string.IsNullOrWhiteSpace(text))
+                {
+                    return null;
+                }
+
+                var normalized = text.Trim();
+                return normalized.Length == 0 ? null : normalized;
+            }
+        }
+        public Dictionary<string, object?>? FindByHorse(string? horseName)
             {
                 if (string.IsNullOrWhiteSpace(horseName))
                 {
