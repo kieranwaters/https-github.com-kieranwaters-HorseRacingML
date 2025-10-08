@@ -907,9 +907,134 @@ namespace HorseRacingML.Scraping
             }
             return '';
         };
-        const extractPriceText = raw => { if (!raw) { return ''; } const text = raw.trim(); if (!text) { return ''; } if (/^[£€$]/.test(text)) { return ''; } return text; };
-        const extractPriceFromButton = raw => { if (!raw) { return ''; } const text = raw.trim(); if (!text) { return ''; } const tokens = text.split(/\s+/); for (const token of tokens) { if (!token || /^[£€$]/.test(token)) { continue; } if (/^[0-9]+(\.[0-9]+)?$/.test(token)) { return token; } } return extractPriceText(text); };
-        const indexTokens = { 1: ['1','one'], 2: ['2','two'], 3: ['3','three'] };
+        const extractPriceText = raw => {
+            if (!raw) { return ''; }
+            const text = raw.trim();
+            if (!text) { return ''; }
+            if (/^[£€$]/.test(text)) { return ''; }
+            return text;
+        };
+        const extractPriceFromButton = raw => {
+            if (!raw) { return ''; }
+            const text = raw.trim();
+            if (!text) { return ''; }
+            const tokens = text.split(/\s+/);
+            for (const token of tokens) {
+                if (!token || /^[£€$]/.test(token)) { continue; }
+                if (/^[0-9]+(\.[0-9]+)?$/.test(token)) { return token; }
+            }
+            return extractPriceText(text);
+        };
+        const getButtonPrice = button => {
+            if (!button) { return ''; }
+            const attrValue = button.getAttribute('data-price')
+                || button.getAttribute('data-bet-price')
+                || button.getAttribute('value');
+            if (attrValue && /^[0-9]+(\.[0-9]+)?$/.test(attrValue.trim())) {
+                return attrValue.trim();
+            }
+            const label = button.querySelector('button label:nth-of-type(1), button span:nth-of-type(1), .bet-button-price, span.price, .price');
+            const labelText = textOrEmpty(label);
+            if (labelText) {
+                const parsed = extractPriceFromButton(labelText);
+                if (parsed) { return parsed; }
+            }
+            const text = textOrEmpty(button);
+            return extractPriceFromButton(text);
+        };
+        const findOursPriceButton = (type, index) => {
+            const cellIndex = type === 'back' ? 4 : 5;
+            const cell = row.querySelector(`td:nth-of-type(${cellIndex})`);
+            if (cell) {
+                const oursButtons = Array.from(cell.querySelectorAll('ours-price-button'));
+                if (oursButtons.length >= index) {
+                    return oursButtons[index - 1];
+                }
+            }
+            return null;
+        };
+        const findPrice = (type, index) => {
+            const preferred = findOursPriceButton(type, index);
+            if (preferred) {
+                const price = getButtonPrice(preferred);
+                if (price) { return price; }
+            }
+            const cellIndex = type === 'back' ? 4 : 5;
+            const cell = row.querySelector(`td:nth-of-type(${cellIndex})`);
+            if (cell) {
+                const explicit = cell.querySelector(`[data-${type}-price], [data-price]`);
+                if (explicit) {
+                    const value = explicit.getAttribute(`data-${type}-price`) || explicit.getAttribute('data-price');
+                    if (value && /^[0-9]+(\.[0-9]+)?$/.test(value.trim())) {
+                        return value.trim();
+                    }
+                }
+                const buttonCandidates = Array.from(cell.querySelectorAll('button, bet-button, ours-price-button'));
+                for (const candidate of buttonCandidates) {
+                    const price = getButtonPrice(candidate);
+                    if (price) { return price; }
+                }
+            }
+            const allButtons = Array.from(row.querySelectorAll('button, bet-button, ours-price-button, .bet-button-price, .price'));
+            const collected = [];
+            for (const candidate of allButtons) {
+                const price = getButtonPrice(candidate);
+                if (price) { collected.push(price); }
+            }
+            if (collected.length >= index) {
+                return collected[index - 1];
+            }
+            return '';
+        };
+        const clothSelectors = [
+            '.runner-number',
+            '.runner-numbers .runner-number',
+            '.runner-numbers .saddle-cloth',
+            '.runner-numbers.double p.saddle-cloth',
+            'p.saddle-cloth',
+            '.saddle-cloth'
+        ];
+        const drawSelectors = [
+            '.draw',
+            '.runner-numbers .draw',
+            '.runner-numbers.double p.stall-draw',
+            'p.stall-draw',
+            '.stall-draw'
+        ];
+        const result = {
+            cloth: queryText(clothSelectors),
+            draw: queryText(drawSelectors),
+            horse: queryText('.name .runner-name'),
+            jockey: queryText('.name .jockey-name'),
+            back1: findPrice('back', 1),
+            back2: findPrice('back', 2),
+            back3: findPrice('back', 3),
+            lay1: findPrice('lay', 1),
+            lay2: findPrice('lay', 2),
+            lay3: findPrice('lay', 3)
+        };
+        const fallbackButtons = Array.from(row.querySelectorAll('bet-button'));
+        if (fallbackButtons.length > 0) {
+            const fallbackPrices = fallbackButtons.map(btn => {
+                const label = btn.querySelector('button label:nth-of-type(1), button span:nth-of-type(1), .bet-button-price');
+                if (label) {
+                    const priceText = extractPriceText(textOrEmpty(label));
+                    if (priceText) { return priceText; }
+                }
+                const buttonText = btn.querySelector('button');
+                return extractPriceFromButton(textOrEmpty(buttonText || btn));
+            });
+            for (let i = 1; i <= 3; i++) {
+                const backKey = `back${i}`;
+                const layKey = `lay${i}`;
+                if (!result[backKey] && fallbackPrices.length >= i) {
+                    result[backKey] = fallbackPrices[i - 1];
+                }
+                if (!result[layKey] && fallbackPrices.length >= i + 3) {
+                    result[layKey] = fallbackPrices[i + 2];
+                }
+            }
+        }
         const ageWeightSelectors = [
             '.runner-timeform-wrapper__horse-details .runner-timeform-wrapper__details.runner-timeform-wrapper__age-weight-rating',
             '.runner-timeform-wrapper__details.runner-timeform-wrapper__age-weight-rating',
@@ -930,38 +1055,6 @@ namespace HorseRacingML.Scraping
             '[data-testid=""runner-trainer""]',
             '[data-test-id=""runner-trainer""]'
         ];
-        const findOursPriceButton = (type, index) => {
-            const cellIndex = type === 'back' ? 4 : 5;
-            const cell = row.querySelector(`td:nth-of-type(${cellIndex})`);
-            if (cell) {
-                const oursButtons = Array.from(cell.querySelectorAll('ours-price-button'));
-                if (oursButtons.length >= index) {
-@@ -873,56 +980,56 @@ const ageWeightSelectors = [
-                '.runner-number',
-                '.runner-numbers .runner-number',
-                '.runner-numbers .saddle-cloth',
-                '.runner-numbers.double p.saddle-cloth',
-                'p.saddle-cloth',
-                '.saddle-cloth'
-            ]),
-            draw: queryText([
-                '.draw',
-                '.runner-numbers .draw',
-                '.runner-numbers.double p.stall-draw',
-                'p.stall-draw',
-                '.stall-draw'
-            ]),
-            horse: queryText('.name .runner-name'),
-            jockey: queryText('.name .jockey-name')
-        };
-        for (let i = 1; i <= 3; i++) { result[`back${i}`] = findPrice('back', i); result[`lay${i}`] = findPrice('lay', i); }
-        const fallbackButtons = Array.from(row.querySelectorAll('bet-button'));
-        const fallbackPrices = fallbackButtons.map(btn => { const label = btn.querySelector('button label:nth-of-type(1), button span:nth-of-type(1), .bet-button-price'); if (label) { const priceText = extractPriceText(textOrEmpty(label)); if (priceText) { return priceText; } } const buttonText = btn.querySelector('button'); return extractPriceFromButton(textOrEmpty(buttonText || btn)); });
-        for (let i = 1; i <= 3; i++) {
-            const backKey = `back${i}`; const layKey = `lay${i}`;
-            if (!result[backKey] && fallbackPrices.length >= i) { result[backKey] = fallbackPrices[i - 1]; }
-            if (!result[layKey] && fallbackPrices.length >= i + 3) { result[layKey] = fallbackPrices[i + 2]; }
-        }
         result['ageWeight'] = queryDetail(ageWeightSelectors);
         result['trainer'] = queryDetail(trainerSelectors);
         return result;

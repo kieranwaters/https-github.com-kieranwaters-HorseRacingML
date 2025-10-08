@@ -33,7 +33,7 @@ namespace HorseRacingML.Scraping
         private readonly string _primaryWindowHandle;
         private static readonly Regex NonNumericCharactersRegex = new("[^0-9.,-]", RegexOptions.Compiled);
         private static readonly TimeSpan MinimumAutomationDelay = TimeSpan.FromSeconds(30);
-        private static readonly TimeSpan MaximumAutomationDelay = TimeSpan.FromMinutes(1);
+        private static readonly TimeSpan MaximumAutomationDelay = TimeSpan.FromMinutes(5);
         private readonly object _automationLock = new();
         private CancellationTokenSource? _automationCancellation;
         private Task? _automationTask;
