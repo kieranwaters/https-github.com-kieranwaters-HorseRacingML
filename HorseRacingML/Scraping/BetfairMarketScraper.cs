@@ -1728,11 +1728,12 @@ DateTime? raceDate,
             {
                 var matchedFeatures = featureLookup.FindByHorse(flow.HorseName)
                     ?? featureLookup.FindBySaddlecloth(flow.ClothNumber);
-                flow.HasPreparedFeatures = matchedFeatures != null;
+                var matchedPreparedRow = matchedFeatures != null;
+
                 Dictionary<string, object?> featureVector;
-                if (matchedFeatures != null)
+                if (matchedPreparedRow)
                 {
-                    featureVector = new Dictionary<string, object?>(matchedFeatures, StringComparer.OrdinalIgnoreCase);
+                    featureVector = new Dictionary<string, object?>(matchedFeatures!, StringComparer.OrdinalIgnoreCase);
                 }
                 else
                 {
@@ -1741,13 +1742,14 @@ DateTime? raceDate,
                         ? flow.HorseName!
                         : (flow.SelectionId ?? "unknown");
                     Console.WriteLine(
-                        $"\t\tNo prepared feature row matched for {missingFeatureIdentifier}; neural model will fall back to legacy odds.");
+                        $"\t\tNo prepared feature row matched for {missingFeatureIdentifier}; synthesizing feature vector from live scrape.");
                 }
 
                 if (runnerCount > 0)
                 {
                     featureVector["RunnerCount"] = runnerCount;
                 }
+
                 ApplyScrapedFeatureFallbacks(
                     featureVector,
                     flow,
@@ -1763,10 +1765,19 @@ DateTime? raceDate,
                     layBookPercentage,
                     flows,
                     raceMissingFields);
-                if (featureVector.Count > 0)
+
+                flow.FeatureValues = featureVector;
+                flow.HasPreparedFeatures = featureVector.Count > 0;
+
+                if (!matchedPreparedRow && flow.HasPreparedFeatures)
                 {
-                    flow.FeatureValues = featureVector;
+                    var identifier = !string.IsNullOrWhiteSpace(flow.HorseName)
+                        ? flow.HorseName!
+                        : (flow.SelectionId ?? "unknown");
+                    Console.WriteLine(
+                        $"\t\tUsing scraped fallback feature vector for {identifier}; attempting neural model scoring with live data only.");
                 }
+
                 if (featureVector.TryGetValue("CareerStarts", out var careerStartsValue))
                 {
                     flow.HistoricalRaceCount = TryConvertToInt32(careerStartsValue);
