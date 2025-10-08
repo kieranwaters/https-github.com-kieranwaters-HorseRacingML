@@ -1257,7 +1257,7 @@ namespace HorseRacingML.Scraping
 
                     if (raceRecommendations.Count > 0)
                     {
-                        if (!TryRefreshRunnerEntriesForBetting(driver, marketId, flows, out var refreshedEntries))
+                        if (!TryRefreshRunnerEntriesForBetting(driver, marketId, raceUrl, flows, out var refreshedEntries))
                         {
                             Console.Error.WriteLine($"\tSkipping bet execution for market {marketId} because the refreshed runner list could not be resolved.");
                             continue;
@@ -1475,6 +1475,7 @@ namespace HorseRacingML.Scraping
         private bool TryRefreshRunnerEntriesForBetting(
             IWebDriver driver,
             string marketId,
+             string? raceUrl,
             IReadOnlyList<RunnerFlow> flows,
             out List<(IWebElement Row, RunnerFlow Flow)> refreshedEntries)
         {
@@ -1484,7 +1485,15 @@ namespace HorseRacingML.Scraping
             {
                 return false;
             }
-
+            string? originalUrl = null;
+            try
+            {
+                originalUrl = driver.Url;
+            }
+            catch (WebDriverException)
+            {
+                originalUrl = raceUrl;
+            }
             try
             {
                 driver.Navigate().Refresh();
@@ -1493,6 +1502,56 @@ namespace HorseRacingML.Scraping
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"\tFailed to refresh market {marketId} before executing bets: {ex.Message}");
+                return false;
+            }
+            var expectedMarketId = marketId;
+            string? refreshedUrl = null;
+            try
+            {
+                refreshedUrl = driver.Url;
+            }
+            catch (WebDriverException)
+            {
+                refreshedUrl = null;
+            }
+
+            var refreshedMarketId = !string.IsNullOrWhiteSpace(refreshedUrl)
+                ? ExtractMarketId(refreshedUrl)
+                : null;
+
+            if (string.IsNullOrWhiteSpace(refreshedMarketId) ||
+                !string.Equals(refreshedMarketId, expectedMarketId, StringComparison.OrdinalIgnoreCase))
+            {
+                var targetUrl = !string.IsNullOrWhiteSpace(raceUrl) ? raceUrl : originalUrl;
+                if (!string.IsNullOrWhiteSpace(targetUrl))
+                {
+                    try
+                    {
+                        driver.Navigate().GoToUrl(targetUrl);
+                        Console.WriteLine($"\tReloaded market {marketId} after refresh redirected to {refreshedUrl ?? "unknown URL"}.");
+                        refreshedUrl = driver.Url;
+                    }
+                    catch (Exception navEx)
+                    {
+                        Console.Error.WriteLine($"\tFailed to restore market {marketId} after refresh: {navEx.Message}");
+                        return false;
+                    }
+                }
+                else
+                {
+                    Console.Error.WriteLine($"\tUnable to determine race URL for market {marketId} after refresh redirected to {refreshedUrl ?? "unknown URL"}.");
+                    return false;
+                }
+            }
+
+            refreshedMarketId = !string.IsNullOrWhiteSpace(refreshedUrl)
+                ? ExtractMarketId(refreshedUrl)
+                : null;
+
+            if (string.IsNullOrWhiteSpace(refreshedMarketId) ||
+                !string.Equals(refreshedMarketId, expectedMarketId, StringComparison.OrdinalIgnoreCase))
+            {
+                Console.Error.WriteLine($"\tFailed to ensure market {marketId} was loaded after refresh (current url: {refreshedUrl ?? "unknown"}).");
                 return false;
             }
 
