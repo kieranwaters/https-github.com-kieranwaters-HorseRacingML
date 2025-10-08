@@ -905,7 +905,6 @@ const el=arguments[0];const selectors=['div.racetrack-conditions','.racetrack-co
                     return;
                 }
             }
-            var hasInitializedTabs = false;
             while (!cancellationToken.IsCancellationRequested)
             {
                 var cycleStartUtc = DateTime.UtcNow;
@@ -913,11 +912,9 @@ const el=arguments[0];const selectors=['div.racetrack-conditions','.racetrack-co
                 try
                 {
                     await OpenHorseRaceMeetingsInNewTabsAsync(
-                        closeExistingRaceTabs: !hasInitializedTabs,
+                        closeExistingRaceTabs: false,
                         raceWindow: raceWindow,
                         windowReferenceUtc: cycleStartUtc);
-
-                    hasInitializedTabs = true;
 
                     ScrapeOpenRaceTabs(repo, trainer, out _);
                 }

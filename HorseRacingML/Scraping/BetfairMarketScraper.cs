@@ -532,6 +532,7 @@ namespace HorseRacingML.Scraping
         {
             var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10)); // short explicit wait
             var handles = handlesToProcess?.ToList() ?? driver.WindowHandles.ToList(); // collect tab handles
+            var orderedHandles = OrderHandlesByScheduledStart(driver, handles);
             var weightPath = ResolveAiWeightPath(); // resolve AI weights path
             _loadedHyperparameters = null;
 
@@ -555,7 +556,7 @@ namespace HorseRacingML.Scraping
             var result = new BetfairScrapeResult(); // aggregate result
             var recommendations = new List<BetRecommendation>(); // all bet recs
 
-            foreach (var handle in handles)
+            foreach (var handle in orderedHandles)
             {
                 driver.SwitchTo().Window(handle); // switch tab
                 Console.WriteLine($"Processing tab: {driver.Url}"); // log url
@@ -1307,6 +1308,163 @@ namespace HorseRacingML.Scraping
 
             result.Recommendations.AddRange(recommendations.OrderByDescending(r => r.Differential).ThenByDescending(r => r.KellyFraction)); // finalize ordering
             return result; // done
+        }
+        private IReadOnlyList<string> OrderHandlesByScheduledStart(IWebDriver driver, IReadOnlyList<string> handles)
+        {
+            if (handles == null || handles.Count <= 1)
+            {
+                return handles ?? Array.Empty<string>();
+            }
+
+            string? originalHandle = null;
+            try
+            {
+                originalHandle = driver.CurrentWindowHandle;
+            }
+            catch (WebDriverException)
+            {
+                originalHandle = null;
+            }
+
+            var metadata = new List<(string Handle, DateTime SortKey, int Index)>(handles.Count);
+
+            for (int i = 0; i < handles.Count; i++)
+            {
+                var handle = handles[i];
+                var sortKey = DateTime.MaxValue;
+
+                try
+                {
+                    driver.SwitchTo().Window(handle);
+                    var url = driver.Url;
+                    if (!string.IsNullOrWhiteSpace(url) && url.Contains("/horse-racing/", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var scheduled = TryResolveScheduledStart(driver);
+                        if (scheduled.HasValue)
+                        {
+                            sortKey = scheduled.Value;
+                        }
+                    }
+                }
+                catch (WebDriverException)
+                {
+                    // Ignore handles that cannot be focused; they will keep the default sort key.
+                }
+
+                metadata.Add((handle, sortKey, i));
+            }
+
+            if (!string.IsNullOrEmpty(originalHandle))
+            {
+                try
+                {
+                    driver.SwitchTo().Window(originalHandle);
+                }
+                catch (WebDriverException)
+                {
+                    // Ignore failures when restoring the original window.
+                }
+            }
+
+            return metadata
+                .OrderBy(m => m.SortKey)
+                .ThenBy(m => m.Index)
+                .Select(m => m.Handle)
+                .ToList();
+        }
+
+        private DateTime? TryResolveScheduledStart(IWebDriver driver)
+        {
+            var eventDateText = ReadFirstNonEmptyText(
+                driver,
+                ".event-date",
+                "[data-testid='event-date']",
+                "[data-testid='eventDate']",
+                "[data-testid='market-date']");
+
+            var startTimeText = ReadFirstNonEmptyText(
+                driver,
+                "[data-testid='startTime']",
+                "[data-testid='marketStartTime']",
+                "[data-testid='market-start-time']",
+                ".market-name",
+                ".event-time");
+
+            var venueText = ReadFirstNonEmptyText(driver, ".venue-name");
+
+            var offTime = TryParseRaceTime(startTimeText);
+
+            if (!offTime.HasValue)
+            {
+                var venueDetails = ParseVenueDetails(venueText);
+                if (venueDetails.Time.HasValue)
+                {
+                    offTime = venueDetails.Time;
+                }
+            }
+
+            var raceDate = ParseEventDate(eventDateText, DateTime.Today);
+
+            if (!raceDate.HasValue)
+            {
+                var fallbackTitleDate = ReadFirstNonEmptyText(
+                    driver,
+                    "[data-testid='marketTitle'] span",
+                    "[data-testid='market-title'] span");
+                raceDate = ParseEventDate(fallbackTitleDate, DateTime.Today);
+            }
+
+            if (!raceDate.HasValue && offTime.HasValue)
+            {
+                var reference = DateTime.Now;
+                var candidate = reference.Date.Add(offTime.Value);
+
+                if (candidate < reference.AddHours(-6))
+                {
+                    candidate = candidate.AddDays(1);
+                }
+                else if (candidate > reference.AddHours(18))
+                {
+                    candidate = candidate.AddDays(-1);
+                }
+
+                raceDate = candidate.Date;
+            }
+
+            if (raceDate.HasValue && offTime.HasValue)
+            {
+                return raceDate.Value.Date.Add(offTime.Value);
+            }
+
+            return raceDate;
+        }
+
+        private static TimeSpan? TryParseRaceTime(string? text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return null;
+            }
+
+            var trimmed = text.Trim();
+
+            if (TimeSpan.TryParse(trimmed, CultureInfo.InvariantCulture, out var parsed))
+            {
+                return parsed;
+            }
+
+            if (DateTime.TryParse(trimmed, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out var parsedDateTime))
+            {
+                return parsedDateTime.TimeOfDay;
+            }
+
+            var match = Regex.Match(trimmed, @"(\d{1,2}:\d{2})");
+            if (match.Success && TimeSpan.TryParse(match.Groups[1].Value, CultureInfo.InvariantCulture, out var fallback))
+            {
+                return fallback;
+            }
+
+            return null;
         }
         private bool TryRefreshRunnerEntriesForBetting(
             IWebDriver driver,
