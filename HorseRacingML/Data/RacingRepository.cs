@@ -79,7 +79,7 @@ namespace HorseRacingML.Data
                 return;
             }
 
-            const string header = @"INSERT INTO RunnerFlow(MarketId, SelectionId, ClothNumber, Draw, HorseName, JockeyName, BackPrice1, BackPrice2, BackPrice3, LayPrice1, LayPrice2, LayPrice3, AiOdds)
+            const string header = @"INSERT INTO RunnerFlow(MarketId, SelectionId, ClothNumber, Draw, HorseName, JockeyName, BackPrice1, BackPrice2, BackPrice3, LayPrice1, LayPrice2, LayPrice3, AiOdds, Age, WeightLbs, WeightText, TrainerName)
 VALUES";
 
             var sqlBuilder = new StringBuilder(header.Length + flowList.Count * 128);
@@ -105,6 +105,10 @@ VALUES";
                     .Append(", @LayPrice2").Append(suffix)
                     .Append(", @LayPrice3").Append(suffix)
                     .Append(", @AiOdds").Append(suffix)
+                    .Append(", @Age").Append(suffix)
+                    .Append(", @WeightLbs").Append(suffix)
+                    .Append(", @WeightText").Append(suffix)
+                    .Append(", @TrainerName").Append(suffix)
                     .Append(')');
 
                 if (i < flowList.Count - 1)
@@ -125,6 +129,10 @@ VALUES";
                 parameters.Add($"LayPrice2{suffix}", flow.LayPrice2);
                 parameters.Add($"LayPrice3{suffix}", flow.LayPrice3);
                 parameters.Add($"AiOdds{suffix}", flow.AiOdds);
+                parameters.Add($"Age{suffix}", flow.Age);
+                parameters.Add($"WeightLbs{suffix}", flow.WeightLbs);
+                parameters.Add($"WeightText{suffix}", flow.WeightText);
+                parameters.Add($"TrainerName{suffix}", flow.TrainerName);
             }
 
             using var conn = OpenConnection();
@@ -733,7 +741,32 @@ BEGIN
         LayPrice2    DECIMAL(9,2)  NULL,
         LayPrice3    DECIMAL(9,2)  NULL,
         AiOdds       FLOAT         NULL
+    AiOdds       FLOAT         NULL,
+        Age          TINYINT       NULL,
+        WeightLbs    TINYINT       NULL,
+        WeightText   NVARCHAR(32)  NULL,
+        TrainerName  NVARCHAR(256) NULL
     );
+END
+
+IF COL_LENGTH(N'dbo.RunnerFlow', 'Age') IS NULL
+BEGIN
+    ALTER TABLE dbo.RunnerFlow ADD Age TINYINT NULL;
+END
+
+IF COL_LENGTH(N'dbo.RunnerFlow', 'WeightLbs') IS NULL
+BEGIN
+    ALTER TABLE dbo.RunnerFlow ADD WeightLbs TINYINT NULL;
+END
+
+IF COL_LENGTH(N'dbo.RunnerFlow', 'WeightText') IS NULL
+BEGIN
+    ALTER TABLE dbo.RunnerFlow ADD WeightText NVARCHAR(32) NULL;
+END
+
+IF COL_LENGTH(N'dbo.RunnerFlow', 'TrainerName') IS NULL
+BEGIN
+    ALTER TABLE dbo.RunnerFlow ADD TrainerName NVARCHAR(256) NULL;
 END";
 
                 conn.Execute(sql);

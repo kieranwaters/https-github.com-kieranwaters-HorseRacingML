@@ -32,6 +32,8 @@ namespace HorseRacingML.Scraping
         private readonly AutomationSettingsService _automationSettings;
         private readonly string _primaryWindowHandle;
         private static readonly Regex NonNumericCharactersRegex = new("[^0-9.,-]", RegexOptions.Compiled);
+        private static readonly TimeSpan MinimumAutomationDelay = TimeSpan.FromSeconds(30);
+        private static readonly TimeSpan MaximumAutomationDelay = TimeSpan.FromMinutes(1);
         private readonly object _automationLock = new();
         private CancellationTokenSource? _automationCancellation;
         private Task? _automationTask;
@@ -840,11 +842,12 @@ const el=arguments[0];const selectors=['div.racetrack-conditions','.racetrack-co
             TimeSpan initialDelay,
             CancellationToken cancellationToken)
         {
-            if (initialDelay > TimeSpan.Zero)
+            var normalizedInitialDelay = ClampAutomationDelay(initialDelay, allowZero: true);
+            if (normalizedInitialDelay > TimeSpan.Zero)
             {
                 try
                 {
-                    await Task.Delay(initialDelay, cancellationToken);
+                    await Task.Delay(normalizedInitialDelay, cancellationToken);
                 }
                 catch (TaskCanceledException)
                 {
@@ -871,18 +874,12 @@ const el=arguments[0];const selectors=['div.racetrack-conditions','.racetrack-co
                 }
 
                 var cycleEndUtc = DateTime.UtcNow;
-                var targetInterval = raceWindow - refreshLeadTime;
-                if (targetInterval <= TimeSpan.Zero)
-                {
-                    continue;
-                }
+                var requestedInterval = raceWindow - refreshLeadTime;
+                var normalizedInterval = ClampAutomationDelay(requestedInterval, allowZero: false);
 
                 var elapsed = cycleEndUtc - cycleStartUtc;
-                var delay = targetInterval - elapsed;
-                if (delay < TimeSpan.Zero)
-                {
-                    delay = TimeSpan.Zero;
-                }
+                var delay = normalizedInterval - elapsed;
+                delay = ClampAutomationDelay(delay, allowZero: false);
 
                 try
                 {
@@ -893,6 +890,20 @@ const el=arguments[0];const selectors=['div.racetrack-conditions','.racetrack-co
                     break;
                 }
             }
+        }
+        private static TimeSpan ClampAutomationDelay(TimeSpan value, bool allowZero)
+        {
+            if (value <= TimeSpan.Zero)
+            {
+                return allowZero ? TimeSpan.Zero : MinimumAutomationDelay;
+            }
+
+            if (value > MaximumAutomationDelay)
+            {
+                return MaximumAutomationDelay;
+            }
+
+            return value;
         }
         public async Task<bool> TrySelectHorseRacingDayAsync(int daysFromToday)
         {
