@@ -28,6 +28,7 @@ namespace HorseRacingML.Scraping
         private static readonly Regex WeightStoneRegex = new(@"\b(?<stone>\d{1,2})\s*(?:st|stone|stones)\s*(?<pounds>\d{1,2})?\s*(?:lb|lbs|pound|pounds)?\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex WeightLbsRegex = new(@"\b(?<pounds>\d{2,3})\s*(?:lb|lbs|pound|pounds)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex TrainerPrefixRegex = new(@"^(?:trainer|trainers?|t:)\s*[:\-]?\s*", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly string[] DistanceBuckets = { "Sprint", "Middle", "Long" };
         private static readonly string[] RaceTypeKeywords =
         {
             "handicap",
@@ -52,6 +53,54 @@ namespace HorseRacingML.Scraping
             "apprentice",
             "amateur"
         };
+        static bool TryGetInt(object? source, out int value)
+        {
+            switch (source)
+            {
+                case null:
+                    value = 0;
+                    return false;
+                case int i:
+                    value = i;
+                    return true;
+                case long l when l >= int.MinValue && l <= int.MaxValue:
+                    value = (int)l;
+                    return true;
+                case short s:
+                    value = s;
+                    return true;
+                case byte b:
+                    value = b;
+                    return true;
+                case float f when float.IsFinite(f):
+                    value = (int)Math.Round(f);
+                    return true;
+                case double d when double.IsFinite(d):
+                    value = (int)Math.Round(d);
+                    return true;
+                case decimal m:
+                    value = (int)Math.Round(m);
+                    return true;
+                case string str when int.TryParse(str, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed):
+                    value = parsed;
+                    return true;
+                default:
+                    try
+                    {
+                        value = System.Convert.ToInt32(source, CultureInfo.InvariantCulture);
+                        return true;
+                    }
+                    catch
+                    {
+                        value = 0;
+                        return false;
+                    }
+            }
+        }
+
+        static string DistanceBucketFromYards(int yards)
+            => yards < 1760 ? "Sprint" : yards < 2640 ? "Middle" : "Long";
+
         private static string NormalizeMarketTitle(string? rawTitle)
         {
             if (string.IsNullOrWhiteSpace(rawTitle))
@@ -213,7 +262,22 @@ namespace HorseRacingML.Scraping
             {
                 MarkMissing("runner count");
             }
+            int resolvedRunnerCount = flows?.Count(f => f != null) ?? 0;
+            if (resolvedRunnerCount <= 0 &&
+                featureVector.TryGetValue("RunnerCount", out var runnerCountObj) &&
+                TryGetInt(runnerCountObj, out var runnerCountValue))
+            {
+                resolvedRunnerCount = runnerCountValue;
+            }
 
+            var clothValues = flows == null
+                ? Array.Empty<int>()
+                : flows
+                    .Where(f => f?.ClothNumber.HasValue == true)
+                    .Select(f => (int)f!.ClothNumber!.Value)
+                    .ToArray();
+            bool hasSaddleclothStats = clothValues.Length > 0;
+            float avgSaddlecloth = (float)(hasSaddleclothStats ? clothValues.Average() : 0f);
             if (backBookPercentage.HasValue)
             {
                 SetIfMissing("BackBookPercentage", Convert.ToDouble(backBookPercentage.Value));
@@ -243,8 +307,14 @@ namespace HorseRacingML.Scraping
                 MarkMissing("draw number");
             }
 
+            float relativeDraw = resolvedRunnerCount > 0 && flow?.Draw.HasValue == true
+                ? flow.Draw.Value / (float)resolvedRunnerCount
+                : 0f;
+            SetIfMissing("RelativeDraw", relativeDraw);
+
             if (flow?.ClothNumber.HasValue == true)
             {
+                SetIfMissing("SaddleclothNumber", flow.ClothNumber.Value);
                 SetIfMissing("SaddleclothMissing", false);
             }
             else
@@ -252,6 +322,18 @@ namespace HorseRacingML.Scraping
                 SetIfMissing("SaddleclothMissing", true);
                 MarkMissing("saddlecloth number");
             }
+            int? saddleclothNumber = flow?.ClothNumber;
+            float saddleclothRelative = saddleclothNumber.HasValue && resolvedRunnerCount > 0
+                ? saddleclothNumber.Value / (float)resolvedRunnerCount
+                : 0f;
+            SetIfMissing("SaddleclothRelative", saddleclothRelative);
+
+            float saddleclothDiff = saddleclothNumber.HasValue && hasSaddleclothStats
+                ? saddleclothNumber.Value - avgSaddlecloth
+                : 0f;
+            SetIfMissing("SaddleclothDiffFromMean", saddleclothDiff);
+
+            SetIfMissing("DrawBias", 0f);
             if (flow?.Age.HasValue == true)
             {
                 SetIfMissing("Age", flow.Age.Value);
@@ -354,9 +436,15 @@ namespace HorseRacingML.Scraping
                 MarkMissing("surface type");
             }
 
-            if (parsed.DistanceYards > 0)
+            int distanceYardsValue = parsed.DistanceYards > 0
+                  ? parsed.DistanceYards
+                  : (featureVector.TryGetValue("DistanceYards", out var distanceObj) && TryGetInt(distanceObj, out var resolvedDistance)
+                      ? resolvedDistance
+                      : 0);
+
+            if (distanceYardsValue > 0)
             {
-                SetIfMissing("DistanceYards", parsed.DistanceYards);
+                SetIfMissing("DistanceYards", distanceYardsValue);
             }
             else
             {
@@ -371,7 +459,20 @@ namespace HorseRacingML.Scraping
             {
                 MarkMissing("distance description");
             }
+            string? distanceBucket = null;
+            if (distanceYardsValue > 0)
+            {
+                distanceBucket = DistanceBucketFromYards(distanceYardsValue);
+                SetIfMissing("DistanceBucket", distanceBucket);
+            }
 
+            foreach (var bucket in DistanceBuckets)
+            {
+                float bucketValue = distanceBucket != null && bucket.Equals(distanceBucket, StringComparison.OrdinalIgnoreCase)
+                    ? relativeDraw
+                    : 0f;
+                SetIfMissing($"RelativeDraw_{bucket}", bucketValue);
+            }
             if (raceDate.HasValue)
             {
                 var date = raceDate.Value.Date;

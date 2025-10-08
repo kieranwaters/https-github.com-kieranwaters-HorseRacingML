@@ -555,6 +555,7 @@ namespace HorseRacingML.Scraping
             }
             var result = new BetfairScrapeResult(); // aggregate result
             var recommendations = new List<BetRecommendation>(); // all bet recs
+            var processedMarketIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var handle in orderedHandles)
             {
@@ -582,6 +583,11 @@ namespace HorseRacingML.Scraping
                 {
                     Console.Error.WriteLine($"\tFailed to extract market ID from URL: {driver.Url}"); // log failure
                     continue; // next tab
+                }
+                if (!processedMarketIds.Add(marketId))
+                {
+                    Console.WriteLine($"\tSkipping market {marketId}: already processed in this scrape session.");
+                    continue; // avoid scraping the same race twice when duplicate tabs are open
                 }
                 var goingText = GetGoingForMarket(marketId);
                 var title = ReadFirstNonEmptyText(driver,
