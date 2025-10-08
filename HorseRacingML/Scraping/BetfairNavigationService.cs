@@ -133,12 +133,33 @@ namespace HorseRacingML.Scraping
                 return null;
             }
 
+            string? originalHandle = null;
+            string? originalUrl = null;
+            try
+            {
+                originalHandle = _driver.CurrentWindowHandle;
+            }
+            catch (WebDriverException)
+            {
+                originalHandle = null;
+            }
+
+            try
+            {
+                originalUrl = _driver.Url;
+            }
+            catch (WebDriverException)
+            {
+                originalUrl = null;
+            }
+
             await LoginAsync();
 
             var priorHandles = _driver.WindowHandles.ToList();
             var priorHandleSet = new HashSet<string>(priorHandles);
             var newHandles = new List<string>();
             var openedNewTab = false;
+            var restoreUrl = string.IsNullOrWhiteSpace(raceUrl) ? originalUrl : raceUrl;
 
             try
             {
@@ -210,22 +231,65 @@ namespace HorseRacingML.Scraping
                         }
                     }
 
-                    var fallback = priorHandles.FirstOrDefault(h => _driver.WindowHandles.Contains(h));
-                    if (!string.IsNullOrEmpty(fallback))
+                    string? handleToRestore = null;
+                    if (!string.IsNullOrEmpty(originalHandle) && _driver.WindowHandles.Contains(originalHandle))
                     {
-                        _driver.SwitchTo().Window(fallback);
+                        handleToRestore = originalHandle;
                     }
-                    else if (_driver.WindowHandles.Count > 0)
+                    else
                     {
-                        _driver.SwitchTo().Window(_driver.WindowHandles[0]);
+                        handleToRestore = priorHandles.FirstOrDefault(h => _driver.WindowHandles.Contains(h));
+                    }
+
+                    if (string.IsNullOrEmpty(handleToRestore) && _driver.WindowHandles.Count > 0)
+                    {
+                        handleToRestore = _driver.WindowHandles[0];
+                    }
+
+                    if (!string.IsNullOrEmpty(handleToRestore))
+                    {
+                        try
+                        {
+                            _driver.SwitchTo().Window(handleToRestore);
+                        }
+                        catch (WebDriverException)
+                        {
+                            // Ignore failures when switching back to the original tab.
+                        }
                     }
                 }
                 else if (priorHandles.Count > 0)
                 {
-                    var current = priorHandles[0];
-                    if (_driver.WindowHandles.Contains(current))
+                    var current = !string.IsNullOrEmpty(originalHandle) && _driver.WindowHandles.Contains(originalHandle)
+                        ? originalHandle
+                        : priorHandles[0];
+                    if (!string.IsNullOrEmpty(current) && _driver.WindowHandles.Contains(current))
                     {
-                        _driver.SwitchTo().Window(current);
+                        try
+                        {
+                            _driver.SwitchTo().Window(current);
+                        }
+                        catch (WebDriverException)
+                        {
+                            // Ignore failures when switching tabs.
+                        }
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(restoreUrl))
+                {
+                    try
+                    {
+                        var currentUrl = _driver.Url;
+                        if (string.IsNullOrWhiteSpace(currentUrl) ||
+                            !string.Equals(currentUrl, restoreUrl, StringComparison.OrdinalIgnoreCase))
+                        {
+                            _driver.Navigate().GoToUrl(restoreUrl);
+                        }
+                    }
+                    catch (WebDriverException)
+                    {
+                        // Ignore failures when restoring the previous URL.
                     }
                 }
             }
