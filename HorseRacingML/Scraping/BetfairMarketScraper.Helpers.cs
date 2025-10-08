@@ -2093,7 +2093,25 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
 
         private static byte? TryParseByte(string text)
         {
-            return byte.TryParse(text, out var v) ? v : (byte?)null;
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return null;
+            }
+
+            var trimmed = text.Trim();
+
+            if (byte.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out var directValue))
+            {
+                return directValue;
+            }
+
+            var digitMatch = Regex.Match(trimmed, @"\d+");
+            if (digitMatch.Success && byte.TryParse(digitMatch.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var matchedValue))
+            {
+                return matchedValue;
+            }
+
+            return null;
         }
 
         internal static string? ExtractMarketId(string url)

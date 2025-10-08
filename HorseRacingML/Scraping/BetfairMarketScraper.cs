@@ -776,7 +776,19 @@ namespace HorseRacingML.Scraping
                     const string runnerExtractionScript = @"
         const row = arguments[0];
         const textOrEmpty = el => el && el.textContent ? el.textContent.trim() : '';
-        const queryText = selector => selector ? textOrEmpty(row.querySelector(selector)) : '';
+        const queryText = selector => {
+            if (!selector) { return ''; }
+            const selectors = Array.isArray(selector) ? selector : [selector];
+            for (const sel of selectors) {
+                if (!sel) { continue; }
+                const element = row.querySelector(sel);
+                if (element) {
+                    const text = textOrEmpty(element);
+                    if (text) { return text; }
+                }
+            }
+            return '';
+        };
 const normalizeSpaces = value => value ? value.replace(/\s+/g, ' ').trim() : '';
         const queryDetail = selectors => {
             if (!Array.isArray(selectors)) { return ''; }
@@ -856,7 +868,25 @@ const ageWeightSelectors = [
             }
             return '';
         };
-        const result = { cloth: queryText('.runner-number'), draw: queryText('.draw'), horse: queryText('.name .runner-name'), jockey: queryText('.name .jockey-name') };
+        const result = {
+            cloth: queryText([
+                '.runner-number',
+                '.runner-numbers .runner-number',
+                '.runner-numbers .saddle-cloth',
+                '.runner-numbers.double p.saddle-cloth',
+                'p.saddle-cloth',
+                '.saddle-cloth'
+            ]),
+            draw: queryText([
+                '.draw',
+                '.runner-numbers .draw',
+                '.runner-numbers.double p.stall-draw',
+                'p.stall-draw',
+                '.stall-draw'
+            ]),
+            horse: queryText('.name .runner-name'),
+            jockey: queryText('.name .jockey-name')
+        };
         for (let i = 1; i <= 3; i++) { result[`back${i}`] = findPrice('back', i); result[`lay${i}`] = findPrice('lay', i); }
         const fallbackButtons = Array.from(row.querySelectorAll('bet-button'));
         const fallbackPrices = fallbackButtons.map(btn => { const label = btn.querySelector('button label:nth-of-type(1), button span:nth-of-type(1), .bet-button-price'); if (label) { const priceText = extractPriceText(textOrEmpty(label)); if (priceText) { return priceText; } } const buttonText = btn.querySelector('button'); return extractPriceFromButton(textOrEmpty(buttonText || btn)); });
