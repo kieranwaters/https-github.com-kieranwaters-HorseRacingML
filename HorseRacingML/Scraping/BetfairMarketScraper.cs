@@ -777,9 +777,40 @@ namespace HorseRacingML.Scraping
         const row = arguments[0];
         const textOrEmpty = el => el && el.textContent ? el.textContent.trim() : '';
         const queryText = selector => selector ? textOrEmpty(row.querySelector(selector)) : '';
+const normalizeSpaces = value => value ? value.replace(/\s+/g, ' ').trim() : '';
+        const queryDetail = selectors => {
+            if (!Array.isArray(selectors)) { return ''; }
+            for (const selector of selectors) {
+                if (!selector) { continue; }
+                const el = row.querySelector(selector);
+                const text = textOrEmpty(el);
+                if (text) { return normalizeSpaces(text); }
+            }
+            return '';
+        };
         const extractPriceText = raw => { if (!raw) { return ''; } const text = raw.trim(); if (!text) { return ''; } if (/^[£€$]/.test(text)) { return ''; } return text; };
         const extractPriceFromButton = raw => { if (!raw) { return ''; } const text = raw.trim(); if (!text) { return ''; } const tokens = text.split(/\s+/); for (const token of tokens) { if (!token || /^[£€$]/.test(token)) { continue; } if (/^[0-9]+(\.[0-9]+)?$/.test(token)) { return token; } } return extractPriceText(text); };
         const indexTokens = { 1: ['1','one'], 2: ['2','two'], 3: ['3','three'] };
+const ageWeightSelectors = [
+            '.runner-timeform-wrapper__horse-details .runner-timeform-wrapper__details.runner-timeform-wrapper__age-weight-rating',
+            '.runner-timeform-wrapper__details.runner-timeform-wrapper__age-weight-rating',
+            '.runner-expanded-details .runner-timeform-wrapper__details.runner-timeform-wrapper__age-weight-rating',
+            '.runner-expanded-details .runner-timeform-wrapper__details--age-weight',
+            '.runner-info-expanded [data-testid=""horse-age-weight""]',
+            '.runner-info-expanded .runner-timeform-wrapper__details--age-weight',
+            '[data-testid=""runner-age-weight""]',
+            '[data-test-id=""runner-age-weight""]'
+        ];
+        const trainerSelectors = [
+            '.runner-timeform-wrapper__horse-details .runner-timeform-wrapper__details.runner-timeform-wrapper__trainer',
+            '.runner-timeform-wrapper__details.runner-timeform-wrapper__trainer',
+            '.runner-expanded-details .runner-timeform-wrapper__details.runner-timeform-wrapper__trainer',
+            '.runner-expanded-details .runner-timeform-wrapper__details--trainer',
+            '.runner-info-expanded [data-testid=""horse-trainer""]',
+            '.runner-info-expanded .runner-timeform-wrapper__details--trainer',
+            '[data-testid=""runner-trainer""]',
+            '[data-test-id=""runner-trainer""]'
+        ];
         const findOursPriceButton = (type, index) => {
             const cellIndex = type === 'back' ? 4 : 5;
             const cell = row.querySelector(`td:nth-of-type(${cellIndex})`);
@@ -834,6 +865,8 @@ namespace HorseRacingML.Scraping
             if (!result[backKey] && fallbackPrices.length >= i) { result[backKey] = fallbackPrices[i - 1]; }
             if (!result[layKey] && fallbackPrices.length >= i + 3) { result[layKey] = fallbackPrices[i + 2]; }
         }
+result['ageWeight'] = queryDetail(ageWeightSelectors);
+        result['trainer'] = queryDetail(trainerSelectors);
         return result;
     ";
 
@@ -855,6 +888,11 @@ namespace HorseRacingML.Scraping
                         LayPrice2 = ParseDecimal(Get("lay2")), // l2
                         LayPrice3 = ParseDecimal(Get("lay3")) // l3
                     };
+                    var (age, weightLbs, weightText) = ParseRunnerAgeWeight(Get("ageWeight"));
+                    runnerFlow.Age = age;
+                    runnerFlow.WeightLbs = weightLbs;
+                    runnerFlow.WeightText = string.IsNullOrWhiteSpace(weightText) ? null : weightText.Trim();
+                    runnerFlow.TrainerName = NormalizeTrainerName(Get("trainer"));
 
                     if (selectionIdMissing && string.IsNullOrWhiteSpace(runnerFlow.HorseName))
                     {

@@ -118,6 +118,10 @@ namespace HorseRacingML.Models
         public bool HasPreparedFeatures { get; set; }
         public int? HistoricalRaceCount { get; set; }
         public bool AiProbabilityMarketDerived { get; set; }
+        public byte? Age { get; set; }
+        public byte? WeightLbs { get; set; }
+        public string? WeightText { get; set; }
+        public string? TrainerName { get; set; }
     }
     public class UpcomingRace
     {

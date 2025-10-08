@@ -21,6 +21,13 @@ namespace HorseRacingML.Scraping
         private static readonly Regex LeadingRaceTypeRegex = new(
             @"^\s*(?<type>(?:[A-Za-z'\-]+(?:\s+[A-Za-z'\-]+)*)|(?:G[1-3])|(?:Group\s+[1-3])|(?:Grade\s+[1-3]))",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex AgeParentheticalRegex = new(@"\((?<age>\d{1,2})\)", RegexOptions.Compiled);
+        private static readonly Regex AgeWordRegex = new(@"\b(?<age>\d{1,2})\s*(?:yo|yr|yrs|year|years)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex AgeLeadingRegex = new(@"^(?<age>\d{1,2})(?=\s|$)", RegexOptions.Compiled);
+        private static readonly Regex WeightDashRegex = new(@"\b(?<stone>\d{1,2})\s*[-/]\s*(?<pounds>\d{1,2})\b", RegexOptions.Compiled);
+        private static readonly Regex WeightStoneRegex = new(@"\b(?<stone>\d{1,2})\s*(?:st|stone|stones)\s*(?<pounds>\d{1,2})?\s*(?:lb|lbs|pound|pounds)?\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex WeightLbsRegex = new(@"\b(?<pounds>\d{2,3})\s*(?:lb|lbs|pound|pounds)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex TrainerPrefixRegex = new(@"^(?:trainer|trainers?|t:)\s*[:\-]?\s*", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly string[] RaceTypeKeywords =
         {
             "handicap",
@@ -245,7 +252,45 @@ namespace HorseRacingML.Scraping
                 SetIfMissing("SaddleclothMissing", true);
                 MarkMissing("saddlecloth number");
             }
+            if (flow?.Age.HasValue == true)
+            {
+                SetIfMissing("Age", flow.Age.Value);
+                SetIfMissing("AgeMissing", false);
+            }
+            else
+            {
+                SetIfMissing("AgeMissing", true);
+                MarkMissing("runner age");
+            }
 
+            if (flow?.WeightLbs.HasValue == true)
+            {
+                SetIfMissing("WeightLbs", flow.WeightLbs.Value);
+                if (!string.IsNullOrWhiteSpace(flow.WeightText))
+                {
+                    SetIfMissing("WeightText", flow.WeightText.Trim());
+                }
+                SetIfMissing("WeightMissing", false);
+            }
+            else
+            {
+                if (!string.IsNullOrWhiteSpace(flow?.WeightText))
+                {
+                    SetIfMissing("WeightText", flow.WeightText!.Trim());
+                }
+
+                SetIfMissing("WeightMissing", true);
+                MarkMissing("runner weight");
+            }
+
+            if (!string.IsNullOrWhiteSpace(flow?.TrainerName))
+            {
+                SetIfMissing("TrainerName", flow!.TrainerName!.Trim());
+            }
+            else
+            {
+                MarkMissing("trainer name");
+            }
             var metadataSource = new RaceDayReport
             {
                 RaceTitle = raceTitle,
@@ -1088,7 +1133,121 @@ const hasBackAllContext = target => {
 
             return builder.ToString();
         }
+        private static (byte? Age, byte? WeightLbs, string? WeightText) ParseRunnerAgeWeight(string? raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return (null, null, null);
+            }
 
+            var normalized = Regex.Replace(raw.Replace('\u00A0', ' '), "\\s+", " ").Trim();
+            if (normalized.Length == 0)
+            {
+                return (null, null, null);
+            }
+
+            static byte? TryParseByte(string? value)
+            {
+                if (byte.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+                {
+                    return parsed;
+                }
+
+                return null;
+            }
+
+            byte? age = null;
+            var ageMatch = AgeParentheticalRegex.Match(normalized);
+            if (ageMatch.Success)
+            {
+                age = TryParseByte(ageMatch.Groups["age"].Value);
+            }
+
+            if (!age.HasValue)
+            {
+                var wordMatch = AgeWordRegex.Match(normalized);
+                if (wordMatch.Success)
+                {
+                    age = TryParseByte(wordMatch.Groups["age"].Value);
+                }
+            }
+
+            if (!age.HasValue)
+            {
+                var leadingMatch = AgeLeadingRegex.Match(normalized);
+                if (leadingMatch.Success)
+                {
+                    age = TryParseByte(leadingMatch.Groups["age"].Value);
+                }
+            }
+
+            string? weightText = null;
+            byte? weightLbs = null;
+
+            var dashMatch = WeightDashRegex.Match(normalized);
+            if (dashMatch.Success)
+            {
+                var stone = TryParseByte(dashMatch.Groups["stone"].Value);
+                var pounds = TryParseByte(dashMatch.Groups["pounds"].Value);
+                if (stone.HasValue && pounds.HasValue)
+                {
+                    weightText = $"{stone.Value}-{pounds.Value}";
+                    var total = stone.Value * 14 + pounds.Value;
+                    if (total <= byte.MaxValue)
+                    {
+                        weightLbs = (byte)total;
+                    }
+                }
+            }
+
+            if (!weightLbs.HasValue)
+            {
+                var stoneMatch = WeightStoneRegex.Match(normalized);
+                if (stoneMatch.Success)
+                {
+                    var stone = TryParseByte(stoneMatch.Groups["stone"].Value);
+                    var poundsGroup = stoneMatch.Groups["pounds"];
+                    var pounds = poundsGroup.Success ? TryParseByte(poundsGroup.Value) ?? (byte)0 : (byte)0;
+
+                    if (stone.HasValue)
+                    {
+                        weightText = $"{stone.Value}-{pounds}";
+                        var total = stone.Value * 14 + pounds;
+                        if (total <= byte.MaxValue)
+                        {
+                            weightLbs = (byte)total;
+                        }
+                    }
+                }
+            }
+
+            if (!weightLbs.HasValue)
+            {
+                var lbsMatch = WeightLbsRegex.Match(normalized);
+                if (lbsMatch.Success)
+                {
+                    var pounds = TryParseByte(lbsMatch.Groups["pounds"].Value);
+                    if (pounds.HasValue)
+                    {
+                        weightText = pounds.Value.ToString(CultureInfo.InvariantCulture);
+                        weightLbs = pounds.Value;
+                    }
+                }
+            }
+
+            return (age, weightLbs, string.IsNullOrWhiteSpace(weightText) ? null : weightText);
+        }
+
+        private static string? NormalizeTrainerName(string? raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return null;
+            }
+
+            var normalized = TrainerPrefixRegex.Replace(raw.Replace('\u00A0', ' '), string.Empty).Trim();
+            return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
+        }
         private static bool IsGoingToken(string token)
         {
             if (string.IsNullOrWhiteSpace(token))
