@@ -402,6 +402,30 @@ namespace HorseRacingML.Scraping
             {
                 MarkMissing("age restriction");
             }
+            if (HasMissingValue(featureVector, "AgeRestriction"))
+            {
+                var ageSamples = flows == null
+                    ? Array.Empty<byte>()
+                    : flows
+                        .Where(f => f?.Age.HasValue == true)
+                        .Select(f => f!.Age!.Value)
+                        .ToArray();
+
+                if (ageSamples.Length > 0)
+                {
+                    Array.Sort(ageSamples);
+                    var minAge = ageSamples[0];
+                    var maxAge = ageSamples[^1];
+                    string restriction = minAge == maxAge
+                        ? $"{minAge}yo"
+                        : $"{minAge}yo+";
+                    featureVector["AgeRestriction"] = restriction;
+                }
+                else
+                {
+                    featureVector["AgeRestriction"] = "Unknown";
+                }
+            }
 
             var resolvedRaceType = string.IsNullOrWhiteSpace(raceType)
                 ? parsed.RaceType
