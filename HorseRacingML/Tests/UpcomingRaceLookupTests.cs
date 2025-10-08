@@ -142,6 +142,7 @@ namespace HorseRacingML.Tests
             Assert.Null(unknownRow["WeightText"]);
             Assert.Null(unknownRow["OfficialRating"]);
         }
+
         [Fact]
         public void LoadFeatureLookup_UsesPersistedUpcomingRaceMetadata()
         {
@@ -215,6 +216,76 @@ namespace HorseRacingML.Tests
             Assert.Equal("Jane Trainer", features["TrainerName"]);
             Assert.Equal(128, features["TrainerRunsLast365"]);
             Assert.Equal(9, features["HorseRunsLast365"]);
+        }
+        [Fact]
+        public void PopulateFeatureVectors_FallsBackToTrainerWhenLookupEmpty()
+        {
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:HorseRacingDb"] = "Server=(local);Database=HorseRacingMLTest;Trusted_Connection=True;"
+                })
+                .Build();
+
+            var fallbackRow = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["HorseName"] = "Fallback Hero",
+                ["SelectionId"] = "321",
+                ["HasLastWin"] = true,
+                ["DistanceChangeFromLast"] = 4f,
+                ["DistanceRatioFromAverage"] = 1.1f,
+                ["CareerStarts"] = 8,
+                ["LifetimeWinRate"] = 0.25f,
+                ["IsTopWeight"] = true,
+                ["IsBottomWeight"] = false,
+                ["JockeyGoingDistanceWinRate"] = 0.4f,
+                ["JockeyGoingDistanceAvgNorm"] = 0.35f,
+                ["LastJockeyGoingDistanceNormPos"] = 0.2f,
+                ["TrainerJockeyCourseWinRate"] = 0.5f
+            };
+            var preparedRace = new PreparedRace(777, new List<Dictionary<string, object?>> { fallbackRow });
+
+            var trainer = new FallbackTrainer(configuration, preparedRace);
+            var repo = new MinimalRacingRepository();
+            var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
+            var scraper = new BetfairMarketScraper(repo, trainer, bankroll: 20m, settings);
+            var flows = new List<RunnerFlow>
+            {
+                new RunnerFlow
+                {
+                    HorseName = "Fallback Hero",
+                    SelectionId = "321"
+                }
+            };
+
+            var report = scraper.TestBuildRaceReport(
+                marketId: "1.555",
+                raceTitle: "Fallback Stakes",
+                venueName: "Fallback Park",
+                venueCountry: "GB",
+                raceDate: new DateTime(2024, 9, 14),
+                offTime: new TimeSpan(15, 15, 0),
+                raceDetails: "Handicap",
+                going: "Good",
+                backBookPercentage: 101m,
+                layBookPercentage: 103m,
+                raceUrl: null,
+                flows: flows);
+
+            Assert.True(trainer.FallbackCalled);
+
+            var runner = Assert.Single(report.Runners);
+            Assert.True(Assert.IsType<bool>(runner.FeatureValues["HasLastWin"]));
+            Assert.Equal(4f, Convert.ToSingle(runner.FeatureValues["DistanceChangeFromLast"]));
+            Assert.Equal(1.1f, Convert.ToSingle(runner.FeatureValues["DistanceRatioFromAverage"]));
+            Assert.Equal(8, Convert.ToInt32(runner.FeatureValues["CareerStarts"]));
+            Assert.Equal(0.25f, Convert.ToSingle(runner.FeatureValues["LifetimeWinRate"]));
+            Assert.Equal(true, runner.FeatureValues["IsTopWeight"]);
+            Assert.Equal(false, runner.FeatureValues["IsBottomWeight"]);
+            Assert.Equal(0.4f, Convert.ToSingle(runner.FeatureValues["JockeyGoingDistanceWinRate"]));
+            Assert.Equal(0.35f, Convert.ToSingle(runner.FeatureValues["JockeyGoingDistanceAvgNorm"]));
+            Assert.Equal(0.2f, Convert.ToSingle(runner.FeatureValues["LastJockeyGoingDistanceNormPos"]));
+            Assert.Equal(0.5f, Convert.ToSingle(runner.FeatureValues["TrainerJockeyCourseWinRate"]));
         }
 
         private sealed class InMemoryRacingRepository : IRacingRepository
@@ -554,6 +625,85 @@ namespace HorseRacingML.Tests
             protected override (int CourseId, string? CourseName) ResolveCourse(SqlConnection conn, UpcomingRace upcoming)
             {
                 return (555, upcoming.VenueName);
+            }
+        }
+        private sealed class MinimalRacingRepository : IRacingRepository
+        {
+            public void ClearDayReportTables()
+            {
+            }
+
+            public UpcomingRace? FindUpcomingRace(DateTime raceDate, string? raceTitle, string? venueName)
+            {
+                return null;
+            }
+
+            public int? GetHistoricalRaceCountByHorseName(string? horseName)
+            {
+                return null;
+            }
+
+            public IReadOnlyDictionary<string, int> GetHistoricalRaceCountsByHorseNames(IEnumerable<string> horseNames)
+            {
+                return new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            }
+
+            public UpcomingRace? GetUpcomingRaceByMarketId(string? marketId)
+            {
+                return null;
+            }
+
+            public void InsertRaceScreen(RaceScreen screen)
+            {
+            }
+
+            public void InsertRunnerFlow(RunnerFlow flow)
+            {
+            }
+
+            public void InsertRunnerFlows(IEnumerable<RunnerFlow> flows)
+            {
+            }
+
+            public int UpsertUpcomingRace(UpcomingRace race)
+            {
+                return 0;
+            }
+        }
+
+        private sealed class FallbackTrainer : HorseRacingML.ML.HyperparameterTrainer
+        {
+            private readonly PreparedRace _fallbackRace;
+
+            public FallbackTrainer(IConfiguration configuration, PreparedRace fallbackRace)
+                : base(configuration)
+            {
+                _fallbackRace = fallbackRace ?? throw new ArgumentNullException(nameof(fallbackRace));
+            }
+
+            public bool FallbackCalled { get; private set; }
+
+            public override IReadOnlyList<PreparedRace?> PrepareUpcomingRaces(
+                IReadOnlyList<(UpcomingRace upcoming, IReadOnlyList<RunnerFlow> flows)> requests)
+            {
+                if (requests is null)
+                {
+                    throw new ArgumentNullException(nameof(requests));
+                }
+
+                var results = new PreparedRace?[requests.Count];
+                for (int i = 0; i < results.Length; i++)
+                {
+                    results[i] = null;
+                }
+
+                return results;
+            }
+
+            public override PreparedRace? PrepareUpcomingRace(UpcomingRace upcoming, IReadOnlyList<RunnerFlow> flows)
+            {
+                FallbackCalled = true;
+                return _fallbackRace;
             }
         }
     }

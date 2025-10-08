@@ -2040,13 +2040,52 @@ DateTime? raceDate,
                 flows,
                 preparedRows,
                 persistedUpcoming);
+            var fallbackLookup = FeatureLookup.Empty;
+            var fallbackAttempted = false;
             foreach (var flow in flows)
             {
                 var matchedFeatures = featureLookup.FindBySelectionId(flow.SelectionId)
                     ?? featureLookup.FindByHorse(flow.HorseName)
                     ?? featureLookup.FindBySaddlecloth(flow.ClothNumber);
                 var matchedPreparedRow = matchedFeatures != null;
+                var identifier = !string.IsNullOrWhiteSpace(flow?.HorseName)
+                   ? flow!.HorseName!
+                   : (flow?.SelectionId ?? "unknown");
 
+                if (!matchedPreparedRow)
+                {
+                    if (!fallbackAttempted)
+                    {
+                        fallbackAttempted = true;
+                        fallbackLookup = BuildFallbackFeatureLookup(
+                            raceDate,
+                            raceTitle,
+                            venueName,
+                            venueCountry,
+                            scheduledOff,
+                            raceDetails,
+                            raceType,
+                            going,
+                            backBookPercentage,
+                            layBookPercentage,
+                            marketId,
+                            flows,
+                            persistedUpcoming);
+                    }
+
+                    if (fallbackLookup != FeatureLookup.Empty)
+                    {
+                        matchedFeatures = fallbackLookup.FindBySelectionId(flow.SelectionId)
+                            ?? fallbackLookup.FindByHorse(flow.HorseName)
+                            ?? fallbackLookup.FindBySaddlecloth(flow.ClothNumber);
+                        matchedPreparedRow = matchedFeatures != null;
+                        if (matchedPreparedRow)
+                        {
+                            Console.WriteLine(
+                                $"\t\tUsing trainer fallback feature vector for {identifier}; synthetic preparation succeeded.");
+                        }
+                    }
+                }
                 Dictionary<string, object?> featureVector;
                 if (matchedPreparedRow)
                 {
@@ -2113,6 +2152,89 @@ DateTime? raceDate,
                         _missingScrapedFieldDescriptions.Add(entry);
                     }
                 }
+            }
+        }
+        private FeatureLookup BuildFallbackFeatureLookup(
+            DateTime? raceDate,
+            string? raceTitle,
+            string? venueName,
+            string? venueCountry,
+            TimeSpan? scheduledOff,
+            string? raceDetails,
+            string? raceType,
+            string? going,
+            decimal? backBookPercentage,
+            decimal? layBookPercentage,
+            string? marketId,
+            IReadOnlyList<RunnerFlow> flows,
+            UpcomingRace? persistedUpcoming)
+        {
+            if (!raceDate.HasValue || flows == null || flows.Count == 0)
+            {
+                return FeatureLookup.Empty;
+            }
+
+            UpcomingRace? upcoming = null;
+            if (persistedUpcoming != null &&
+                ShouldUseUpcomingCandidate(persistedUpcoming, marketId, raceTitle, venueName))
+            {
+                upcoming = persistedUpcoming;
+            }
+
+            if (upcoming == null)
+            {
+                try
+                {
+                    upcoming = _repo.FindUpcomingRace(raceDate.Value, raceTitle, venueName);
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"  Failed to query upcoming race metadata for fallback lookup: {ex.Message}");
+                }
+
+                if (upcoming != null &&
+                    !ShouldUseUpcomingCandidate(upcoming, marketId, raceTitle, venueName))
+                {
+                    upcoming = null;
+                }
+            }
+
+            if (upcoming == null)
+            {
+                upcoming = BuildSyntheticUpcomingRace(
+                    raceDate.Value,
+                    raceTitle,
+                    venueName,
+                    venueCountry,
+                    scheduledOff,
+                    raceDetails,
+                    raceType,
+                    going,
+                    backBookPercentage,
+                    layBookPercentage,
+                    marketId,
+                    flows);
+            }
+
+            if (upcoming == null)
+            {
+                return FeatureLookup.Empty;
+            }
+
+            try
+            {
+                var prepared = _trainer.PrepareUpcomingRace(upcoming, flows);
+                if (prepared == null || prepared.Rows.Count == 0)
+                {
+                    return FeatureLookup.Empty;
+                }
+
+                return FeatureLookup.FromPreparedRace(prepared);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"      Failed to build fallback synthetic feature vector for upcoming race {upcoming.MarketId ?? marketId ?? "<unknown>"}:{ex.Message}");
+                return FeatureLookup.Empty;
             }
         }
         public static bool ShouldUseUpcomingCandidate(
