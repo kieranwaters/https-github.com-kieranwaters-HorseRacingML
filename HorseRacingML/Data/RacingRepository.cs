@@ -740,8 +740,7 @@ BEGIN
         LayPrice1    DECIMAL(9,2)  NULL,
         LayPrice2    DECIMAL(9,2)  NULL,
         LayPrice3    DECIMAL(9,2)  NULL,
-        AiOdds       FLOAT         NULL
-    AiOdds       FLOAT         NULL,
+        AiOdds       FLOAT         NULL,
         Age          TINYINT       NULL,
         WeightLbs    TINYINT       NULL,
         WeightText   NVARCHAR(32)  NULL,
