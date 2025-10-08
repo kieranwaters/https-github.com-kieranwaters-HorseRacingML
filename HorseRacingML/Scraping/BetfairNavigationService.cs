@@ -537,15 +537,22 @@ namespace HorseRacingML.Scraping
                 Races = orderedRaces
             };
         }
+
         public async Task OpenHorseRaceMeetingsInNewTabsAsync(
             int delayBetweenTabsMs = 0,
             bool closeExistingRaceTabs = true,
             TimeSpan? raceWindow = null,
             DateTime? windowReferenceUtc = null)
         {
+            HashSet<string> existingMarketIds;
             if (closeExistingRaceTabs)
             {
                 CloseAdditionalRaceTabs();
+                existingMarketIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            }
+            else
+            {
+                existingMarketIds = CaptureOpenRaceMarketIds();
             }
 
             ReturnToPrimaryWindow();
@@ -664,6 +671,15 @@ namespace HorseRacingML.Scraping
                         {
                             continue;
                         }
+                        string? marketIdFromLink = null;
+                        try
+                        {
+                            marketIdFromLink = BetfairMarketScraper.ExtractMarketId(href);
+                        }
+                        catch (Exception)
+                        {
+                            marketIdFromLink = null;
+                        }
                         try
                         {
                             var going = ExtractGoingForElement(el);
@@ -672,6 +688,10 @@ namespace HorseRacingML.Scraping
                         catch (Exception ex)
                         {
                             Console.Error.WriteLine($"[Navigation] Failed to record going for race link: {ex.Message}");
+                        }
+                        if (!string.IsNullOrWhiteSpace(marketIdFromLink) && existingMarketIds.Contains(marketIdFromLink))
+                        {
+                            continue;
                         }
                         if (raceWindow.HasValue)
                         {
@@ -719,6 +739,15 @@ namespace HorseRacingML.Scraping
                     var href = anchor.GetAttribute("href");
                     if (!string.IsNullOrWhiteSpace(href))
                     {
+                        string? marketIdFromLink = null;
+                        try
+                        {
+                            marketIdFromLink = BetfairMarketScraper.ExtractMarketId(href);
+                        }
+                        catch (Exception)
+                        {
+                            marketIdFromLink = null;
+                        }
                         try
                         {
                             var going = ExtractGoingForElement(anchor);
@@ -727,6 +756,10 @@ namespace HorseRacingML.Scraping
                         catch (Exception ex)
                         {
                             Console.Error.WriteLine($"[Navigation] Failed to capture going from fallback link: {ex.Message}");
+                        }
+                        if (!string.IsNullOrWhiteSpace(marketIdFromLink) && existingMarketIds.Contains(marketIdFromLink))
+                        {
+                            continue;
                         }
                         seen.Add(href);
                     }
@@ -748,8 +781,26 @@ namespace HorseRacingML.Scraping
                 urlsToOpen = seen!;
             }
 
+            var newlyOpenedMarketIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var url in urlsToOpen)
             {
+                string? marketId = null;
+                try
+                {
+                    marketId = BetfairMarketScraper.ExtractMarketId(url);
+                }
+                catch (Exception)
+                {
+                    marketId = null;
+                }
+
+                if (!string.IsNullOrWhiteSpace(marketId))
+                {
+                    if (existingMarketIds.Contains(marketId) || !newlyOpenedMarketIds.Add(marketId))
+                    {
+                        continue;
+                    }
+                }
                 ((IJavaScriptExecutor)_driver).ExecuteScript("window.open(arguments[0],'_blank');", url);
                 if (delayBetweenTabsMs > 0)
                 {
@@ -854,7 +905,7 @@ const el=arguments[0];const selectors=['div.racetrack-conditions','.racetrack-co
                     return;
                 }
             }
-
+            var hasInitializedTabs = false;
             while (!cancellationToken.IsCancellationRequested)
             {
                 var cycleStartUtc = DateTime.UtcNow;
@@ -862,9 +913,11 @@ const el=arguments[0];const selectors=['div.racetrack-conditions','.racetrack-co
                 try
                 {
                     await OpenHorseRaceMeetingsInNewTabsAsync(
-                        closeExistingRaceTabs: true,
+                        closeExistingRaceTabs: !hasInitializedTabs,
                         raceWindow: raceWindow,
                         windowReferenceUtc: cycleStartUtc);
+
+                    hasInitializedTabs = true;
 
                     ScrapeOpenRaceTabs(repo, trainer, out _);
                 }
@@ -891,6 +944,63 @@ const el=arguments[0];const selectors=['div.racetrack-conditions','.racetrack-co
                 }
             }
         }
+        private HashSet<string> CaptureOpenRaceMarketIds()
+        {
+            var existing = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            IReadOnlyCollection<string> handles;
+
+            try
+            {
+                handles = _driver.WindowHandles;
+            }
+            catch (WebDriverException)
+            {
+                return existing;
+            }
+
+            string? originalHandle = null;
+            try
+            {
+                originalHandle = _driver.CurrentWindowHandle;
+            }
+            catch (WebDriverException)
+            {
+                originalHandle = null;
+            }
+
+            foreach (var handle in handles)
+            {
+                try
+                {
+                    _driver.SwitchTo().Window(handle);
+                    var url = _driver.Url;
+                    var marketId = BetfairMarketScraper.ExtractMarketId(url);
+                    if (!string.IsNullOrWhiteSpace(marketId))
+                    {
+                        existing.Add(marketId);
+                    }
+                }
+                catch (WebDriverException)
+                {
+                    continue;
+                }
+            }
+
+            try
+            {
+                if (!string.IsNullOrEmpty(originalHandle) && _driver.WindowHandles.Contains(originalHandle))
+                {
+                    _driver.SwitchTo().Window(originalHandle);
+                }
+            }
+            catch (WebDriverException)
+            {
+                ReturnToPrimaryWindow();
+            }
+
+            return existing;
+        }
+
         private static TimeSpan ClampAutomationDelay(TimeSpan value, bool allowZero)
         {
             if (value <= TimeSpan.Zero)
