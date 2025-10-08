@@ -2434,7 +2434,7 @@ DateTime? raceDate,
                 var normalized = text.Trim();
                 return normalized.Length == 0 ? null : normalized;
             }
-        }
+        
         public Dictionary<string, object?>? FindByHorse(string? horseName)
             {
                 if (string.IsNullOrWhiteSpace(horseName))
