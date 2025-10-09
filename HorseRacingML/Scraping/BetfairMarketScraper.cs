@@ -2276,6 +2276,140 @@ DateTime? raceDate,
                 }
             }
         }
+        private static float? TryConvertToSingle(object? value)
+        {
+            if (value == null)
+            {
+                return null;
+            }
+
+            switch (value)
+            {
+                case float f when !float.IsNaN(f) && !float.IsInfinity(f):
+                    return f;
+                case double d when !double.IsNaN(d) && !double.IsInfinity(d):
+                    if (d > float.MaxValue || d < float.MinValue)
+                    {
+                        return null;
+                    }
+                    return (float)d;
+                case decimal m:
+                    try
+                    {
+                        var convertedDecimal = (float)m;
+                        if (!float.IsNaN(convertedDecimal) && !float.IsInfinity(convertedDecimal))
+                        {
+                            return convertedDecimal;
+                        }
+                    }
+                    catch
+                    {
+                        // ignored
+                    }
+                    return null;
+                case int i:
+                    return i;
+                case long l:
+                    return l;
+                case short s:
+                    return s;
+                case byte b:
+                    return b;
+                case sbyte sb:
+                    return sb;
+                case ushort us:
+                    return us;
+                case uint ui:
+                    return ui;
+                case string s when float.TryParse(s, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var parsedInvariant):
+                    return parsedInvariant;
+                case string s when float.TryParse(s, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.CurrentCulture, out var parsedCurrent):
+                    return parsedCurrent;
+            }
+
+            if (value is IConvertible convertible)
+            {
+                try
+                {
+                    var converted = convertible.ToSingle(CultureInfo.InvariantCulture);
+                    if (!float.IsNaN(converted) && !float.IsInfinity(converted))
+                    {
+                        return converted;
+                    }
+                }
+                catch
+                {
+                    // ignored
+                }
+            }
+
+            return null;
+        }
+
+        private static void EnsureRaceAverageWinRateLast5(IReadOnlyList<RunnerFlow> flows)
+        {
+            if (flows == null || flows.Count == 0)
+            {
+                return;
+            }
+
+            double sum = 0d;
+            int participantCount = 0;
+
+            foreach (var flow in flows)
+            {
+                if (flow == null)
+                {
+                    continue;
+                }
+
+                participantCount++;
+
+                float runnerWinRate = 0f;
+                if (flow.FeatureValues != null &&
+                    TryGetMeaningfulValue(flow.FeatureValues, "WinRateLast5", out var winRateValue))
+                {
+                    var converted = TryConvertToSingle(winRateValue);
+                    if (converted.HasValue && !float.IsNaN(converted.Value) && !float.IsInfinity(converted.Value))
+                    {
+                        runnerWinRate = converted.Value;
+                    }
+                }
+
+                sum += runnerWinRate;
+            }
+
+            if (participantCount == 0)
+            {
+                return;
+            }
+
+            var average = (float)(sum / participantCount);
+            if (float.IsNaN(average) || float.IsInfinity(average))
+            {
+                return;
+            }
+
+            foreach (var flow in flows)
+            {
+                if (flow?.FeatureValues == null)
+                {
+                    continue;
+                }
+
+                if (!TryGetMeaningfulValue(flow.FeatureValues, "RaceAvgWinRateLast5", out var existingValue))
+                {
+                    flow.FeatureValues["RaceAvgWinRateLast5"] = average;
+                    continue;
+                }
+
+                var existing = TryConvertToSingle(existingValue);
+                if (!existing.HasValue || float.IsNaN(existing.Value) || float.IsInfinity(existing.Value))
+                {
+                    flow.FeatureValues["RaceAvgWinRateLast5"] = average;
+                }
+            }
+        }
         private static readonly string[] HistoricalFeatureBackfillKeys =
         {
            "Class",
@@ -2323,6 +2457,7 @@ DateTime? raceDate,
             "GoingDistanceWinRate",
             "GoingDistanceAvgNorm",
             "LastGoingDistanceNormPos",
+            "RaceAvgWinRateLast5",
             "WinningTimeMs",
             "RaceSpeed",
             "RunnerSpeed",
