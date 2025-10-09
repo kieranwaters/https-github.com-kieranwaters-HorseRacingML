@@ -2124,6 +2124,7 @@ DateTime? raceDate,
                     Console.WriteLine(
                         $"\t\tNo prepared feature row matched for {missingFeatureIdentifier}; synthesizing feature vector from live scrape.");
                 }
+                IReadOnlyList<string> missingHistoricalKeys = Array.Empty<string>();
                 if (NeedsHistoricalFeatureBackfill(featureVector))
                 {
                     if (!fallbackAttempted)
@@ -2231,23 +2232,29 @@ DateTime? raceDate,
             "TrainerJockeyCourseWinRate"
         };
 
-        private static bool NeedsHistoricalFeatureBackfill(Dictionary<string, object?> featureVector)
+        private static IReadOnlyList<string> GetMissingHistoricalFeatureKeys(Dictionary<string, object?> featureVector)
         {
+            var missing = new List<string>();
+
             if (featureVector == null || featureVector.Count == 0)
             {
-                return true;
+                missing.AddRange(HistoricalFeatureBackfillKeys);
+                return missing;
             }
 
             foreach (var key in HistoricalFeatureBackfillKeys)
             {
                 if (!featureVector.TryGetValue(key, out var value) || value == null)
                 {
-                    return true;
+                    missing.Add(key);
                 }
             }
 
-            return false;
+            return missing;
         }
+
+        private static bool NeedsHistoricalFeatureBackfill(Dictionary<string, object?> featureVector) =>
+            GetMissingHistoricalFeatureKeys(featureVector).Count > 0;
         private FeatureLookup BuildFallbackFeatureLookup(
             DateTime? raceDate,
             string? raceTitle,
