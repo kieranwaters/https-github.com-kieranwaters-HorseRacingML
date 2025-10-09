@@ -337,8 +337,37 @@ namespace HorseRacingML.Tests
                 ["JockeyGoingDistanceWinRate"] = 0.42f,
                 ["JockeyGoingDistanceAvgNorm"] = 0.31f,
                 ["LastJockeyGoingDistanceNormPos"] = 0.18f,
-                ["TrainerJockeyCourseWinRate"] = 0.37f
-            };
+                ["TrainerJockeyCourseWinRate"] = 0.37f,
+                ["DistanceBeatenLengths"] = 1.5f,
+                ["DistanceBeatenKnown"] = true,
+                ["WinningTimeMs"] = 95432,
+                ["ClassWinRate"] = 0.55f,
+                ["ClassAvgNorm"] = 0.27f,
+                ["LastClassNormPos"] = 0.19f,
+                ["TrainerClassWinRate"] = 0.48f,
+                ["TrainerClassAvgNorm"] = 0.22f,
+                ["LastTrainerClassNormPos"] = 0.31f,
+                ["JockeyClassWinRate"] = 0.33f,
+                ["JockeyClassAvgNorm"] = 0.21f,
+                ["LastJockeyClassNormPos"] = 0.17f,
+                ["GoingCourseWinRate"] = 0.41f,
+                ["GoingCourseAvgNorm"] = 0.36f,
+                ["LastGoingCourseNormPos"] = 0.29f,
+                ["AgeRestrictionWinRate"] = 0.38f,
+                ["LastAgeRestrictionNormPos"] = 0.26f,
+                ["DistanceBucketWinRate"] = 0.45f,
+                ["LastDistanceBucketNormPos"] = 0.24f,
+                ["GoingDistanceWinRate"] = 0.34f,
+                ["GoingDistanceAvgNorm"] = 0.28f,
+                ["LastGoingDistanceNormPos"] = 0.23f,
+                ["RaceSpeed"] = 0.92f,
+                ["RunnerSpeed"] = 0.89f,
+                ["SpeedMissing"] = false,
+                ["SpeedDiff"] = -0.03f,
+                ["SpeedRatio"] = 0.97f,
+                ["CourseWinRateLast5"] = 0.52f
+            
+        };
             var fallbackRace = new PreparedRace(889, new List<Dictionary<string, object?>> { fallbackRow });
 
             var trainer = new BackfillTrainer(configuration, primaryRace, fallbackRace);
@@ -383,6 +412,34 @@ namespace HorseRacingML.Tests
             Assert.Equal(0.31f, Convert.ToSingle(runner.FeatureValues["JockeyGoingDistanceAvgNorm"]));
             Assert.Equal(0.18f, Convert.ToSingle(runner.FeatureValues["LastJockeyGoingDistanceNormPos"]));
             Assert.Equal(0.37f, Convert.ToSingle(runner.FeatureValues["TrainerJockeyCourseWinRate"]));
+            Assert.Equal(1.5f, Convert.ToSingle(runner.FeatureValues["DistanceBeatenLengths"]));
+            Assert.True(Convert.ToBoolean(runner.FeatureValues["DistanceBeatenKnown"]));
+            Assert.Equal(95432, Convert.ToInt32(runner.FeatureValues["WinningTimeMs"]));
+            Assert.Equal(0.55f, Convert.ToSingle(runner.FeatureValues["ClassWinRate"]));
+            Assert.Equal(0.27f, Convert.ToSingle(runner.FeatureValues["ClassAvgNorm"]));
+            Assert.Equal(0.19f, Convert.ToSingle(runner.FeatureValues["LastClassNormPos"]));
+            Assert.Equal(0.48f, Convert.ToSingle(runner.FeatureValues["TrainerClassWinRate"]));
+            Assert.Equal(0.22f, Convert.ToSingle(runner.FeatureValues["TrainerClassAvgNorm"]));
+            Assert.Equal(0.31f, Convert.ToSingle(runner.FeatureValues["LastTrainerClassNormPos"]));
+            Assert.Equal(0.33f, Convert.ToSingle(runner.FeatureValues["JockeyClassWinRate"]));
+            Assert.Equal(0.21f, Convert.ToSingle(runner.FeatureValues["JockeyClassAvgNorm"]));
+            Assert.Equal(0.17f, Convert.ToSingle(runner.FeatureValues["LastJockeyClassNormPos"]));
+            Assert.Equal(0.41f, Convert.ToSingle(runner.FeatureValues["GoingCourseWinRate"]));
+            Assert.Equal(0.36f, Convert.ToSingle(runner.FeatureValues["GoingCourseAvgNorm"]));
+            Assert.Equal(0.29f, Convert.ToSingle(runner.FeatureValues["LastGoingCourseNormPos"]));
+            Assert.Equal(0.38f, Convert.ToSingle(runner.FeatureValues["AgeRestrictionWinRate"]));
+            Assert.Equal(0.26f, Convert.ToSingle(runner.FeatureValues["LastAgeRestrictionNormPos"]));
+            Assert.Equal(0.45f, Convert.ToSingle(runner.FeatureValues["DistanceBucketWinRate"]));
+            Assert.Equal(0.24f, Convert.ToSingle(runner.FeatureValues["LastDistanceBucketNormPos"]));
+            Assert.Equal(0.34f, Convert.ToSingle(runner.FeatureValues["GoingDistanceWinRate"]));
+            Assert.Equal(0.28f, Convert.ToSingle(runner.FeatureValues["GoingDistanceAvgNorm"]));
+            Assert.Equal(0.23f, Convert.ToSingle(runner.FeatureValues["LastGoingDistanceNormPos"]));
+            Assert.Equal(0.92f, Convert.ToSingle(runner.FeatureValues["RaceSpeed"]));
+            Assert.Equal(0.89f, Convert.ToSingle(runner.FeatureValues["RunnerSpeed"]));
+            Assert.False(Convert.ToBoolean(runner.FeatureValues["SpeedMissing"]));
+            Assert.Equal(-0.03f, Convert.ToSingle(runner.FeatureValues["SpeedDiff"]));
+            Assert.Equal(0.97f, Convert.ToSingle(runner.FeatureValues["SpeedRatio"]));
+            Assert.Equal(0.52f, Convert.ToSingle(runner.FeatureValues["CourseWinRateLast5"]));
         }
 
 

@@ -2202,16 +2202,7 @@ DateTime? raceDate,
 
                         if (fallbackFeatures != null)
                         {
-                            foreach (var key in HistoricalFeatureBackfillKeys)
-                            {
-                                if (!featureVector.TryGetValue(key, out var existing) || existing == null)
-                                {
-                                    if (fallbackFeatures.TryGetValue(key, out var replacement) && replacement != null)
-                                    {
-                                        featureVector[key] = replacement;
-                                    }
-                                }
-                            }
+                            BackfillHistoricalFeatures(featureVector, fallbackFeatures);
                         }
                     }
                 }
@@ -2291,13 +2282,60 @@ DateTime? raceDate,
             "DistanceRatioFromAverage",
             "CareerStarts",
             "LifetimeWinRate",
+            "DistanceBeatenLengths",
+            "DistanceBeatenKnown",
+            "DrawBias",
+            "SaddleclothDiffFromMean",
             "IsTopWeight",
             "IsBottomWeight",
             "JockeyGoingDistanceWinRate",
             "JockeyGoingDistanceAvgNorm",
             "LastJockeyGoingDistanceNormPos",
-            "TrainerJockeyCourseWinRate"
+            "TrainerJockeyCourseWinRate",
+            "ClassWinRate",
+            "ClassAvgNorm",
+            "LastClassNormPos",
+            "TrainerClassWinRate",
+            "TrainerClassAvgNorm",
+            "LastTrainerClassNormPos",
+            "JockeyClassWinRate",
+            "JockeyClassAvgNorm",
+            "LastJockeyClassNormPos",
+            "GoingCourseWinRate",
+            "GoingCourseAvgNorm",
+            "LastGoingCourseNormPos",
+            "AgeRestrictionWinRate",
+            "LastAgeRestrictionNormPos",
+            "DistanceBucketWinRate",
+            "LastDistanceBucketNormPos",
+            "GoingDistanceWinRate",
+            "GoingDistanceAvgNorm",
+            "LastGoingDistanceNormPos",
+            "WinningTimeMs",
+            "RaceSpeed",
+            "RunnerSpeed",
+            "SpeedMissing",
+            "SpeedDiff",
+            "SpeedRatio"
         };
+
+        private static readonly HashSet<string> HistoricalFeatureBackfillExcludedKeys = new(
+            new[]
+            {
+                "HorseName",
+                "HorseId",
+                "TrainerName",
+                "TrainerId",
+                "JockeyName",
+                "JockeyId",
+                "SelectionId",
+                "RaceId",
+                "RaceDate",
+                "RunnerResultId",
+                "MarketId"
+            },
+            StringComparer.OrdinalIgnoreCase);
+
 
         private static IReadOnlyList<string> GetMissingHistoricalFeatureKeys(Dictionary<string, object?> featureVector)
         {
@@ -2311,7 +2349,7 @@ DateTime? raceDate,
 
             foreach (var key in HistoricalFeatureBackfillKeys)
             {
-                if (!featureVector.TryGetValue(key, out var value) || value == null)
+                if (!TryGetMeaningfulValue(featureVector, key, out _))
                 {
                     missing.Add(key);
                 }
@@ -2319,7 +2357,88 @@ DateTime? raceDate,
 
             return missing;
         }
+        private static void BackfillHistoricalFeatures(
+            Dictionary<string, object?> target,
+            Dictionary<string, object?> source)
+        {
+            if (target == null || source == null || source.Count == 0)
+            {
+                return;
+            }
 
+            foreach (var key in HistoricalFeatureBackfillKeys)
+            {
+                if (!TryGetMeaningfulValue(target, key, out _) &&
+                    TryGetMeaningfulValue(source, key, out var replacement))
+                {
+                    target[key] = replacement;
+                }
+            }
+
+            foreach (var kvp in source)
+            {
+                var key = kvp.Key;
+                if (string.IsNullOrWhiteSpace(key))
+                {
+                    continue;
+                }
+
+                if (HistoricalFeatureBackfillExcludedKeys.Contains(key))
+                {
+                    continue;
+                }
+
+                if (!TryGetMeaningfulValue(target, key, out _) && HasMeaningfulValue(kvp.Value))
+                {
+                    target[key] = kvp.Value;
+                }
+            }
+        }
+
+        private static bool TryGetMeaningfulValue(
+            Dictionary<string, object?>? source,
+            string key,
+            out object? value)
+        {
+            value = null;
+            if (source == null || string.IsNullOrWhiteSpace(key))
+            {
+                return false;
+            }
+
+            if (!source.TryGetValue(key, out var existing) || !HasMeaningfulValue(existing))
+            {
+                return false;
+            }
+
+            value = existing;
+            return true;
+        }
+
+        private static bool HasMeaningfulValue(object? value)
+        {
+            if (value == null)
+            {
+                return false;
+            }
+
+            if (value is string s)
+            {
+                return !string.IsNullOrWhiteSpace(s);
+            }
+
+            if (value is float f)
+            {
+                return !float.IsNaN(f);
+            }
+
+            if (value is double d)
+            {
+                return !double.IsNaN(d);
+            }
+
+            return true;
+        }
         private static bool NeedsHistoricalFeatureBackfill(Dictionary<string, object?> featureVector) =>
             GetMissingHistoricalFeatureKeys(featureVector).Count > 0;
         private FeatureLookup BuildFallbackFeatureLookup(
