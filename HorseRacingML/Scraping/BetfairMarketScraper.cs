@@ -302,7 +302,33 @@ namespace HorseRacingML.Scraping
                     Console.WriteLine($"	Persisted upcoming race metadata for market {persistedUpcoming.MarketId ?? marketId ?? "<unknown>"} rejected due to metadata misalignment with scraped race (Title/VenueName).");
                 }
             }
+            if (upcoming == null && !string.IsNullOrWhiteSpace(marketId))
+            {
+                try
+                {
+                    var byMarket = _repo.GetUpcomingRaceByMarketId(marketId);
+                    if (byMarket != null)
+                    {
+                        upcoming = byMarket;
+                        Console.WriteLine($"    Located UpcomingRaces row by market id: UpcomingRaceId={byMarket.UpcomingRaceId}, MarketId={byMarket.MarketId ?? "<null>"}.");
+                    }
+                    else
+                    {
+                        Console.WriteLine("    No UpcomingRaces row matched market id search.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"  Failed to query upcoming race metadata by market id: {ex.Message}");
+                }
 
+                if (upcoming != null &&
+                    !ShouldUseUpcomingCandidate(upcoming, marketId, raceTitle, venueName))
+                {
+                    Console.WriteLine($"        UpcomingRaces row {upcoming.UpcomingRaceId} rejected due to metadata misalignment with scraped race (Title/VenueName).");
+                    upcoming = null;
+                }
+            }
             if (upcoming == null)
             {
                 try
@@ -2251,7 +2277,33 @@ DateTime? raceDate,
             {
                 upcoming = persistedUpcoming;
             }
+            if (upcoming == null && !string.IsNullOrWhiteSpace(marketId))
+            {
+                try
+                {
+                    var byMarket = _repo.GetUpcomingRaceByMarketId(marketId);
+                    if (byMarket != null)
+                    {
+                        upcoming = byMarket;
+                        Console.WriteLine($"    Located UpcomingRaces row by market id: UpcomingRaceId={byMarket.UpcomingRaceId}, MarketId={byMarket.MarketId ?? "<null>"}.");
+                    }
+                    else
+                    {
+                        Console.WriteLine("    No UpcomingRaces row matched market id search.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"  Failed to query upcoming race metadata by market id: {ex.Message}");
+                }
 
+                if (upcoming != null &&
+                    !ShouldUseUpcomingCandidate(upcoming, marketId, raceTitle, venueName))
+                {
+                    Console.WriteLine($"        UpcomingRaces row {upcoming.UpcomingRaceId} rejected due to metadata misalignment with scraped race (Title/VenueName).");
+                    upcoming = null;
+                }
+            }
             if (upcoming == null)
             {
                 try
