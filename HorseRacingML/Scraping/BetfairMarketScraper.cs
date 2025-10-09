@@ -2127,9 +2127,6 @@ DateTime? raceDate,
 
                 if (!matchedPreparedRow && flow.HasPreparedFeatures)
                 {
-                    var identifier = !string.IsNullOrWhiteSpace(flow.HorseName)
-                        ? flow.HorseName!
-                        : (flow.SelectionId ?? "unknown");
                     Console.WriteLine(
                         $"\t\tUsing scraped fallback feature vector for {identifier}; attempting neural model scoring with live data only.");
                 }
