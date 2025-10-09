@@ -1898,15 +1898,39 @@ namespace HorseRacingML.Scraping
                     }
                 }
             }
+            void EnsureCareerStartsFeature(int count)
+            {
+                if (runner.FeatureValues == null)
+                {
+                    runner.FeatureValues = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+                }
+
+                runner.FeatureValues["CareerStarts"] = count;
+
+                if (flow.FeatureValues == null)
+                {
+                    flow.FeatureValues = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+                }
+
+                flow.FeatureValues["CareerStarts"] = count;
+            }
+
             if (flow.HistoricalRaceCount.HasValue)
             {
                 runner.HistoricalRaceCount = flow.HistoricalRaceCount;
+                EnsureCareerStartsFeature(flow.HistoricalRaceCount.Value);
             }
             else if (flow.FeatureValues != null &&
                      flow.FeatureValues.TryGetValue("CareerStarts", out var historyValue))
             {
-                runner.HistoricalRaceCount = TryConvertToInt32(historyValue);
-                flow.HistoricalRaceCount = runner.HistoricalRaceCount;
+                var converted = TryConvertToInt32(historyValue);
+                runner.HistoricalRaceCount = converted;
+                flow.HistoricalRaceCount = converted;
+
+                if (converted.HasValue)
+                {
+                    EnsureCareerStartsFeature(converted.Value);
+                }
             }
             else
             {
@@ -1916,20 +1940,7 @@ namespace HorseRacingML.Scraping
                 {
                     runner.HistoricalRaceCount = resolvedHistoryCount;
                     flow.HistoricalRaceCount = resolvedHistoryCount;
-
-                    if (runner.FeatureValues == null)
-                    {
-                        runner.FeatureValues = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
-                    }
-
-                    runner.FeatureValues["CareerStarts"] = resolvedHistoryCount.Value;
-
-                    if (flow.FeatureValues == null)
-                    {
-                        flow.FeatureValues = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
-                    }
-
-                    flow.FeatureValues["CareerStarts"] = resolvedHistoryCount.Value;
+                    EnsureCareerStartsFeature(resolvedHistoryCount.Value);
                 }
             }
             return runner;
