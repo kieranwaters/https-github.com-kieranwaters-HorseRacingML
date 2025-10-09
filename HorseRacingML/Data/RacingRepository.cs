@@ -498,10 +498,58 @@ GROUP BY h.Name;";
             {
                 candidates.Add(normalized);
             }
-
+            var key = NormalizeHistoricalNameKey(trimmed);
+            if (!string.IsNullOrEmpty(key))
+            {
+                candidates.Add(key);
+            }
             return candidates;
         }
+        internal static string NormalizeHistoricalNameKey(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
 
+            var withoutBracketed = RemoveBracketedText(value).Trim();
+            if (withoutBracketed.Length == 0)
+            {
+                return string.Empty;
+            }
+
+            var normalized = withoutBracketed.Normalize(NormalizationForm.FormD);
+            var builder = new StringBuilder(normalized.Length);
+
+            foreach (var c in normalized)
+            {
+                var category = CharUnicodeInfo.GetUnicodeCategory(c);
+                if (category == UnicodeCategory.NonSpacingMark ||
+                    category == UnicodeCategory.SpacingCombiningMark ||
+                    category == UnicodeCategory.EnclosingMark)
+                {
+                    continue;
+                }
+
+                if (char.IsLetterOrDigit(c))
+                {
+                    builder.Append(char.ToLowerInvariant(c));
+                    continue;
+                }
+
+                if (char.IsWhiteSpace(c))
+                {
+                    continue;
+                }
+
+                if (c == '&')
+                {
+                    builder.Append("and");
+                }
+            }
+
+            return builder.ToString();
+        }
         public UpcomingRace? GetUpcomingRaceByMarketId(string? marketId)
         {
             if (string.IsNullOrWhiteSpace(marketId))

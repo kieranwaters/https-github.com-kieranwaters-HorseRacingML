@@ -60,6 +60,25 @@ namespace HorseRacingML.Tests
 
             Assert.False(shouldUse);
         }
+        [Theory]
+        [InlineData("Sophar Sogood", "sopharsogood")]
+        [InlineData("Sophar So Good", "sopharsogood")]
+        [InlineData("Masterdream (IRE)", "masterdream")]
+        [InlineData("Rock & Roll", "rockandroll")]
+        public void NormalizeHistoricalNameKey_StripsFormatting(string source, string expected)
+        {
+            var normalized = RacingRepository.NormalizeHistoricalNameKey(source);
+            Assert.Equal(expected, normalized);
+        }
+
+        [Fact]
+        public void BuildHistoricalNameCandidates_IncludesNormalizedVariant()
+        {
+            var candidates = RacingRepository.BuildHistoricalNameCandidates("Sophar Sogood");
+
+            Assert.Contains("Sophar Sogood", candidates);
+            Assert.Contains("sopharsogood", candidates, StringComparer.OrdinalIgnoreCase);
+        }
         [Fact]
         public void BuildUpcomingRaceRows_UsesBatchedLookupsWhenAvailable()
         {

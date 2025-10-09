@@ -1894,9 +1894,10 @@ namespace HorseRacingML.ML
              IReadOnlyCollection<int>? horseIdsFromFlows = null)
         {
             var horseIdLookup = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            Dictionary<string, HashSet<string>>? horseCandidateMap = null;
             if (horseNames.Count > 0)
             {
-                var horseCandidateMap = BuildNameCandidateMap(horseNames);
+                horseCandidateMap = BuildNameCandidateMap(horseNames);
                 if (horseCandidateMap.Count > 0)
                 {
                     const string horseSql = "SELECT Name, MIN(HorseId) AS HorseId FROM Horse WHERE Name IN @Names GROUP BY Name";
@@ -1918,11 +1919,82 @@ namespace HorseRacingML.ML
                     }
                 }
             }
+            if (horseNames.Count > 0)
+            {
+                var unmatched = new HashSet<string>(horseNames, StringComparer.OrdinalIgnoreCase);
+                foreach (var matched in horseIdLookup.Keys)
+                {
+                    unmatched.Remove(matched);
+                }
 
-                var jockeyIdLookup = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                if (unmatched.Count > 0)
+                {
+                    var normalizedMap = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var original in unmatched)
+                    {
+                        if (string.IsNullOrWhiteSpace(original))
+                        {
+                            continue;
+                        }
+
+                        IEnumerable<string> candidates = horseCandidateMap != null && horseCandidateMap.Count > 0
+                            ? horseCandidateMap.Where(kvp => kvp.Value.Contains(original)).Select(kvp => kvp.Key)
+                            : RacingRepository.BuildHistoricalNameCandidates(original);
+
+                        foreach (var candidate in candidates)
+                        {
+                            var normalized = RacingRepository.NormalizeHistoricalNameKey(candidate);
+                            if (string.IsNullOrEmpty(normalized))
+                            {
+                                continue;
+                            }
+
+                            if (!normalizedMap.TryGetValue(normalized, out var originals))
+                            {
+                                originals = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                                normalizedMap[normalized] = originals;
+                            }
+
+                            originals.Add(original);
+                        }
+                    }
+
+                    if (normalizedMap.Count > 0)
+                    {
+                        const string normalizedHorseSql = @"SELECT lookup.Normalized,
+       MIN(h.HorseId) AS HorseId
+FROM Horse h
+CROSS APPLY (SELECT LOWER(
+        REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(h.Name, ' ', ''), '-', ''), '''', ''), '’', ''), '.', ''), ',', ''), '&', 'and'), '(', ''), ')', ''), '/', '')
+    ) AS Normalized) AS lookup
+WHERE lookup.Normalized IN @Names
+GROUP BY lookup.Normalized";
+
+                        var normalizedKeys = normalizedMap.Keys.ToArray();
+                        foreach (var row in conn.Query<(string Normalized, int HorseId)>(normalizedHorseSql, new { Names = normalizedKeys }))
+                        {
+                            if (!normalizedMap.TryGetValue(row.Normalized, out var originals))
+                            {
+                                continue;
+                            }
+
+                            foreach (var original in originals)
+                            {
+                                if (!horseIdLookup.ContainsKey(original))
+                                {
+                                    horseIdLookup[original] = row.HorseId;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            var jockeyIdLookup = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            Dictionary<string, HashSet<string>>? jockeyCandidateMap = null;
             if (jockeyNames.Count > 0)
             {
-                var jockeyCandidateMap = BuildNameCandidateMap(jockeyNames);
+                jockeyCandidateMap = BuildNameCandidateMap(jockeyNames);
                 if (jockeyCandidateMap.Count > 0)
                 {
                     const string jockeySql = "SELECT Name, MIN(JockeyId) AS JockeyId FROM Jockey WHERE Name IN @Names GROUP BY Name";
@@ -1944,8 +2016,77 @@ namespace HorseRacingML.ML
                     }
                 }
             }
+            if (jockeyNames.Count > 0)
+            {
+                var unmatched = new HashSet<string>(jockeyNames, StringComparer.OrdinalIgnoreCase);
+                foreach (var matched in jockeyIdLookup.Keys)
+                {
+                    unmatched.Remove(matched);
+                }
 
-                var runnerSnapshots = new Dictionary<int, RunnerSnapshot>();
+                if (unmatched.Count > 0)
+                {
+                    var normalizedMap = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var original in unmatched)
+                    {
+                        if (string.IsNullOrWhiteSpace(original))
+                        {
+                            continue;
+                        }
+
+                        IEnumerable<string> candidates = jockeyCandidateMap != null && jockeyCandidateMap.Count > 0
+                            ? jockeyCandidateMap.Where(kvp => kvp.Value.Contains(original)).Select(kvp => kvp.Key)
+                            : RacingRepository.BuildHistoricalNameCandidates(original);
+
+                        foreach (var candidate in candidates)
+                        {
+                            var normalized = RacingRepository.NormalizeHistoricalNameKey(candidate);
+                            if (string.IsNullOrEmpty(normalized))
+                            {
+                                continue;
+                            }
+
+                            if (!normalizedMap.TryGetValue(normalized, out var originals))
+                            {
+                                originals = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                                normalizedMap[normalized] = originals;
+                            }
+
+                            originals.Add(original);
+                        }
+                    }
+
+                    if (normalizedMap.Count > 0)
+                    {
+                        const string normalizedJockeySql = @"SELECT lookup.Normalized,
+       MIN(j.JockeyId) AS JockeyId
+FROM Jockey j
+CROSS APPLY (SELECT LOWER(
+        REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(j.Name, ' ', ''), '-', ''), '''', ''), '’', ''), '.', ''), ',', ''), '&', 'and'), '(', ''), ')', ''), '/', '')
+    ) AS Normalized) AS lookup
+WHERE lookup.Normalized IN @Names
+GROUP BY lookup.Normalized";
+
+                        var normalizedKeys = normalizedMap.Keys.ToArray();
+                        foreach (var row in conn.Query<(string Normalized, int JockeyId)>(normalizedJockeySql, new { Names = normalizedKeys }))
+                        {
+                            if (!normalizedMap.TryGetValue(row.Normalized, out var originals))
+                            {
+                                continue;
+                            }
+
+                            foreach (var original in originals)
+                            {
+                                if (!jockeyIdLookup.ContainsKey(original))
+                                {
+                                    jockeyIdLookup[original] = row.JockeyId;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            var runnerSnapshots = new Dictionary<int, RunnerSnapshot>();
             var knownHorseIds = new HashSet<int>();
             foreach (var horseId in horseIdLookup.Values)
             {
