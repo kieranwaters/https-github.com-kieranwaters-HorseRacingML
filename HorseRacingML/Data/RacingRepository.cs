@@ -952,7 +952,46 @@ WHERE r.RaceId IN @Ids";
 
             return result;
         }
+        private sealed class HorseDistanceRow
+        {
+            public int? DistanceYards { get; set; }
+            public double? AverageDistance { get; set; }
+        }
 
+        public HorseDistanceStats? GetHorseDistanceStatsByHorseName(string? horseName)
+        {
+            var candidates = BuildHistoricalNameCandidates(horseName);
+            if (candidates.Count == 0)
+            {
+                return null;
+            }
+
+            const string sql = @"
+WITH Distances AS (
+    SELECT r.DistanceYards,
+           r.RaceDate,
+           rr.RunnerResultId,
+           AVG(CAST(r.DistanceYards AS float)) OVER () AS AverageDistance
+    FROM RunnerResult rr
+    INNER JOIN Race r ON r.RaceId = rr.RaceId
+    INNER JOIN Horse h ON h.HorseId = rr.HorseId
+    WHERE h.Name IN @Names AND r.DistanceYards IS NOT NULL
+)
+SELECT TOP (1)
+       DistanceYards,
+       AverageDistance
+FROM Distances
+ORDER BY RaceDate DESC, RunnerResultId DESC;";
+
+            using var conn = OpenConnection();
+            var row = conn.QueryFirstOrDefault<HorseDistanceRow>(sql, new { Names = candidates.ToArray() });
+            if (row == null)
+            {
+                return null;
+            }
+
+            return new HorseDistanceStats(row.DistanceYards, row.AverageDistance);
+        }
 
         public MLParameter? GetBestMLParameter()
         {

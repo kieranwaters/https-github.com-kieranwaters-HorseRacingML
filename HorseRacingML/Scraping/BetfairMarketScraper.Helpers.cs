@@ -191,7 +191,7 @@ namespace HorseRacingML.Scraping
             Console.Error.WriteLine($"\tAI weight file not found; expected locations include {fallback}");
             return fallback;
         }
-        private static void ApplyScrapedFeatureFallbacks(
+        private void ApplyScrapedFeatureFallbacks(
             Dictionary<string, object?> featureVector,
             RunnerFlow flow,
             DateTime? raceDate,
@@ -506,7 +506,45 @@ namespace HorseRacingML.Scraping
                 distanceBucket = DistanceBucketFromYards(distanceYardsValue);
                 SetIfMissing("DistanceBucket", distanceBucket);
             }
+            bool needsDistanceChange = HasMissingValue(featureVector, "DistanceChangeFromLast");
+            bool needsDistanceRatio = HasMissingValue(featureVector, "DistanceRatioFromAverage");
+            HorseDistanceStats? distanceStats = null;
+            if ((needsDistanceChange || needsDistanceRatio) && !string.IsNullOrWhiteSpace(flow?.HorseName))
+            {
+                try
+                {
+                    distanceStats = _repo.GetHorseDistanceStatsByHorseName(flow.HorseName);
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"\tFailed to resolve historical distance stats for {flow?.HorseName ?? "unknown horse"}: {ex.Message}");
+                }
+            }
 
+            if (needsDistanceChange)
+            {
+                float change = 0f;
+                if (distanceStats.HasValue && distanceStats.Value.LastDistanceYards.HasValue && distanceYardsValue > 0)
+                {
+                    change = distanceYardsValue - distanceStats.Value.LastDistanceYards.Value;
+                }
+
+                featureVector["DistanceChangeFromLast"] = change;
+            }
+
+            if (needsDistanceRatio)
+            {
+                float ratio = 1f;
+                if (distanceStats.HasValue &&
+                    distanceStats.Value.AverageDistanceYards.HasValue &&
+                    distanceStats.Value.AverageDistanceYards.Value > 0d &&
+                    distanceYardsValue > 0)
+                {
+                    ratio = distanceYardsValue / (float)distanceStats.Value.AverageDistanceYards.Value;
+                }
+
+                featureVector["DistanceRatioFromAverage"] = ratio;
+            }
             foreach (var bucket in DistanceBuckets)
             {
                 float bucketValue = distanceBucket != null && bucket.Equals(distanceBucket, StringComparison.OrdinalIgnoreCase)

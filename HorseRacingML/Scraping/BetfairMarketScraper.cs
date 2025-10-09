@@ -2063,6 +2063,7 @@ DateTime? raceDate,
                 return;
             }
             var raceMissingFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var lastDistanceCache = new Dictionary<(int? HorseId, string NameKey), int?>();
             IReadOnlyDictionary<string, int>? prefetchedCounts = null;
             try
             {
@@ -2228,6 +2229,11 @@ DateTime? raceDate,
                     layBookPercentage,
                     flows,
                     raceMissingFields);
+                EnsureDistanceChangeFromLast(
+                    featureVector,
+                    flow,
+                    raceDate,
+                    lastDistanceCache);
 
                 flow.FeatureValues = featureVector;
                 flow.HasPreparedFeatures = featureVector.Count > 0;
@@ -2585,6 +2591,91 @@ DateTime? raceDate,
             }
 
             return true;
+        }
+        private void EnsureDistanceChangeFromLast(
+            Dictionary<string, object?> featureVector,
+            RunnerFlow flow,
+            DateTime? raceDate,
+            Dictionary<(int? HorseId, string NameKey), int?> cache)
+        {
+            if (featureVector == null || cache == null)
+            {
+                return;
+            }
+
+            if (TryGetMeaningfulValue(featureVector, "DistanceChangeFromLast", out _))
+            {
+                return;
+            }
+
+            if (!TryGetMeaningfulValue(featureVector, "DistanceYards", out var distanceObj))
+            {
+                return;
+            }
+
+            var currentDistance = TryConvertToInt32(distanceObj);
+            if (!currentDistance.HasValue || currentDistance.Value <= 0)
+            {
+                return;
+            }
+
+            int? horseId = null;
+            if (featureVector.TryGetValue("HorseId", out var horseIdValue))
+            {
+                horseId = TryConvertToInt32(horseIdValue);
+            }
+
+            if (!horseId.HasValue && flow?.FeatureValues != null &&
+                flow.FeatureValues.TryGetValue("HorseId", out var flowHorseId))
+            {
+                horseId = TryConvertToInt32(flowHorseId);
+            }
+
+            string? horseName = flow?.HorseName;
+            if (string.IsNullOrWhiteSpace(horseName) &&
+                featureVector.TryGetValue("HorseName", out var horseObj) &&
+                horseObj is string horseStr)
+            {
+                horseName = horseStr;
+            }
+
+            var cacheKey = (horseId, NormalizeHorseNameKeyForCache(horseName));
+            if (!cache.TryGetValue(cacheKey, out var lastDistance))
+            {
+                try
+                {
+                    lastDistance = _repo.GetLastRaceDistance(horseName, horseId, raceDate);
+                }
+                catch (Exception ex)
+                {
+                    var identifier = !string.IsNullOrWhiteSpace(horseName)
+                        ? horseName
+                        : (!string.IsNullOrWhiteSpace(flow?.SelectionId) ? flow!.SelectionId! : "<unknown runner>");
+                    Console.Error.WriteLine($"  Failed to resolve last race distance for {identifier}: {ex.Message}");
+                    lastDistance = null;
+                }
+
+                cache[cacheKey] = lastDistance;
+            }
+
+            if (lastDistance.HasValue)
+            {
+                featureVector["DistanceChangeFromLast"] = (float)(currentDistance.Value - lastDistance.Value);
+            }
+            else
+            {
+                featureVector["DistanceChangeFromLast"] = 0f;
+            }
+        }
+
+        private static string NormalizeHorseNameKeyForCache(string? name)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return string.Empty;
+            }
+
+            return name.Trim().ToLowerInvariant();
         }
         private static bool NeedsHistoricalFeatureBackfill(Dictionary<string, object?> featureVector) =>
             GetMissingHistoricalFeatureKeys(featureVector).Count > 0;

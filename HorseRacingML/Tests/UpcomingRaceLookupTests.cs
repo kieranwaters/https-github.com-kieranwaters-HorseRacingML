@@ -310,6 +310,60 @@ namespace HorseRacingML.Tests
             Assert.Equal(0.2f, Convert.ToSingle(runner.FeatureValues["LastJockeyGoingDistanceNormPos"]));
             Assert.Equal(0.5f, Convert.ToSingle(runner.FeatureValues["TrainerJockeyCourseWinRate"]));
         }
+
+        [Fact]
+        public void PopulateFeatureVectors_ComputesDistanceChangeFromRepositoryFallback()
+        {
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:HorseRacingDb"] = "Server=(local);Database=HorseRacingMLTest;Trusted_Connection=True;"
+                })
+                .Build();
+
+            var preparedRow = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["HorseName"] = "Repository Hero",
+                ["SelectionId"] = "321",
+                ["DistanceYards"] = 2200
+            };
+
+            var preparedRace = new PreparedRace(888, new List<Dictionary<string, object?>> { preparedRow });
+
+            var trainer = new FallbackTrainer(configuration, preparedRace);
+            var repo = new MinimalRacingRepository
+            {
+                LastDistanceResult = 2100
+            };
+            var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
+            var scraper = new BetfairMarketScraper(repo, trainer, bankroll: 20m, settings);
+            var flows = new List<RunnerFlow>
+            {
+                new RunnerFlow
+                {
+                    HorseName = "Repository Hero",
+                    SelectionId = "321"
+                }
+            };
+
+            var report = scraper.TestBuildRaceReport(
+                marketId: "1.777",
+                raceTitle: "Repository Stakes",
+                venueName: "Repository Park",
+                venueCountry: "GB",
+                raceDate: new DateTime(2024, 9, 14),
+                offTime: new TimeSpan(15, 15, 0),
+                raceDetails: "Handicap",
+                going: "Good",
+                backBookPercentage: 101m,
+                layBookPercentage: 103m,
+                raceUrl: null,
+                flows: flows);
+
+            var runner = Assert.Single(report.Runners);
+            Assert.True(repo.LastDistanceLookupCalled);
+            Assert.Equal(100f, Convert.ToSingle(runner.FeatureValues["DistanceChangeFromLast"]));
+        }
         [Fact]
         public void PopulateFeatureVectors_BackfillsHistoricalFeaturesFromTrainer()
         {
@@ -691,6 +745,10 @@ namespace HorseRacingML.Tests
 
                 return new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             }
+            public int? GetLastRaceDistance(string? horseName, int? horseId, DateTime? beforeDate)
+            {
+                return null;
+            }
             public UpcomingRace? GetUpcomingRaceByMarketId(string? marketId)
             {
                 if (string.IsNullOrWhiteSpace(marketId))
@@ -931,6 +989,8 @@ namespace HorseRacingML.Tests
         }
         private sealed class MinimalRacingRepository : IRacingRepository
         {
+            public int? LastDistanceResult { get; set; }
+            public bool LastDistanceLookupCalled { get; private set; }
             public void ClearDayReportTables()
             {
             }
@@ -948,6 +1008,11 @@ namespace HorseRacingML.Tests
             public IReadOnlyDictionary<string, int> GetHistoricalRaceCountsByHorseNames(IEnumerable<string> horseNames)
             {
                 return new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            }
+            public int? GetLastRaceDistance(string? horseName, int? horseId, DateTime? beforeDate)
+            {
+                LastDistanceLookupCalled = true;
+                return LastDistanceResult;
             }
 
             public UpcomingRace? GetUpcomingRaceByMarketId(string? marketId)
