@@ -2100,6 +2100,48 @@ DateTime? raceDate,
                     Console.WriteLine(
                         $"\t\tNo prepared feature row matched for {missingFeatureIdentifier}; synthesizing feature vector from live scrape.");
                 }
+                if (NeedsHistoricalFeatureBackfill(featureVector))
+                {
+                    if (!fallbackAttempted)
+                    {
+                        fallbackAttempted = true;
+                        fallbackLookup = BuildFallbackFeatureLookup(
+                            raceDate,
+                            raceTitle,
+                            venueName,
+                            venueCountry,
+                            scheduledOff,
+                            raceDetails,
+                            raceType,
+                            going,
+                            backBookPercentage,
+                            layBookPercentage,
+                            marketId,
+                            flows,
+                            persistedUpcoming);
+                    }
+
+                    if (fallbackLookup != FeatureLookup.Empty)
+                    {
+                        var fallbackFeatures = fallbackLookup.FindBySelectionId(flow.SelectionId)
+                            ?? fallbackLookup.FindByHorse(flow.HorseName)
+                            ?? fallbackLookup.FindBySaddlecloth(flow.ClothNumber);
+
+                        if (fallbackFeatures != null)
+                        {
+                            foreach (var key in HistoricalFeatureBackfillKeys)
+                            {
+                                if (!featureVector.TryGetValue(key, out var existing) || existing == null)
+                                {
+                                    if (fallbackFeatures.TryGetValue(key, out var replacement) && replacement != null)
+                                    {
+                                        featureVector[key] = replacement;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
 
                 if (runnerCount > 0)
                 {
@@ -2150,6 +2192,38 @@ DateTime? raceDate,
                     }
                 }
             }
+        }
+        private static readonly string[] HistoricalFeatureBackfillKeys =
+        {
+            "HasLastWin",
+            "DistanceChangeFromLast",
+            "DistanceRatioFromAverage",
+            "CareerStarts",
+            "LifetimeWinRate",
+            "IsTopWeight",
+            "IsBottomWeight",
+            "JockeyGoingDistanceWinRate",
+            "JockeyGoingDistanceAvgNorm",
+            "LastJockeyGoingDistanceNormPos",
+            "TrainerJockeyCourseWinRate"
+        };
+
+        private static bool NeedsHistoricalFeatureBackfill(Dictionary<string, object?> featureVector)
+        {
+            if (featureVector == null || featureVector.Count == 0)
+            {
+                return true;
+            }
+
+            foreach (var key in HistoricalFeatureBackfillKeys)
+            {
+                if (!featureVector.TryGetValue(key, out var value) || value == null)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
         private FeatureLookup BuildFallbackFeatureLookup(
             DateTime? raceDate,

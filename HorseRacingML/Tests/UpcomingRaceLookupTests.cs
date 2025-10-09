@@ -287,6 +287,85 @@ namespace HorseRacingML.Tests
             Assert.Equal(0.2f, Convert.ToSingle(runner.FeatureValues["LastJockeyGoingDistanceNormPos"]));
             Assert.Equal(0.5f, Convert.ToSingle(runner.FeatureValues["TrainerJockeyCourseWinRate"]));
         }
+        [Fact]
+        public void PopulateFeatureVectors_BackfillsHistoricalFeaturesFromTrainer()
+        {
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:HorseRacingDb"] = "Server=(local);Database=HorseRacingMLTest;Trusted_Connection=True;"
+                })
+                .Build();
+
+            var primaryRow = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["HorseName"] = "Backfill Hero",
+                ["SelectionId"] = "654"
+            };
+            var primaryRace = new PreparedRace(888, new List<Dictionary<string, object?>> { primaryRow });
+
+            var fallbackRow = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["HorseName"] = "Backfill Hero",
+                ["SelectionId"] = "654",
+                ["HasLastWin"] = true,
+                ["DistanceChangeFromLast"] = -2f,
+                ["DistanceRatioFromAverage"] = 0.95f,
+                ["CareerStarts"] = 14,
+                ["LifetimeWinRate"] = 0.285f,
+                ["IsTopWeight"] = false,
+                ["IsBottomWeight"] = true,
+                ["JockeyGoingDistanceWinRate"] = 0.42f,
+                ["JockeyGoingDistanceAvgNorm"] = 0.31f,
+                ["LastJockeyGoingDistanceNormPos"] = 0.18f,
+                ["TrainerJockeyCourseWinRate"] = 0.37f
+            };
+            var fallbackRace = new PreparedRace(889, new List<Dictionary<string, object?>> { fallbackRow });
+
+            var trainer = new BackfillTrainer(configuration, primaryRace, fallbackRace);
+            var repo = new MinimalRacingRepository();
+            var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
+            var scraper = new BetfairMarketScraper(repo, trainer, bankroll: 15m, settings);
+            var flows = new List<RunnerFlow>
+            {
+                new RunnerFlow
+                {
+                    HorseName = "Backfill Hero",
+                    SelectionId = "654",
+                    ClothNumber = 3
+                }
+            };
+
+            var report = scraper.TestBuildRaceReport(
+                marketId: "1.777",
+                raceTitle: "Backfill Stakes",
+                venueName: "Backfill Park",
+                venueCountry: "GB",
+                raceDate: new DateTime(2024, 9, 15),
+                offTime: new TimeSpan(14, 45, 0),
+                raceDetails: "Handicap",
+                going: "Good to Firm",
+                backBookPercentage: 102m,
+                layBookPercentage: 105m,
+                raceUrl: null,
+                flows: flows);
+
+            Assert.True(trainer.BackfillCalled);
+
+            var runner = Assert.Single(report.Runners);
+            Assert.True(Convert.ToBoolean(runner.FeatureValues["HasLastWin"]));
+            Assert.Equal(-2f, Convert.ToSingle(runner.FeatureValues["DistanceChangeFromLast"]));
+            Assert.Equal(0.95f, Convert.ToSingle(runner.FeatureValues["DistanceRatioFromAverage"]));
+            Assert.Equal(14, Convert.ToInt32(runner.FeatureValues["CareerStarts"]));
+            Assert.Equal(0.285f, Convert.ToSingle(runner.FeatureValues["LifetimeWinRate"]));
+            Assert.Equal(false, Convert.ToBoolean(runner.FeatureValues["IsTopWeight"]));
+            Assert.Equal(true, Convert.ToBoolean(runner.FeatureValues["IsBottomWeight"]));
+            Assert.Equal(0.42f, Convert.ToSingle(runner.FeatureValues["JockeyGoingDistanceWinRate"]));
+            Assert.Equal(0.31f, Convert.ToSingle(runner.FeatureValues["JockeyGoingDistanceAvgNorm"]));
+            Assert.Equal(0.18f, Convert.ToSingle(runner.FeatureValues["LastJockeyGoingDistanceNormPos"]));
+            Assert.Equal(0.37f, Convert.ToSingle(runner.FeatureValues["TrainerJockeyCourseWinRate"]));
+        }
+
 
         private sealed class InMemoryRacingRepository : IRacingRepository
         {
@@ -703,6 +782,43 @@ namespace HorseRacingML.Tests
             public override PreparedRace? PrepareUpcomingRace(UpcomingRace upcoming, IReadOnlyList<RunnerFlow> flows)
             {
                 FallbackCalled = true;
+                return _fallbackRace;
+            }
+        }
+        private sealed class BackfillTrainer : HorseRacingML.ML.HyperparameterTrainer
+        {
+            private readonly PreparedRace _primaryRace;
+            private readonly PreparedRace _fallbackRace;
+
+            public BackfillTrainer(IConfiguration configuration, PreparedRace primaryRace, PreparedRace fallbackRace)
+                : base(configuration)
+            {
+                _primaryRace = primaryRace ?? throw new ArgumentNullException(nameof(primaryRace));
+                _fallbackRace = fallbackRace ?? throw new ArgumentNullException(nameof(fallbackRace));
+            }
+
+            public bool BackfillCalled { get; private set; }
+
+            public override IReadOnlyList<PreparedRace?> PrepareUpcomingRaces(
+                IReadOnlyList<(UpcomingRace upcoming, IReadOnlyList<RunnerFlow> flows)> requests)
+            {
+                if (requests is null)
+                {
+                    throw new ArgumentNullException(nameof(requests));
+                }
+
+                var results = new PreparedRace?[requests.Count];
+                for (int i = 0; i < results.Length; i++)
+                {
+                    results[i] = _primaryRace;
+                }
+
+                return results;
+            }
+
+            public override PreparedRace? PrepareUpcomingRace(UpcomingRace upcoming, IReadOnlyList<RunnerFlow> flows)
+            {
+                BackfillCalled = true;
                 return _fallbackRace;
             }
         }

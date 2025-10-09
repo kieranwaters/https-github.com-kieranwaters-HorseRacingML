@@ -4,6 +4,7 @@ using Microsoft.Data.SqlClient;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using HorseRacingML.Data;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -1895,24 +1896,56 @@ namespace HorseRacingML.ML
             var horseIdLookup = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             if (horseNames.Count > 0)
             {
-                const string horseSql = "SELECT Name, MIN(HorseId) AS HorseId FROM Horse WHERE Name IN @Names GROUP BY Name";
-                foreach (var (name, horseId) in conn.Query<(string Name, int HorseId)>(horseSql, new { Names = horseNames }))
+                var horseCandidateMap = BuildNameCandidateMap(horseNames);
+                if (horseCandidateMap.Count > 0)
                 {
-                    horseIdLookup[name] = horseId;
+                    const string horseSql = "SELECT Name, MIN(HorseId) AS HorseId FROM Horse WHERE Name IN @Names GROUP BY Name";
+                    var candidateList = horseCandidateMap.Keys.ToArray();
+                    foreach (var (name, horseId) in conn.Query<(string Name, int HorseId)>(horseSql, new { Names = candidateList }))
+                    {
+                        if (!horseCandidateMap.TryGetValue(name, out var originals) || originals == null)
+                        {
+                            continue;
+                        }
+
+                        foreach (var original in originals)
+                        {
+                            if (!horseIdLookup.ContainsKey(original))
+                            {
+                                horseIdLookup[original] = horseId;
+                            }
+                        }
+                    }
                 }
             }
 
-            var jockeyIdLookup = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                var jockeyIdLookup = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             if (jockeyNames.Count > 0)
             {
-                const string jockeySql = "SELECT Name, MIN(JockeyId) AS JockeyId FROM Jockey WHERE Name IN @Names GROUP BY Name";
-                foreach (var (name, jockeyId) in conn.Query<(string Name, int JockeyId)>(jockeySql, new { Names = jockeyNames }))
+                var jockeyCandidateMap = BuildNameCandidateMap(jockeyNames);
+                if (jockeyCandidateMap.Count > 0)
                 {
-                    jockeyIdLookup[name] = jockeyId;
+                    const string jockeySql = "SELECT Name, MIN(JockeyId) AS JockeyId FROM Jockey WHERE Name IN @Names GROUP BY Name";
+                    var candidateList = jockeyCandidateMap.Keys.ToArray();
+                    foreach (var (name, jockeyId) in conn.Query<(string Name, int JockeyId)>(jockeySql, new { Names = candidateList }))
+                    {
+                        if (!jockeyCandidateMap.TryGetValue(name, out var originals) || originals == null)
+                        {
+                            continue;
+                        }
+
+                        foreach (var original in originals)
+                        {
+                            if (!jockeyIdLookup.ContainsKey(original))
+                            {
+                                jockeyIdLookup[original] = jockeyId;
+                            }
+                        }
+                    }
                 }
             }
 
-            var runnerSnapshots = new Dictionary<int, RunnerSnapshot>();
+                var runnerSnapshots = new Dictionary<int, RunnerSnapshot>();
             var knownHorseIds = new HashSet<int>();
             foreach (var horseId in horseIdLookup.Values)
             {
@@ -1981,7 +2014,40 @@ namespace HorseRacingML.ML
 
             return new RunnerLookupData(horseIdLookup, jockeyIdLookup, runnerSnapshots);
         }
+        private static Dictionary<string, HashSet<string>> BuildNameCandidateMap(IReadOnlyCollection<string> names)
+        {
+            var map = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+            if (names == null || names.Count == 0)
+            {
+                return map;
+            }
 
+            foreach (var name in names)
+            {
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    continue;
+                }
+
+                foreach (var candidate in RacingRepository.BuildHistoricalNameCandidates(name))
+                {
+                    if (string.IsNullOrWhiteSpace(candidate))
+                    {
+                        continue;
+                    }
+
+                    if (!map.TryGetValue(candidate, out var originals))
+                    {
+                        originals = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                        map[candidate] = originals;
+                    }
+
+                    originals.Add(name);
+                }
+            }
+
+            return map;
+        }
         protected virtual (int CourseId, string? CourseName) ResolveCourse(SqlConnection conn, UpcomingRace upcoming)
         {
             if (!string.IsNullOrWhiteSpace(upcoming.VenueName))
