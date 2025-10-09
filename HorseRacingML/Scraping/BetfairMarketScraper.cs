@@ -179,6 +179,14 @@ namespace HorseRacingML.Scraping
                     {
                         continue;
                     }
+                    var runnerIdentifier = !string.IsNullOrWhiteSpace(runner.HorseName)
+                        ? runner.HorseName
+                        : (!string.IsNullOrWhiteSpace(runner.SelectionId) ? runner.SelectionId : "unknown");
+
+                    var historyDescription = runner.HistoricalRaceCount.HasValue
+                        ? runner.HistoricalRaceCount.Value.ToString("N0", CultureInfo.InvariantCulture)
+                        : "unknown";
+                    Console.WriteLine($"\t[DayReport] {runnerIdentifier}: historical races used for AI features = {historyDescription}.");
 
                     if (!runner.AiProbability.HasValue || !double.IsFinite(runner.AiProbability.Value) || runner.AiProbability.Value <= 0)
                     {
@@ -1916,33 +1924,45 @@ namespace HorseRacingML.Scraping
                 flow.FeatureValues["CareerStarts"] = count;
             }
 
+            int? historyCount = null;
             if (flow.HistoricalRaceCount.HasValue)
             {
-                runner.HistoricalRaceCount = flow.HistoricalRaceCount;
-                EnsureCareerStartsFeature(flow.HistoricalRaceCount.Value);
+                historyCount = flow.HistoricalRaceCount.Value;
             }
-            else if (flow.FeatureValues != null &&
-                     flow.FeatureValues.TryGetValue("CareerStarts", out var historyValue))
-            {
-                var converted = TryConvertToInt32(historyValue);
-                runner.HistoricalRaceCount = converted;
-                flow.HistoricalRaceCount = converted;
 
-                if (converted.HasValue)
+            int? featureHistoryCount = null;
+            if (flow.FeatureValues != null &&
+                flow.FeatureValues.TryGetValue("CareerStarts", out var historyValue))
+            {
+                featureHistoryCount = TryConvertToInt32(historyValue);
+                if (!historyCount.HasValue)
                 {
-                    EnsureCareerStartsFeature(converted.Value);
+                    historyCount = featureHistoryCount;
                 }
             }
-            else
+
+            var requiresLookup = !historyCount.HasValue || historyCount.Value <= 0;
+            if (requiresLookup)
             {
                 var resolvedHistoryCount = ResolveHistoricalRaceCountFromPrefetch(flow, prefetchedCounts)
-                   ?? ResolveHistoricalRaceCount(flow);
-                if (resolvedHistoryCount.HasValue)
+                    ?? ResolveHistoricalRaceCount(flow);
+
+                if (resolvedHistoryCount.HasValue && resolvedHistoryCount.Value > 0)
                 {
-                    runner.HistoricalRaceCount = resolvedHistoryCount;
-                    flow.HistoricalRaceCount = resolvedHistoryCount;
-                    EnsureCareerStartsFeature(resolvedHistoryCount.Value);
+                    historyCount = resolvedHistoryCount.Value;
                 }
+            }
+
+            if (!historyCount.HasValue && featureHistoryCount.HasValue)
+            {
+                historyCount = featureHistoryCount.Value;
+            }
+
+            if (historyCount.HasValue)
+            {
+                runner.HistoricalRaceCount = historyCount;
+                flow.HistoricalRaceCount = historyCount;
+                EnsureCareerStartsFeature(historyCount.Value);
             }
             return runner;
         }
@@ -3251,7 +3271,19 @@ DateTime? raceDate,
                 var marketProbability = 1.0 / (double)decimalOdds;
                 var differential = aiProbability - marketProbability;
 
-                Console.WriteLine($"\tRunner {identifier}: decimalOdds={decimalOdds.ToString("0.##", CultureInfo.InvariantCulture)}, aiProb={aiProbability.ToString("0.####", CultureInfo.InvariantCulture)}, marketProb={marketProbability.ToString("0.####", CultureInfo.InvariantCulture)}, diff={differential.ToString("0.####", CultureInfo.InvariantCulture)}");
+                int? runnerHistoryCount = flow.HistoricalRaceCount;
+                if (!runnerHistoryCount.HasValue &&
+                    flow.FeatureValues != null &&
+                    flow.FeatureValues.TryGetValue("CareerStarts", out var flowHistoryValue))
+                {
+                    runnerHistoryCount = TryConvertToInt32(flowHistoryValue);
+                }
+
+                var historyText = runnerHistoryCount.HasValue
+                    ? runnerHistoryCount.Value.ToString("N0", CultureInfo.InvariantCulture)
+                    : "unknown";
+
+                Console.WriteLine($"\tRunner {identifier}: decimalOdds={decimalOdds.ToString("0.##", CultureInfo.InvariantCulture)}, aiProb={aiProbability.ToString("0.####", CultureInfo.InvariantCulture)}, marketProb={marketProbability.ToString("0.####", CultureInfo.InvariantCulture)}, diff={differential.ToString("0.####", CultureInfo.InvariantCulture)}, historyCount={historyText}");
 
                 if (differential <= 0)
                 {
