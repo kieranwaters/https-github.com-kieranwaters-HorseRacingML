@@ -240,6 +240,10 @@ namespace HorseRacingML.ML
                             int age = row.TryGetValue("Age", out var ageObj) && PreparedDataset.TryConvertToInt32(ageObj, out var ageValue)
                                 ? ageValue
                                 : 0;
+                            if (!row.TryGetValue("Age", out var existingAge) || existingAge is null)
+                            {
+                                row["Age"] = age;
+                            }
                             row["AgeRelative"] = age - raceStat.AvgAge;
                             int classVal = row.TryGetValue("Class", out var classObj) && PreparedDataset.TryConvertToInt32(classObj, out var classValue)
                                 ? classValue
@@ -1032,6 +1036,18 @@ namespace HorseRacingML.ML
                     {
                         raceRow["RaceAvgSpeedLast5"] = raceAvgSpeed;
                         raceRow["RaceAvgWinRateLast5"] = raceAvgWinRate;
+                        if (!raceRow.TryGetValue("RatingSlope", out var slope) || slope is null)
+                        {
+                            raceRow["RatingSlope"] = 0f;
+                        }
+                        if (!raceRow.TryGetValue("Age", out var ageValue) || ageValue is null)
+                        {
+                            raceRow["Age"] = 0;
+                        }
+                        if (!raceRow.TryGetValue("RaceAvgSpeedLast5", out var raceAvgSpeedValue) || raceAvgSpeedValue is null)
+                        {
+                            raceRow["RaceAvgSpeedLast5"] = 0f;
+                        }
                         TrimRunnerRow(raceRow, _identifierKeys);
                     }
                 }
