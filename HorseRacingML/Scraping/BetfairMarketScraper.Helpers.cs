@@ -29,6 +29,107 @@ namespace HorseRacingML.Scraping
         private static readonly Regex WeightLbsRegex = new(@"\b(?<pounds>\d{2,3})\s*(?:lb|lbs|pound|pounds)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex TrainerPrefixRegex = new(@"^(?:trainer|trainers?|t:)\s*[:\-]?\s*", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly string[] DistanceBuckets = { "Sprint", "Middle", "Long" };
+        private static readonly int[] PerformanceWindowSizes = { 1, 3, 5, 10, 15, 20, 25, 30, 50, 100 };
+        private static readonly string[] PerformanceWindowPrefixes =
+        {
+            "WinRateLast",
+            "AvgNormPosLast",
+            "AvgSpeedLast",
+            "AvgSpeedDiffLast",
+            "AvgRatingLast",
+            "GoingWinRateLast",
+            "GoingAvgNormLast",
+            "SurfaceWinRateLast",
+            "SurfaceAvgNormLast",
+            "CourseWinRateLast",
+            "CourseAvgNormLast",
+            "DistanceBucketWinRateLast",
+            "DistanceBucketAvgNormLast"
+        };
+        private static readonly IReadOnlyDictionary<string, object?> NeutralFeatureFallbacks =
+            new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["BackBookPercentage"] = 0d,
+                ["LayBookPercentage"] = 0d,
+                ["RunnerCount"] = 0,
+                ["Class"] = 0,
+                ["RaceType"] = "Unknown",
+                ["AgeRestriction"] = "Unknown",
+                ["Surface"] = "Unknown",
+                ["Going"] = "Unknown",
+                ["DistanceYards"] = 0,
+                ["DistanceText"] = "Unknown",
+                ["DistanceBucket"] = "Unknown",
+                ["HasLastWin"] = false,
+                ["DistanceChangeFromLast"] = 0f,
+                ["DistanceRatioFromAverage"] = 1f,
+                ["CareerStarts"] = 0,
+                ["LifetimeWinRate"] = 0f,
+                ["DistanceBeatenLengths"] = 0f,
+                ["DistanceBeatenKnown"] = false,
+                ["DrawBias"] = 0f,
+                ["SaddleclothDiffFromMean"] = 0f,
+                ["IsTopWeight"] = false,
+                ["IsBottomWeight"] = false,
+                ["WinningTimeMs"] = 0f,
+                ["RaceSpeed"] = 0f,
+                ["RunnerSpeed"] = 0f,
+                ["SpeedMissing"] = true,
+                ["SpeedDiff"] = 0f,
+                ["SpeedRatio"] = 0f,
+                ["RaceAvgWinRateLast5"] = 0f,
+                ["TrainerWinRate"] = 0f,
+                ["TrainerWinRateLast50"] = 0f,
+                ["TrainerWinRateRecentDays"] = 0f,
+                ["TrainerSurfaceWinRate"] = 0f,
+                ["TrainerSurfaceAvgNorm"] = 0f,
+                ["LastTrainerSurfaceNormPos"] = 0f,
+                ["TrainerGoingWinRate"] = 0f,
+                ["TrainerGoingAvgNorm"] = 0f,
+                ["LastTrainerGoingNormPos"] = 0f,
+                ["TrainerDistanceBucketWinRate"] = 0f,
+                ["TrainerDistanceBucketAvgNorm"] = 0f,
+                ["LastTrainerDistanceBucketNormPos"] = 0f,
+                ["TrainerCourseWinRate"] = 0f,
+                ["TrainerClassWinRate"] = 0f,
+                ["TrainerClassAvgNorm"] = 0f,
+                ["LastTrainerClassNormPos"] = 0f,
+                ["TrainerJockeyWinRate"] = 0f,
+                ["TrainerJockeySurfaceWinRate"] = 0f,
+                ["TrainerJockeyCourseWinRate"] = 0f,
+                ["JockeyWinRate"] = 0f,
+                ["JockeyWinRateLast50"] = 0f,
+                ["JockeyWinRateRecentDays"] = 0f,
+                ["JockeySurfaceWinRate"] = 0f,
+                ["JockeySurfaceAvgNorm"] = 0f,
+                ["LastJockeySurfaceNormPos"] = 0f,
+                ["JockeyGoingWinRate"] = 0f,
+                ["JockeyGoingAvgNorm"] = 0f,
+                ["LastJockeyGoingNormPos"] = 0f,
+                ["JockeyDistanceBucketWinRate"] = 0f,
+                ["JockeyDistanceBucketAvgNorm"] = 0f,
+                ["LastJockeyDistanceBucketNormPos"] = 0f,
+                ["JockeyCourseWinRate"] = 0f,
+                ["JockeyClassWinRate"] = 0f,
+                ["JockeyClassAvgNorm"] = 0f,
+                ["LastJockeyClassNormPos"] = 0f,
+                ["JockeyGoingDistanceWinRate"] = 0f,
+                ["JockeyGoingDistanceAvgNorm"] = 0f,
+                ["LastJockeyGoingDistanceNormPos"] = 0f,
+                ["GoingCourseWinRate"] = 0f,
+                ["GoingCourseAvgNorm"] = 0f,
+                ["LastGoingCourseNormPos"] = 0f,
+                ["AgeRestrictionWinRate"] = 0f,
+                ["LastAgeRestrictionNormPos"] = 0f,
+                ["DistanceBucketWinRate"] = 0f,
+                ["LastDistanceBucketNormPos"] = 0f,
+                ["GoingDistanceWinRate"] = 0f,
+                ["GoingDistanceAvgNorm"] = 0f,
+                ["LastGoingDistanceNormPos"] = 0f,
+                ["ClassWinRate"] = 0f,
+                ["ClassAvgNorm"] = 0f,
+                ["LastClassNormPos"] = 0f
+            };
         private static readonly string[] RaceTypeKeywords =
         {
             "handicap",
@@ -590,6 +691,41 @@ namespace HorseRacingML.Scraping
             else
             {
                 MarkMissing("race date");
+            }
+            ApplyNeutralFeatureFallbacks(featureVector);
+        }
+
+        private static void ApplyNeutralFeatureFallbacks(Dictionary<string, object?> featureVector)
+        {
+            if (featureVector == null)
+            {
+                return;
+            }
+
+            foreach (var kvp in NeutralFeatureFallbacks)
+            {
+                if (!featureVector.TryGetValue(kvp.Key, out var existing) || existing == null)
+                {
+                    featureVector[kvp.Key] = kvp.Value;
+                    continue;
+                }
+
+                if (existing is string s && string.IsNullOrWhiteSpace(s))
+                {
+                    featureVector[kvp.Key] = kvp.Value;
+                }
+            }
+
+            foreach (var window in PerformanceWindowSizes)
+            {
+                foreach (var prefix in PerformanceWindowPrefixes)
+                {
+                    var key = prefix + window;
+                    if (!featureVector.TryGetValue(key, out var existing) || existing == null)
+                    {
+                        featureVector[key] = 0f;
+                    }
+                }
             }
         }
         
