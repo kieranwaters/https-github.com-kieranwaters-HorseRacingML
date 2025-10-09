@@ -108,11 +108,14 @@
             </div>
         }
     </div>
-    <button type="button" id="saveReportButton" class="btn btn-outline-primary">Save Report</button>
+    <div class="d-flex flex-column flex-sm-row gap-2">
+        <button type="button" id="removePastRacesButton" class="btn btn-outline-danger">Remove past races</button>
+        <button type="button" id="saveReportButton" class="btn btn-outline-primary">Save Report</button>
+    </div>
 </div>
 <div class="card mb-4">
     <div class="card-body">
-        <div class="row g-2 align-items-end">
+        <div class="row g-3 align-items-end">
             <div class="col-sm-6 col-md-4 col-lg-3">
                 <label for="kellyBankrollInput" class="form-label mb-1">Kelly bankroll override</label>
                 <input type="number"
@@ -120,18 +123,48 @@
                        id="kellyBankrollInput"
                        placeholder="Enter bankroll"
                        step="0.01"
-                       min="0"
+                       min="0.01"
                        inputmode="decimal"
                        data-report-bankroll="@Model.Bankroll.ToString("0.##", CultureInfo.InvariantCulture)" />
                 <div class="form-text">Kelly stakes update immediately when this override is set.</div>
                 <div class="invalid-feedback">Enter a positive bankroll to apply the override.</div>
             </div>
-            <div class="col-auto d-flex flex-wrap gap-2">
+            <div class="col-sm-6 col-md-4 col-lg-3">
+                <label for="stakeAmountInput" class="form-label mb-1">Stake amount override</label>
+                <input type="number"
+                       class="form-control form-control-sm"
+                       id="stakeAmountInput"
+                       placeholder="Enter flat stake"
+                       step="0.01"
+                       min="0.01"
+                       inputmode="decimal" />
+                <div class="form-text">Apply a flat stake value to every runner recommendation.</div>
+                <div class="invalid-feedback">Enter a positive stake amount to apply the override.</div>
+            </div>
+            <div class="col-sm-6 col-md-4 col-lg-3">
+                <label for="stakeDampenerInput" class="form-label mb-1">Stake dampener</label>
+                <input type="number"
+                       class="form-control form-control-sm"
+                       id="stakeDampenerInput"
+                       value="1"
+                       step="0.01"
+                       min="0.01"
+                       inputmode="decimal" />
+                <div class="form-text">Divide every stake by this value to temper staking.</div>
+                <div class="invalid-feedback">Enter a dampener greater than zero.</div>
+            </div>
+            <div class="col-12 d-flex flex-wrap gap-2">
                 <button type="button" id="kellyBankrollUseReport" class="btn btn-outline-secondary btn-sm">
                     Use report bankroll (@bankrollText)
                 </button>
                 <button type="button" id="kellyBankrollReset" class="btn btn-outline-secondary btn-sm">
-                    Clear override
+                    Clear bankroll override
+                </button>
+                <button type="button" id="stakeAmountReset" class="btn btn-outline-secondary btn-sm">
+                    Clear stake override
+                </button>
+                <button type="button" id="stakeDampenerReset" class="btn btn-outline-secondary btn-sm">
+                    Reset dampener
                 </button>
             </div>
         </div>
@@ -184,7 +217,25 @@ else
             .ThenBy(r => r.HorseName ?? string.Empty)
             .ToList();
 
-        <div class="card mb-4" data-market-id="@race.MarketId">
+        DateTime? raceStart = null;
+        if (race.RaceDate.HasValue)
+        {
+            var baseDate = race.RaceDate.Value;
+            if (race.OffTime.HasValue)
+            {
+                raceStart = baseDate.Date + race.OffTime.Value;
+            }
+            else
+            {
+                raceStart = baseDate;
+            }
+        }
+
+        var raceStartIso = raceStart.HasValue
+            ? raceStart.Value.ToString("o", CultureInfo.InvariantCulture)
+            : string.Empty;
+
+        <div class="card mb-4 race-card" data-market-id="@race.MarketId" data-race-start="@raceStartIso">
             <div class="card-header bg-light">
                 <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
                     <div>
@@ -384,7 +435,12 @@ else
                                     <td class="text-end">@diff</td>
                                    <td class="text-end">@displayedKelly</td>
                                     <td class="text-end">
-                                        <span class="stake-value" data-default-stake="@stakeData" data-kelly-fraction="@kellyData" data-stake-type="@stakeType" data-lay-odds="@layOddsData">@displayedStake</span>
+                                        <span class="stake-value"
+                                              data-default-stake="@stakeData"
+                                              data-kelly-fraction="@kellyData"
+                                              data-stake-type="@stakeType"
+                                              data-lay-odds="@layOddsData"
+                                              data-original-text="@displayedStake">@displayedStake</span>
                                     </td>
                                 </tr>
                             }
@@ -418,535 +474,791 @@ else
                 });
             }
 
-            const refreshButtons = document.querySelectorAll('.refresh-race-btn');
-            if (refreshButtons.length > 0) {
-                const refreshEndpoint = '@Url.Action("RefreshRaceOdds")';
- const formatProbabilityPercent = (value) => {
-                    if (typeof value !== 'number' || !isFinite(value) || value < 0) {
-                        return '-';
-                    }
-
-                    const percent = value * 100;
-                    if (percent >= 0.01) {
-                        return percent.toLocaleString(undefined, { maximumFractionDigits: 2 }) + '%';
-                    }
-
-                    if (percent >= 0.0001) {
-                        return percent.toLocaleString(undefined, { maximumFractionDigits: 4 }) + '%';
-                    }
-
-                    if (percent > 0) {
-                        return '<0.0001%';
-                    }
-
-                    return '0%';
-                };
-
-                const buildProbabilityTooltip = (value) => {
-                    if (typeof value !== 'number' || !isFinite(value) || value < 0) {
-                        return null;
-                    }
-
-                    return (value).toLocaleString(undefined, {
-                        style: 'percent',
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 6
-                    });
-                };
-
-                const formatDate = (value) => {
-                    if (!value) {
-                        return null;
-                    }
-
-                    const parsed = new Date(value);
-                    if (Number.isNaN(parsed.getTime())) {
-                        return value;
-                    }
-
-                    const year = parsed.getFullYear();
-                    const month = String(parsed.getMonth() + 1).padStart(2, '0');
-                    const day = String(parsed.getDate()).padStart(2, '0');
-                    return `${year}-${month}-${day}`;
-                };
-
-                const formatTime = (value) => {
-                    if (!value) {
-                        return null;
-                    }
-
-                    if (typeof value === 'string' && /^\d{1,2}:\d{2}(:\d{2})?$/.test(value)) {
-                        return value.slice(0, 5);
-                    }
-
-                    if (typeof value === 'number' && Number.isFinite(value)) {
-                        // assume minutes
-                        const hours = Math.floor(value / 60);
-                        const minutes = Math.round(value % 60);
-                        return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
-                    }
-
+            const removePastRacesButton = document.getElementById('removePastRacesButton');
+            const parseDateFromAttribute = (value) => {
+                if (!value) {
                     return null;
-                };
-
-                const formatPercentage = (value) => {
-                    if (typeof value !== 'number' || !isFinite(value)) {
-                        return null;
-                    }
-
-                    return value.toLocaleString(undefined, { maximumFractionDigits: 2 }) + '%';
-                };
-
-                const formatDecimal = (value, fractionDigits = 2) => {
-                    if (typeof value !== 'number' || !isFinite(value)) {
-                        return '-';
-                    }
-
-                    return value.toLocaleString(undefined, {
-                        minimumFractionDigits: fractionDigits,
-                        maximumFractionDigits: fractionDigits
-                    });
-                };
-
-               const formatKellyPercent = (fraction) => {
-                    if (typeof fraction !== 'number' || !isFinite(fraction) || fraction <= 0) {
-                        return null;
-                    }
-
-                    return (fraction * 100).toLocaleString(undefined, { maximumFractionDigits: 2 }) + '%';
-                };
-
-                const formatStakeAmount = (value) => {
-                    if (typeof value !== 'number' || !isFinite(value) || value <= 0) {
-                        return null;
-                    }
-
-                    return formatDecimal(value);
-                };
-
-                const formatStakeDisplay = (value, stakeType) => {
-                    const formatted = formatStakeAmount(value);
-                    if (!formatted) {
-                        return null;
-                    }
-
-                    return stakeType === 'lay' ? `Lay ${formatted}` : formatted;
-                };
-
-                const resolveBettingRecommendation = (runner) => {
-                    const hasBack = typeof runner?.kellyFraction === 'number' && runner.kellyFraction > 0;
-                    if (hasBack) {
-                        const stakeValue = typeof runner?.suggestedStake === 'number' && runner.suggestedStake > 0
-                            ? runner.suggestedStake
-                            : NaN;
-                        const kellyPercent = formatKellyPercent(runner.kellyFraction);
-                        return {
-                            type: 'back',
-                            rowClass: 'runner-edge-back',
-                            kellyText: kellyPercent ?? '-',
-                            kellyData: runner.kellyFraction.toFixed(6),
-                            stakeText: formatStakeDisplay(stakeValue, 'back') ?? '-',
-                            stakeData: Number.isFinite(stakeValue) && stakeValue > 0 ? stakeValue.toFixed(2) : '',
-                            layOddsData: ''
-                        };
-                    }
-
-                    const hasLay = typeof runner?.layKellyFraction === 'number' && runner.layKellyFraction > 0;
-                    if (hasLay) {
-                        const stakeValue = typeof runner?.laySuggestedStake === 'number' && runner.laySuggestedStake > 0
-                            ? runner.laySuggestedStake
-                            : NaN;
-                        const layOdds = typeof runner?.layDecimalOdds === 'number' && runner.layDecimalOdds > 1
-                            ? runner.layDecimalOdds
-                            : NaN;
-                        const kellyPercent = formatKellyPercent(runner.layKellyFraction);
-                        const kellyText = kellyPercent ? `Lay ${kellyPercent}` : 'Lay -';
-                        return {
-                            type: 'lay',
-                            rowClass: 'runner-edge-lay',
-                            kellyText,
-                            kellyData: runner.layKellyFraction.toFixed(6),
-                            stakeText: formatStakeDisplay(stakeValue, 'lay') ?? '-',
-                            stakeData: Number.isFinite(stakeValue) && stakeValue > 0 ? stakeValue.toFixed(2) : '',
-                            layOddsData: Number.isFinite(layOdds) ? layOdds.toString() : ''
-                        };
-                    }
-
-                    return {
-                        type: 'none',
-                        rowClass: '',
-                        kellyText: '-',
-                        kellyData: '',
-                        stakeText: '-',
-                        stakeData: '',
-                        layOddsData: ''
-                    };
-                };
-                let customKellyBankroll = null;
-
-
-                const updateStakeDisplays = () => {
-                    const stakeElements = document.querySelectorAll('.stake-value');
-                    stakeElements.forEach(element => {
-                        const defaultStakeRaw = element.dataset.defaultStake ?? '';
-                        const kellyFractionRaw = element.dataset.kellyFraction ?? '';
-                        const stakeTypeRaw = element.dataset.stakeType ?? '';
-                        const stakeType = stakeTypeRaw === 'lay' ? 'lay' : stakeTypeRaw === 'none' ? 'none' : 'back';
-                        if (customKellyBankroll !== null) {
-                            const fraction = Number.parseFloat(kellyFractionRaw);
-                            if (Number.isFinite(fraction) && fraction > 0) {
-                                let computedStake = customKellyBankroll * fraction;
-                                if (stakeType === 'lay') {
-                                    const layOdds = Number.parseFloat(element.dataset.layOdds ?? '');
-                                    if (!Number.isFinite(layOdds) || layOdds <= 1) {
-                                        computedStake = NaN;
-                                    } else {
-                                        const liability = customKellyBankroll * fraction;
-                                        computedStake = liability / (layOdds - 1);
-                                    }
-                                }
-
-                                const formattedDefault = formatStakeDisplay(defaultStake, stakeType);
-                                if (formattedComputed) {
-                                    element.textContent = formattedComputed;
-                                    return;
-                                }
-                            }
-                        }
-
-                        if (defaultStakeRaw) {
-                            const defaultStake = Number.parseFloat(defaultStakeRaw);
-                            const formattedDefault = formatStakeAmount(defaultStake);
-                            if (formattedDefault) {
-                                element.textContent = formattedDefault;
-                                return;
-                            }
-                        }
-
-                        element.textContent = '-';
-                    });
-                };
-
-                const setCustomKellyBankroll = (value) => {
-                    if (Number.isFinite(value) && value > 0) {
-                        customKellyBankroll = value;
-                    } else {
-                        customKellyBankroll = null;
-                    }
-
-                    updateStakeDisplays();
-                };
-
-                const bankrollInput = document.getElementById('kellyBankrollInput');
-                const applyReportBankrollButton = document.getElementById('kellyBankrollUseReport');
-                const resetBankrollButton = document.getElementById('kellyBankrollReset');
-
-                const handleBankrollInput = () => {
-                    if (!bankrollInput) {
-                        return;
-                    }
-
-                    const raw = bankrollInput.value.trim();
-                    if (raw.length === 0) {
-                        bankrollInput.classList.remove('is-invalid');
-                        setCustomKellyBankroll(null);
-                        return;
-                    }
-
-                    const parsed = Number.parseFloat(raw);
-                    if (!Number.isFinite(parsed) || parsed <= 0) {
-                        bankrollInput.classList.add('is-invalid');
-                        setCustomKellyBankroll(null);
-                        return;
-                    }
-
-                    bankrollInput.classList.remove('is-invalid');
-                    setCustomKellyBankroll(parsed);
-                };
-
-                if (bankrollInput) {
-                    bankrollInput.addEventListener('input', handleBankrollInput);
-                    bankrollInput.addEventListener('change', handleBankrollInput);
                 }
 
-                if (applyReportBankrollButton && bankrollInput) {
-                    applyReportBankrollButton.addEventListener('click', () => {
-                        const defaultValue = bankrollInput.dataset.reportBankroll ?? '';
-                        if (defaultValue.length === 0) {
+                const parsed = new Date(value);
+                if (Number.isNaN(parsed.getTime())) {
+                    return null;
+                }
+
+                return parsed;
+            };
+
+            if (removePastRacesButton) {
+                removePastRacesButton.addEventListener('click', () => {
+                    const now = new Date();
+                    const raceCards = document.querySelectorAll('.race-card');
+                    raceCards.forEach(card => {
+                        const raw = card.dataset.raceStart ?? '';
+                        const start = parseDateFromAttribute(raw);
+                        if (!start) {
                             return;
                         }
 
-                        bankrollInput.value = defaultValue;
-                        bankrollInput.dispatchEvent(new Event('input', { bubbles: true }));
-                        bankrollInput.focus();
-                        bankrollInput.select();
+                        if (start < now) {
+                            card.remove();
+                        }
                     });
+                });
+            }
+
+            const refreshEndpoint = '@Url.Action("RefreshRaceOdds")';
+
+            const formatProbabilityPercent = (value) => {
+                if (typeof value !== 'number' || !isFinite(value) || value < 0) {
+                    return '-';
                 }
 
-                if (resetBankrollButton && bankrollInput) {
-                    resetBankrollButton.addEventListener('click', () => {
-                        bankrollInput.value = '';
-                        bankrollInput.classList.remove('is-invalid');
-                        setCustomKellyBankroll(null);
-                        bankrollInput.focus();
-                    });
+                const percent = value * 100;
+                if (percent >= 0.01) {
+                    return percent.toLocaleString(undefined, { maximumFractionDigits: 2 }) + '%';
                 }
 
-                const updateRaceMetadata = (card, race) => {
-                    const title = card.querySelector('h2.h5');
-                    if (title) {
-                        const text = race?.raceTitle && race.raceTitle.trim().length > 0
-                            ? race.raceTitle
-                            : 'Unknown Race';
-                        title.textContent = text;
+                if (percent >= 0.0001) {
+                    return percent.toLocaleString(undefined, { maximumFractionDigits: 4 }) + '%';
+                }
+
+                if (percent > 0) {
+                    return '<0.0001%';
+                }
+
+                return '0%';
+            };
+
+            const buildProbabilityTooltip = (value) => {
+                if (typeof value !== 'number' || !isFinite(value) || value < 0) {
+                    return null;
+                }
+
+                return value.toLocaleString(undefined, {
+                    style: 'percent',
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 6
+                });
+            };
+
+            const formatDate = (value) => {
+                if (!value) {
+                    return null;
+                }
+
+                const parsed = new Date(value);
+                if (Number.isNaN(parsed.getTime())) {
+                    return value;
+                }
+
+                const year = parsed.getFullYear();
+                const month = String(parsed.getMonth() + 1).padStart(2, '0');
+                const day = String(parsed.getDate()).padStart(2, '0');
+                return `${year}-${month}-${day}`;
+            };
+
+            const formatTime = (value) => {
+                if (!value) {
+                    return null;
+                }
+
+                if (typeof value === 'string' && /^\d{1,2}:\d{2}(:\d{2})?$/.test(value)) {
+                    return value.slice(0, 5);
+                }
+
+                if (typeof value === 'number' && Number.isFinite(value)) {
+                    const hours = Math.floor(value / 60);
+                    const minutes = Math.round(value % 60);
+                    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+                }
+
+                return null;
+            };
+
+            const formatPercentage = (value) => {
+                if (typeof value !== 'number' || !isFinite(value)) {
+                    return null;
+                }
+
+                return value.toLocaleString(undefined, { maximumFractionDigits: 2 }) + '%';
+            };
+
+            const formatDecimal = (value, fractionDigits = 2) => {
+                if (typeof value !== 'number' || !isFinite(value)) {
+                    return '-';
+                }
+
+                return value.toLocaleString(undefined, {
+                    minimumFractionDigits: fractionDigits,
+                    maximumFractionDigits: fractionDigits
+                });
+            };
+
+            const formatKellyPercent = (fraction) => {
+                if (typeof fraction !== 'number' || !isFinite(fraction) || fraction <= 0) {
+                    return null;
+                }
+
+                return (fraction * 100).toLocaleString(undefined, { maximumFractionDigits: 2 }) + '%';
+            };
+
+            const formatStakeAmount = (value) => {
+                if (typeof value !== 'number' || !isFinite(value) || value <= 0) {
+                    return null;
+                }
+
+                return formatDecimal(value);
+            };
+
+            const formatStakeDisplay = (value, stakeType) => {
+                const formatted = formatStakeAmount(value);
+                if (!formatted) {
+                    return null;
+                }
+
+                return stakeType === 'lay' ? `Lay ${formatted}` : formatted;
+            };
+
+            const parseTimeToMinutes = (value) => {
+                if (value === null || typeof value === 'undefined') {
+                    return null;
+                }
+
+                if (value instanceof Date) {
+                    return value.getHours() * 60 + value.getMinutes() + value.getSeconds() / 60;
+                }
+
+                if (typeof value === 'number' && Number.isFinite(value)) {
+                    return value;
+                }
+
+                if (typeof value === 'string') {
+                    const trimmed = value.trim();
+                    if (trimmed.length === 0) {
+                        return null;
                     }
 
-                    const infoContainer = card.querySelector('.card-header .small.text-muted');
-                    if (infoContainer) {
-                        infoContainer.innerHTML = '';
+                    const match = trimmed.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+                    if (match) {
+                        const hours = Number.parseInt(match[1], 10);
+                        const minutes = Number.parseInt(match[2], 10);
+                        const seconds = match[3] ? Number.parseInt(match[3], 10) : 0;
+                        return hours * 60 + minutes + seconds / 60;
+                    }
 
-                        const appendSpan = (text, classes = []) => {
-                            if (!text) {
+                    const isoMatch = trimmed.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/i);
+                    if (isoMatch) {
+                        const hours = isoMatch[1] ? Number.parseInt(isoMatch[1], 10) : 0;
+                        const minutes = isoMatch[2] ? Number.parseInt(isoMatch[2], 10) : 0;
+                        const seconds = isoMatch[3] ? Number.parseInt(isoMatch[3], 10) : 0;
+                        return hours * 60 + minutes + seconds / 60;
+                    }
+                }
+
+                if (typeof value === 'object') {
+                    const hours = Number.parseFloat(value.hours ?? value.Hours);
+                    const minutes = Number.parseFloat(value.minutes ?? value.Minutes);
+                    const seconds = Number.parseFloat(value.seconds ?? value.Seconds);
+                    if ([hours, minutes, seconds].some(v => Number.isFinite(v))) {
+                        return (Number.isFinite(hours) ? hours : 0) * 60
+                            + (Number.isFinite(minutes) ? minutes : 0)
+                            + (Number.isFinite(seconds) ? seconds : 0) / 60;
+                    }
+                }
+
+                return null;
+            };
+
+            const parseRaceDate = (value) => {
+                if (!value) {
+                    return null;
+                }
+
+                if (value instanceof Date) {
+                    return new Date(value.getTime());
+                }
+
+                if (typeof value === 'string') {
+                    const trimmed = value.trim();
+                    if (trimmed.length === 0) {
+                        return null;
+                    }
+
+                    const parsed = new Date(trimmed);
+                    if (!Number.isNaN(parsed.getTime())) {
+                        return parsed;
+                    }
+
+                    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+                        const [year, month, day] = trimmed.split('-').map(part => Number.parseInt(part, 10));
+                        return new Date(year, month - 1, day);
+                    }
+                }
+
+                return null;
+            };
+
+            const resolveRaceStart = (race) => {
+                const date = parseRaceDate(race?.raceDate);
+                if (!date) {
+                    return null;
+                }
+
+                const minutes = parseTimeToMinutes(race?.offTime);
+                if (minutes !== null) {
+                    const start = new Date(date.getTime());
+                    start.setHours(0, 0, 0, 0);
+                    start.setMinutes(start.getMinutes() + minutes);
+                    return start;
+                }
+
+                return date;
+            };
+
+            const updateCardRaceStart = (card, race) => {
+                if (!card) {
+                    return;
+                }
+
+                const start = resolveRaceStart(race);
+                if (start) {
+                    card.dataset.raceStart = start.toISOString();
+                } else {
+                    card.dataset.raceStart = '';
+                }
+            };
+
+            const resolveBettingRecommendation = (runner) => {
+                const hasBack = typeof runner?.kellyFraction === 'number' && runner.kellyFraction > 0;
+                if (hasBack) {
+                    const stakeValue = typeof runner?.suggestedStake === 'number' && runner.suggestedStake > 0
+                        ? runner.suggestedStake
+                        : NaN;
+                    const kellyPercent = formatKellyPercent(runner.kellyFraction);
+                    return {
+                        type: 'back',
+                        rowClass: 'runner-edge-back',
+                        kellyText: kellyPercent ?? '-',
+                        kellyData: runner.kellyFraction.toFixed(6),
+                        stakeText: formatStakeDisplay(stakeValue, 'back') ?? '-',
+                        stakeData: Number.isFinite(stakeValue) && stakeValue > 0 ? stakeValue.toFixed(2) : '',
+                        layOddsData: ''
+                    };
+                }
+
+                const hasLay = typeof runner?.layKellyFraction === 'number' && runner.layKellyFraction > 0;
+                if (hasLay) {
+                    const stakeValue = typeof runner?.laySuggestedStake === 'number' && runner.laySuggestedStake > 0
+                        ? runner.laySuggestedStake
+                        : NaN;
+                    const layOdds = typeof runner?.layDecimalOdds === 'number' && runner.layDecimalOdds > 1
+                        ? runner.layDecimalOdds
+                        : NaN;
+                    const kellyPercent = formatKellyPercent(runner.layKellyFraction);
+                    const kellyText = kellyPercent ? `Lay ${kellyPercent}` : 'Lay -';
+                    return {
+                        type: 'lay',
+                        rowClass: 'runner-edge-lay',
+                        kellyText,
+                        kellyData: runner.layKellyFraction.toFixed(6),
+                        stakeText: formatStakeDisplay(stakeValue, 'lay') ?? '-',
+                        stakeData: Number.isFinite(stakeValue) && stakeValue > 0 ? stakeValue.toFixed(2) : '',
+                        layOddsData: Number.isFinite(layOdds) ? layOdds.toString() : ''
+                    };
+                }
+
+                return {
+                    type: 'none',
+                    rowClass: '',
+                    kellyText: '-',
+                    kellyData: '',
+                    stakeText: '-',
+                    stakeData: '',
+                    layOddsData: ''
+                };
+            };
+
+            let customKellyBankroll = null;
+            let customStakeAmount = null;
+            let stakeDampener = 1;
+
+            const updateStakeDisplays = () => {
+                const stakeElements = document.querySelectorAll('.stake-value');
+                stakeElements.forEach(element => {
+                    const stakeTypeRaw = element.dataset.stakeType ?? '';
+                    const stakeType = stakeTypeRaw === 'lay' ? 'lay' : stakeTypeRaw === 'none' ? 'none' : 'back';
+                    const defaultStakeRaw = element.dataset.defaultStake ?? '';
+                    const kellyFraction = Number.parseFloat(element.dataset.kellyFraction ?? '');
+                    const layOdds = Number.parseFloat(element.dataset.layOdds ?? '');
+                    const originalText = element.dataset.originalText ?? '';
+
+                    let stake = NaN;
+
+                    if (customStakeAmount !== null && stakeType !== 'none') {
+                        stake = customStakeAmount;
+                    } else if (customKellyBankroll !== null && stakeType !== 'none') {
+                        if (Number.isFinite(kellyFraction) && kellyFraction > 0) {
+                            if (stakeType === 'lay') {
+                                if (Number.isFinite(layOdds) && layOdds > 1) {
+                                    const liability = customKellyBankroll * kellyFraction;
+                                    stake = liability / (layOdds - 1);
+                                }
+                            } else {
+                                stake = customKellyBankroll * kellyFraction;
+                            }
+                        }
+                    } else if (defaultStakeRaw) {
+                        const parsedDefault = Number.parseFloat(defaultStakeRaw);
+                        if (Number.isFinite(parsedDefault) && parsedDefault > 0) {
+                            stake = parsedDefault;
+                        }
+                    }
+
+                    if (Number.isFinite(stake) && stake > 0) {
+                        let adjustedStake = stake;
+                        if (Number.isFinite(stakeDampener) && stakeDampener > 0) {
+                            adjustedStake = adjustedStake / stakeDampener;
+                        }
+
+                        if (adjustedStake > 0) {
+                            const formatted = formatStakeDisplay(adjustedStake, stakeType);
+                            if (formatted) {
+                                element.textContent = formatted;
                                 return;
                             }
-
-                            const span = document.createElement('span');
-                            span.textContent = text;
-                            classes.forEach(cls => span.classList.add(cls));
-                            infoContainer.appendChild(span);
-                        };
-
-                        const venueParts = [race?.venueName, race?.venueCountry]
-                            .filter(part => typeof part === 'string' && part.trim().length > 0)
-                            .map(part => part.trim());
-                        if (venueParts.length > 0) {
-                            appendSpan(venueParts.join(' - '));
-                        }
-
-                        const scheduleParts = [];
-                        const formattedDate = formatDate(race?.raceDate);
-                        if (formattedDate) {
-                            scheduleParts.push(formattedDate);
-                        }
-
-                        const formattedTime = formatTime(race?.offTime);
-                        if (formattedTime) {
-                            scheduleParts.push(formattedTime);
-                        }
-
-                        if (scheduleParts.length > 0) {
-                            appendSpan(scheduleParts.join(' '), ['ms-2']);
-                        }
-
-                        if (race?.raceDetails && race.raceDetails.trim().length > 0) {
-                            appendSpan(race.raceDetails.trim(), ['ms-2']);
-                        }
-
-                        const bookParts = [];
-                        const backText = formatPercentage(race?.backBookPercentage);
-                        if (backText) {
-                            bookParts.push(`Back ${backText}`);
-                        }
-
-                        const layText = formatPercentage(race?.layBookPercentage);
-                        if (layText) {
-                            bookParts.push(`Lay ${layText}`);
-                        }
-
-                        if (bookParts.length > 0) {
-                            appendSpan(`Book: ${bookParts.join(' / ')}`, ['ms-2']);
                         }
                     }
 
+                    element.textContent = originalText && originalText.trim().length > 0 ? originalText : '-';
+                });
+            };
+
+            const setCustomKellyBankroll = (value) => {
+                if (Number.isFinite(value) && value > 0) {
+                    customKellyBankroll = value;
+                } else {
+                    customKellyBankroll = null;
+                }
+
+                updateStakeDisplays();
+            };
+
+            const setCustomStakeAmount = (value) => {
+                if (Number.isFinite(value) && value > 0) {
+                    customStakeAmount = value;
+                } else {
+                    customStakeAmount = null;
+                }
+
+                updateStakeDisplays();
+            };
+
+            const setStakeDampener = (value) => {
+                if (Number.isFinite(value) && value > 0) {
+                    stakeDampener = value;
+                } else {
+                    stakeDampener = 1;
+                }
+
+                updateStakeDisplays();
+            };
+
+            const bankrollInput = document.getElementById('kellyBankrollInput');
+            const applyReportBankrollButton = document.getElementById('kellyBankrollUseReport');
+            const resetBankrollButton = document.getElementById('kellyBankrollReset');
+
+            const handleBankrollInput = () => {
+                if (!bankrollInput) {
+                    return;
+                }
+
+                const raw = bankrollInput.value.trim();
+                if (raw.length === 0) {
+                    bankrollInput.classList.remove('is-invalid');
+                    setCustomKellyBankroll(null);
+                    return;
+                }
+
+                const parsed = Number.parseFloat(raw);
+                if (!Number.isFinite(parsed) || parsed <= 0) {
+                    bankrollInput.classList.add('is-invalid');
+                    setCustomKellyBankroll(null);
+                    return;
+                }
+
+                bankrollInput.classList.remove('is-invalid');
+                setCustomKellyBankroll(parsed);
+            };
+
+            if (bankrollInput) {
+                bankrollInput.addEventListener('input', handleBankrollInput);
+                bankrollInput.addEventListener('change', handleBankrollInput);
+            }
+
+            if (applyReportBankrollButton && bankrollInput) {
+                applyReportBankrollButton.addEventListener('click', () => {
+                    const defaultValue = bankrollInput.dataset.reportBankroll ?? '';
+                    if (defaultValue.length === 0) {
+                        return;
+                    }
+
+                    bankrollInput.value = defaultValue;
+                    bankrollInput.dispatchEvent(new Event('input', { bubbles: true }));
+                    bankrollInput.focus();
+                    bankrollInput.select();
+                });
+            }
+
+            if (resetBankrollButton && bankrollInput) {
+                resetBankrollButton.addEventListener('click', () => {
+                    bankrollInput.value = '';
+                    bankrollInput.classList.remove('is-invalid');
+                    setCustomKellyBankroll(null);
+                    bankrollInput.focus();
+                });
+            }
+
+            const stakeAmountInput = document.getElementById('stakeAmountInput');
+            const stakeAmountReset = document.getElementById('stakeAmountReset');
+
+            const handleStakeAmountInput = () => {
+                if (!stakeAmountInput) {
+                    return;
+                }
+
+                const raw = stakeAmountInput.value.trim();
+                if (raw.length === 0) {
+                    stakeAmountInput.classList.remove('is-invalid');
+                    setCustomStakeAmount(null);
+                    return;
+                }
+
+                const parsed = Number.parseFloat(raw);
+                if (!Number.isFinite(parsed) || parsed <= 0) {
+                    stakeAmountInput.classList.add('is-invalid');
+                    setCustomStakeAmount(null);
+                    return;
+                }
+
+                stakeAmountInput.classList.remove('is-invalid');
+                setCustomStakeAmount(parsed);
+            };
+
+            if (stakeAmountInput) {
+                stakeAmountInput.addEventListener('input', handleStakeAmountInput);
+                stakeAmountInput.addEventListener('change', handleStakeAmountInput);
+            }
+
+            if (stakeAmountReset && stakeAmountInput) {
+                stakeAmountReset.addEventListener('click', () => {
+                    stakeAmountInput.value = '';
+                    stakeAmountInput.classList.remove('is-invalid');
+                    setCustomStakeAmount(null);
+                    stakeAmountInput.focus();
+                });
+            }
+
+            const stakeDampenerInput = document.getElementById('stakeDampenerInput');
+            const stakeDampenerReset = document.getElementById('stakeDampenerReset');
+
+            const handleStakeDampenerInput = () => {
+                if (!stakeDampenerInput) {
+                    return;
+                }
+
+                const raw = stakeDampenerInput.value.trim();
+                if (raw.length === 0) {
+                    stakeDampenerInput.classList.remove('is-invalid');
+                    setStakeDampener(1);
+                    return;
+                }
+
+                const parsed = Number.parseFloat(raw);
+                if (!Number.isFinite(parsed) || parsed <= 0) {
+                    stakeDampenerInput.classList.add('is-invalid');
+                    return;
+                }
+
+                stakeDampenerInput.classList.remove('is-invalid');
+                setStakeDampener(parsed);
+            };
+
+            if (stakeDampenerInput) {
+                stakeDampenerInput.addEventListener('input', handleStakeDampenerInput);
+                stakeDampenerInput.addEventListener('change', handleStakeDampenerInput);
+            }
+
+            if (stakeDampenerReset && stakeDampenerInput) {
+                stakeDampenerReset.addEventListener('click', () => {
+                    stakeDampenerInput.value = '1';
+                    stakeDampenerInput.classList.remove('is-invalid');
+                    setStakeDampener(1);
+                    stakeDampenerInput.focus();
+                    stakeDampenerInput.select();
+                });
+            }
+
+            const updateRaceMetadata = (card, race) => {
+                const title = card.querySelector('h2.h5');
+                if (title) {
+                    const text = race?.raceTitle && race.raceTitle.trim().length > 0
+                        ? race.raceTitle
+                        : 'Unknown Race';
+                    title.textContent = text;
+                }
+
+                const infoContainer = card.querySelector('.card-header .small.text-muted');
+                if (infoContainer) {
+                    infoContainer.innerHTML = '';
+
+                    const appendSpan = (text, classes = []) => {
+                        if (!text) {
+                            return;
+                        }
+
+                        const span = document.createElement('span');
+                        span.textContent = text;
+                        classes.forEach(cls => span.classList.add(cls));
+                        infoContainer.appendChild(span);
+                    };
+
+                    const venueParts = [race?.venueName, race?.venueCountry]
+                        .filter(part => typeof part === 'string' && part.trim().length > 0)
+                        .map(part => part.trim());
+                    if (venueParts.length > 0) {
+                        appendSpan(venueParts.join(' - '));
+                    }
+
+                    const scheduleParts = [];
+                    const formattedDate = formatDate(race?.raceDate);
+                    if (formattedDate) {
+                        scheduleParts.push(formattedDate);
+                    }
+
+                    const formattedTime = formatTime(race?.offTime);
+                    if (formattedTime) {
+                        scheduleParts.push(formattedTime);
+                    }
+
+                    if (scheduleParts.length > 0) {
+                        appendSpan(scheduleParts.join(' '), ['ms-2']);
+                    }
+
+                    if (race?.raceDetails && race.raceDetails.trim().length > 0) {
+                        appendSpan(race.raceDetails.trim(), ['ms-2']);
+                    }
+
+                    const bookParts = [];
+                    const backText = formatPercentage(race?.backBookPercentage);
+                    if (backText) {
+                        bookParts.push(`Back ${backText}`);
+                    }
+
+                    const layText = formatPercentage(race?.layBookPercentage);
+                    if (layText) {
+                        bookParts.push(`Lay ${layText}`);
+                    }
+
+                    if (bookParts.length > 0) {
+                        appendSpan(`Book: ${bookParts.join(' / ')}`, ['ms-2']);
+                    }
+                }
+
+                const refreshButton = card.querySelector('.refresh-race-btn');
+                if (refreshButton) {
+                    const url = race?.raceUrl ?? '';
+                    refreshButton.dataset.raceUrl = url;
+                    refreshButton.disabled = !url;
+                }
+
+                updateCardRaceStart(card, race);
+            };
+
+            const renderRaceRows = (card, race) => {
+                const tbody = card.querySelector('tbody');
+                if (!tbody) {
+                    return;
+                }
+
+                tbody.innerHTML = '';
+
+                const runners = Array.isArray(race?.runners) ? [...race.runners] : [];
+                runners.sort((a, b) => {
+                    const clothA = Number.isFinite(a?.clothNumber) ? a.clothNumber : Number.MAX_SAFE_INTEGER;
+                    const clothB = Number.isFinite(b?.clothNumber) ? b.clothNumber : Number.MAX_SAFE_INTEGER;
+                    if (clothA !== clothB) {
+                        return clothA - clothB;
+                    }
+
+                    const horseA = (a?.horseName ?? '').toString();
+                    const horseB = (b?.horseName ?? '').toString();
+                    return horseA.localeCompare(horseB);
+                });
+
+                runners.forEach(runner => {
+                    const row = document.createElement('tr');
+
+                    const appendCell = (text, className) => {
+                        const cell = document.createElement('td');
+                        if (className) {
+                            cell.className = className;
+                        }
+                        cell.textContent = text;
+                        row.appendChild(cell);
+                        return cell;
+                    };
+
+                    appendCell(Number.isFinite(runner?.clothNumber) ? runner.clothNumber.toString() : '-');
+                    appendCell(Number.isFinite(runner?.draw) ? runner.draw.toString() : '-');
+
+                    const horseCell = document.createElement('td');
+                    const horseName = document.createElement('div');
+                    horseName.className = 'fw-semibold';
+                    horseName.textContent = runner?.horseName ?? '';
+                    horseCell.appendChild(horseName);
+
+                    if (runner?.selectionId) {
+                        const selection = document.createElement('div');
+                        selection.className = 'text-muted small';
+                        selection.textContent = `Selection ID: ${runner.selectionId}`;
+                        horseCell.appendChild(selection);
+                    }
+
+                    if (runner?.featureValues && typeof runner.featureValues === 'object' && Object.keys(runner.featureValues).length > 0) {
+                        const details = document.createElement('details');
+                        details.className = 'small mt-1';
+
+                        const summary = document.createElement('summary');
+                        summary.className = 'text-muted';
+                        summary.textContent = 'Feature inputs';
+                        details.appendChild(summary);
+
+                        const dl = document.createElement('dl');
+                        dl.className = 'row mb-0';
+
+                        Object.keys(runner.featureValues)
+                            .sort((a, b) => a.localeCompare(b))
+                            .forEach(key => {
+                                const value = runner.featureValues[key];
+                                const dt = document.createElement('dt');
+                                dt.className = 'col-sm-5';
+                                dt.textContent = key;
+
+                                const dd = document.createElement('dd');
+                                dd.className = 'col-sm-7';
+                                let valueText;
+                                if (value === null || typeof value === 'undefined') {
+                                    valueText = '-';
+                                } else if (typeof value === 'number' && isFinite(value)) {
+                                    valueText = value.toLocaleString();
+                                } else {
+                                    valueText = value.toString();
+                                }
+                                dd.textContent = valueText;
+
+                                dl.appendChild(dt);
+                                dl.appendChild(dd);
+                            });
+
+                        details.appendChild(dl);
+                        horseCell.appendChild(details);
+                    }
+
+                    row.appendChild(horseCell);
+
+                    appendCell(runner?.jockeyName ?? '');
+                    appendCell(Number.isFinite(runner?.historicalRaceCount)
+                        ? runner.historicalRaceCount.toLocaleString(undefined, { maximumFractionDigits: 0 })
+                        : '-', 'text-end');
+
+                    appendCell(typeof runner?.marketDecimalOdds === 'number'
+                        ? formatDecimal(runner.marketDecimalOdds)
+                        : '-', 'text-end');
+
+                    appendCell(typeof runner?.layDecimalOdds === 'number'
+                        ? formatDecimal(runner.layDecimalOdds)
+                        : '-', 'text-end');
+
+                    const aiProbCell = appendCell('-', 'text-end');
+                    if (typeof runner?.aiProbability === 'number') {
+                        const display = formatProbabilityPercent(runner.aiProbability);
+                        if (display !== '-') {
+                            const span = document.createElement('span');
+                            span.textContent = display;
+                            const tooltip = buildProbabilityTooltip(runner.aiProbability);
+                            if (tooltip) {
+                                span.title = tooltip;
+                            }
+                            aiProbCell.textContent = '';
+                            aiProbCell.appendChild(span);
+                        } else {
+                            aiProbCell.textContent = display;
+                        }
+                    }
+
+                    appendCell(typeof runner?.aiDecimalOdds === 'number'
+                        ? formatDecimal(runner.aiDecimalOdds)
+                        : '-', 'text-end');
+
+                    const marketPercent = typeof runner?.marketProbability === 'number'
+                        ? formatPercentage(runner.marketProbability * 100)
+                        : null;
+                    appendCell(marketPercent ?? '-', 'text-end');
+
+                    const diffPercent = typeof runner?.differential === 'number'
+                        ? formatPercentage(runner.differential * 100)
+                        : null;
+                    appendCell(diffPercent ?? '-', 'text-end');
+
+                    const betting = resolveBettingRecommendation(runner);
+                    if (betting.rowClass) {
+                        row.classList.add(betting.rowClass);
+                    }
+
+                    appendCell(betting.kellyText, 'text-end');
+                    const stakeCell = document.createElement('td');
+                    stakeCell.className = 'text-end';
+                    const stakeSpan = document.createElement('span');
+                    stakeSpan.className = 'stake-value';
+                    stakeSpan.dataset.defaultStake = betting.stakeData;
+                    stakeSpan.dataset.kellyFraction = betting.kellyData;
+                    stakeSpan.dataset.stakeType = betting.type;
+                    stakeSpan.dataset.layOdds = betting.layOddsData;
+                    stakeSpan.dataset.originalText = betting.stakeText ?? '-';
+                    stakeSpan.textContent = betting.stakeText;
+                    stakeCell.appendChild(stakeSpan);
+                    row.appendChild(stakeCell);
+
+                    tbody.appendChild(row);
+                });
+
+                updateStakeDisplays();
+            };
+
+            const updateRaceCard = (marketId, race) => {
+                if (!marketId) {
+                    return;
+                }
+
+                const card = document.querySelector(`.card[data-market-id="${marketId}"]`);
+                if (!card) {
+                    return;
+                }
+
+                if (race?.marketId) {
+                    card.dataset.marketId = race.marketId;
                     const refreshButton = card.querySelector('.refresh-race-btn');
                     if (refreshButton) {
-                        const url = race?.raceUrl ?? '';
-                        refreshButton.dataset.raceUrl = url;
-                        refreshButton.disabled = !url;
+                        refreshButton.dataset.marketId = race.marketId;
                     }
-                };
+                }
 
-                const renderRaceRows = (card, race) => {
-                    const tbody = card.querySelector('tbody');
-                    if (!tbody) {
-                        return;
-                    }
+                updateRaceMetadata(card, race);
+                renderRaceRows(card, race);
+            };
 
-                    tbody.innerHTML = '';
-
-                    const runners = Array.isArray(race?.runners) ? [...race.runners] : [];
-                    runners.sort((a, b) => {
-                        const clothA = Number.isFinite(a?.clothNumber) ? a.clothNumber : Number.MAX_SAFE_INTEGER;
-                        const clothB = Number.isFinite(b?.clothNumber) ? b.clothNumber : Number.MAX_SAFE_INTEGER;
-                        if (clothA !== clothB) {
-                            return clothA - clothB;
-                        }
-
-                        const horseA = (a?.horseName ?? '').toString();
-                        const horseB = (b?.horseName ?? '').toString();
-                        return horseA.localeCompare(horseB);
-                    });
-
-                    runners.forEach(runner => {
-                        const row = document.createElement('tr');
-
-                        const appendCell = (text, className) => {
-                            const cell = document.createElement('td');
-                            if (className) {
-                                cell.className = className;
-                            }
-                            cell.textContent = text;
-                            row.appendChild(cell);
-                            return cell;
-                        };
-
-                        appendCell(Number.isFinite(runner?.clothNumber) ? runner.clothNumber.toString() : '-');
-                        appendCell(Number.isFinite(runner?.draw) ? runner.draw.toString() : '-');
-
-                        const horseCell = document.createElement('td');
-                        const horseName = document.createElement('div');
-                        horseName.className = 'fw-semibold';
-                        horseName.textContent = runner?.horseName ?? '';
-                        horseCell.appendChild(horseName);
-
-                        if (runner?.selectionId) {
-                            const selection = document.createElement('div');
-                            selection.className = 'text-muted small';
-                            selection.textContent = `Selection ID: ${runner.selectionId}`;
-                            horseCell.appendChild(selection);
-                        }
-
-                        if (runner?.featureValues && typeof runner.featureValues === 'object' && Object.keys(runner.featureValues).length > 0) {
-                            const details = document.createElement('details');
-                            details.className = 'small mt-1';
-
-                            const summary = document.createElement('summary');
-                            summary.className = 'text-muted';
-                            summary.textContent = 'Feature inputs';
-                            details.appendChild(summary);
-
-                            const dl = document.createElement('dl');
-                            dl.className = 'row mb-0';
-
-                            Object.keys(runner.featureValues)
-                                .sort((a, b) => a.localeCompare(b))
-                                .forEach(key => {
-                                    const value = runner.featureValues[key];
-                                    const dt = document.createElement('dt');
-                                    dt.className = 'col-sm-5';
-                                    dt.textContent = key;
-
-                                    const dd = document.createElement('dd');
-                                    dd.className = 'col-sm-7';
-                                    let valueText;
-                                    if (value === null || typeof value === 'undefined') {
-                                        valueText = '-';
-                                    } else if (typeof value === 'number' && isFinite(value)) {
-                                        valueText = value.toLocaleString();
-                                    } else {
-                                        valueText = value.toString();
-                                    }
-                                    dd.textContent = valueText;
-
-                                    dl.appendChild(dt);
-                                    dl.appendChild(dd);
-                                });
-
-                            details.appendChild(dl);
-                            horseCell.appendChild(details);
-                        }
-
-                        row.appendChild(horseCell);
-
-                        appendCell(runner?.jockeyName ?? '');
-                        appendCell(Number.isFinite(runner?.historicalRaceCount)
-                            ? runner.historicalRaceCount.toLocaleString(undefined, { maximumFractionDigits: 0 })
-                            : '-', 'text-end');
-
-                        appendCell(typeof runner?.marketDecimalOdds === 'number'
-                            ? formatDecimal(runner.marketDecimalOdds)
-                            : '-', 'text-end');
-
-                        appendCell(typeof runner?.layDecimalOdds === 'number'
-                            ? formatDecimal(runner.layDecimalOdds)
-                            : '-', 'text-end');
-
-                        const aiProbCell = appendCell('-', 'text-end');
-                        if (typeof runner?.aiProbability === 'number') {
-                            const display = formatProbabilityPercent(runner.aiProbability);
-                            if (display !== '-') {
-                                const span = document.createElement('span');
-                                span.textContent = display;
-                                const tooltip = buildProbabilityTooltip(runner.aiProbability);
-                                if (tooltip) {
-                                    span.title = tooltip;
-                                }
-                                aiProbCell.textContent = '';
-                                aiProbCell.appendChild(span);
-                            } else {
-                                aiProbCell.textContent = display;
-                            }
-                        }
-
-                        appendCell(typeof runner?.aiDecimalOdds === 'number'
-                            ? formatDecimal(runner.aiDecimalOdds)
-                            : '-', 'text-end');
-
-                        const marketPercent = typeof runner?.marketProbability === 'number'
-                            ? formatPercentage(runner.marketProbability * 100)
-                            : null;
-                        appendCell(marketPercent ?? '-', 'text-end');
-
-                        const diffPercent = typeof runner?.differential === 'number'
-                            ? formatPercentage(runner.differential * 100)
-                            : null;
-                        appendCell(diffPercent ?? '-', 'text-end');
-
-                        const betting = resolveBettingRecommendation(runner);
-                        if (betting.rowClass) {
-                            row.classList.add(betting.rowClass);
-                        }
-
-                        appendCell(betting.kellyText, 'text-end');
-                        const stakeCell = document.createElement('td');
-                        stakeCell.className = 'text-end';
-                        const stakeSpan = document.createElement('span');
-                        stakeSpan.className = 'stake-value';
-     stakeSpan.dataset.defaultStake = betting.stakeData;
-                        stakeSpan.dataset.kellyFraction = betting.kellyData;
-                        stakeSpan.dataset.stakeType = betting.type;
-                        stakeSpan.dataset.layOdds = betting.layOddsData;
-                        stakeSpan.textContent = betting.stakeText;
-                        stakeCell.appendChild(stakeSpan);
-                        row.appendChild(stakeCell);
-
-                        tbody.appendChild(row);
-                    });
-                    updateStakeDisplays();
-                };
-
-                const updateRaceCard = (marketId, race) => {
-                    if (!marketId) {
-                        return;
-                    }
-
-                    const card = document.querySelector(`.card[data-market-id="${marketId}"]`);
-                    if (!card) {
-                        return;
-                    }
-
-                    if (race?.marketId) {
-                        card.dataset.marketId = race.marketId;
-                        const refreshButton = card.querySelector('.refresh-race-btn');
-                        if (refreshButton) {
-                            refreshButton.dataset.marketId = race.marketId;
-                        }
-                    }
-
-                    updateRaceMetadata(card, race);
-                    renderRaceRows(card, race);
-                };
-
+            const refreshButtons = document.querySelectorAll('.refresh-race-btn');
+            if (refreshButtons.length > 0) {
                 refreshButtons.forEach(button => {
                     button.addEventListener('click', async () => {
                         if (button.disabled) {
@@ -997,6 +1309,7 @@ else
                     });
                 });
             }
+
             updateStakeDisplays();
         })();
     </script>
