@@ -1,16 +1,17 @@
-﻿using System;
-using System.Globalization;
-using System.Text.RegularExpressions;
-using System.Linq;
-using System.Threading;
+﻿using HorseRacingML.Data;
+using HorseRacingML.ML;
+using HorseRacingML.Models;
+using HorseRacingML.Services;
 using OpenQA.Selenium;
 using OpenQA.Selenium.Support.UI;
-using HorseRacingML.Data;
-using HorseRacingML.Models;
+using System;
 using System.Collections.Generic;
-using HorseRacingML.ML;
-using HorseRacingML.Services;
+using System.Globalization;
 using System.IO;
+using System.Linq;
+using System.Security.Claims;
+using System.Text.RegularExpressions;
+using System.Threading;
 using PreparedDataset = HorseRacingML.ML.HyperparameterTrainer.TrainingDataset.PreparedDataset;
 using PreparedRace = HorseRacingML.ML.HyperparameterTrainer.TrainingDataset.PreparedDataset.PreparedRace;
 
@@ -2277,6 +2278,17 @@ DateTime? raceDate,
         }
         private static readonly string[] HistoricalFeatureBackfillKeys =
         {
+           "Class",
+            "RaceType",
+            "AgeRestriction",
+            "Surface",
+            "Going",
+            "DistanceYards",
+            "DistanceText",
+            "DistanceBucket",
+            "BackBookPercentage",
+            "LayBookPercentage",
+            "RunnerCount",
             "HasLastWin",
             "DistanceChangeFromLast",
             "DistanceRatioFromAverage",

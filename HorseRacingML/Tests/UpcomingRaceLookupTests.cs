@@ -250,6 +250,8 @@ namespace HorseRacingML.Tests
             {
                 ["HorseName"] = "Fallback Hero",
                 ["SelectionId"] = "321",
+                ["Class"] = 3,
+                ["Going"] = "Soft",
                 ["HasLastWin"] = true,
                 ["DistanceChangeFromLast"] = 4f,
                 ["DistanceRatioFromAverage"] = 1.1f,
@@ -298,6 +300,8 @@ namespace HorseRacingML.Tests
             Assert.Equal(4f, Convert.ToSingle(runner.FeatureValues["DistanceChangeFromLast"]));
             Assert.Equal(1.1f, Convert.ToSingle(runner.FeatureValues["DistanceRatioFromAverage"]));
             Assert.Equal(8, Convert.ToInt32(runner.FeatureValues["CareerStarts"]));
+            Assert.Equal(3, Convert.ToInt32(runner.FeatureValues["Class"]));
+            Assert.Equal("Soft", Assert.IsType<string>(runner.FeatureValues["Going"]));
             Assert.Equal(0.25f, Convert.ToSingle(runner.FeatureValues["LifetimeWinRate"]));
             Assert.Equal(true, runner.FeatureValues["IsTopWeight"]);
             Assert.Equal(false, runner.FeatureValues["IsBottomWeight"]);
@@ -327,6 +331,8 @@ namespace HorseRacingML.Tests
             {
                 ["HorseName"] = "Backfill Hero",
                 ["SelectionId"] = "654",
+                ["Class"] = 4,
+                ["Going"] = "Good",
                 ["HasLastWin"] = true,
                 ["DistanceChangeFromLast"] = -2f,
                 ["DistanceRatioFromAverage"] = 0.95f,
@@ -406,6 +412,8 @@ namespace HorseRacingML.Tests
             Assert.Equal(0.95f, Convert.ToSingle(runner.FeatureValues["DistanceRatioFromAverage"]));
             Assert.Equal(14, Convert.ToInt32(runner.FeatureValues["CareerStarts"]));
             Assert.Equal(0.285f, Convert.ToSingle(runner.FeatureValues["LifetimeWinRate"]));
+            Assert.Equal(4, Convert.ToInt32(runner.FeatureValues["Class"]));
+            Assert.Equal("Good", Assert.IsType<string>(runner.FeatureValues["Going"]));
             Assert.Equal(false, Convert.ToBoolean(runner.FeatureValues["IsTopWeight"]));
             Assert.Equal(true, Convert.ToBoolean(runner.FeatureValues["IsBottomWeight"]));
             Assert.Equal(0.42f, Convert.ToSingle(runner.FeatureValues["JockeyGoingDistanceWinRate"]));
@@ -442,6 +450,83 @@ namespace HorseRacingML.Tests
             Assert.Equal(0.52f, Convert.ToSingle(runner.FeatureValues["CourseWinRateLast5"]));
         }
 
+        [Fact]
+        public void PopulateFeatureVectors_BackfillsRaceMetadataFromTrainer()
+        {
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:HorseRacingDb"] = "Server=(local);Database=HorseRacingMLTest;Trusted_Connection=True;"
+                })
+                .Build();
+
+            var primaryRow = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["HorseName"] = "Metadata Marvel",
+                ["SelectionId"] = "987"
+            };
+            var primaryRace = new PreparedRace(890, new List<Dictionary<string, object?>> { primaryRow });
+
+            var fallbackRow = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["HorseName"] = "Metadata Marvel",
+                ["SelectionId"] = "987",
+                ["Class"] = (byte)4,
+                ["RaceType"] = "Handicap",
+                ["AgeRestriction"] = "3yo+",
+                ["Surface"] = "Turf",
+                ["Going"] = "Good to Firm",
+                ["DistanceYards"] = 1540,
+                ["DistanceText"] = "7f",
+                ["DistanceBucket"] = "Sprint",
+                ["BackBookPercentage"] = 102.5m,
+                ["LayBookPercentage"] = 104.2m,
+                ["RunnerCount"] = (byte)12
+            };
+            var fallbackRace = new PreparedRace(891, new List<Dictionary<string, object?>> { fallbackRow });
+
+            var trainer = new BackfillTrainer(configuration, primaryRace, fallbackRace);
+            var repo = new MinimalRacingRepository();
+            var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
+            var scraper = new BetfairMarketScraper(repo, trainer, bankroll: 25m, settings);
+            var flows = new List<RunnerFlow>
+            {
+                new RunnerFlow
+                {
+                    HorseName = "Metadata Marvel",
+                    SelectionId = "987"
+                }
+            };
+
+            var report = scraper.TestBuildRaceReport(
+                marketId: "1.999",
+                raceTitle: "Metadata Stakes",
+                venueName: "Metadata Park",
+                venueCountry: "GB",
+                raceDate: new DateTime(2024, 9, 20),
+                offTime: new TimeSpan(15, 30, 0),
+                raceDetails: null,
+                going: null,
+                backBookPercentage: null,
+                layBookPercentage: null,
+                raceUrl: null,
+                flows: flows);
+
+            Assert.True(trainer.BackfillCalled);
+
+            var runner = Assert.Single(report.Runners);
+            Assert.Equal(4, Convert.ToInt32(runner.FeatureValues["Class"]));
+            Assert.Equal("Handicap", Convert.ToString(runner.FeatureValues["RaceType"]));
+            Assert.Equal("3yo+", Convert.ToString(runner.FeatureValues["AgeRestriction"]));
+            Assert.Equal("Turf", Convert.ToString(runner.FeatureValues["Surface"]));
+            Assert.Equal("Good to Firm", Convert.ToString(runner.FeatureValues["Going"]));
+            Assert.Equal(1540, Convert.ToInt32(runner.FeatureValues["DistanceYards"]));
+            Assert.Equal("7f", Convert.ToString(runner.FeatureValues["DistanceText"]));
+            Assert.Equal("Sprint", Convert.ToString(runner.FeatureValues["DistanceBucket"]));
+            Assert.Equal(102.5m, Convert.ToDecimal(runner.FeatureValues["BackBookPercentage"]));
+            Assert.Equal(104.2m, Convert.ToDecimal(runner.FeatureValues["LayBookPercentage"]));
+            Assert.Equal(12, Convert.ToInt32(runner.FeatureValues["RunnerCount"]));
+        }
 
         private sealed class InMemoryRacingRepository : IRacingRepository
         {
