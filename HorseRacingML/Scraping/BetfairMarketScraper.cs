@@ -2062,6 +2062,44 @@ DateTime? raceDate,
                 return;
             }
             var raceMissingFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            IReadOnlyDictionary<string, int>? prefetchedCounts = null;
+            try
+            {
+                var missingNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var flow in flows)
+                {
+                    if (flow == null)
+                    {
+                        continue;
+                    }
+
+                    if (flow.HistoricalRaceCount.HasValue)
+                    {
+                        continue;
+                    }
+
+                    if (flow.FeatureValues != null &&
+                        flow.FeatureValues.TryGetValue("CareerStarts", out var existingValue) &&
+                        TryConvertToInt32(existingValue).HasValue)
+                    {
+                        continue;
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(flow.HorseName))
+                    {
+                        missingNames.Add(flow.HorseName);
+                    }
+                }
+
+                if (missingNames.Count > 0)
+                {
+                    prefetchedCounts = _repo.GetHistoricalRaceCountsByHorseNames(missingNames);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"\tFailed to prefetch historical race counts: {ex.Message}");
+            }
             var featureLookup = LoadFeatureLookup(
                 raceDate,
                 raceTitle,
@@ -2208,9 +2246,27 @@ DateTime? raceDate,
                         $"\t\tUsing scraped fallback feature vector for {identifier}; attempting neural model scoring with live data only.");
                 }
 
+                int? resolvedCareerStarts = null;
                 if (featureVector.TryGetValue("CareerStarts", out var careerStartsValue))
                 {
-                    flow.HistoricalRaceCount = TryConvertToInt32(careerStartsValue);
+                    resolvedCareerStarts = TryConvertToInt32(careerStartsValue);
+                }
+
+                if (!resolvedCareerStarts.HasValue && flow.HistoricalRaceCount.HasValue)
+                {
+                    resolvedCareerStarts = flow.HistoricalRaceCount.Value;
+                }
+
+                if (!resolvedCareerStarts.HasValue)
+                {
+                    resolvedCareerStarts = ResolveHistoricalRaceCountFromPrefetch(flow, prefetchedCounts)
+                        ?? ResolveHistoricalRaceCount(flow);
+                }
+
+                if (resolvedCareerStarts.HasValue)
+                {
+                    featureVector["CareerStarts"] = resolvedCareerStarts.Value;
+                    flow.HistoricalRaceCount = resolvedCareerStarts.Value;
                 }
                 else
                 {
