@@ -1882,6 +1882,42 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
             var normalizedSum = valid.Sum(f => f.AiOdds!.Value);
             Console.WriteLine($"\t\tNormalized probability sum: {normalizedSum.ToString("0.####", CultureInfo.InvariantCulture)}.");
         }
+        private static void ApplyMarketFallbackForUnmatchedRunners(IReadOnlyList<RunnerFlow> flows)
+        {
+            if (flows == null || flows.Count == 0)
+            {
+                return;
+            }
+
+            foreach (var flow in flows)
+            {
+                if (flow == null || flow.MatchedDatabaseRecord)
+                {
+                    continue;
+                }
+
+                var identifier = !string.IsNullOrWhiteSpace(flow.HorseName)
+                    ? flow.HorseName!
+                    : (flow.SelectionId ?? "unknown");
+
+                if (flow.BackPrice1.HasValue && flow.BackPrice1.Value > 1m)
+                {
+                    var marketProbability = 1.0 / (double)flow.BackPrice1.Value;
+                    flow.AiOdds = marketProbability;
+                    flow.AiProbabilityMarketDerived = true;
+                    Console.WriteLine(
+                        $"\t\tNo database match for {identifier}; using market-implied probability {marketProbability.ToString(\"0.####\", CultureInfo.InvariantCulture)} as AI odds.");
+                }
+                else
+                    {
+                        flow.AiOdds = null;
+                        flow.AiProbabilityMarketDerived = false;
+                        Console.WriteLine(
+                            $"\t\tNo database match for {identifier} and no usable back price; AI odds remain unavailable.");
+                    }
+                }
+            } 
+        }
         private static bool TryApplyLegacyFallback(ICollection<RunnerFlow> flows)
         {
             if (flows is null || flows.Count == 0)

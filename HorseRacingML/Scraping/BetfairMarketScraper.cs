@@ -1253,6 +1253,7 @@ namespace HorseRacingML.Scraping
                 }
 
                 NormalizeAiOdds(flows, _useMarketFallbackForAiDegeneracy); // normalize
+                ApplyMarketFallbackForUnmatchedRunners(flows); // ensure unmatched runners use market odds
 
                 if (captureReport)
                 {
@@ -2144,6 +2145,7 @@ DateTime? raceDate,
                 var matchedFeatures = featureLookup.FindBySelectionId(flow.SelectionId)
                    ?? featureLookup.FindByHorse(flow.HorseName);
                 var matchedPreparedRow = matchedFeatures != null;
+                var matchedDatabaseRow = matchedPreparedRow;
                 var identifier = !string.IsNullOrWhiteSpace(flow?.HorseName)
                    ? flow!.HorseName!
                    : (flow?.SelectionId ?? "unknown");
@@ -2195,6 +2197,7 @@ DateTime? raceDate,
                     Console.WriteLine(
                         $"\t\tNo prepared feature row matched for {missingFeatureIdentifier}; synthesizing feature vector from live scrape.");
                 }
+                flow.MatchedDatabaseRecord = matchedDatabaseRow;
                 IReadOnlyList<string> missingHistoricalKeys = Array.Empty<string>();
                 if (NeedsHistoricalFeatureBackfill(featureVector))
                 {

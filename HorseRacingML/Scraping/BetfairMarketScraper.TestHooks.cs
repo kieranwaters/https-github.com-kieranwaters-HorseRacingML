@@ -143,5 +143,9 @@ namespace HorseRacingML.Scraping
 
             return flows.Count > 0 ? lookup.FindByHorse(flows[0].HorseName) : null;
         }
+        internal void TestApplyMarketFallback(IReadOnlyList<RunnerFlow> flows)
+        {
+            ApplyMarketFallbackForUnmatchedRunners(flows);
+        }
     }
 }

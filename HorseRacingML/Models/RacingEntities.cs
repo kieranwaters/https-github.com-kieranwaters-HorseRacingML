@@ -122,6 +122,7 @@ namespace HorseRacingML.Models
         public byte? WeightLbs { get; set; }
         public string? WeightText { get; set; }
         public string? TrainerName { get; set; }
+        public bool MatchedDatabaseRecord { get; set; }
     }
     public class UpcomingRace
     {

@@ -732,6 +732,49 @@ namespace HorseRacingML.Tests
                 Assert.NotNull(features2);
                 Assert.Equal(1, trainer.PrepareCalls);
             }
+            [Fact]
+            public void ApplyMarketFallback_UsesMarketOddsForUnmatchedRunners()
+            {
+                var configuration = new ConfigurationBuilder()
+                    .AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["ConnectionStrings:HorseRacingDb"] = "Server=(local);Database=HorseRacingMLTest;Trusted_Connection=True;"
+                    })
+                    .Build();
+
+                var trainer = new FakeTrainer(configuration, upcomingRace: null);
+                var repo = new InMemoryRacingRepository();
+                var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
+                var scraper = new BetfairMarketScraper(repo, trainer, bankroll: 10m, settings);
+
+                var flows = new List<RunnerFlow>
+            {
+                new RunnerFlow
+                {
+                    HorseName = "Unknown Runner",
+                    BackPrice1 = 5m,
+                    MatchedDatabaseRecord = false
+                },
+                new RunnerFlow
+                {
+                    HorseName = "Known Runner",
+                    BackPrice1 = 4m,
+                    AiOdds = 0.3,
+                    MatchedDatabaseRecord = true
+                }
+            };
+
+                scraper.TestApplyMarketFallback(flows);
+
+                var unknown = flows[0];
+                Assert.True(unknown.AiProbabilityMarketDerived);
+                Assert.True(unknown.AiOdds.HasValue);
+                Assert.Equal(0.2, unknown.AiOdds!.Value, 12);
+
+                var known = flows[1];
+                Assert.False(known.AiProbabilityMarketDerived);
+                Assert.Equal(0.3, known.AiOdds);
+            }
             public int? GetHistoricalRaceCountByHorseName(string? horseName)
             {
                 return null;
