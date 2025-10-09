@@ -176,7 +176,9 @@ else
         {
             bookParts.Add($"Lay {race.LayBookPercentage.Value.ToString("0.##", CultureInfo.CurrentCulture)}%");
         }
-
+        var goingText = string.IsNullOrWhiteSpace(race.Going)
+            ? null
+            : race.Going.Trim();
         var orderedRunners = (race.Runners ?? new List<RunnerDayReport>())
             .OrderBy(r => r.ClothNumber ?? byte.MaxValue)
             .ThenBy(r => r.HorseName ?? string.Empty)
@@ -209,6 +211,10 @@ else
                             @if (bookParts.Count > 0)
                             {
                                 <span class="ms-2">Book: @string.Join(" / ", bookParts)</span>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(goingText))
+                            {
+                                <span class="ms-2">Going: @goingText</span>
                             }
                         </div>
                     </div>

@@ -444,7 +444,24 @@ namespace HorseRacingML.Scraping
                 : going.Trim();
             if (!string.IsNullOrWhiteSpace(resolvedGoing))
             {
-                SetIfMissing("Going", resolvedGoing);
+                var normalizedGoing = resolvedGoing.Trim();
+                if (featureVector.TryGetValue("Going", out var existingGoing) && existingGoing != null)
+                {
+                    var existingText = existingGoing switch
+                    {
+                        string s => s.Trim(),
+                        _ => existingGoing.ToString()?.Trim()
+                    };
+
+                    if (!string.Equals(existingText, normalizedGoing, StringComparison.OrdinalIgnoreCase))
+                    {
+                        featureVector["Going"] = normalizedGoing;
+                    }
+                }
+                else
+                {
+                    featureVector["Going"] = normalizedGoing;
+                }
             }
             else
             {
