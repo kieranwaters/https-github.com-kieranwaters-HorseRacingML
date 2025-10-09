@@ -141,6 +141,10 @@ namespace HorseRacingML.Tests
                 LastBulkNames = new List<string>(horseNames);
                 return new Dictionary<string, int>(BulkResult, StringComparer.OrdinalIgnoreCase);
             }
+            public HorseDistanceStats? GetHorseDistanceStatsByHorseName(string? horseName)
+            {
+                return null;
+            }
             public int? GetLastRaceDistance(string? horseName, int? horseId, DateTime? beforeDate)
             {
                 return null;

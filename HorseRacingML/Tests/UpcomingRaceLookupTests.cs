@@ -745,6 +745,10 @@ namespace HorseRacingML.Tests
 
                 return new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             }
+            public HorseDistanceStats? GetHorseDistanceStatsByHorseName(string? horseName)
+            {
+                return null;
+            }
             public int? GetLastRaceDistance(string? horseName, int? horseId, DateTime? beforeDate)
             {
                 return null;
@@ -1008,6 +1012,10 @@ namespace HorseRacingML.Tests
             public IReadOnlyDictionary<string, int> GetHistoricalRaceCountsByHorseNames(IEnumerable<string> horseNames)
             {
                 return new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            }
+            public HorseDistanceStats? GetHorseDistanceStatsByHorseName(string? horseName)
+            {
+                return null;
             }
             public int? GetLastRaceDistance(string? horseName, int? horseId, DateTime? beforeDate)
             {
