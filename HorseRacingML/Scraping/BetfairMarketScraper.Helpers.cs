@@ -1877,6 +1877,42 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
             foreach (var flow in valid)
             {
                 flow.AiOdds = Math.Max(flow.AiOdds!.Value / sum, 0);
+
+            }
+            if (valid.Count > 1)
+            {
+                const double minimumNormalizedProbability = 1e-6;
+                var normalizedMinimum = valid.Min(f => f.AiOdds!.Value);
+                var uniformProbability = 1.0 / valid.Count;
+                var targetFloor = Math.Min(minimumNormalizedProbability, uniformProbability * 0.5);
+
+                if (normalizedMinimum < targetFloor && uniformProbability > normalizedMinimum)
+                {
+                    var blendWeight = (targetFloor - normalizedMinimum) / (uniformProbability - normalizedMinimum);
+                    blendWeight = Math.Clamp(blendWeight, 0d, 1d);
+
+                    if (blendWeight > 0d)
+                    {
+                        foreach (var flow in valid)
+                        {
+                            var blended = (1d - blendWeight) * flow.AiOdds!.Value + blendWeight * uniformProbability;
+                            flow.AiOdds = Math.Max(blended, 0d);
+                        }
+
+                        var blendedSum = valid.Sum(f => f.AiOdds!.Value);
+                        if (blendedSum > 0d && Math.Abs(blendedSum - 1d) > 1e-12)
+                        {
+                            foreach (var flow in valid)
+                            {
+                                flow.AiOdds = Math.Max(flow.AiOdds!.Value / blendedSum, 0d);
+                            }
+                        }
+
+                        Console.WriteLine(
+                            $"\t\tApplied probability smoothing with blend={blendWeight.ToString("0.####E+0", CultureInfo.InvariantCulture)} " +
+                            $"to enforce minimum normalized probability {targetFloor.ToString("0.####", CultureInfo.InvariantCulture)}.");
+                    }
+                }
             }
 
             var normalizedSum = valid.Sum(f => f.AiOdds!.Value);
@@ -1884,40 +1920,28 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
         }
         private static void ApplyMarketFallbackForUnmatchedRunners(IReadOnlyList<RunnerFlow> flows)
         {
-            if (flows == null || flows.Count == 0)
-            {
-                return;
-            }
+            if (flows == null || flows.Count == 0) return; // return early if list is null or empty
 
             foreach (var flow in flows)
             {
-                if (flow == null || flow.MatchedDatabaseRecord)
-                {
-                    continue;
-                }
+                if (flow == null || flow.MatchedDatabaseRecord) continue; // skip matched or null entries
 
-                var identifier = !string.IsNullOrWhiteSpace(flow.HorseName)
-                    ? flow.HorseName!
-                    : (flow.SelectionId ?? "unknown");
+                var identifier = !string.IsNullOrWhiteSpace(flow.HorseName) ? flow.HorseName! : (flow.SelectionId ?? "unknown"); // determine identifier
 
                 if (flow.BackPrice1.HasValue && flow.BackPrice1.Value > 1m)
                 {
-                    var marketProbability = 1.0 / (double)flow.BackPrice1.Value;
-                    flow.AiOdds = marketProbability;
-                    flow.AiProbabilityMarketDerived = true;
-                    Console.WriteLine(
-                        $"\t\tNo database match for {identifier}; using market-implied probability {marketProbability.ToString(\"0.####\", CultureInfo.InvariantCulture)} as AI odds.");
+                    var marketProbability = 1.0 / (double)flow.BackPrice1.Value; // calculate implied probability
+                    flow.AiOdds = marketProbability; flow.AiProbabilityMarketDerived = true;
+                    Console.WriteLine($"\t\tNo database match for {identifier}; using market-implied probability {marketProbability.ToString("0.####", CultureInfo.InvariantCulture)} as AI odds.");
                 }
                 else
-                    {
-                        flow.AiOdds = null;
-                        flow.AiProbabilityMarketDerived = false;
-                        Console.WriteLine(
-                            $"\t\tNo database match for {identifier} and no usable back price; AI odds remain unavailable.");
-                    }
+                {
+                    flow.AiOdds = null; flow.AiProbabilityMarketDerived = false;
+                    Console.WriteLine($"\t\tNo database match for {identifier} and no usable back price; AI odds remain unavailable.");
                 }
-            } 
+            }
         }
+
         private static bool TryApplyLegacyFallback(ICollection<RunnerFlow> flows)
         {
             if (flows is null || flows.Count == 0)
