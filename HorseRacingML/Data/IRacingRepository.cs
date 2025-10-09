@@ -17,5 +17,6 @@ namespace HorseRacingML.Data
         int? GetHistoricalRaceCountByHorseName(string? horseName);
         IReadOnlyDictionary<string, int> GetHistoricalRaceCountsByHorseNames(IEnumerable<string> horseNames);
         HorseDistanceStats? GetHorseDistanceStatsByHorseName(string? horseName);
+        int? GetLastRaceDistance(string? horseName, int? horseId, DateTime? beforeDate);
     }
 }
