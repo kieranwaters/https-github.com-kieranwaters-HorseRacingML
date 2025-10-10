@@ -24,6 +24,7 @@ builder.Services.AddSingleton<HyperparameterTrainer>();
 builder.Services.AddSingleton<BetfairNavigationService>();
 builder.Services.AddTransient<RaceResultsScraper>();
 builder.Services.AddSingleton<ScrapingStatusService>();
+builder.Services.AddTransient<RaceDataScraper>();
 
 var app = builder.Build();
 
