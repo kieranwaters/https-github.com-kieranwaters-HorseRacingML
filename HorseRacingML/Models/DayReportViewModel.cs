@@ -50,5 +50,6 @@ namespace HorseRacingML.Models
         public decimal? LaySuggestedStake { get; set; }
         public Dictionary<string, object?> FeatureValues { get; set; } = new(StringComparer.OrdinalIgnoreCase);
         public bool AiProbabilityMarketDerived { get; set; }
+        public bool AiProbabilityClampedToMarket { get; set; }
     }
 }

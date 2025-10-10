@@ -14,6 +14,7 @@ namespace HorseRacingML.Scraping
 {
     public partial class BetfairMarketScraper
     {
+        private const double LowAiProbabilityClampThreshold = 0.002;
         private string? GetGoingForMarket(string? marketId)
         {
             if (string.IsNullOrWhiteSpace(marketId) || _raceGoingLookup == null)
@@ -665,7 +666,8 @@ namespace HorseRacingML.Scraping
                         if (rf.LayPrice2.HasValue) { rf.FeatureValues["LayPrice2"] = rf.LayPrice2.Value; } // copy l2
                         if (rf.LayPrice3.HasValue) { rf.FeatureValues["LayPrice3"] = rf.LayPrice3.Value; } // copy l3
                     }
-
+                    rf.AiProbabilityClampedToMarket = false;
+                    rf.AiProbabilityClampTarget = null;
                     try
                     {
                         var probability = aiCalculator.CalculateOdds(rf); // compute AI odds
@@ -688,7 +690,23 @@ namespace HorseRacingML.Scraping
                     {
                         rf.AiOdds = null; // set null on fail
                         rf.AiProbabilityMarketDerived = false;
+                        rf.AiProbabilityClampedToMarket = false;
+                        rf.AiProbabilityClampTarget = null;
                         Console.Error.WriteLine($"\tFailed to calculate AI odds for selection {rfIdentifier} in market {marketId}: {ex.Message}"); // log
+                    }
+                    if (rf.AiOdds.HasValue && double.IsFinite(rf.AiOdds.Value) && rf.AiOdds.Value > 0 && rf.AiOdds.Value < LowAiProbabilityClampThreshold)
+                    {
+                        if (rf.BackPrice1.HasValue && rf.BackPrice1.Value > 1m)
+                        {
+                            var marketProbability = 1.0 / (double)rf.BackPrice1.Value;
+                            rf.AiOdds = marketProbability;
+                            rf.AiProbabilityClampedToMarket = true;
+                            rf.AiProbabilityClampTarget = marketProbability;
+                        }
+                        else
+                        {
+                            Console.WriteLine($"\t\tUnable to clamp low AI probability for {rfIdentifier}: market price unavailable.");
+                        }
                     }
                     string aiText;
                     if (rf.AiOdds.HasValue)

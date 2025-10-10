@@ -1869,54 +1869,225 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
                 foreach (var flow in valid)
                 {
                     flow.AiOdds = uniform;
+                    flow.AiProbabilityClampedToMarket = false;
+                    flow.AiProbabilityClampTarget = null;
                 }
                 Console.WriteLine($"\t\tRaw probabilities summed to ~0; distributing uniform probability {uniform.ToString("0.####", CultureInfo.InvariantCulture)} across valid runners.");
                 return;
             }
 
-            foreach (var flow in valid)
-            {
-                flow.AiOdds = Math.Max(flow.AiOdds!.Value / sum, 0);
+            var clamped = valid
+                .Where(f => f.AiProbabilityClampedToMarket
+                            && f.AiProbabilityClampTarget.HasValue
+                            && double.IsFinite(f.AiProbabilityClampTarget.Value)
+                            && f.AiProbabilityClampTarget.Value > 0)
+                .ToList();
 
-            }
-            if (valid.Count > 1)
+            if (clamped.Count == 0)
             {
-                const double minimumNormalizedProbability = 1e-6;
-                var normalizedMinimum = valid.Min(f => f.AiOdds!.Value);
-                var uniformProbability = 1.0 / valid.Count;
-                var targetFloor = Math.Min(minimumNormalizedProbability, uniformProbability * 0.5);
-
-                if (normalizedMinimum < targetFloor && uniformProbability > normalizedMinimum)
+                foreach (var flow in valid)
                 {
-                    var blendWeight = (targetFloor - normalizedMinimum) / (uniformProbability - normalizedMinimum);
-                    blendWeight = Math.Clamp(blendWeight, 0d, 1d);
+                    flow.AiOdds = Math.Max(flow.AiOdds!.Value / sum, 0d);
+                }
 
-                    if (blendWeight > 0d)
+                if (valid.Count > 1)
+                {
+                    const double minimumNormalizedProbability = 1e-6;
+                    var normalizedMinimum = valid.Min(f => f.AiOdds!.Value);
+                    var uniformProbability = 1.0 / valid.Count;
+                    var targetFloor = Math.Min(minimumNormalizedProbability, uniformProbability * 0.5);
+
+                    if (normalizedMinimum < targetFloor && uniformProbability > normalizedMinimum)
                     {
-                        foreach (var flow in valid)
-                        {
-                            var blended = (1d - blendWeight) * flow.AiOdds!.Value + blendWeight * uniformProbability;
-                            flow.AiOdds = Math.Max(blended, 0d);
-                        }
+                        var blendWeight = (targetFloor - normalizedMinimum) / (uniformProbability - normalizedMinimum);
+                        blendWeight = Math.Clamp(blendWeight, 0d, 1d);
 
-                        var blendedSum = valid.Sum(f => f.AiOdds!.Value);
-                        if (blendedSum > 0d && Math.Abs(blendedSum - 1d) > 1e-12)
+                        if (blendWeight > 0d)
                         {
                             foreach (var flow in valid)
                             {
-                                flow.AiOdds = Math.Max(flow.AiOdds!.Value / blendedSum, 0d);
+                                var blended = (1d - blendWeight) * flow.AiOdds!.Value + blendWeight * uniformProbability;
+                                flow.AiOdds = Math.Max(blended, 0d);
                             }
-                        }
 
-                        Console.WriteLine(
-                            $"\t\tApplied probability smoothing with blend={blendWeight.ToString("0.####E+0", CultureInfo.InvariantCulture)} " +
-                            $"to enforce minimum normalized probability {targetFloor.ToString("0.####", CultureInfo.InvariantCulture)}.");
+                            var blendedSum = valid.Sum(f => f.AiOdds!.Value);
+                            if (blendedSum > 0d && Math.Abs(blendedSum - 1d) > 1e-12)
+                            {
+                                foreach (var flow in valid)
+                                {
+                                    flow.AiOdds = Math.Max(flow.AiOdds!.Value / blendedSum, 0d);
+                                }
+                            }
+
+                            Console.WriteLine(
+                                $"\t\tApplied probability smoothing with blend={blendWeight.ToString("0.####E+0", CultureInfo.InvariantCulture)} " +
+                                $"to enforce minimum normalized probability {targetFloor.ToString("0.####", CultureInfo.InvariantCulture)}.");
+                        }
+                    }
+                }
+
+                var normalizedSum = valid.Sum(f => f.AiOdds!.Value);
+                Console.WriteLine($"\t\tNormalized probability sum: {normalizedSum.ToString("0.####", CultureInfo.InvariantCulture)}.");
+                return;
+            }
+
+            var adjustable = valid.Except(clamped).ToList();
+            var reservedProbability = clamped.Sum(f => f.AiProbabilityClampTarget!.Value);
+            reservedProbability = Math.Max(reservedProbability, 0d);
+
+            Console.WriteLine($"\t\tReserved {reservedProbability.ToString("0.####", CultureInfo.InvariantCulture)} probability mass for {clamped.Count} market-clamped runner(s).");
+
+            if (reservedProbability >= 1d)
+            {
+                if (reservedProbability <= double.Epsilon)
+                {
+                    var uniform = 1.0 / valid.Count;
+                    foreach (var flow in valid)
+                    {
+                        flow.AiOdds = uniform;
+                        flow.AiProbabilityClampedToMarket = false;
+                        flow.AiProbabilityClampTarget = null;
+                    }
+                    Console.WriteLine("\t\tReserved mass exhausted distribution; reverted to uniform probabilities.");
+                    return;
+                }
+
+                var scale = 1d / reservedProbability;
+                foreach (var flow in clamped)
+                {
+                    flow.AiOdds = Math.Max(flow.AiProbabilityClampTarget!.Value * scale, 0d);
+                }
+                foreach (var flow in adjustable)
+                {
+                    flow.AiOdds = 0d;
+                }
+
+                var normalizedReserved = clamped.Sum(f => f.AiOdds!.Value);
+                Console.WriteLine($"\t\tReserved probability exceeded total mass; scaled clamped runners to {normalizedReserved.ToString("0.####", CultureInfo.InvariantCulture)} and zeroed others.");
+
+                return;
+            }
+
+            foreach (var flow in clamped)
+            {
+                flow.AiOdds = Math.Max(flow.AiProbabilityClampTarget!.Value, 0d);
+            }
+
+            var available = 1d - reservedProbability;
+            if (adjustable.Count > 0)
+            {
+                var adjustableRawSum = adjustable.Sum(f => f.AiOdds!.Value);
+                if (adjustableRawSum <= double.Epsilon)
+                {
+                    var uniformAdjustable = available / adjustable.Count;
+                    foreach (var flow in adjustable)
+                    {
+                        flow.AiOdds = Math.Max(uniformAdjustable, 0d);
+                    }
+                    Console.WriteLine("\t\tAdjustable runners had non-positive mass; distributed remaining probability uniformly amongst them.");
+                }
+                else
+                {
+                    var scale = available / adjustableRawSum;
+                    foreach (var flow in adjustable)
+                    {
+                        flow.AiOdds = Math.Max(flow.AiOdds!.Value * scale, 0d);
+                    }
+                }
+
+                if (adjustable.Count > 1 && available > 0d)
+                {
+                    const double minimumNormalizedProbability = 1e-6;
+                    var normalizedMinimum = adjustable.Min(f => f.AiOdds!.Value);
+                    var uniformProbability = available / adjustable.Count;
+                    var targetFloor = Math.Min(minimumNormalizedProbability, uniformProbability * 0.5);
+
+                    if (uniformProbability > 0d && normalizedMinimum < targetFloor)
+                    {
+                        var blendWeight = (targetFloor - normalizedMinimum) / (uniformProbability - normalizedMinimum);
+                        blendWeight = Math.Clamp(blendWeight, 0d, 1d);
+
+                        if (blendWeight > 0d)
+                        {
+                            foreach (var flow in adjustable)
+                            {
+                                var blended = (1d - blendWeight) * flow.AiOdds!.Value + blendWeight * uniformProbability;
+                                flow.AiOdds = Math.Max(blended, 0d);
+                            }
+
+                            var blendedSum = adjustable.Sum(f => f.AiOdds!.Value);
+                            if (blendedSum > 0d)
+                            {
+                                var rescale = available / blendedSum;
+                                foreach (var flow in adjustable)
+                                {
+                                    flow.AiOdds = Math.Max(flow.AiOdds!.Value * rescale, 0d);
+                                }
+                            }
+
+                            Console.WriteLine(
+                                $"\t\tApplied probability smoothing to adjustable runners with blend={blendWeight.ToString("0.####E+0", CultureInfo.InvariantCulture)} " +
+                                $"to enforce minimum normalized probability {targetFloor.ToString("0.####", CultureInfo.InvariantCulture)}.");
+                        }
+                    }
+                }
+            }
+            else
+            {
+                var actualReserved = clamped.Sum(f => f.AiOdds!.Value);
+                if (Math.Abs(actualReserved - 1d) > 1e-12)
+                {
+                    var scale = actualReserved > 0d ? 1d / actualReserved : 0d;
+                    foreach (var flow in clamped)
+                    {
+                        flow.AiOdds = scale > 0d ? Math.Max(flow.AiOdds!.Value * scale, 0d) : 0d;
                     }
                 }
             }
 
-            var normalizedSum = valid.Sum(f => f.AiOdds!.Value);
-            Console.WriteLine($"\t\tNormalized probability sum: {normalizedSum.ToString("0.####", CultureInfo.InvariantCulture)}.");
+            var clampSumAfter = clamped.Sum(f => f.AiOdds!.Value);
+            var adjustableSumAfter = adjustable.Sum(f => f.AiOdds!.Value);
+            var totalAfterClamp = clampSumAfter + adjustableSumAfter;
+
+            if (Math.Abs(totalAfterClamp - 1d) > 1e-8 && totalAfterClamp > 0d)
+            {
+                if (adjustable.Count > 0)
+                {
+                    var desiredAdjustableTotal = Math.Max(1d - clampSumAfter, 0d);
+                    if (adjustableSumAfter > 0d)
+                    {
+                        var rescaleAdjustable = desiredAdjustableTotal / adjustableSumAfter;
+                        foreach (var flow in adjustable)
+                        {
+                            flow.AiOdds = Math.Max(flow.AiOdds!.Value * rescaleAdjustable, 0d);
+                        }
+                    }
+                    else if (desiredAdjustableTotal > 0d)
+                    {
+                        var uniformAdjustable = desiredAdjustableTotal / adjustable.Count;
+                        foreach (var flow in adjustable)
+                        {
+                            flow.AiOdds = Math.Max(uniformAdjustable, 0d);
+                        }
+                    }
+
+                    clampSumAfter = clamped.Sum(f => f.AiOdds!.Value);
+                    adjustableSumAfter = adjustable.Sum(f => f.AiOdds!.Value);
+                    totalAfterClamp = clampSumAfter + adjustableSumAfter;
+                }
+
+                if (Math.Abs(totalAfterClamp - 1d) > 1e-8 && totalAfterClamp > 0d)
+                {
+                    var scale = 1d / totalAfterClamp;
+                    foreach (var flow in valid)
+                    {
+                        flow.AiOdds = Math.Max(flow.AiOdds!.Value * scale, 0d);
+                    }
+                }
+            }
+
+            var normalizedSumWithClamp = valid.Sum(f => f.AiOdds!.Value);
+            Console.WriteLine($"\t\tNormalized probability sum: {normalizedSumWithClamp.ToString("0.####", CultureInfo.InvariantCulture)}.");
         }
         private static void ApplyMarketFallbackForUnmatchedRunners(IReadOnlyList<RunnerFlow> flows)
         {
@@ -1932,6 +2103,8 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
                 {
                     var marketProbability = 1.0 / (double)flow.BackPrice1.Value; // calculate implied probability
                     flow.AiOdds = marketProbability; flow.AiProbabilityMarketDerived = true;
+                    flow.AiProbabilityClampedToMarket = false;
+                    flow.AiProbabilityClampTarget = null;
                     Console.WriteLine($"\t\tNo database match for {identifier}; using market-implied probability {marketProbability.ToString("0.####", CultureInfo.InvariantCulture)} as AI odds.");
                 }
                 else
@@ -1976,6 +2149,8 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
                 else
                 {
                     flow.AiOdds = null;
+                    flow.AiProbabilityClampedToMarket = false;
+                    flow.AiProbabilityClampTarget = null;
                     flow.AiProbabilityMarketDerived = false;
                 }
             }
@@ -2049,6 +2224,8 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
                     foreach (var flow in others)
                     {
                         flow.AiOdds = uniform;
+                        flow.AiProbabilityClampedToMarket = false;
+                        flow.AiProbabilityClampTarget = null;
                     }
                 }
                 else
@@ -2057,11 +2234,15 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
                     {
                         var share = leftoverMass * (kvp.Value / weightSum);
                         kvp.Key.AiOdds = Math.Max(share, 0d);
+                        kvp.Key.AiProbabilityClampedToMarket = false;
+                        kvp.Key.AiProbabilityClampTarget = null;
                     }
                 }
             }
 
             winner.AiOdds = winnerProbability;
+            winner.AiProbabilityClampedToMarket = false;
+            winner.AiProbabilityClampTarget = null;
 
             var validAfter = flows
                 .Where(f => f.AiOdds.HasValue && double.IsFinite(f.AiOdds.Value) && f.AiOdds.Value >= 0)

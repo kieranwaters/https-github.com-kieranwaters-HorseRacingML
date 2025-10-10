@@ -335,9 +335,20 @@ else
                                     aiProb = "-";
                                 }
 
-                                var aiOdds = runner.AiDecimalOdds.HasValue
-                                    ? runner.AiDecimalOdds.Value.ToString("0.00", CultureInfo.CurrentCulture)
-                                    : "-";
+                                string aiOdds;
+                                if (runner.AiDecimalOdds.HasValue)
+                                {
+                                    aiOdds = runner.AiDecimalOdds.Value.ToString("0.00", CultureInfo.CurrentCulture);
+                                    if (runner.AiProbabilityClampedToMarket)
+                                    {
+                                        aiOdds += "!";
+                                    }
+                                }
+                                else
+                                {
+                                    aiOdds = "-";
+                                }
+
 
                                 var marketProb = runner.MarketProbability.HasValue
                                     ? (runner.MarketProbability.Value * 100).ToString("0.##", CultureInfo.CurrentCulture) + "%"
