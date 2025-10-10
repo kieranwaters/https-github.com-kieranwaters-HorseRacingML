@@ -29,6 +29,7 @@ namespace HorseRacingML.Data
         private static bool _raceScreenTableEnsured;
         private static bool _runnerFlowTableEnsured;
         private static bool _upcomingRaceTableEnsured;
+        private readonly AsyncLocal<DayReportScopeState?> _dayReportScope = new();
         private IDbConnection OpenConnection()
         {
             const int maxAttempts = 3;
@@ -61,7 +62,120 @@ namespace HorseRacingML.Data
 
             InsertRunnerFlows(new[] { flow });
         }
+        private (IDbConnection Connection, DayReportScopeState? Scope, bool OwnsConnection) GetScopedConnection()
+        {
+            var scope = _dayReportScope.Value;
+            if (scope != null)
+            {
+                return (scope.Connection, scope, false);
+            }
 
+            var connection = OpenConnection();
+            return (connection, null, true);
+        }
+
+        private void EnsureRaceScreenTable(IDbConnection connection, DayReportScopeState? scope)
+        {
+            if (scope != null)
+            {
+                if (!scope.RaceScreenEnsured)
+                {
+                    EnsureRaceScreenTableExists(connection);
+                    scope.RaceScreenEnsured = true;
+                }
+
+                return;
+            }
+
+            EnsureRaceScreenTableExists(connection);
+        }
+
+        private void EnsureRunnerFlowTable(IDbConnection connection, DayReportScopeState? scope)
+        {
+            if (scope != null)
+            {
+                if (!scope.RunnerFlowEnsured)
+                {
+                    EnsureRunnerFlowTableExists(connection);
+                    scope.RunnerFlowEnsured = true;
+                }
+
+                return;
+            }
+
+            EnsureRunnerFlowTableExists(connection);
+        }
+
+        private void EnsureUpcomingRaceTable(IDbConnection connection, DayReportScopeState? scope)
+        {
+            if (scope != null)
+            {
+                if (!scope.UpcomingRaceEnsured)
+                {
+                    EnsureUpcomingRaceTableExists(connection);
+                    scope.UpcomingRaceEnsured = true;
+                }
+
+                return;
+            }
+
+            EnsureUpcomingRaceTableExists(connection);
+        }
+
+        public IDisposable BeginDayReportScope()
+        {
+            var scopeState = new DayReportScopeState(OpenConnection());
+            var previous = _dayReportScope.Value;
+            _dayReportScope.Value = scopeState;
+            return new DayReportScope(this, previous, scopeState);
+        }
+
+        private sealed class DayReportScopeState
+        {
+            public DayReportScopeState(IDbConnection connection)
+            {
+                Connection = connection ?? throw new ArgumentNullException(nameof(connection));
+            }
+
+            public IDbConnection Connection { get; }
+            public bool RaceScreenEnsured { get; set; }
+            public bool RunnerFlowEnsured { get; set; }
+            public bool UpcomingRaceEnsured { get; set; }
+        }
+
+        private sealed class DayReportScope : IDisposable
+        {
+            private readonly RacingRepository _repository;
+            private readonly DayReportScopeState? _previous;
+            private readonly DayReportScopeState _current;
+            private bool _disposed;
+
+            public DayReportScope(RacingRepository repository, DayReportScopeState? previous, DayReportScopeState current)
+            {
+                _repository = repository;
+                _previous = previous;
+                _current = current;
+            }
+
+            public void Dispose()
+            {
+                if (_disposed)
+                {
+                    return;
+                }
+
+                _disposed = true;
+
+                try
+                {
+                    _current.Connection.Dispose();
+                }
+                finally
+                {
+                    _repository._dayReportScope.Value = _previous;
+                }
+            }
+        }
         public void InsertRunnerFlows(IEnumerable<RunnerFlow> flows)
         {
             if (flows is null)
@@ -135,12 +249,36 @@ VALUES";
                 parameters.Add($"TrainerName{suffix}", flow.TrainerName);
             }
 
-            using var conn = OpenConnection();
-            EnsureRunnerFlowTableExists(conn);
+            var (connection, scope, ownsConnection) = GetScopedConnection();
+            IDbTransaction? transaction = null;
+            try
+            {
+                EnsureRunnerFlowTable(connection, scope);
+                transaction = connection.BeginTransaction();
+                connection.Execute(sqlBuilder.ToString(), parameters, transaction);
+                transaction.Commit();
+            }
+            catch
+            {
+                try
+                {
+                    transaction?.Rollback();
+                }
+                catch
+                {
+                    // Ignore rollback failures.
+                }
 
-            using var transaction = conn.BeginTransaction();
-            conn.Execute(sqlBuilder.ToString(), parameters, transaction);
-            transaction.Commit();
+                throw;
+            }
+            finally
+            {
+                transaction?.Dispose();
+                if (ownsConnection)
+                {
+                    connection.Dispose();
+                }
+            }
         }
         public int UpsertUpcomingRace(UpcomingRace race)
         {
@@ -240,9 +378,19 @@ BEGIN
     SELECT @ExistingId;
 END;";
 
-            using var conn = OpenConnection();
-            EnsureUpcomingRaceTableExists(conn);
-            return conn.QuerySingle<int>(sql, race);
+            var (connection, scope, ownsConnection) = GetScopedConnection();
+            try
+            {
+                EnsureUpcomingRaceTable(connection, scope);
+                return connection.QuerySingle<int>(sql, race);
+            }
+            finally
+            {
+                if (ownsConnection)
+                {
+                    connection.Dispose();
+                }
+            }
         }
         private static void EnsureUpcomingRaceTableExists(IDbConnection conn)
         {
@@ -673,9 +821,94 @@ GROUP BY h.Name;";
             const string sql = @"
 INSERT INTO RaceScreen(MarketId, RaceDate, OffTime, Title, VenueName, VenueCountry, EventDateText, RaceDetails, RaceType, Going, BackBookPercentage, LayBookPercentage, RaceUrl)
 VALUES(@MarketId, @RaceDate, @OffTime, @Title, @VenueName, @VenueCountry, @EventDateText, @RaceDetails, @RaceType, @Going, @BackBookPercentage, @LayBookPercentage, @RaceUrl);";
-            using var conn = OpenConnection();
-            EnsureRaceScreenTableExists(conn);
-            conn.Execute(sql, screen);
+            var (connection, scope, ownsConnection) = GetScopedConnection();
+            try
+            {
+                EnsureRaceScreenTable(connection, scope);
+                connection.Execute(sql, screen);
+            }
+            finally
+            {
+                if (ownsConnection)
+                {
+                    connection.Dispose();
+                }
+            }
+        }
+        public void ClearDayReportTables()
+        {
+            var (connection, scope, ownsConnection) = GetScopedConnection();
+            IDbTransaction? transaction = null;
+
+            try
+            {
+                EnsureRaceScreenTable(connection, scope);
+                EnsureRunnerFlowTable(connection, scope);
+                EnsureUpcomingRaceTable(connection, scope);
+
+                transaction = connection.BeginTransaction();
+
+                ExecuteTruncateOrDelete(connection, transaction, "RunnerFlow");
+                ExecuteTruncateOrDelete(connection, transaction, "RaceScreen");
+                ExecuteTruncateOrDelete(connection, transaction, "UpcomingRaces");
+
+                transaction.Commit();
+            }
+            catch
+            {
+                try
+                {
+                    transaction?.Rollback();
+                }
+                catch
+                {
+                    // Ignore rollback failures.
+                }
+
+                throw;
+            }
+            finally
+            {
+                transaction?.Dispose();
+
+                if (ownsConnection)
+                {
+                    connection.Dispose();
+                }
+            }
+        }
+
+        private static void ExecuteTruncateOrDelete(IDbConnection connection, IDbTransaction transaction, string tableName)
+        {
+            if (connection is null)
+            {
+                throw new ArgumentNullException(nameof(connection));
+            }
+
+            if (transaction is null)
+            {
+                throw new ArgumentNullException(nameof(transaction));
+            }
+
+            if (string.IsNullOrWhiteSpace(tableName))
+            {
+                throw new ArgumentException("Table name must be provided.", nameof(tableName));
+            }
+
+            try
+            {
+                connection.Execute($"TRUNCATE TABLE [{tableName}];", transaction: transaction);
+            }
+            catch (SqlException ex) when (IsTruncateNotAllowed(ex))
+            {
+                connection.Execute($"DELETE FROM [{tableName}];", transaction: transaction);
+            }
+        }
+
+        private static bool IsTruncateNotAllowed(SqlException ex)
+        {
+            // 4712: Cannot truncate table because it is being referenced by a FOREIGN KEY constraint.
+            return ex.Number == 4712;
         }
         private static string? NormalizeGoing(string? going)
         {
@@ -745,22 +978,6 @@ END";
                 conn.Execute(addGoingSql);
                 _raceScreenTableEnsured = true;
             }
-        }
-        public void ClearDayReportTables()
-        {
-            using var conn = OpenConnection();
-
-            EnsureRaceScreenTableExists(conn);
-            EnsureRunnerFlowTableExists(conn);
-            EnsureUpcomingRaceTableExists(conn);
-
-            using var transaction = conn.BeginTransaction();
-
-            conn.Execute("DELETE FROM RunnerFlow;", transaction: transaction);
-            conn.Execute("DELETE FROM RaceScreen;", transaction: transaction);
-            conn.Execute("DELETE FROM UpcomingRaces;", transaction: transaction);
-
-            transaction.Commit();
         }
         private static void EnsureRunnerFlowTableExists(IDbConnection conn)
         {
