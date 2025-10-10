@@ -44,6 +44,7 @@ namespace HorseRacingML.ML
             LogDebug(flow, "Attempting to calculate probability with trained model");
             if (!_hasTrainedModel)
             {
+                AppendFallbackDetail(flow, "Trained model unavailable");
                 LogDebug(flow, "Trained model is unavailable; will fall back to legacy odds");
                 return false;
             }
@@ -298,6 +299,7 @@ namespace HorseRacingML.ML
                 if (flow != null)
                 {
                     flow.AiProbabilityMarketDerived = false;
+                    flow.AiProbabilityFallbackReason = null;
                 }
                 return probability;
             }
@@ -311,6 +313,7 @@ namespace HorseRacingML.ML
                 if (flow != null)
                 {
                     flow.AiProbabilityMarketDerived = true;
+                    AppendFallbackDetail(flow, "Using legacy logistic regression probability");
                 }
                 return legacyProbability.Value;
             }
@@ -323,6 +326,7 @@ namespace HorseRacingML.ML
             if (flow != null)
             {
                 flow.AiProbabilityMarketDerived = true;
+                AppendFallbackDetail(flow, "Using legacy logistic regression probability");
             }
             return fallback;
         }
@@ -348,12 +352,31 @@ namespace HorseRacingML.ML
             {
                 return;
             }
-
+            AppendFallbackDetail(flow, reason);
             var runnerId = DescribeRunner(flow);
             var marketId = string.IsNullOrWhiteSpace(flow.MarketId) ? "<unknown>" : flow.MarketId;
             Console.WriteLine($"[AI] Unable to use trained model for {runnerId} in market {marketId}: {reason}.");
         }
+        private static void AppendFallbackDetail(RunnerFlow? flow, string detail)
+        {
+            if (flow == null || string.IsNullOrWhiteSpace(detail))
+            {
+                return;
+            }
 
+            if (string.IsNullOrWhiteSpace(flow.AiProbabilityFallbackReason))
+            {
+                flow.AiProbabilityFallbackReason = detail;
+                return;
+            }
+
+            if (flow.AiProbabilityFallbackReason.IndexOf(detail, StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return;
+            }
+
+            flow.AiProbabilityFallbackReason = $"{flow.AiProbabilityFallbackReason}; {detail}";
+        }
         private static string DescribeRunner(RunnerFlow flow)
         {
             var parts = new List<string>();

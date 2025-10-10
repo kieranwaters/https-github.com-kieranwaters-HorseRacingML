@@ -51,5 +51,6 @@ namespace HorseRacingML.Models
         public Dictionary<string, object?> FeatureValues { get; set; } = new(StringComparer.OrdinalIgnoreCase);
         public bool AiProbabilityMarketDerived { get; set; }
         public bool AiProbabilityClampedToMarket { get; set; }
+        public string? AiProbabilityFallbackReason { get; set; }
     }
 }

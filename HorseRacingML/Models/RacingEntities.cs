@@ -120,6 +120,7 @@ namespace HorseRacingML.Models
         public bool AiProbabilityMarketDerived { get; set; }
         public bool AiProbabilityClampedToMarket { get; set; }
         public double? AiProbabilityClampTarget { get; set; }
+        public string? AiProbabilityFallbackReason { get; set; }
 
         public byte? Age { get; set; }
         public byte? WeightLbs { get; set; }

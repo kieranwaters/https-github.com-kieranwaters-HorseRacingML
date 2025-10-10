@@ -438,7 +438,10 @@ else
                                         }
                                         @if (runner.AiProbabilityMarketDerived)
                                         {
-                                            <div class="text-warning small">Market-derived fallback</div>
+                                            var fallbackText = string.IsNullOrWhiteSpace(runner.AiProbabilityFallbackReason)
+                                                ? "Market-derived fallback"
+                                                : $"Market-derived fallback: {runner.AiProbabilityFallbackReason}";
+                                            <div class="text-warning small">@fallbackText</div>
                                         }
                                     </td>
                                     <td class="text-end">@aiOdds</td>

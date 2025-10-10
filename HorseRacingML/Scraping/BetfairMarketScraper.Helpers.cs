@@ -1819,12 +1819,14 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
                         {
                             flow.AiOdds = 1.0 / (double)flow.BackPrice1.Value;
                             flow.AiProbabilityMarketDerived = true;
+                            AppendMarketFallbackReason(flow, "Degenerate model outputs; using market-implied probability");
                             anyFallbackApplied = true;
                         }
                         else
                         {
                             flow.AiOdds = null;
                             flow.AiProbabilityMarketDerived = false;
+                            AppendMarketFallbackReason(flow, "Degenerate model outputs; using market-implied probability");
                         }
                     }
 
@@ -2105,14 +2107,36 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
                     flow.AiOdds = marketProbability; flow.AiProbabilityMarketDerived = true;
                     flow.AiProbabilityClampedToMarket = false;
                     flow.AiProbabilityClampTarget = null;
+                    AppendMarketFallbackReason(flow, "Database record not found; using market-implied probability");
                     Console.WriteLine($"\t\tNo database match for {identifier}; using market-implied probability {marketProbability.ToString("0.####", CultureInfo.InvariantCulture)} as AI odds.");
                 }
                 else
                 {
                     flow.AiOdds = null; flow.AiProbabilityMarketDerived = false;
+                    flow.AiProbabilityFallbackReason = null;
                     Console.WriteLine($"\t\tNo database match for {identifier} and no usable back price; AI odds remain unavailable.");
                 }
             }
+        }
+        private static void AppendMarketFallbackReason(RunnerFlow? flow, string detail)
+        {
+            if (flow == null || string.IsNullOrWhiteSpace(detail))
+            {
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(flow.AiProbabilityFallbackReason))
+            {
+                flow.AiProbabilityFallbackReason = detail;
+                return;
+            }
+
+            if (flow.AiProbabilityFallbackReason.IndexOf(detail, StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return;
+            }
+
+            flow.AiProbabilityFallbackReason = $"{flow.AiProbabilityFallbackReason}; {detail}";
         }
 
         private static bool TryApplyLegacyFallback(ICollection<RunnerFlow> flows)

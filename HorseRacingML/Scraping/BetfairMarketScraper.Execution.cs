@@ -675,12 +675,13 @@ namespace HorseRacingML.Scraping
                         {
                             rf.AiOdds = probability;
                             rf.AiProbabilityMarketDerived = false;
+                            rf.AiProbabilityFallbackReason = null;
                         }
                         else
                         {
                             rf.AiOdds = null;
                             rf.AiProbabilityMarketDerived = false;
-                            var probabilityText = double.IsFinite(probability)
+                            rf.AiProbabilityFallbackReason = null;
                                 ? probability.ToString("0.####", CultureInfo.InvariantCulture)
                                 : "non-finite";
                             Console.WriteLine($"\t\tDiscarding non-positive AI probability {probabilityText} for {rfIdentifier}; treating as missing.");
@@ -690,6 +691,7 @@ namespace HorseRacingML.Scraping
                     {
                         rf.AiOdds = null; // set null on fail
                         rf.AiProbabilityMarketDerived = false;
+                        rf.AiProbabilityFallbackReason = null;
                         rf.AiProbabilityClampedToMarket = false;
                         rf.AiProbabilityClampTarget = null;
                         Console.Error.WriteLine($"\tFailed to calculate AI odds for selection {rfIdentifier} in market {marketId}: {ex.Message}"); // log
