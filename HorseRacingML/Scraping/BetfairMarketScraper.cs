@@ -109,5 +109,6 @@ namespace HorseRacingML.Scraping
         {
             return ScrapeOpenRaceTabsInternal(driver, executeBets: true, captureReport: false).Recommendations;
         }
+
     }
 }
