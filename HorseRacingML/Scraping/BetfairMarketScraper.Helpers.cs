@@ -30,6 +30,9 @@ namespace HorseRacingML.Scraping
         private static readonly Regex TrainerPrefixRegex = new(@"^(?:trainer|trainers?|t:)\s*[:\-]?\s*", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly string[] DistanceBuckets = { "Sprint", "Middle", "Long" };
         private static readonly int[] PerformanceWindowSizes = { 1, 3, 5, 10, 15, 20, 25, 30, 50, 100 };
+        private static readonly Regex MarketTitleDateCandidateRegex = new(
+            @"(?:(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*\s+)?\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]{3,9}(?:\s+\d{2,4})?",
+            RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly string[] PerformanceWindowPrefixes =
         {
             "WinRateLast",
@@ -226,6 +229,96 @@ namespace HorseRacingML.Scraping
             }
 
             return normalized.Trim();
+        }
+        private static DateTime? ExtractDateFromTitle(string? normalizedTitle)
+        {
+            if (string.IsNullOrWhiteSpace(normalizedTitle))
+            {
+                return null;
+            }
+
+            static IEnumerable<string> EnumerateCandidates(string source)
+            {
+                foreach (Match match in MarketTitleDateCandidateRegex.Matches(source))
+                {
+                    if (match.Success)
+                    {
+                        yield return match.Value;
+                    }
+                }
+            }
+
+            static DateTime? TryParseCandidate(string candidate)
+            {
+                if (string.IsNullOrWhiteSpace(candidate))
+                {
+                    return null;
+                }
+
+                var sanitized = Regex.Replace(candidate, @"(\d)(st|nd|rd|th)", "$1", RegexOptions.IgnoreCase);
+
+                // Try a range of formats that may appear in market titles.
+                var formats = new[]
+                {
+                    "ddd d MMM yyyy",
+                    "ddd d MMMM yyyy",
+                    "dddd d MMM yyyy",
+                    "dddd d MMMM yyyy",
+                    "d MMM yyyy",
+                    "d MMMM yyyy",
+                    "ddd d MMM",
+                    "ddd d MMMM",
+                    "dddd d MMM",
+                    "dddd d MMMM",
+                    "d MMM",
+                    "d MMMM"
+                };
+
+                foreach (var format in formats)
+                {
+                    if (DateTime.TryParseExact(
+                        sanitized,
+                        format,
+                        CultureInfo.InvariantCulture,
+                        DateTimeStyles.AllowWhiteSpaces | DateTimeStyles.AssumeLocal,
+                        out var parsed))
+                    {
+                        if (format.Contains("yyyy", StringComparison.Ordinal))
+                        {
+                            return parsed.Date;
+                        }
+
+                        var today = DateTime.Today;
+                        try
+                        {
+                            var resolved = new DateTime(today.Year, parsed.Month, parsed.Day);
+                            if (resolved < today.AddDays(-30))
+                            {
+                                resolved = resolved.AddYears(1);
+                            }
+
+                            return resolved.Date;
+                        }
+                        catch
+                        {
+                            // Ignore invalid day/month combinations.
+                        }
+                    }
+                }
+
+                return null;
+            }
+
+            foreach (var candidate in EnumerateCandidates(normalizedTitle))
+            {
+                var parsed = TryParseCandidate(candidate);
+                if (parsed.HasValue)
+                {
+                    return parsed.Value;
+                }
+            }
+
+            return null;
         }
         private static string ResolveAiWeightPath()
         {
