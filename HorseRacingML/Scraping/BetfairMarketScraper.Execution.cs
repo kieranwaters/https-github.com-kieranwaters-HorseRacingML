@@ -682,6 +682,7 @@ namespace HorseRacingML.Scraping
                             rf.AiOdds = null;
                             rf.AiProbabilityMarketDerived = false;
                             rf.AiProbabilityFallbackReason = null;
+                            var probabilityText = double.IsFinite(probability)
                                 ? probability.ToString("0.####", CultureInfo.InvariantCulture)
                                 : "non-finite";
                             Console.WriteLine($"\t\tDiscarding non-positive AI probability {probabilityText} for {rfIdentifier}; treating as missing.");

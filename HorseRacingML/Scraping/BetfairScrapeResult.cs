@@ -10,20 +10,14 @@ namespace HorseRacingML.Scraping
     /// </summary>
     public sealed class BetfairScrapeResult
     {
-        public BetfairScrapeResult()
-        {
-            Races = new List<RaceDayReport>();
-            Recommendations = new List<BetRecommendation>();
-        }
-
         /// <summary>
         /// Gets the collection of race reports captured during the scrape.
         /// </summary>
-        public IList<RaceDayReport> Races { get; }
+        public List<RaceDayReport> Races { get; } = new();
 
         /// <summary>
         /// Gets the collection of bet recommendations produced during the scrape.
         /// </summary>
-        public IList<BetRecommendation> Recommendations { get; }
+        public List<BetRecommendation> Recommendations { get; } = new();
     }
 }
