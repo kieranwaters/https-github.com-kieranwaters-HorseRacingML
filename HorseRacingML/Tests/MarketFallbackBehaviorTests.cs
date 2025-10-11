@@ -10,7 +10,7 @@ namespace HorseRacingML.Tests
     public class MarketFallbackBehaviorTests
     {
         [Fact]
-        public void ApplyMarketFallback_PreservesExistingAiProbabilities()
+        public void ApplyMarketFallback_NormalizesProbabilities()
         {
             var flows = new List<RunnerFlow>
             {
@@ -42,20 +42,24 @@ namespace HorseRacingML.Tests
             var matched = flows[0];
             Assert.False(matched.AiProbabilityMarketDerived);
             Assert.True(matched.AiOdds.HasValue);
-            Assert.Equal(0.25d, matched.AiOdds!.Value, 12);
             Assert.Null(matched.AiProbabilityFallbackReason);
 
             var synthetic = flows[1];
             Assert.False(synthetic.AiProbabilityMarketDerived);
             Assert.True(synthetic.AiOdds.HasValue);
-            Assert.Equal(0.35d, synthetic.AiOdds!.Value, 12);
             Assert.Null(synthetic.AiProbabilityFallbackReason);
 
             var fallback = flows[2];
             Assert.True(fallback.AiProbabilityMarketDerived);
             Assert.True(fallback.AiOdds.HasValue);
             var expectedMarketProbability = 1.0d / (double)fallback.BackPrice1!.Value;
-            Assert.Equal(expectedMarketProbability, fallback.AiOdds!.Value, 12);
+            var rawSum = 0.25d + 0.35d + expectedMarketProbability;
+            var expectedScale = 1.0d / rawSum;
+
+            Assert.Equal(0.25d * expectedScale, matched.AiOdds!.Value, 12);
+            Assert.Equal(0.35d * expectedScale, synthetic.AiOdds!.Value, 12);
+            Assert.Equal(expectedMarketProbability * expectedScale, fallback.AiOdds!.Value, 12);
+            Assert.Equal(1.0d, matched.AiOdds!.Value + synthetic.AiOdds!.Value + fallback.AiOdds!.Value, 12);
             Assert.False(string.IsNullOrWhiteSpace(fallback.AiProbabilityFallbackReason));
         }
 

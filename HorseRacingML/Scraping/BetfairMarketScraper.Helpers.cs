@@ -2187,7 +2187,7 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
         private static void ApplyMarketFallbackForUnmatchedRunners(IReadOnlyList<RunnerFlow> flows)
         {
             if (flows == null || flows.Count == 0) return; // return early if list is null or empty
-
+            bool fallbackApplied = false;
             foreach (var flow in flows)
             {
                 if (flow == null || flow.MatchedDatabaseRecord)
@@ -2214,6 +2214,7 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
                     flow.AiProbabilityClampTarget = null;
                     AppendMarketFallbackReason(flow, "Database record not found; using market-implied probability");
                     Console.WriteLine($"\t\tNo database match for {identifier}; using market-implied probability {marketProbability.ToString("0.####", CultureInfo.InvariantCulture)} as AI odds.");
+                    fallbackApplied = true;
                 }
                 else
                 {
@@ -2221,7 +2222,58 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
                     flow.AiProbabilityFallbackReason = null;
                     Console.WriteLine($"\t\tNo database match for {identifier} and no usable back price; AI odds remain unavailable.");
                 }
+                if (fallbackApplied)
+                {
+                    RenormalizeAiProbabilities(flows);
+                }
             }
+
+        private static void RenormalizeAiProbabilities(IEnumerable<RunnerFlow>? flows)
+        {
+            if (flows == null)
+            {
+                return;
+            }
+
+            var valid = flows
+                .Where(f => f != null && f.AiOdds.HasValue && double.IsFinite(f.AiOdds.Value) && f.AiOdds.Value > 0d)
+                .ToList();
+
+            if (valid.Count == 0)
+            {
+                return;
+            }
+
+            var sum = valid.Sum(f => f.AiOdds!.Value);
+            if (!double.IsFinite(sum) || sum <= double.Epsilon)
+            {
+                return;
+            }
+
+            const double tolerance = 1e-8;
+            if (Math.Abs(sum - 1d) <= tolerance)
+            {
+                return;
+            }
+
+            var scale = 1d / sum;
+
+            foreach (var flow in valid)
+            {
+                flow.AiOdds = Math.Max(flow.AiOdds!.Value * scale, 0d);
+
+                if (flow.AiProbabilityClampTarget.HasValue && double.IsFinite(flow.AiProbabilityClampTarget.Value))
+                {
+                    flow.AiProbabilityClampTarget = Math.Max(flow.AiProbabilityClampTarget.Value * scale, 0d);
+                }
+            }
+
+            var normalizedSum = valid.Sum(f => f.AiOdds!.Value);
+            Console.WriteLine(
+                $"\t\tApplied post-fallback normalization to AI probabilities; " +
+                $"scale={scale.ToString("0.####", CultureInfo.InvariantCulture)}, " +
+                $"normalized sum={normalizedSum.ToString("0.####", CultureInfo.InvariantCulture)}.");
+        }
         }
         private static void AppendMarketFallbackReason(RunnerFlow? flow, string detail)
         {
