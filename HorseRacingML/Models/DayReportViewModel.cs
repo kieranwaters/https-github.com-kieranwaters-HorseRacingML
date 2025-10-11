@@ -28,6 +28,7 @@ namespace HorseRacingML.Models
         public List<RunnerDayReport> Runners { get; set; } = new();
         public int? UpcomingRaceId { get; set; }
         public string? RaceUrl { get; set; }
+        public string? RaceFallbackSummary { get; set; }
     }
 
     public class RunnerDayReport

@@ -2190,7 +2190,19 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
 
             foreach (var flow in flows)
             {
-                if (flow == null || flow.MatchedDatabaseRecord) continue; // skip matched or null entries
+                if (flow == null || flow.MatchedDatabaseRecord)
+                {
+                    continue; // skip matched or null entries
+                }
+
+                var hasValidAiProbability = flow.AiOdds.HasValue
+                    && double.IsFinite(flow.AiOdds.Value)
+                    && flow.AiOdds.Value > 0d;
+
+                if (hasValidAiProbability)
+                {
+                    continue; // retain existing AI odds when available
+                }
 
                 var identifier = !string.IsNullOrWhiteSpace(flow.HorseName) ? flow.HorseName! : (flow.SelectionId ?? "unknown"); // determine identifier
 
