@@ -41,6 +41,7 @@ namespace HorseRacingML.Scraping
         private Task? _automationTask;
         private readonly Dictionary<string, string?> _raceGoingByMarketId = new(StringComparer.OrdinalIgnoreCase);
         private readonly object _raceGoingLock = new();
+        private static readonly TimeSpan SchedulePageReadyTimeout = TimeSpan.FromSeconds(120);
 
         public BetfairNavigationService(IConfiguration config, AutomationSettingsService automationSettings)
         {
@@ -1010,11 +1011,24 @@ namespace HorseRacingML.Scraping
                     wait.Until(d =>
                     {
                         var state = ((IJavaScriptExecutor)d).ExecuteScript("return document.readyState");
-                        return string.Equals("complete", state?.ToString(), StringComparison.OrdinalIgnoreCase);
+                        var stateText = state?.ToString();
+                        return string.Equals("complete", stateText, StringComparison.OrdinalIgnoreCase)
+                            || string.Equals("interactive", stateText, StringComparison.OrdinalIgnoreCase);
                     });
 
                     wait.Until(d =>
                     {
+                        if (!d.Url.Contains("horse-racing", StringComparison.OrdinalIgnoreCase) &&
+                            !d.Url.Contains("horse-racing-betting-7", StringComparison.OrdinalIgnoreCase))
+                        {
+                            return false;
+                        }
+
+                        if (IsScheduleContentAvailable(d))
+                        {
+                            return true;
+                        }
+
                         var elements = d.FindElements(By.CssSelector("a,button"));
                         return elements != null && elements.Count > 0;
                     });
@@ -1043,6 +1057,56 @@ namespace HorseRacingML.Scraping
             }
 
             throw lastTimeout ?? new WebDriverTimeoutException("Failed to ensure the Betfair schedule page is ready.");
+        }
+        private static bool IsScheduleContentAvailable(IWebDriver driver)
+        {
+            try
+            {
+                var selectors = new[]
+                {
+                    "[data-testid='racing-schedule']",
+                    "[data-testid='racing-event']",
+                    ".meeting-description",
+                    "[data-testid='racing-race-list'] li",
+                    "li .meeting-description"
+                };
+
+                foreach (var selector in selectors)
+                {
+                    var elements = driver.FindElements(By.CssSelector(selector));
+                    if (elements.Any(e => e.Displayed))
+                    {
+                        return true;
+                    }
+                }
+
+                var raceLinks = driver.FindElements(By.CssSelector("a[href*='/horse-racing/']"));
+                if (raceLinks.Count > 0)
+                {
+                    return true;
+                }
+
+                try
+                {
+                    var body = driver.FindElement(By.TagName("body"));
+                    var text = body?.Text;
+                    if (!string.IsNullOrWhiteSpace(text) &&
+                        text.IndexOf("no races", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        return true;
+                    }
+                }
+                catch (NoSuchElementException)
+                {
+                    // Ignore if the body element is not yet available.
+                }
+            }
+            catch (WebDriverException)
+            {
+                return false;
+            }
+
+            return false;
         }
         private IReadOnlyDictionary<string, string?> GetRaceGoingSnapshot() { lock (_raceGoingLock) { return new Dictionary<string, string?>(_raceGoingByMarketId, StringComparer.OrdinalIgnoreCase); } }
         private void RecordRaceGoing(string? href, string? going) { if (string.IsNullOrWhiteSpace(href)) { return; } var marketId = BetfairMarketScraper.ExtractMarketId(href); if (string.IsNullOrWhiteSpace(marketId)) { return; } var trimmedGoing = string.IsNullOrWhiteSpace(going) ? null : going!.Trim(); lock (_raceGoingLock) { if (!string.IsNullOrEmpty(trimmedGoing)) { _raceGoingByMarketId[marketId] = trimmedGoing; } else if (!_raceGoingByMarketId.ContainsKey(marketId)) { _raceGoingByMarketId[marketId] = null; } } }
