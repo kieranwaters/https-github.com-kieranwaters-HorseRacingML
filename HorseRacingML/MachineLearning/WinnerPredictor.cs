@@ -69,7 +69,9 @@ namespace HorseRacingML.ML
 
                 training.Add(new RunnerFeatures
                 {
-                    Odds = GetOdds(r),
+                    Odds = r.SP_Decimal.HasValue && r.SP_Decimal.Value > 0m
+                        ? (float)r.SP_Decimal.Value
+                        : 1000f,
                     Weight = r.WeightLbs ?? 0,
                     WeightMissing = r.WeightLbs.HasValue ? 0f : 1f,
                     Draw = r.Draw ?? 0,
@@ -273,7 +275,9 @@ namespace HorseRacingML.ML
                     float drawBias = r.Draw.HasValue ? r.Draw.Value - avgDraw : 0f;
                     var input = new RunnerFeatures
                     {
-                        Odds = GetOdds(r),
+                        Odds = r.SP_Decimal.HasValue && r.SP_Decimal.Value > 0m
+                            ? (float)r.SP_Decimal.Value
+                            : 1000f,
                         Weight = r.WeightLbs ?? 0,
                         WeightMissing = r.WeightLbs.HasValue ? 0f : 1f,
                         Draw = r.Draw ?? 0,
@@ -304,7 +308,9 @@ namespace HorseRacingML.ML
 
             foreach (var r in raceRunners)
             {
-                double odds = GetOdds(r);
+                double odds = r.SP_Decimal.HasValue && r.SP_Decimal.Value > 0m
+                   ? (double)r.SP_Decimal.Value
+                   : 1000d;
                 double score = 1.0 / odds;
 
                 if (r.WeightLbs.HasValue)
@@ -397,11 +403,6 @@ namespace HorseRacingML.ML
                 }
             }
             return (float)total;
-        }
-        private static float GetOdds(RunnerResult r)
-        {
-            float odds = (float)(r.SP_Decimal ?? 0m);
-            return odds > 0 ? odds : 1000f;
         }
         private class ModelMetrics
         {

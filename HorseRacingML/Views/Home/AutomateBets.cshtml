@@ -113,7 +113,6 @@
         </div>
     </div>
 </div>
-
 @section Scripts {
     <script>
         (function () {
@@ -127,10 +126,15 @@
             let debounceHandle = null;
 
             if (form) {
-                form.addEventListener('submit', (event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                });
+                const preventFormSubmission = (event) => {
+                    if (event.type === 'submit' || event.key === 'Enter') {
+                        event.preventDefault();
+                        event.stopPropagation();
+                    }
+                };
+
+                form.addEventListener('submit', preventFormSubmission);
+                form.addEventListener('keydown', preventFormSubmission);
             }
 
             function parseNumber(value) {
