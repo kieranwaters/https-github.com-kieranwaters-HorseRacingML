@@ -104,10 +104,15 @@ namespace HorseRacingML.Scraping
             PopulateWinnerProbabilities(result.Races);
             return result.Races.AsReadOnly();
         }
-
-        public IReadOnlyList<BetRecommendation> ScrapeOpenRaceTabs(IWebDriver driver)
+        public IReadOnlyList<BetRecommendation> ScrapeOpenRaceTabs(
+                    IWebDriver driver,
+                    IEnumerable<string>? handlesToProcess = null)
         {
-            var result = ScrapeOpenRaceTabsInternal(driver, executeBets: true, captureReport: false);
+            var result = ScrapeOpenRaceTabsInternal(
+                driver,
+                executeBets: true,
+                captureReport: false,
+                handlesToProcess: handlesToProcess);
             return result.Recommendations.AsReadOnly();
         }
 
