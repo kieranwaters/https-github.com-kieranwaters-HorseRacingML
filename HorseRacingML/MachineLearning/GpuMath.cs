@@ -8,6 +8,24 @@ namespace HorseRacingML.ML
 {
     internal static class GpuMath
     {
+        static GpuMath()
+        {
+            const string tfLogLevelVariable = "TF_CPP_MIN_LOG_LEVEL";
+
+            try
+            {
+                var existingValue = Environment.GetEnvironmentVariable(tfLogLevelVariable);
+                if (string.IsNullOrEmpty(existingValue))
+                {
+                    Environment.SetEnvironmentVariable(tfLogLevelVariable, "1");
+                }
+            }
+            catch
+            {
+                // If we cannot update the environment variable we still continue without GPU logs suppressed.
+            }
+        }
+
         private static readonly Lazy<bool> _isGpuAvailable = new Lazy<bool>(InitializeGpu, true);
         private static string? _initializationError;
 

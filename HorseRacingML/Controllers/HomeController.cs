@@ -136,7 +136,6 @@ namespace HorseRacingML.Controllers
                     ErrorMessage = "Start time must be earlier than or equal to the end time."
                 });
             }
-            await betfair.LoginAsync();
             await betfair.OpenHorseRaceMeetingsInNewTabsAsync(
                 scheduleStartTime: startTimeSpan,
                 scheduleEndTime: endTimeSpan);

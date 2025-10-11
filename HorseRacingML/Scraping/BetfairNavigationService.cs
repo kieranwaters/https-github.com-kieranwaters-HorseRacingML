@@ -697,11 +697,7 @@ namespace HorseRacingML.Scraping
             }
 
             ReturnToPrimaryWindow();
-
-            var wait = new WebDriverWait(_driver, TimeSpan.FromSeconds(20));
-            wait.Until(d =>
-                ((IJavaScriptExecutor)d).ExecuteScript("return document.readyState").ToString() == "complete");
-            wait.Until(d => d.FindElements(By.CssSelector("a,button")).Count > 0);
+            EnsureSchedulePageReady();
             CaptureRaceGoingFromSchedule();
             static string? ExtractTimeToken(string? value)
             {
@@ -992,6 +988,61 @@ namespace HorseRacingML.Scraping
                     await Task.Delay(delayBetweenTabsMs);
                 }
             }
+        }
+        private void EnsureSchedulePageReady()
+        {
+            const int maxAttempts = 2;
+            WebDriverTimeoutException? lastTimeout = null;
+
+            for (var attempt = 0; attempt < maxAttempts; attempt++)
+            {
+                try
+                {
+                    var wait = new WebDriverWait(_driver, TimeSpan.FromSeconds(30))
+                    {
+                        PollingInterval = TimeSpan.FromMilliseconds(250)
+                    };
+                    wait.IgnoreExceptionTypes(
+                        typeof(JavaScriptException),
+                        typeof(NoSuchElementException),
+                        typeof(StaleElementReferenceException));
+
+                    wait.Until(d =>
+                    {
+                        var state = ((IJavaScriptExecutor)d).ExecuteScript("return document.readyState");
+                        return string.Equals("complete", state?.ToString(), StringComparison.OrdinalIgnoreCase);
+                    });
+
+                    wait.Until(d =>
+                    {
+                        var elements = d.FindElements(By.CssSelector("a,button"));
+                        return elements != null && elements.Count > 0;
+                    });
+
+                    return;
+                }
+                catch (WebDriverTimeoutException ex)
+                {
+                    lastTimeout = ex;
+                    if (attempt + 1 == maxAttempts)
+                    {
+                        break;
+                    }
+
+                    try
+                    {
+                        _driver.Navigate().Refresh();
+                    }
+                    catch (Exception)
+                    {
+                        // Ignore refresh failures; we'll retry with the existing page state.
+                    }
+
+                    Thread.Sleep(TimeSpan.FromSeconds(2));
+                }
+            }
+
+            throw lastTimeout ?? new WebDriverTimeoutException("Failed to ensure the Betfair schedule page is ready.");
         }
         private IReadOnlyDictionary<string, string?> GetRaceGoingSnapshot() { lock (_raceGoingLock) { return new Dictionary<string, string?>(_raceGoingByMarketId, StringComparer.OrdinalIgnoreCase); } }
         private void RecordRaceGoing(string? href, string? going) { if (string.IsNullOrWhiteSpace(href)) { return; } var marketId = BetfairMarketScraper.ExtractMarketId(href); if (string.IsNullOrWhiteSpace(marketId)) { return; } var trimmedGoing = string.IsNullOrWhiteSpace(going) ? null : going!.Trim(); lock (_raceGoingLock) { if (!string.IsNullOrEmpty(trimmedGoing)) { _raceGoingByMarketId[marketId] = trimmedGoing; } else if (!_raceGoingByMarketId.ContainsKey(marketId)) { _raceGoingByMarketId[marketId] = null; } } }
