@@ -297,15 +297,6 @@ namespace HorseRacingML.Tests
 
                 return Array.Empty<PreparedRace?>();
             }
-
-            public override HyperparameterSummary? TrainModel(
-                string trainingOutputDirectory,
-                TrainingDataset.PreparedDataset dataset,
-                bool writeDebugOutput = false,
-                bool useCachedDataset = true)
-            {
-                return null;
-            }
         }
     }
 }
