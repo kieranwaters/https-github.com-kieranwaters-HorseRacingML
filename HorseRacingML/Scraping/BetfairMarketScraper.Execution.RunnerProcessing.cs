@@ -336,7 +336,92 @@ namespace HorseRacingML.Scraping
                 report.Runners.Add(CreateRunnerReport(flow, prefetchedCounts));
             }
 
+            report.RaceFallbackSummary = BuildRaceFallbackSummary(runnerList);
+
             return report;
+        }
+
+
+        private static string? BuildRaceFallbackSummary(ICollection<RunnerFlow> flows)
+        {
+            if (flows is null || flows.Count == 0)
+            {
+                return null;
+            }
+
+            var validRunners = flows
+                .Where(flow => flow != null)
+                .ToList();
+
+            if (validRunners.Count == 0)
+            {
+                return null;
+            }
+
+            var marketDerived = validRunners
+                .Where(flow => flow.AiProbabilityMarketDerived)
+                .ToList();
+
+            if (marketDerived.Count == 0)
+            {
+                return null;
+            }
+
+            var reasons = new List<string>();
+            var reasonSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var flow in marketDerived)
+            {
+                if (string.IsNullOrWhiteSpace(flow.AiProbabilityFallbackReason))
+                {
+                    continue;
+                }
+
+                var detail = flow.AiProbabilityFallbackReason.Trim();
+                if (detail.Length == 0)
+                {
+                    continue;
+                }
+
+                if (reasonSet.Add(detail))
+                {
+                    reasons.Add(detail);
+                }
+            }
+
+            var totalRunners = validRunners.Count;
+            var baseMessage = BuildFallbackBaseMessage(totalRunners, marketDerived.Count);
+
+            if (string.IsNullOrEmpty(baseMessage))
+            {
+                return null;
+            }
+
+            if (reasons.Count == 0)
+            {
+                return baseMessage;
+            }
+
+            var reasonLabel = reasons.Count == 1 ? "Reason" : "Reasons";
+            return $"{baseMessage} {reasonLabel}: {string.Join("; ", reasons)}.";
+        }
+
+        private static string? BuildFallbackBaseMessage(int totalRunners, int marketDerivedCount)
+        {
+            if (totalRunners <= 0 || marketDerivedCount <= 0 || marketDerivedCount > totalRunners)
+            {
+                return null;
+            }
+
+            if (marketDerivedCount == totalRunners)
+            {
+                return "All AI win probabilities defaulted to market-implied odds for this race.";
+            }
+
+            var remaining = totalRunners - marketDerivedCount;
+            var runnerWord = remaining == 1 ? "runner" : "runners";
+
+            return $"{marketDerivedCount} of {totalRunners} AI win probabilities defaulted to market-implied odds for this race. The remaining {remaining} {runnerWord} retained their model-derived probabilities.";
         }
 
 

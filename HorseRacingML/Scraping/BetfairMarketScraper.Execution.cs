@@ -699,14 +699,7 @@ namespace HorseRacingML.Scraping
                     }
                     if (rf.AiOdds.HasValue && double.IsFinite(rf.AiOdds.Value) && rf.AiOdds.Value > 0 && rf.AiOdds.Value < LowAiProbabilityClampThreshold)
                     {
-                        if (rf.BackPrice1.HasValue && rf.BackPrice1.Value > 1m)
-                        {
-                            var marketProbability = 1.0 / (double)rf.BackPrice1.Value;
-                            rf.AiOdds = marketProbability;
-                            rf.AiProbabilityClampedToMarket = true;
-                            rf.AiProbabilityClampTarget = marketProbability;
-                        }
-                        else
+                        if (!TryClampLowAiProbabilityToMarket(rf))
                         {
                             Console.WriteLine($"\t\tUnable to clamp low AI probability for {rfIdentifier}: market price unavailable.");
                         }

@@ -323,6 +323,12 @@ else
                 </div>
             </div>
             <div class="card-body">
+                @if (!string.IsNullOrWhiteSpace(race.RaceFallbackSummary))
+                {
+                    <div class="alert alert-warning small" role="status">
+                        <strong>AI fallback:</strong> @race.RaceFallbackSummary
+                    </div>
+                }
                 <div class="table-responsive">
                     <table class="table table-sm table-striped align-middle mb-0">
                         <thead>

@@ -2228,6 +2228,28 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
                 }
             }
         }
+        private static bool TryClampLowAiProbabilityToMarket(RunnerFlow? flow)
+        {
+            if (flow == null)
+            {
+                return false;
+            }
+
+            if (!flow.BackPrice1.HasValue || flow.BackPrice1.Value <= 1m)
+            {
+                return false;
+            }
+
+            var marketProbability = 1.0 / (double)flow.BackPrice1.Value;
+
+            flow.AiOdds = marketProbability;
+            flow.AiProbabilityClampedToMarket = true;
+            flow.AiProbabilityClampTarget = marketProbability;
+            flow.AiProbabilityMarketDerived = true;
+            AppendMarketFallbackReason(flow, "Model probability below clamp threshold; using market-implied probability");
+
+            return true;
+        }
 
         private static void RenormalizeAiProbabilities(IEnumerable<RunnerFlow>? flows)
         {
