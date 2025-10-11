@@ -137,7 +137,10 @@ namespace HorseRacingML.Controllers
                 });
             }
             await betfair.LoginAsync();
-            await betfair.OpenHorseRaceMeetingsInNewTabsAsync();
+            await betfair.OpenHorseRaceMeetingsInNewTabsAsync(
+                scheduleStartTime: startTimeSpan,
+                scheduleEndTime: endTimeSpan);
+
 
             var report = betfair.GenerateDayReport(_repository, trainer);
             var usedNextDay = false;
@@ -148,7 +151,10 @@ namespace HorseRacingML.Controllers
                 var switched = await betfair.TrySelectHorseRacingDayAsync(1);
                 if (switched)
                 {
-                    await betfair.OpenHorseRaceMeetingsInNewTabsAsync(closeExistingRaceTabs: true);
+                    await betfair.OpenHorseRaceMeetingsInNewTabsAsync(
+                        closeExistingRaceTabs: true,
+                        scheduleStartTime: startTimeSpan,
+                        scheduleEndTime: endTimeSpan);
                     var nextDayReport = betfair.GenerateDayReport(_repository, trainer);
                     if (nextDayReport?.Races?.Count > 0)
                     {

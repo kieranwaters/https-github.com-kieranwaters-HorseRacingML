@@ -671,8 +671,16 @@ namespace HorseRacingML.Scraping
             int delayBetweenTabsMs = 0,
             bool closeExistingRaceTabs = true,
             TimeSpan? raceWindow = null,
-            DateTime? windowReferenceUtc = null)
+            DateTime? windowReferenceUtc = null,
+            TimeSpan? scheduleStartTime = null,
+            TimeSpan? scheduleEndTime = null)
         {
+            if (raceWindow.HasValue && (scheduleStartTime.HasValue || scheduleEndTime.HasValue))
+            {
+                throw new ArgumentException(
+                    "Race window and schedule time filters cannot be used at the same time.",
+                    nameof(raceWindow));
+            }
             HashSet<string> existingMarketIds;
             if (closeExistingRaceTabs)
             {
@@ -754,7 +762,7 @@ namespace HorseRacingML.Scraping
                 windowStart = reference;
                 windowEnd = reference.Add(raceWindow.Value);
             }
-
+            var hasScheduleFilters = scheduleStartTime.HasValue || scheduleEndTime.HasValue;
             var seen = raceWindow.HasValue
                 ? null
                 : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -822,13 +830,17 @@ namespace HorseRacingML.Scraping
                         {
                             continue;
                         }
-                        if (raceWindow.HasValue)
+                        DateTime? raceTime = null;
+                        if (raceWindow.HasValue || hasScheduleFilters)
                         {
-                            var raceTime = TryResolveRaceDateTime(textValue, windowReferenceLocal);
+                            raceTime = TryResolveRaceDateTime(textValue, windowReferenceLocal);
                             if (!raceTime.HasValue)
                             {
                                 continue;
                             }
+                        }
+                        if (raceWindow.HasValue)
+                        {
 
                             if (raceTime.Value < windowStart || raceTime.Value > windowEnd)
                             {
@@ -845,6 +857,20 @@ namespace HorseRacingML.Scraping
                         }
                         else
                         {
+                            if (hasScheduleFilters)
+                            {
+                                var timeOfDay = raceTime!.Value.TimeOfDay;
+                                if (scheduleStartTime.HasValue && timeOfDay < scheduleStartTime.Value)
+                                {
+                                    continue;
+                                }
+
+                                if (scheduleEndTime.HasValue && timeOfDay > scheduleEndTime.Value)
+                                {
+                                    continue;
+                                }
+                            }
+
                             seen!.Add(href);
                         }
                     }
@@ -889,6 +915,32 @@ namespace HorseRacingML.Scraping
                         if (!string.IsNullOrWhiteSpace(marketIdFromLink) && existingMarketIds.Contains(marketIdFromLink))
                         {
                             continue;
+                        }
+                        if (hasScheduleFilters)
+                        {
+                            var textValue = anchor.Text;
+                            if (string.IsNullOrWhiteSpace(textValue))
+                            {
+                                textValue = anchor.GetAttribute("innerText");
+                            }
+
+                            textValue = textValue?.Trim() ?? string.Empty;
+                            var raceTime = TryResolveRaceDateTime(textValue, windowReferenceLocal);
+                            if (!raceTime.HasValue)
+                            {
+                                continue;
+                            }
+
+                            var timeOfDay = raceTime.Value.TimeOfDay;
+                            if (scheduleStartTime.HasValue && timeOfDay < scheduleStartTime.Value)
+                            {
+                                continue;
+                            }
+
+                            if (scheduleEndTime.HasValue && timeOfDay > scheduleEndTime.Value)
+                            {
+                                continue;
+                            }
                         }
                         seen.Add(href);
                     }
