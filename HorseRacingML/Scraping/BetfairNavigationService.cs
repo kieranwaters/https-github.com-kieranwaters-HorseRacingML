@@ -22,6 +22,7 @@ namespace HorseRacingML.Scraping
     {
         private const string HardCodedUsername = "kierandpwaters@gmail.com";
         private const string HardCodedPassword = "AZQ2v.b=$e$!e!u";
+        private const string HorseRacingScheduleUrl = "https://www.betfair.com/exchange/plus/horse-racing";
 
         private readonly string _username;
         private readonly string _password;
@@ -638,9 +639,7 @@ namespace HorseRacingML.Scraping
                 ((IJavaScriptExecutor)_driver).ExecuteScript("arguments[0].click();", horseRacingLink);
             }
 
-            wait.Until(d =>
-                d.Url.Contains("horse-racing", StringComparison.OrdinalIgnoreCase) ||
-                d.Url.Contains("horse-racing-betting-7", StringComparison.OrdinalIgnoreCase));
+            wait.Until(d => IsScheduleUrl(d.Url));
         }
         public DayReportViewModel GenerateDayReport(RacingRepository repo, HyperparameterTrainer trainer)
         {
@@ -999,7 +998,9 @@ namespace HorseRacingML.Scraping
             {
                 try
                 {
-                    var wait = new WebDriverWait(_driver, TimeSpan.FromSeconds(30))
+                    EnsureScheduleNavigation();
+
+                    var wait = new WebDriverWait(_driver, SchedulePageReadyTimeout)
                     {
                         PollingInterval = TimeSpan.FromMilliseconds(250)
                     };
@@ -1018,8 +1019,7 @@ namespace HorseRacingML.Scraping
 
                     wait.Until(d =>
                     {
-                        if (!d.Url.Contains("horse-racing", StringComparison.OrdinalIgnoreCase) &&
-                            !d.Url.Contains("horse-racing-betting-7", StringComparison.OrdinalIgnoreCase))
+                        if (!IsScheduleUrl(d.Url))
                         {
                             return false;
                         }
@@ -1057,6 +1057,65 @@ namespace HorseRacingML.Scraping
             }
 
             throw lastTimeout ?? new WebDriverTimeoutException("Failed to ensure the Betfair schedule page is ready.");
+        }
+        private void EnsureScheduleNavigation()
+        {
+            var currentUrl = TryGetCurrentUrl();
+            if (IsScheduleUrl(currentUrl))
+            {
+                return;
+            }
+
+            for (var attempt = 0; attempt < 2; attempt++)
+            {
+                try
+                {
+                    _driver.Navigate().GoToUrl(HorseRacingScheduleUrl);
+                    return;
+                }
+                catch (WebDriverException ex) when (TryHandleInvalidSession(ex))
+                {
+                    // Driver was reset due to an invalid session; retry navigation with the new instance.
+                }
+            }
+        }
+
+        private string? TryGetCurrentUrl()
+        {
+            try
+            {
+                return _driver.Url;
+            }
+            catch (WebDriverException)
+            {
+                return null;
+            }
+        }
+
+        private static bool IsScheduleUrl(string? url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                return false;
+            }
+
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            {
+                return false;
+            }
+
+            var path = uri.AbsolutePath?.TrimEnd('/') ?? string.Empty;
+            if (path.IndexOf("/market/", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return false;
+            }
+
+            if (path.IndexOf("horse-racing-betting", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return true;
+            }
+
+            return path.EndsWith("/horse-racing", StringComparison.OrdinalIgnoreCase);
         }
         private static bool IsScheduleContentAvailable(IWebDriver driver)
         {
