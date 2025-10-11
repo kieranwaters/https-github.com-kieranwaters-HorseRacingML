@@ -118,12 +118,20 @@
     <script>
         (function () {
             const state = JSON.parse('@Html.Raw(initialSettingsJson)');
+            const form = document.getElementById('automationSettingsForm');
             const kellyInput = document.getElementById('kellyDampenerInput');
             const percentInput = document.getElementById('maxStakePercentInput');
             const amountInput = document.getElementById('maxStakeAmountInput');
             const modeInputs = Array.from(document.querySelectorAll('input[name="maxStakeMode"]'));
             const feedback = document.getElementById('automationSettingsFeedback');
             let debounceHandle = null;
+
+            if (form) {
+                form.addEventListener('submit', (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                });
+            }
 
             function parseNumber(value) {
                 if (value === null || value === undefined || value === '') {
