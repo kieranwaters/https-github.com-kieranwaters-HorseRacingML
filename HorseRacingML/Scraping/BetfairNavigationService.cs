@@ -300,9 +300,10 @@ namespace HorseRacingML.Scraping
         public IReadOnlyList<BetRecommendation> ScrapeOpenRaceTabs(
            RacingRepository repo,
            HyperparameterTrainer trainer,
-           out IReadOnlyCollection<string> missingScrapeFields)
+           out IReadOnlyCollection<string> missingScrapeFields,
+           bool refreshBankrollFromPage = true)
         {
-            var bankroll = GetEffectiveBankroll();
+            var bankroll = GetEffectiveBankroll(refreshBankrollFromPage);
             var settings = _automationSettings.GetSnapshot();
             var scraper = new BetfairMarketScraper(
                 repo,
@@ -316,12 +317,15 @@ namespace HorseRacingML.Scraping
             return recommendations;
         }
 
-        private decimal GetEffectiveBankroll()
+        private decimal GetEffectiveBankroll(bool refreshFromPage = true)
         {
-            var refreshed = TryRefreshBankrollFromPage();
-            if (refreshed.HasValue && refreshed.Value > 0m)
+            if (refreshFromPage)
             {
-                _bankroll = refreshed.Value;
+                var refreshed = TryRefreshBankrollFromPage();
+                if (refreshed.HasValue && refreshed.Value > 0m)
+                {
+                    _bankroll = refreshed.Value;
+                }
             }
 
             if (_bankroll <= 0m)
@@ -1098,7 +1102,13 @@ const el=arguments[0];const selectors=['div.racetrack-conditions','.racetrack-co
                         raceWindow: raceWindow,
                         windowReferenceUtc: cycleStartUtc);
 
-                    ScrapeOpenRaceTabs(repo, trainer, out _);
+                    var recommendations = ScrapeOpenRaceTabs(
+                        repo,
+                        trainer,
+                        out _,
+                        refreshBankrollFromPage: false);
+
+                    UpdateBankrollFromExecutedBets(recommendations);
                 }
                 catch (Exception ex)
                 {
@@ -1128,6 +1138,28 @@ const el=arguments[0];const selectors=['div.racetrack-conditions','.racetrack-co
                 {
                     break;
                 }
+            }
+        }
+        private void UpdateBankrollFromExecutedBets(IEnumerable<BetRecommendation> recommendations)
+        {
+            if (recommendations == null)
+            {
+                return;
+            }
+
+            var totalStaked = recommendations
+                .Where(r => r != null && r.Stake > 0m)
+                .Sum(r => r.Stake);
+
+            if (totalStaked <= 0m)
+            {
+                return;
+            }
+
+            _bankroll -= totalStaked;
+            if (_bankroll < 0m)
+            {
+                _bankroll = 0m;
             }
         }
         private HashSet<string> CaptureOpenRaceMarketIds()
