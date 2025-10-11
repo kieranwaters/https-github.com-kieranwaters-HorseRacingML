@@ -10,6 +10,8 @@ namespace HorseRacingML.Models
         public decimal Bankroll { get; set; }
         public HyperparameterSummary? AiHyperparameters { get; set; }
         public List<RaceDayReport> Races { get; set; } = new();
+        public TimeSpan? FilterStartTime { get; set; }
+        public TimeSpan? FilterEndTime { get; set; }
     }
 
     public class RaceDayReport

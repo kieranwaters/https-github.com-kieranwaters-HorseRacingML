@@ -2227,6 +2227,7 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
                     RenormalizeAiProbabilities(flows);
                 }
             }
+        }
 
         private static void RenormalizeAiProbabilities(IEnumerable<RunnerFlow>? flows)
         {
@@ -2274,7 +2275,7 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
                 $"scale={scale.ToString("0.####", CultureInfo.InvariantCulture)}, " +
                 $"normalized sum={normalizedSum.ToString("0.####", CultureInfo.InvariantCulture)}.");
         }
-        }
+        
         private static void AppendMarketFallbackReason(RunnerFlow? flow, string detail)
         {
             if (flow == null || string.IsNullOrWhiteSpace(detail))

@@ -86,6 +86,39 @@
         var local = utc.Kind == DateTimeKind.Utc ? utc.ToLocalTime() : utc;
         return local.ToString("f", culture);
     }
+    string? FormatFilterTime(TimeSpan? value, CultureInfo culture)
+    {
+        if (!value.HasValue)
+        {
+            return null;
+        }
+
+        return DateTime.Today.Add(value.Value).ToString("t", culture);
+    }
+
+    var filterStartText = FormatFilterTime(Model.FilterStartTime, CultureInfo.CurrentCulture);
+    var filterEndText = FormatFilterTime(Model.FilterEndTime, CultureInfo.CurrentCulture);
+    string? filterSummary = null;
+
+    if (!string.IsNullOrEmpty(filterStartText) && !string.IsNullOrEmpty(filterEndText))
+    {
+        filterSummary = $"Showing races between {filterStartText} and {filterEndText}.";
+    }
+    else if (!string.IsNullOrEmpty(filterStartText))
+    {
+        filterSummary = $"Showing races from {filterStartText} onwards.";
+    }
+    else if (!string.IsNullOrEmpty(filterEndText))
+    {
+        filterSummary = $"Showing races until {filterEndText}.";
+    }
+
+    var filterStartRouteValue = Model.FilterStartTime.HasValue
+        ? Model.FilterStartTime.Value.ToString(@"hh\:mm", CultureInfo.InvariantCulture)
+        : null;
+    var filterEndRouteValue = Model.FilterEndTime.HasValue
+        ? Model.FilterEndTime.Value.ToString(@"hh\:mm", CultureInfo.InvariantCulture)
+        : null;
 }
 
 <div class="d-flex justify-content-between align-items-center mb-3">
@@ -109,9 +142,17 @@
         }
     </div>
     <div class="d-flex flex-column flex-sm-row gap-2">
+        <a class="btn btn-outline-secondary" asp-action="DayReportOptions" asp-route-startTime="@filterStartRouteValue" asp-route-endTime="@filterEndRouteValue">
+            Change time filter
+        </a>
         <button type="button" id="removePastRacesButton" class="btn btn-outline-danger">Remove past races</button>
         <button type="button" id="saveReportButton" class="btn btn-outline-primary">Save Report</button>
-    </div>
+</div>
+        @if (!string.IsNullOrEmpty(filterSummary))
+{
+    <div class="alert alert-secondary">@filterSummary</div>
+}
+   
 </div>
 <div class="card mb-4">
     <div class="card-body">

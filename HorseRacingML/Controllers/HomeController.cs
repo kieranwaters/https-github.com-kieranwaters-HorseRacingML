@@ -88,10 +88,54 @@ namespace HorseRacingML.Controllers
             };
             return View(model);
         }
+        [HttpGet]
+        public IActionResult DayReportOptions(string? startTime = null, string? endTime = null, string? error = null)
+        {
+            var model = new DayReportFilterViewModel
+            {
+                StartTime = startTime,
+                EndTime = endTime,
+                ErrorMessage = error
+            };
+
+            return View(model);
+        }
+
         public async Task<IActionResult> DayReport(
             [FromServices] BetfairNavigationService betfair,
-            [FromServices] HyperparameterTrainer trainer)
+            [FromServices] HyperparameterTrainer trainer,
+            string? startTime = null,
+            string? endTime = null)
         {
+            if (!TryParseTimeOfDay(startTime, out var startTimeSpan))
+            {
+                return View("DayReportOptions", new DayReportFilterViewModel
+                {
+                    StartTime = startTime,
+                    EndTime = endTime,
+                    ErrorMessage = "Start time must be in HH:MM format."
+                });
+            }
+
+            if (!TryParseTimeOfDay(endTime, out var endTimeSpan))
+            {
+                return View("DayReportOptions", new DayReportFilterViewModel
+                {
+                    StartTime = startTime,
+                    EndTime = endTime,
+                    ErrorMessage = "End time must be in HH:MM format."
+                });
+            }
+
+            if (startTimeSpan.HasValue && endTimeSpan.HasValue && startTimeSpan.Value > endTimeSpan.Value)
+            {
+                return View("DayReportOptions", new DayReportFilterViewModel
+                {
+                    StartTime = startTime,
+                    EndTime = endTime,
+                    ErrorMessage = "Start time must be earlier than or equal to the end time."
+                });
+            }
             await betfair.LoginAsync();
             await betfair.OpenHorseRaceMeetingsInNewTabsAsync();
 
@@ -126,7 +170,95 @@ namespace HorseRacingML.Controllers
                 ? $"Day report (next day schedule) generated at {DateTime.Now:G}."
                 : $"Day report generated at {DateTime.Now:G}.";
             _status.Update(statusMessage);
+            if (report != null)
+            {
+                ApplyTimeFilters(report, startTimeSpan, endTimeSpan);
+            }
+
             return View(report);
+        }
+
+        private static bool TryParseTimeOfDay(string? value, out TimeSpan? time)
+        {
+            time = null;
+
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return true;
+            }
+
+            if (TimeSpan.TryParseExact(value, new[] { "h\\:mm", "hh\\:mm" }, CultureInfo.InvariantCulture, out var parsed))
+            {
+                time = parsed;
+                return true;
+            }
+
+            return false;
+        }
+
+        private static void ApplyTimeFilters(DayReportViewModel report, TimeSpan? start, TimeSpan? end)
+        {
+            if (report.Races == null || report.Races.Count == 0)
+            {
+                report.FilterStartTime = start;
+                report.FilterEndTime = end;
+                return;
+            }
+
+            var hasStart = start.HasValue;
+            var hasEnd = end.HasValue;
+
+            if (!hasStart && !hasEnd)
+            {
+                report.FilterStartTime = null;
+                report.FilterEndTime = null;
+                return;
+            }
+
+            var effectiveStart = start ?? TimeSpan.Zero;
+            var effectiveEnd = end ?? new TimeSpan(23, 59, 59);
+
+            static TimeSpan? GetRaceTime(RaceDayReport race)
+            {
+                if (race.OffTime.HasValue)
+                {
+                    return race.OffTime.Value;
+                }
+
+                if (race.RaceDate.HasValue)
+                {
+                    return race.RaceDate.Value.TimeOfDay;
+                }
+
+                return null;
+            }
+
+            var filtered = report.Races
+                .Where(race =>
+                {
+                    var raceTime = GetRaceTime(race);
+                    if (!raceTime.HasValue)
+                    {
+                        return true;
+                    }
+
+                    if (hasStart && raceTime.Value < effectiveStart)
+                    {
+                        return false;
+                    }
+
+                    if (hasEnd && raceTime.Value > effectiveEnd)
+                    {
+                        return false;
+                    }
+
+                    return true;
+                })
+                .ToList();
+
+            report.Races = filtered;
+            report.FilterStartTime = start;
+            report.FilterEndTime = end;
         }
         private static bool ShouldLoadNextDaySchedule(DayReportViewModel? report)
         {

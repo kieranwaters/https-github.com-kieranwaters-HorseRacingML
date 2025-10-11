@@ -1,0 +1,49 @@
+﻿@model HorseRacingML.Models.DayReportFilterViewModel
+@{
+    ViewData["Title"] = "Day Report";
+    string startValue = string.IsNullOrWhiteSpace(Model.StartTime) ? string.Empty : Model.StartTime!;
+    string endValue = string.IsNullOrWhiteSpace(Model.EndTime) ? string.Empty : Model.EndTime!;
+}
+
+<div class="row justify-content-center">
+    <div class="col-lg-8 col-xl-6">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h1 class="h3 mb-3">Day Report</h1>
+                <p class="text-muted">Select the time window you want to include in your day report. Leave a field empty to include all races before or after the other selection.</p>
+
+                @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+                {
+                    <div class="alert alert-danger" role="alert">@Model.ErrorMessage</div>
+                }
+
+                <form asp-action="DayReport" asp-controller="Home" method="get" class="row g-3">
+                    <div class="col-12 col-md-6">
+                        <label class="form-label" for="startTimeInput">Start time</label>
+                        <input type="time"
+                               class="form-control"
+                               id="startTimeInput"
+                               name="startTime"
+                               value="@startValue"
+                               placeholder="HH:MM" />
+                        <div class="form-text">Include races from this time onwards.</div>
+                    </div>
+                    <div class="col-12 col-md-6">
+                        <label class="form-label" for="endTimeInput">End time</label>
+                        <input type="time"
+                               class="form-control"
+                               id="endTimeInput"
+                               name="endTime"
+                               value="@endValue"
+                               placeholder="HH:MM" />
+                        <div class="form-text">Include races up to this time.</div>
+                    </div>
+                    <div class="col-12 d-flex justify-content-between flex-wrap gap-2 mt-3">
+                        <a asp-action="Index" asp-controller="Home" class="btn btn-outline-secondary">Back to dashboard</a>
+                        <button type="submit" class="btn btn-primary">Generate day report</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
