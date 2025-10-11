@@ -33,7 +33,7 @@ namespace HorseRacingML.ML
             try
             {
                 var devices = tf.config.list_physical_devices("GPU");
-                return devices != null && devices.Count > 0;
+                return devices != null && devices.Count() > 0;
             }
             catch (Exception ex)
             {
