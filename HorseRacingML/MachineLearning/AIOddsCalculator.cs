@@ -30,6 +30,8 @@ namespace HorseRacingML.ML
         private readonly double _legacyBias;
         private readonly string _modelStatus;
         private HyperparameterSummary? _hyperparameters;
+        private static readonly object _gpuStatusLock = new();
+        private static bool _gpuStatusLogged;
 
         private static readonly DateTime BaseDate = new DateTime(2005, 1, 1);
 
@@ -410,6 +412,7 @@ namespace HorseRacingML.ML
             _legacyWeights = Array.Empty<double>();
             _legacyBias = 0d;
             _modelStatus = "AI model not initialized.";
+            LogGpuStatus();
             if (!File.Exists(path))
             {
                 Console.Error.WriteLine($"[AI] Weight file not found at {path}; falling back to legacy logistic model.");
@@ -723,6 +726,10 @@ namespace HorseRacingML.ML
 
         private static double[] Multiply(double[] inputs, double[][] weights, double[] bias)
         {
+            if (GpuMath.TryMatMul(inputs, weights, bias, out var gpuResult))
+            {
+                return gpuResult;
+            }
             if (weights.Length != inputs.Length)
             {
                 throw new InvalidOperationException("Weight matrix input dimension mismatch.");
@@ -749,12 +756,46 @@ namespace HorseRacingML.ML
 
         private static double[] ApplyRelu(double[] values)
         {
+            if (GpuMath.TryRelu(values, out var gpuResult))
+            {
+                return gpuResult;
+            }
             var result = new double[values.Length];
             for (int i = 0; i < values.Length; i++)
             {
                 result[i] = values[i] > 0 ? values[i] : 0d;
             }
             return result;
+        }
+        private static void LogGpuStatus()
+        {
+            if (_gpuStatusLogged)
+            {
+                return;
+            }
+
+            lock (_gpuStatusLock)
+            {
+                if (_gpuStatusLogged)
+                {
+                    return;
+                }
+
+                if (GpuMath.IsGpuAvailable)
+                {
+                    Console.WriteLine("[AI] GPU acceleration enabled for neural network inference.");
+                }
+                else if (!string.IsNullOrEmpty(GpuMath.InitializationError))
+                {
+                    Console.WriteLine($"[AI] GPU acceleration unavailable: {GpuMath.InitializationError}");
+                }
+                else
+                {
+                    Console.WriteLine("[AI] GPU acceleration unavailable; using CPU inference.");
+                }
+
+                _gpuStatusLogged = true;
+            }
         }
 
         private double CalculateLegacyOdds(RunnerFlow flow)
