@@ -119,6 +119,9 @@
     var filterEndRouteValue = Model.FilterEndTime.HasValue
         ? Model.FilterEndTime.Value.ToString(@"hh\:mm", CultureInfo.InvariantCulture)
         : null;
+        var initialRegionSelection = string.IsNullOrWhiteSpace(Model?.InitialRegion)
+        ? DayReportFilterViewModel.DefaultRegion
+        : Model.InitialRegion!;
         string DetermineRaceRegion(string? country)
     {
         if (string.IsNullOrWhiteSpace(country))
@@ -232,7 +235,7 @@
         }
     </div>
     <div class="d-flex flex-column flex-sm-row gap-2">
-        <a class="btn btn-outline-secondary" asp-action="DayReportOptions" asp-route-startTime="@filterStartRouteValue" asp-route-endTime="@filterEndRouteValue">
+        <a class="btn btn-outline-secondary" asp-action="DayReportOptions" asp-route-startTime="@filterStartRouteValue" asp-route-endTime="@filterEndRouteValue" asp-route-region="@initialRegionSelection">
             Change time filter
         </a>
         <button type="button" id="removePastRacesButton" class="btn btn-outline-danger">Remove past races</button>
@@ -244,17 +247,18 @@
 }
 @if (Model.Races != null && Model.Races.Count > 0)
 {
+    <input type="hidden" id="dayReportInitialRegion" value="@initialRegionSelection" />
     <div class="card mb-4">
         <div class="card-body">
             <div class="row g-3 align-items-end">
                 <div class="col-sm-6 col-md-4 col-lg-3">
                     <label for="dayReportRegionSelect" class="form-label mb-1">Region</label>
                     <select id="dayReportRegionSelect" class="form-select form-select-sm">
-                        <option value="GB &amp; IRE" selected>GB &amp; IRE</option>
-                        <option value="USA">USA</option>
-                        <option value="RSA">RSA</option>
-                        <option value="FRA">FRA</option>
-                        <option value="All">All</option>
+                        <option value="GB &amp; IRE" @(initialRegionSelection == "GB & IRE" ? "selected" : string.Empty)>GB &amp; IRE</option>
+                        <option value="USA" @(initialRegionSelection == "USA" ? "selected" : string.Empty)>USA</option>
+                        <option value="RSA" @(initialRegionSelection == "RSA" ? "selected" : string.Empty)>RSA</option>
+                        <option value="FRA" @(initialRegionSelection == "FRA" ? "selected" : string.Empty)>FRA</option>
+                        <option value="All" @(initialRegionSelection == "All" ? "selected" : string.Empty)>All</option>
                     </select>
                     <div class="form-text">Use the selector to focus on specific race regions.</div>
                 </div>
@@ -663,7 +667,12 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
     <script>
         (function () {
             const regionSelect = document.getElementById('dayReportRegionSelect');
+            const initialRegionInput = document.getElementById('dayReportInitialRegion');
             const regionButtons = Array.from(document.querySelectorAll('.region-filter-btn'));
+            const initialRegionValue = (initialRegionInput?.value ?? '').trim();
+            if (regionSelect && initialRegionValue.length > 0) {
+                regionSelect.value = initialRegionValue;
+            }
             const regionProcessingOrder = ['GB & IRE', 'USA', 'RSA', 'FRA'];
             const delay = (ms) => {
                 const value = typeof ms === 'number' ? ms : Number(ms);
@@ -807,8 +816,12 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
             }
 
             if (regionButtons.length > 0) {
-                const initialRegion = regionSelect ? (regionSelect.value ?? 'GB & IRE') : 'GB & IRE';
-                activateRegion(initialRegion || 'GB & IRE');
+                const normalizedInitial = initialRegionValue.length > 0 ? initialRegionValue : 'GB & IRE';
+                if (normalizedInitial.toLowerCase() === 'all') {
+                    processAllRegionsSequentially();
+                } else {
+                    activateRegion(normalizedInitial || 'GB & IRE');
+                }
             }
             const saveButton = document.getElementById('saveReportButton');
             if (saveButton) {

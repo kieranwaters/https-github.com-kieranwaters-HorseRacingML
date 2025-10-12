@@ -3,6 +3,9 @@
     ViewData["Title"] = "Day Report";
     string startValue = string.IsNullOrWhiteSpace(Model.StartTime) ? string.Empty : Model.StartTime!;
     string endValue = string.IsNullOrWhiteSpace(Model.EndTime) ? string.Empty : Model.EndTime!;
+    string regionValue = string.IsNullOrWhiteSpace(Model.Region)
+        ? HorseRacingML.Models.DayReportFilterViewModel.DefaultRegion
+        : Model.Region;
 }
 
 <div class="row justify-content-center">
@@ -37,6 +40,17 @@
                                value="@endValue"
                                placeholder="HH:MM" />
                         <div class="form-text">Include races up to this time.</div>
+                    </div>
+                    <div class="col-12 col-md-6">
+                        <label class="form-label" for="regionSelect">Region</label>
+                        <select class="form-select" id="regionSelect" name="region">
+                            <option value="GB &amp; IRE" @(regionValue == "GB & IRE" ? "selected" : string.Empty)>GB &amp; IRE</option>
+                            <option value="USA" @(regionValue == "USA" ? "selected" : string.Empty)>USA</option>
+                            <option value="RSA" @(regionValue == "RSA" ? "selected" : string.Empty)>RSA</option>
+                            <option value="FRA" @(regionValue == "FRA" ? "selected" : string.Empty)>FRA</option>
+                            <option value="All" @(regionValue == "All" ? "selected" : string.Empty)>All</option>
+                        </select>
+                        <div class="form-text">Choose which Betfair region to expand automatically.</div>
                     </div>
                     <div class="col-12 d-flex justify-content-between flex-wrap gap-2 mt-3">
                         <a asp-action="Index" asp-controller="Home" class="btn btn-outline-secondary">Back to dashboard</a>

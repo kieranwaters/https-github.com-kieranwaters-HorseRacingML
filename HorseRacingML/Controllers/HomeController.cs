@@ -78,6 +78,135 @@ namespace HorseRacingML.Controllers
                 }
             });
         }
+        [HttpGet]
+        public IActionResult DayReportOptions(string? startTime = null, string? endTime = null, string? error = null, string? region = null)
+        {
+            var normalizedRegion = DayReportFilterViewModel.NormalizeRegion(region);
+            var model = new DayReportFilterViewModel
+            {
+                StartTime = startTime,
+                EndTime = endTime,
+                ErrorMessage = error,
+                Region = normalizedRegion
+            };
+
+            return View(model);
+        }
+
+        public async Task<IActionResult> DayReport(
+            [FromServices] BetfairNavigationService betfair,
+            [FromServices] HyperparameterTrainer trainer,
+            string? startTime = null,
+            string? endTime = null,
+            string? region = null)
+        {
+            var normalizedRegion = DayReportFilterViewModel.NormalizeRegion(region);
+            if (!TryParseTimeOfDay(startTime, out var startTimeSpan))
+            {
+                return View("DayReportOptions", new DayReportFilterViewModel
+                {
+                    StartTime = startTime,
+                    EndTime = endTime,
+                    ErrorMessage = "Start time must be in HH:MM format.",
+                    Region = normalizedRegion
+                });
+            }
+
+            if (!TryParseTimeOfDay(endTime, out var endTimeSpan))
+            {
+                return View("DayReportOptions", new DayReportFilterViewModel
+                {
+                    StartTime = startTime,
+                    EndTime = endTime,
+                    ErrorMessage = "End time must be in HH:MM format.",
+                    Region = normalizedRegion
+                });
+            }
+
+            if (startTimeSpan.HasValue && endTimeSpan.HasValue && startTimeSpan.Value > endTimeSpan.Value)
+            {
+                return View("DayReportOptions", new DayReportFilterViewModel
+                {
+                    StartTime = startTime,
+                    EndTime = endTime,
+                    ErrorMessage = "Start time must be earlier than or equal to the end time.",
+                    Region = normalizedRegion
+                });
+            }
+            await betfair.OpenHorseRaceMeetingsInNewTabsAsync(
+                scheduleStartTime: startTimeSpan,
+                scheduleEndTime: endTimeSpan);
+
+
+            var report = betfair.GenerateDayReport(_repository, trainer);
+            var usedNextDay = false;
+
+            if (ShouldLoadNextDaySchedule(report))
+            {
+                _logger.LogInformation("Day report contains only USA races; attempting to load the next day's schedule.");
+                var switched = await betfair.TrySelectHorseRacingDayAsync(1);
+                if (switched)
+                {
+                    await betfair.OpenHorseRaceMeetingsInNewTabsAsync(
+                        closeExistingRaceTabs: true,
+                        scheduleStartTime: startTimeSpan,
+                        scheduleEndTime: endTimeSpan);
+                    var nextDayReport = betfair.GenerateDayReport(_repository, trainer);
+                    if (nextDayReport?.Races?.Count > 0)
+                    {
+                        report = nextDayReport;
+                        usedNextDay = true;
+                    }
+                    else
+                    {
+                        _logger.LogWarning("Next day schedule did not produce any races; retaining USA schedule report.");
+                    }
+                }
+                else
+                {
+                    _logger.LogWarning("Unable to switch Betfair schedule to the next day; retaining USA schedule report.");
+                }
+            }
+
+            var statusMessage = usedNextDay
+                ? $"Day report (next day schedule) generated at {DateTime.Now:G}."
+                : $"Day report generated at {DateTime.Now:G}.";
+            _status.Update(statusMessage);
+            if (report != null)
+            {
+                ApplyTimeFilters(report, startTimeSpan, endTimeSpan);
+                report.InitialRegion = normalizedRegion;
+            }
+            else
+            {
+                report = new DayReportViewModel
+                {
+                    FilterStartTime = startTimeSpan,
+                    FilterEndTime = endTimeSpan,
+                    InitialRegion = normalizedRegion
+                };
+            }
+
+            return View(report);
+        }
+
+        private static bool TryParseTimeOfDay(string? value, out TimeSpan? time)
+        {
+            time = null;
+
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return true;
+            }
+
+            if (TimeSpan.TryParseExact(value, new[] { "h\\:mm", "hh\\:mm" }, CultureInfo.InvariantCulture, out var parsed))
+            {
+                time = parsed;
+                return true;
+            }
+
+            return false;
+        }
         public IActionResult CalculateFavouritesAccuracy()
         {
             var (includingJoint, excludingJoint, logLoss) = _repository.GetFavouriteAccuracy();
@@ -183,25 +312,6 @@ namespace HorseRacingML.Controllers
 
             return View(report);
         }
-
-        private static bool TryParseTimeOfDay(string? value, out TimeSpan? time)
-        {
-            time = null;
-
-            if (string.IsNullOrWhiteSpace(value))
-            {
-                return true;
-            }
-
-            if (TimeSpan.TryParseExact(value, new[] { "h\\:mm", "hh\\:mm" }, CultureInfo.InvariantCulture, out var parsed))
-            {
-                time = parsed;
-                return true;
-            }
-
-            return false;
-        }
-
         private static void ApplyTimeFilters(DayReportViewModel report, TimeSpan? start, TimeSpan? end)
         {
             if (report.Races == null || report.Races.Count == 0)

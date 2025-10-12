@@ -12,6 +12,7 @@ namespace HorseRacingML.Models
         public List<RaceDayReport> Races { get; set; } = new();
         public TimeSpan? FilterStartTime { get; set; }
         public TimeSpan? FilterEndTime { get; set; }
+        public string InitialRegion { get; set; } = DayReportFilterViewModel.DefaultRegion;
     }
 
     public class RaceDayReport
