@@ -310,16 +310,24 @@ else
                             }
                         </div>
                     </div>
-                    <div class="text-end">
+                    <div class="d-flex flex-column align-items-end gap-2 text-end">
+                        <button
+                            type="button"
+                            class="btn btn-sm btn-outline-secondary refresh-market-only-btn"
+                            data-market-id="@race.MarketId"
+                            data-race-url="@race.RaceUrl"
+                            @(string.IsNullOrWhiteSpace(race.RaceUrl) ? "disabled" : string.Empty)>
+                            Refresh market odds
+                        </button>
                         <button
                             type="button"
                             class="btn btn-sm btn-outline-secondary refresh-race-btn"
                             data-market-id="@race.MarketId"
                             data-race-url="@race.RaceUrl"
                             @(string.IsNullOrWhiteSpace(race.RaceUrl) ? "disabled" : string.Empty)>
-                            Refresh market odds
+                            Full refresh (AI + odds)
                         </button>
-                    </div>
+                          </div>
                 </div>
             </div>
             <div class="card-body">
@@ -413,6 +421,15 @@ else
                                         ? "runner-edge-lay"
                                         : string.Empty;
 
+                                var selectionIdAttr = runner.SelectionId?.Trim() ?? string.Empty;
+                                var horseNameAttr = runner.HorseName?.Trim() ?? string.Empty;
+                                var aiProbabilityAttr = runner.AiProbability.HasValue
+                                    ? runner.AiProbability.Value.ToString("0.################", CultureInfo.InvariantCulture)
+                                    : string.Empty;
+                                var marketProbabilityAttr = runner.MarketProbability.HasValue
+                                    ? runner.MarketProbability.Value.ToString("0.################", CultureInfo.InvariantCulture)
+                                    : string.Empty;
+
                                 var displayedKelly = hasBackEdge
                                     ? (runner.KellyFraction!.Value * 100).ToString("0.##", CultureInfo.CurrentCulture) + "%"
                                     : hasLayEdge
@@ -439,7 +456,11 @@ else
                                 var stakeData = displayedStakeValue.HasValue && displayedStakeValue.Value > 0
                                     ? displayedStakeValue.Value.ToString("0.00", CultureInfo.InvariantCulture)
                                     : string.Empty;
-                                <tr class="@rowClass">
+                                <tr class="@rowClass"
+                                    data-selection-id="@selectionIdAttr"
+                                    data-horse-name="@horseNameAttr"
+                                    data-ai-probability="@aiProbabilityAttr"
+                                    data-market-probability="@marketProbabilityAttr">
                                     <td>@cloth</td>
                                     <td>@draw</td>
                                     <td>
@@ -568,7 +589,19 @@ else
             }
 
             const refreshEndpoint = '@Url.Action("RefreshRaceOdds")';
+            const refreshMarketEndpoint = '@Url.Action("RefreshRaceMarketOdds")';
 
+            const cssEscape = (value) => {
+                const text = typeof value === 'string' ? value : String(value ?? '');
+                if (typeof window !== 'undefined' && window.CSS && typeof window.CSS.escape === 'function') {
+                    return window.CSS.escape(text);
+                }
+
+                return text.replace(/[\0-\x1F\x7F-\x9F!"#$%&'()*+,./:;<=>?@\[\]\\^`{|}~]/g, (char) => {
+                    const hex = char.charCodeAt(0).toString(16).padStart(2, '0');
+                    return `\\${hex} `;
+                });
+            };
             const formatProbabilityPercent = (value) => {
                 if (typeof value !== 'number' || !isFinite(value) || value < 0) {
                     return '-';
@@ -1131,7 +1164,12 @@ else
                     refreshButton.dataset.raceUrl = url;
                     refreshButton.disabled = !url;
                 }
-
+                const marketOnlyButton = card.querySelector('.refresh-market-only-btn');
+                if (marketOnlyButton) {
+                    const url = race?.raceUrl ?? '';
+                    marketOnlyButton.dataset.raceUrl = url;
+                    marketOnlyButton.disabled = !url;
+                }
                 updateCardRaceStart(card, race);
             };
 
@@ -1158,6 +1196,30 @@ else
 
                 runners.forEach(runner => {
                     const row = document.createElement('tr');
+                    if (typeof runner?.selectionId === 'string' && runner.selectionId.trim().length > 0) {
+                        row.dataset.selectionId = runner.selectionId.trim();
+                    } else {
+                        delete row.dataset.selectionId;
+                    }
+
+                    if (typeof runner?.horseName === 'string') {
+                        row.dataset.horseName = runner.horseName.trim();
+                    } else {
+                        delete row.dataset.horseName;
+                    }
+
+                    if (typeof runner?.aiProbability === 'number' && Number.isFinite(runner.aiProbability) && runner.aiProbability > 0) {
+                        row.dataset.aiProbability = runner.aiProbability.toString();
+                    } else {
+                        delete row.dataset.aiProbability;
+                    }
+
+                    if (typeof runner?.marketProbability === 'number' && Number.isFinite(runner.marketProbability) && runner.marketProbability > 0) {
+                        row.dataset.marketProbability = runner.marketProbability.toString();
+                    } else {
+                        delete row.dataset.marketProbability;
+                    }
+
 
                     const appendCell = (text, className) => {
                         const cell = document.createElement('td');
@@ -1312,11 +1374,229 @@ else
                     if (refreshButton) {
                         refreshButton.dataset.marketId = race.marketId;
                     }
+                    const marketOnlyButton = card.querySelector('.refresh-market-only-btn');
+                    if (marketOnlyButton) {
+                        marketOnlyButton.dataset.marketId = race.marketId;
+                    }
                 }
 
                 updateRaceMetadata(card, race);
                 renderRaceRows(card, race);
             };
+
+            const applyMarketOddsUpdate = (card, update) => {
+                if (!card || !update) {
+                    return;
+                }
+
+                if (update.marketId) {
+                    card.dataset.marketId = update.marketId;
+                    const refreshButton = card.querySelector('.refresh-race-btn');
+                    if (refreshButton) {
+                        refreshButton.dataset.marketId = update.marketId;
+                    }
+
+                    const marketOnlyButton = card.querySelector('.refresh-market-only-btn');
+                    if (marketOnlyButton) {
+                        marketOnlyButton.dataset.marketId = update.marketId;
+                    }
+                }
+
+                if (typeof update.backBookPercentage === 'number' || typeof update.layBookPercentage === 'number') {
+                    const infoContainer = card.querySelector('.card-header .small.text-muted');
+                    if (infoContainer) {
+                        const spans = Array.from(infoContainer.querySelectorAll('span'));
+                        const bookSpan = spans.find(span => span.textContent && span.textContent.trim().startsWith('Book:'));
+                        if (bookSpan) {
+                            const parts = [];
+                            const backText = typeof update.backBookPercentage === 'number' && Number.isFinite(update.backBookPercentage)
+                                ? formatPercentage(update.backBookPercentage)
+                                : null;
+                            if (backText) {
+                                parts.push(`Back ${backText}`);
+                            }
+
+                            const layText = typeof update.layBookPercentage === 'number' && Number.isFinite(update.layBookPercentage)
+                                ? formatPercentage(update.layBookPercentage)
+                                : null;
+                            if (layText) {
+                                parts.push(`Lay ${layText}`);
+                            }
+
+                            bookSpan.textContent = parts.length > 0
+                                ? `Book: ${parts.join(' / ')}`
+                                : 'Book: -';
+                        }
+                    }
+                }
+
+                const rows = card.querySelectorAll('tbody tr');
+                const runners = Array.isArray(update.runners) ? update.runners : [];
+                runners.forEach(runner => {
+                    if (!runner) {
+                        return;
+                    }
+
+                    const selectionId = typeof runner.selectionId === 'string' ? runner.selectionId.trim() : '';
+                    let targetRow = null;
+
+                    if (selectionId.length > 0) {
+                        const escaped = cssEscape(selectionId);
+                        targetRow = card.querySelector(`tbody tr[data-selection-id="${escaped}"]`);
+                    }
+
+                    if (!targetRow && typeof runner.horseName === 'string' && runner.horseName.trim().length > 0) {
+                        const horseName = runner.horseName.trim().toLowerCase();
+                        targetRow = Array.from(rows).find(r => {
+                            const horseElement = r.querySelector('td:nth-of-type(3) .fw-semibold');
+                            if (!horseElement) {
+                                return false;
+                            }
+
+                            return horseElement.textContent.trim().toLowerCase() === horseName;
+                        }) || null;
+                    }
+
+                    if (!targetRow) {
+                        return;
+                    }
+
+                    if (selectionId.length > 0) {
+                        targetRow.dataset.selectionId = selectionId;
+                    }
+
+                    if (typeof runner.horseName === 'string') {
+                        targetRow.dataset.horseName = runner.horseName.trim();
+                    }
+
+                    let marketProbability = null;
+                    if (typeof runner.marketProbability === 'number' && Number.isFinite(runner.marketProbability) && runner.marketProbability > 0) {
+                        marketProbability = runner.marketProbability;
+                    } else if (typeof runner.marketDecimalOdds === 'number' && Number.isFinite(runner.marketDecimalOdds) && runner.marketDecimalOdds > 1) {
+                        marketProbability = 1 / runner.marketDecimalOdds;
+                    }
+
+                    if (Number.isFinite(marketProbability) && marketProbability > 0) {
+                        targetRow.dataset.marketProbability = marketProbability.toString();
+                    } else {
+                        delete targetRow.dataset.marketProbability;
+                    }
+
+                    const cells = targetRow.querySelectorAll('td');
+                    if (cells.length < 10) {
+                        return;
+                    }
+
+                    const marketOddsCell = cells[5];
+                    if (marketOddsCell) {
+                        if (typeof runner.marketDecimalOdds === 'number' && Number.isFinite(runner.marketDecimalOdds) && runner.marketDecimalOdds > 1) {
+                            marketOddsCell.textContent = formatDecimal(runner.marketDecimalOdds);
+                        } else {
+                            marketOddsCell.textContent = '-';
+                        }
+                    }
+
+                    const layOddsCell = cells[6];
+                    if (layOddsCell) {
+                        if (typeof runner.layDecimalOdds === 'number' && Number.isFinite(runner.layDecimalOdds) && runner.layDecimalOdds > 1) {
+                            layOddsCell.textContent = formatDecimal(runner.layDecimalOdds);
+                        } else {
+                            layOddsCell.textContent = '-';
+                        }
+                    }
+
+                    const marketWinCell = cells[9];
+                    if (marketWinCell) {
+                        if (Number.isFinite(marketProbability) && marketProbability > 0) {
+                            const percentText = formatPercentage(marketProbability * 100);
+                            marketWinCell.textContent = percentText ?? '-';
+                        } else {
+                            marketWinCell.textContent = '-';
+                        }
+                    }
+
+                    const diffCell = cells[10];
+                    if (diffCell) {
+                        const aiProbability = Number.parseFloat(targetRow.dataset.aiProbability ?? '');
+                        if (Number.isFinite(aiProbability) && Number.isFinite(marketProbability) && marketProbability > 0) {
+                            const diffPercent = (aiProbability - marketProbability) * 100;
+                            const diffText = formatPercentage(diffPercent);
+                            diffCell.textContent = diffText ?? '-';
+                        } else {
+                            diffCell.textContent = '-';
+                        }
+                    }
+
+                    const stakeSpan = targetRow.querySelector('.stake-value');
+                    if (stakeSpan) {
+                        if (typeof runner.layDecimalOdds === 'number' && Number.isFinite(runner.layDecimalOdds) && runner.layDecimalOdds > 1) {
+                            stakeSpan.dataset.layOdds = runner.layDecimalOdds.toString();
+                        } else if (!Number.isFinite(Number.parseFloat(stakeSpan.dataset.layOdds ?? ''))) {
+                            delete stakeSpan.dataset.layOdds;
+                        }
+                    }
+                });
+
+                updateStakeDisplays();
+            };
+
+            const marketRefreshButtons = document.querySelectorAll('.refresh-market-only-btn');
+            if (marketRefreshButtons.length > 0) {
+                marketRefreshButtons.forEach(button => {
+                    button.addEventListener('click', async () => {
+                        if (button.disabled) {
+                            return;
+                        }
+
+                        const raceUrl = button.dataset.raceUrl;
+                        const marketId = button.dataset.marketId;
+                        const card = button.closest('.card');
+
+                        if (!raceUrl) {
+                            alert('No market URL is available for this race.');
+                            return;
+                        }
+
+                        if (!card) {
+                            alert('Unable to locate the race card for updating.');
+                            return;
+                        }
+
+                        const originalHtml = button.innerHTML;
+                        button.disabled = true;
+                        button.innerText = 'Refreshing…';
+
+                        try {
+                            const response = await fetch(refreshMarketEndpoint, {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({ raceUrl, marketId })
+                            });
+
+                            if (!response.ok) {
+                                throw new Error(`Request failed with status ${response.status}`);
+                            }
+
+                            const payload = await response.json();
+                            if (payload?.success && payload?.update) {
+                                applyMarketOddsUpdate(card, payload.update);
+                                return;
+                            }
+
+                            const message = payload?.message ?? 'Failed to refresh market odds.';
+                            alert(message);
+                        } catch (error) {
+                            console.error('Market-only refresh request failed', error);
+                            alert('Unable to refresh the market odds for this race. Please try again.');
+                        } finally {
+                            button.innerHTML = originalHtml;
+                            button.disabled = !button.dataset.raceUrl;
+                        }
+                    });
+                });
+            }
 
             const refreshButtons = document.querySelectorAll('.refresh-race-btn');
             if (refreshButtons.length > 0) {

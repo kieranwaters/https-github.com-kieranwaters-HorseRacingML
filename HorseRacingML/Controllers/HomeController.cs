@@ -9,6 +9,7 @@ using HorseRacingML.ML;
 using System.Globalization;
 using System.Linq;
 using System;
+using System.Collections.Generic;
 
 namespace HorseRacingML.Controllers
 {
@@ -417,7 +418,51 @@ namespace HorseRacingML.Controllers
             TempData["Message"] = "Scraping of recent race results has started.";
             return RedirectToAction("Index");
         }
+        [HttpPost]
+        public async Task<IActionResult> RefreshRaceMarketOdds(
+            [FromBody] RefreshRaceRequest request,
+            [FromServices] BetfairNavigationService betfair,
+            [FromServices] HyperparameterTrainer trainer)
+        {
+            if (request == null || string.IsNullOrWhiteSpace(request.RaceUrl))
+            {
+                return BadRequest(new { success = false, message = "Race URL is required." });
+            }
 
+            try
+            {
+                var refreshed = await betfair.RefreshRaceAsync(request.RaceUrl, _repository, trainer);
+                if (refreshed == null)
+                {
+                    return NotFound(new { success = false, message = "Unable to refresh market data for the selected race." });
+                }
+
+                var update = new RaceMarketOddsUpdate
+                {
+                    MarketId = refreshed.MarketId,
+                    BackBookPercentage = refreshed.BackBookPercentage,
+                    LayBookPercentage = refreshed.LayBookPercentage,
+                    Runners = refreshed.Runners?.Select(runner => new RunnerMarketOddsUpdate
+                    {
+                        SelectionId = runner.SelectionId,
+                        HorseName = runner.HorseName,
+                        MarketDecimalOdds = runner.MarketDecimalOdds,
+                        LayDecimalOdds = runner.LayDecimalOdds,
+                        MarketProbability = runner.MarketProbability ??
+                            (runner.MarketDecimalOdds.HasValue && runner.MarketDecimalOdds.Value > 0m
+                                ? (double?)(1.0m / runner.MarketDecimalOdds.Value)
+                                : null)
+                    }).ToList() ?? new List<RunnerMarketOddsUpdate>()
+                };
+
+                return Json(new { success = true, update });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to refresh market-only odds for URL {RaceUrl}.", request.RaceUrl);
+                return StatusCode(500, new { success = false, message = "An unexpected error occurred while refreshing the market odds." });
+            }
+        }
         public IActionResult Index()
         {
             ViewData["StatusMessage"] = _status.Message;
