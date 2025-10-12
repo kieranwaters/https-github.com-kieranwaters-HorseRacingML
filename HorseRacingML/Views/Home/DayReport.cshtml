@@ -166,10 +166,17 @@
             return "FRA";
         }
 
+    if (normalized.Contains("AUSTRALIA") ||
+            normalized == "AUS" ||
+            normalized == "AUST")
+        {
+            return "AUS";
+        }
+
         return "GB & IRE";
     }
 
-    var regionOrder = new[] { "GB & IRE", "USA", "RSA", "FRA" };
+    var regionOrder = new[] { "GB & IRE", "USA", "RSA", "FRA", "AUS" };
     var regionRaceCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
     var regionTrackSets = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
 
@@ -258,6 +265,7 @@
                         <option value="USA" selected='@(initialRegionSelection == "USA" ? "selected" : null)'>USA</option>
                         <option value="RSA" selected='@(initialRegionSelection == "RSA" ? "selected" : null)'>RSA</option>
                         <option value="FRA" selected='@(initialRegionSelection == "FRA" ? "selected" : null)'>FRA</option>
+                         <option value="AUS" selected='@(initialRegionSelection == "AUS" ? "selected" : null)'>AUS</option>
                         <option value="All" selected='@(initialRegionSelection == "All" ? "selected" : null)'>All</option>
                     </select>
                     <div class="form-text">Use the selector to focus on specific race regions.</div>
@@ -673,7 +681,7 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
             if (regionSelect && initialRegionValue.length > 0) {
                 regionSelect.value = initialRegionValue;
             }
-            const regionProcessingOrder = ['GB & IRE', 'USA', 'RSA', 'FRA'];
+            const regionProcessingOrder = ['GB & IRE', 'USA', 'RSA', 'FRA', 'AUS'];
             const delay = (ms) => {
                 const value = typeof ms === 'number' ? ms : Number(ms);
                 const safeValue = Number.isFinite(value) && value > 0 ? value : 0;

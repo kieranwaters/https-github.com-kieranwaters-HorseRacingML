@@ -14,6 +14,7 @@ namespace HorseRacingML.Models
             "USA",
             "RSA",
             "FRA",
+            "AUS",
             "All"
         };
 
