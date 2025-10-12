@@ -710,13 +710,15 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                         return;
                     }
 
-                    const detailsElements = card.querySelectorAll('details');
-                    detailsElements.forEach(details => {
-                        details.open = true;
+                    const autoOpenDetails = card.querySelectorAll('details[data-auto-open="true"]');
+                    autoOpenDetails.forEach(details => {
+                        if (!details.open) {
+                            details.open = true;
+                        }
                     });
 
-                    const summaryElements = card.querySelectorAll('summary');
-                    summaryElements.forEach(summary => {
+                    const autoOpenSummaries = card.querySelectorAll('summary[data-auto-open="true"]');
+                    autoOpenSummaries.forEach(summary => {
                         const container = summary.closest('details');
                         if (container && !container.open) {
                             summary.click();
