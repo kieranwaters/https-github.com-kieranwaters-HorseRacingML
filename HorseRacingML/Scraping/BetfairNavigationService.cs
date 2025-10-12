@@ -645,32 +645,41 @@ namespace HorseRacingML.Scraping
         {
             ReturnToPrimaryWindow();
             CaptureRaceGoingFromSchedule();
-            repo.ClearDayReportTables();
-            var bankroll = GetEffectiveBankroll();
-            var settings = _automationSettings.GetSnapshot();
-            var scraper = new BetfairMarketScraper(
-                repo,
-                trainer,
-                bankroll,
-                settings,
-                _useMarketFallbackForAiDegeneracy,
-                GetRaceGoingSnapshot());
-            var races = scraper.ScrapeOpenRaceTabsForReport(_driver);
-            var orderedRaces = races
-                .OrderBy(r => GetRaceScheduleSortKey(r))
-                .ThenBy(r => r.RaceTitle ?? string.Empty, StringComparer.OrdinalIgnoreCase)
-                .ThenBy(r => r.MarketId, StringComparer.Ordinal)
-                .ToList();
-            ReturnToPrimaryWindow();
+
+            decimal bankroll;
+            HyperparameterSummary? hyperparameters;
+            List<RaceDayReport> orderedRaces;
+
+            using (repo.BeginDayReportScope())
+            {
+                repo.ClearDayReportTables();
+                bankroll = GetEffectiveBankroll();
+                var settings = _automationSettings.GetSnapshot();
+                var scraper = new BetfairMarketScraper(
+                    repo,
+                    trainer,
+                    bankroll,
+                    settings,
+                    _useMarketFallbackForAiDegeneracy,
+                    GetRaceGoingSnapshot());
+                var races = scraper.ScrapeOpenRaceTabsForReport(_driver);
+                orderedRaces = races
+                    .OrderBy(r => GetRaceScheduleSortKey(r))
+                    .ThenBy(r => r.RaceTitle ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(r => r.MarketId, StringComparer.Ordinal)
+                    .ToList();
+                hyperparameters = scraper.LoadedHyperparameters;
+                ReturnToPrimaryWindow();
+            }
+
             return new DayReportViewModel
             {
                 GeneratedAt = DateTime.UtcNow,
                 Bankroll = bankroll,
-                AiHyperparameters = scraper.LoadedHyperparameters,
+                AiHyperparameters = hyperparameters,
                 Races = orderedRaces
             };
         }
-
         public async Task OpenHorseRaceMeetingsInNewTabsAsync(
             int delayBetweenTabsMs = 0,
             bool closeExistingRaceTabs = true,
