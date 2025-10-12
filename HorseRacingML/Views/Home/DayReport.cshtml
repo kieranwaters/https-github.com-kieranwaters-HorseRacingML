@@ -119,6 +119,96 @@
     var filterEndRouteValue = Model.FilterEndTime.HasValue
         ? Model.FilterEndTime.Value.ToString(@"hh\:mm", CultureInfo.InvariantCulture)
         : null;
+        string DetermineRaceRegion(string? country)
+    {
+        if (string.IsNullOrWhiteSpace(country))
+        {
+            return "GB & IRE";
+        }
+
+        var normalized = country.Trim().ToUpperInvariant();
+
+        if (normalized.Contains("UNITED KINGDOM") ||
+            normalized.Contains("GREAT BRITAIN") ||
+            normalized.Contains("ENGLAND") ||
+            normalized.Contains("SCOTLAND") ||
+            normalized.Contains("WALES") ||
+            normalized.Contains("NORTHERN IRELAND") ||
+            normalized.Contains("IRELAND") ||
+            normalized == "UK" ||
+            normalized == "GB" ||
+            normalized == "IRE" ||
+            normalized == "EIRE")
+        {
+            return "GB & IRE";
+        }
+
+        if (normalized.Contains("UNITED STATES") ||
+            normalized.Contains("AMERICA") ||
+            normalized == "USA" ||
+            normalized == "US")
+        {
+            return "USA";
+        }
+
+        if (normalized.Contains("SOUTH AFRICA") ||
+            normalized == "RSA")
+        {
+            return "RSA";
+        }
+
+        if (normalized.Contains("FRANCE") ||
+            normalized == "FRA")
+        {
+            return "FRA";
+        }
+
+        return "GB & IRE";
+    }
+
+    var regionOrder = new[] { "GB & IRE", "USA", "RSA", "FRA" };
+    var regionRaceCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+    var regionTrackSets = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+
+    foreach (var region in regionOrder)
+    {
+        regionRaceCounts[region] = 0;
+        regionTrackSets[region] = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    }
+
+    if (Model.Races != null)
+    {
+        foreach (var race in Model.Races)
+        {
+            var region = DetermineRaceRegion(race.VenueCountry);
+            if (!regionRaceCounts.ContainsKey(region))
+            {
+                regionRaceCounts[region] = 0;
+            }
+
+            if (!regionTrackSets.ContainsKey(region))
+            {
+                regionTrackSets[region] = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            }
+
+            regionRaceCounts[region]++;
+
+            var venueName = race.VenueName?.Trim();
+            if (!string.IsNullOrEmpty(venueName))
+            {
+                regionTrackSets[region].Add(venueName);
+            }
+        }
+    }
+
+    var regionSummaries = regionOrder
+        .Select(region => new
+        {
+            Region = region,
+            RaceCount = regionRaceCounts.TryGetValue(region, out var races) ? races : 0,
+            TrackCount = regionTrackSets.TryGetValue(region, out var tracks) ? tracks.Count : 0
+        })
+        .ToList();
 }
 
 <div class="d-flex justify-content-between align-items-center mb-3">
@@ -151,6 +241,40 @@
         @if (!string.IsNullOrEmpty(filterSummary))
 {
     <div class="alert alert-secondary">@filterSummary</div>
+}
+@if (Model.Races != null && Model.Races.Count > 0)
+{
+    <div class="card mb-4">
+        <div class="card-body">
+            <div class="row g-3 align-items-end">
+                <div class="col-sm-6 col-md-4 col-lg-3">
+                    <label for="dayReportRegionSelect" class="form-label mb-1">Region</label>
+                    <select id="dayReportRegionSelect" class="form-select form-select-sm">
+                        <option value="GB &amp; IRE" selected>GB &amp; IRE</option>
+                        <option value="USA">USA</option>
+                        <option value="RSA">RSA</option>
+                        <option value="FRA">FRA</option>
+                        <option value="All">All</option>
+                    </select>
+                    <div class="form-text">Use the selector to focus on specific race regions.</div>
+                </div>
+                <div class="col-12">
+                    <div class="d-flex flex-wrap gap-2" id="dayReportRegionButtons">
+                        @foreach (var summary in regionSummaries)
+                        {
+                            var trackLabel = summary.TrackCount == 1 ? "track" : "tracks";
+                            var raceLabel = summary.RaceCount == 1 ? "race" : "races";
+                            <button type="button"
+                                    class="btn btn-outline-secondary btn-sm region-filter-btn"
+                                    data-region="@summary.Region">
+                                @summary.Region (@summary.TrackCount @trackLabel / @summary.RaceCount @raceLabel)
+                            </button>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 }
    
 </div>
@@ -275,8 +399,9 @@ else
         var raceStartIso = raceStart.HasValue
             ? raceStart.Value.ToString("o", CultureInfo.InvariantCulture)
             : string.Empty;
+var raceRegion = DetermineRaceRegion(race.VenueCountry);
 
-        <div class="card mb-4 race-card" data-market-id="@race.MarketId" data-race-start="@raceStartIso">
+        <div class="card mb-4 race-card" data-market-id="@race.MarketId" data-race-start="@raceStartIso" data-region="@raceRegion">
             <div class="card-header bg-light">
                 <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
                     <div>
@@ -537,6 +662,154 @@ else
 @section Scripts {
     <script>
         (function () {
+            const regionSelect = document.getElementById('dayReportRegionSelect');
+            const regionButtons = Array.from(document.querySelectorAll('.region-filter-btn'));
+            const regionProcessingOrder = ['GB & IRE', 'USA', 'RSA', 'FRA'];
+            const delay = (ms) => {
+                const value = typeof ms === 'number' ? ms : Number(ms);
+                const safeValue = Number.isFinite(value) && value > 0 ? value : 0;
+                return new Promise(resolve => setTimeout(resolve, safeValue));
+            };
+
+            const setActiveRegionButton = (region) => {
+                const normalized = (region ?? '').trim().toLowerCase();
+                regionButtons.forEach(button => {
+                    const buttonRegion = (button.dataset.region ?? '').trim().toLowerCase();
+                    const shouldActivate = normalized.length > 0 && normalized !== 'all' && buttonRegion === normalized;
+                    button.classList.toggle('active', shouldActivate);
+                });
+            };
+
+            const filterRacesByRegion = (region) => {
+                const normalized = (region ?? '').trim().toLowerCase();
+                const raceCards = document.querySelectorAll('.race-card');
+                raceCards.forEach(card => {
+                    const cardRegion = (card.dataset.region ?? '').trim().toLowerCase();
+                    const shouldShow = normalized.length === 0 || normalized === 'all' || cardRegion === normalized;
+                    if (shouldShow) {
+                        card.classList.remove('d-none');
+                    } else {
+                        card.classList.add('d-none');
+                    }
+                });
+            };
+
+            const openVisibleRaceDetails = () => {
+                const raceCards = document.querySelectorAll('.race-card');
+                raceCards.forEach(card => {
+                    if (card.classList.contains('d-none')) {
+                        return;
+                    }
+
+                    const detailsElements = card.querySelectorAll('details');
+                    detailsElements.forEach(details => {
+                        details.open = true;
+                    });
+
+                    const summaryElements = card.querySelectorAll('summary');
+                    summaryElements.forEach(summary => {
+                        const container = summary.closest('details');
+                        if (container && !container.open) {
+                            summary.click();
+                        }
+                    });
+
+                    const toggleElements = card.querySelectorAll('[aria-expanded="false"], button[data-bs-toggle="collapse"].collapsed, button[data-toggle="collapse"].collapsed');
+                    toggleElements.forEach(toggle => {
+                        if (toggle instanceof HTMLElement && !toggle.disabled) {
+                            toggle.click();
+                        }
+                    });
+                });
+            };
+
+            const activateRegion = (region) => {
+                const normalized = (region ?? '').trim();
+                if (normalized.length === 0) {
+                    filterRacesByRegion('GB & IRE');
+                    setActiveRegionButton('GB & IRE');
+                    if (regionSelect && regionSelect.value !== 'GB & IRE') {
+                        regionSelect.value = 'GB & IRE';
+                    }
+                    openVisibleRaceDetails();
+                    return;
+                }
+
+                const lowered = normalized.toLowerCase();
+                if (lowered === 'all') {
+                    filterRacesByRegion('All');
+                    setActiveRegionButton('');
+                    if (regionSelect && regionSelect.value !== 'All') {
+                        regionSelect.value = 'All';
+                    }
+                    openVisibleRaceDetails();
+                    return;
+                }
+
+                filterRacesByRegion(normalized);
+                setActiveRegionButton(normalized);
+                if (regionSelect && regionSelect.value !== normalized) {
+                    regionSelect.value = normalized;
+                }
+                openVisibleRaceDetails();
+            };
+
+            const processAllRegionsSequentially = async () => {
+                for (const region of regionProcessingOrder) {
+                    activateRegion(region);
+                    await delay(300);
+                }
+
+                filterRacesByRegion('All');
+                setActiveRegionButton('');
+                openVisibleRaceDetails();
+                if (regionSelect) {
+                    regionSelect.value = 'All';
+                }
+            };
+
+            regionButtons.forEach(button => {
+                button.addEventListener('click', event => {
+                    event.preventDefault();
+                    const region = (button.dataset.region ?? '').trim();
+                    if (!region) {
+                        return;
+                    }
+
+                    activateRegion(region);
+                });
+            });
+
+            if (regionSelect) {
+                regionSelect.addEventListener('change', async event => {
+                    const value = (event.target?.value ?? '').trim();
+                    if (!value) {
+                        activateRegion('GB & IRE');
+                        return;
+                    }
+
+                    if (value === 'All') {
+                        await processAllRegionsSequentially();
+                        return;
+                    }
+
+                    if (value !== 'GB & IRE') {
+                        const match = regionButtons.find(button => (button.dataset.region ?? '').trim().toLowerCase() === value.toLowerCase());
+                        if (match) {
+                            match.focus();
+                            match.click();
+                            return;
+                        }
+                    }
+
+                    activateRegion(value);
+                });
+            }
+
+            if (regionButtons.length > 0) {
+                const initialRegion = regionSelect ? (regionSelect.value ?? 'GB & IRE') : 'GB & IRE';
+                activateRegion(initialRegion || 'GB & IRE');
+            }
             const saveButton = document.getElementById('saveReportButton');
             if (saveButton) {
                 saveButton.addEventListener('click', function () {
@@ -597,7 +870,7 @@ else
                     return window.CSS.escape(text);
                 }
 
-                return text.replace(/[\0-\x1F\x7F-\x9F!"#$%&'()*+,./:;<=>?@\[\]\\^`{|}~]/g, (char) => {
+             return text.replace(/[\0-\x1F\x7F-\x9F!"#$%&'()*+,./:;<=>?@@\[\]\\^`{|}~]/g, (char) => {
                     const hex = char.charCodeAt(0).toString(16).padStart(2, '0');
                     return `\\${hex} `;
                 });
