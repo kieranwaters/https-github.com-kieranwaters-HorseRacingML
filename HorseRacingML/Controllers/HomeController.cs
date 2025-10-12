@@ -141,7 +141,7 @@ namespace HorseRacingML.Controllers
             var report = betfair.GenerateDayReport(_repository, trainer);
             var usedNextDay = false;
 
-            if (ShouldLoadNextDaySchedule(report))
+            if (ShouldLoadNextDaySchedule(report, normalizedRegion))
             {
                 _logger.LogInformation("Day report contains only USA races; attempting to load the next day's schedule.");
                 var switched = await betfair.TrySelectHorseRacingDayAsync(1);
@@ -282,8 +282,12 @@ namespace HorseRacingML.Controllers
             report.FilterStartTime = start;
             report.FilterEndTime = end;
         }
-        private static bool ShouldLoadNextDaySchedule(DayReportViewModel? report)
+        private static bool ShouldLoadNextDaySchedule(DayReportViewModel? report, string normalizedRegion)
         {
+            if (!string.Equals(normalizedRegion, DayReportFilterViewModel.DefaultRegion, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
             if (report?.Races == null || report.Races.Count == 0)
             {
                 return false;
