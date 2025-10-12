@@ -9,6 +9,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace HorseRacingML.Scraping
 {
@@ -641,6 +642,7 @@ namespace HorseRacingML.Scraping
 
                 var flowsSnapshot = flows.ToList(); // snapshot for safe iteration
                 var hasAnyBackPrice = flowsSnapshot.Any(f => f.BackPrice1.HasValue); // detect available prices
+                var evaluationCandidates = new List<RunnerFlow>();
 
                 foreach (var rf in flowsSnapshot) // process each runner
                 {
@@ -653,7 +655,7 @@ namespace HorseRacingML.Scraping
                         : (rf.SelectionId ?? "unknown");
                     if (hasAnyBackPrice && !rf.BackPrice1.HasValue)
                     {
-                        Console.WriteLine($"\t\tNo back price available for {rfIdentifier}; assuming this runner is a non-runner and excluding it from analysis.");
+                        Console.WriteLine($"		No back price available for {rfIdentifier}; assuming this runner is a non-runner and excluding it from analysis.");
                         flows.Remove(rf); // drop non-runner from active list
                         continue; // skip downstream processing
                     }
@@ -668,42 +670,70 @@ namespace HorseRacingML.Scraping
                     }
                     rf.AiProbabilityClampedToMarket = false;
                     rf.AiProbabilityClampTarget = null;
-                    try
+                    rf.AiProbabilityMarketDerived = false;
+                    rf.AiProbabilityFallbackReason = null;
+                    evaluationCandidates.Add(rf);
+                }
+
+                if (evaluationCandidates.Count > 0)
+                {
+                    var parallelOptions = new ParallelOptions { MaxDegreeOfParallelism = 6 };
+                    Parallel.ForEach(evaluationCandidates, parallelOptions, rf =>
                     {
-                        var probability = aiCalculator.CalculateOdds(rf); // compute AI odds
-                        if (double.IsFinite(probability) && probability > 0 && probability <= 1)
+                        var rfIdentifier = !string.IsNullOrWhiteSpace(rf.HorseName)
+                                ? rf.HorseName!
+                                : (rf.SelectionId ?? "unknown");
+
+                        try
                         {
-                            rf.AiOdds = probability;
+                            var probability = aiCalculator.CalculateOdds(rf); // compute AI odds
+                            if (double.IsFinite(probability) && probability > 0 && probability <= 1)
+                            {
+                                rf.AiOdds = probability;
+                                rf.AiProbabilityMarketDerived = false;
+                                rf.AiProbabilityFallbackReason = null;
+                            }
+                            else
+                            {
+                                rf.AiOdds = null;
+                                rf.AiProbabilityMarketDerived = false;
+                                rf.AiProbabilityFallbackReason = null;
+                                var probabilityText = double.IsFinite(probability)
+                                    ? probability.ToString("0.####", CultureInfo.InvariantCulture)
+                                    : "non-finite";
+                                Console.WriteLine($"		Discarding non-positive AI probability {probabilityText} for {rfIdentifier}; treating as missing.");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            rf.AiOdds = null; // set null on fail
                             rf.AiProbabilityMarketDerived = false;
                             rf.AiProbabilityFallbackReason = null;
+                            rf.AiProbabilityClampedToMarket = false;
+                            rf.AiProbabilityClampTarget = null;
+                            Console.Error.WriteLine($"	Failed to calculate AI odds for selection {rfIdentifier} in market {marketId}: {ex.Message}"); // log
                         }
-                        else
+
+                        if (rf.AiOdds.HasValue && double.IsFinite(rf.AiOdds.Value) && rf.AiOdds.Value > 0 && rf.AiOdds.Value < LowAiProbabilityClampThreshold)
                         {
-                            rf.AiOdds = null;
-                            rf.AiProbabilityMarketDerived = false;
-                            rf.AiProbabilityFallbackReason = null;
-                            var probabilityText = double.IsFinite(probability)
-                                ? probability.ToString("0.####", CultureInfo.InvariantCulture)
-                                : "non-finite";
-                            Console.WriteLine($"\t\tDiscarding non-positive AI probability {probabilityText} for {rfIdentifier}; treating as missing.");
+                            if (!TryClampLowAiProbabilityToMarket(rf))
+                            {
+                                Console.WriteLine($"		Unable to clamp low AI probability for {rfIdentifier}: market price unavailable.");
+                            }
                         }
-                    }
-                    catch (Exception ex)
+                    });
+                }
+
+                foreach (var rf in flowsSnapshot)
+                {
+                    if (!flows.Contains(rf))
                     {
-                        rf.AiOdds = null; // set null on fail
-                        rf.AiProbabilityMarketDerived = false;
-                        rf.AiProbabilityFallbackReason = null;
-                        rf.AiProbabilityClampedToMarket = false;
-                        rf.AiProbabilityClampTarget = null;
-                        Console.Error.WriteLine($"\tFailed to calculate AI odds for selection {rfIdentifier} in market {marketId}: {ex.Message}"); // log
+                        continue;
                     }
-                    if (rf.AiOdds.HasValue && double.IsFinite(rf.AiOdds.Value) && rf.AiOdds.Value > 0 && rf.AiOdds.Value < LowAiProbabilityClampThreshold)
-                    {
-                        if (!TryClampLowAiProbabilityToMarket(rf))
-                        {
-                            Console.WriteLine($"\t\tUnable to clamp low AI probability for {rfIdentifier}: market price unavailable.");
-                        }
-                    }
+
+                    var rfIdentifier = !string.IsNullOrWhiteSpace(rf.HorseName)
+                        ? rf.HorseName!
+                        : (rf.SelectionId ?? "unknown");
                     string aiText;
                     if (rf.AiOdds.HasValue)
                     {
