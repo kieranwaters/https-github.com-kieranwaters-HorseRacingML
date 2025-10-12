@@ -1980,9 +1980,11 @@ namespace HorseRacingML.ML
                         const string normalizedHorseSql = @"SELECT lookup.Normalized,
        MIN(h.HorseId) AS HorseId
 FROM Horse h
-CROSS APPLY (SELECT LOWER(
+CROSS APPLY (
+    SELECT Normalized = LOWER(
         REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(h.Name, ' ', ''), '-', ''), '''', ''), '’', ''), '.', ''), ',', ''), '&', 'and'), '(', ''), ')', ''), '/', '')
-    ) AS Normalized) AS lookup
+    )
+) AS lookup
 WHERE lookup.Normalized IN @Names
 GROUP BY lookup.Normalized";
 
@@ -2077,9 +2079,11 @@ GROUP BY lookup.Normalized";
                         const string normalizedJockeySql = @"SELECT lookup.Normalized,
        MIN(j.JockeyId) AS JockeyId
 FROM Jockey j
-CROSS APPLY (SELECT LOWER(
+CROSS APPLY (
+    SELECT Normalized = LOWER(
         REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(j.Name, ' ', ''), '-', ''), '''', ''), '’', ''), '.', ''), ',', ''), '&', 'and'), '(', ''), ')', ''), '/', '')
-    ) AS Normalized) AS lookup
+    )
+) AS lookup
 WHERE lookup.Normalized IN @Names
 GROUP BY lookup.Normalized";
 

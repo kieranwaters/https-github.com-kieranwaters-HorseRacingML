@@ -2,9 +2,25 @@ using HorseRacingML.Data;
 using HorseRacingML.ML;
 using HorseRacingML.Scraping;
 using HorseRacingML.Services;
+using Microsoft.AspNetCore.Hosting;
 using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
+
+var hostingSection = builder.Configuration.GetSection("Hosting");
+var httpPort = hostingSection.GetValue("HttpPort", 5051);
+var httpsPort = hostingSection.GetValue("HttpsPort", 7251);
+var enableHttps = hostingSection.GetValue("EnableHttps", false);
+
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.ListenLocalhost(httpPort);
+
+    if (enableHttps)
+    {
+        options.ListenLocalhost(httpsPort, listenOptions => listenOptions.UseHttps());
+    }
+});
 
 // Add services to the container.
 builder.Services
@@ -36,7 +52,10 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 
-app.UseHttpsRedirection();
+if (enableHttps)
+{
+    app.UseHttpsRedirection();
+}
 app.UseStaticFiles();
 
 app.UseRouting();
