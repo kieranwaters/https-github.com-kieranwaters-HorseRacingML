@@ -254,11 +254,11 @@
                 <div class="col-sm-6 col-md-4 col-lg-3">
                     <label for="dayReportRegionSelect" class="form-label mb-1">Region</label>
                     <select id="dayReportRegionSelect" class="form-select form-select-sm">
-                        <option value="GB &amp; IRE" @(initialRegionSelection == "GB & IRE" ? "selected" : string.Empty)>GB &amp; IRE</option>
-                        <option value="USA" @(initialRegionSelection == "USA" ? "selected" : string.Empty)>USA</option>
-                        <option value="RSA" @(initialRegionSelection == "RSA" ? "selected" : string.Empty)>RSA</option>
-                        <option value="FRA" @(initialRegionSelection == "FRA" ? "selected" : string.Empty)>FRA</option>
-                        <option value="All" @(initialRegionSelection == "All" ? "selected" : string.Empty)>All</option>
+                        <option value="GB &amp; IRE" selected='@(initialRegionSelection == "GB & IRE" ? "selected" : null)'>GB &amp; IRE</option>
+                        <option value="USA" selected='@(initialRegionSelection == "USA" ? "selected" : null)'>USA</option>
+                        <option value="RSA" selected='@(initialRegionSelection == "RSA" ? "selected" : null)'>RSA</option>
+                        <option value="FRA" selected='@(initialRegionSelection == "FRA" ? "selected" : null)'>FRA</option>
+                        <option value="All" selected='@(initialRegionSelection == "All" ? "selected" : null)'>All</option>
                     </select>
                     <div class="form-text">Use the selector to focus on specific race regions.</div>
                 </div>

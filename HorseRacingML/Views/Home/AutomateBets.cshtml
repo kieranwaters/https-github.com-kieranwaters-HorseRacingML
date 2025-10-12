@@ -59,7 +59,7 @@
                                name="maxStakeMode"
                                id="maxStakeModeNone"
                                value="@MaxStakeMode.None"
-                               @(Model.MaxStakeMode == MaxStakeMode.None ? "checked" : string.Empty)>
+                               checked='@(Model.MaxStakeMode == MaxStakeMode.None ? "checked" : null)'>
                         <label class="form-check-label" for="maxStakeModeNone">No additional cap</label>
                     </div>
                     <div class="form-check mt-2">
@@ -68,7 +68,7 @@
                                name="maxStakeMode"
                                id="maxStakeModePercent"
                                value="@MaxStakeMode.PercentageOfBankroll"
-                               @(Model.MaxStakeMode == MaxStakeMode.PercentageOfBankroll ? "checked" : string.Empty)>
+                               checked='@(Model.MaxStakeMode == MaxStakeMode.PercentageOfBankroll ? "checked" : null)'>
                         <label class="form-check-label" for="maxStakeModePercent">Limit to a percentage of bankroll</label>
                         <div class="mt-2 ms-4">
                             <div class="input-group input-group-sm">
@@ -79,7 +79,7 @@
                                        step="0.1"
                                        max="100"
                                        value="@FormatNumber(Model.MaxStakePercent, "0.##")"
-                                       @(Model.MaxStakeMode == MaxStakeMode.PercentageOfBankroll ? string.Empty : "disabled") />
+                                       disabled='@(Model.MaxStakeMode == MaxStakeMode.PercentageOfBankroll ? null : "disabled")' />
                                 <span class="input-group-text">%</span>
                             </div>
                             <div class="form-text">Cap each selection to this percentage of the live bankroll.</div>
@@ -91,7 +91,7 @@
                                name="maxStakeMode"
                                id="maxStakeModeFixed"
                                value="@MaxStakeMode.FixedAmount"
-                               @(Model.MaxStakeMode == MaxStakeMode.FixedAmount ? "checked" : string.Empty)>
+                               checked='@(Model.MaxStakeMode == MaxStakeMode.FixedAmount ? "checked" : null)'>
                         <label class="form-check-label" for="maxStakeModeFixed">Limit to a fixed cash amount</label>
                         <div class="mt-2 ms-4">
                             <div class="input-group input-group-sm">
@@ -102,7 +102,7 @@
                                        min="0"
                                        step="0.01"
                                        value="@FormatNumber(Model.MaxStakeAmount, "0.##")"
-                                       @(Model.MaxStakeMode == MaxStakeMode.FixedAmount ? string.Empty : "disabled") />
+                                       disabled='@(Model.MaxStakeMode == MaxStakeMode.FixedAmount ? null : "disabled")' />
                             </div>
                             <div class="form-text">Cap each selection to this cash amount regardless of bankroll size.</div>
                         </div>

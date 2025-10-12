@@ -44,11 +44,17 @@
                     <div class="col-12 col-md-6">
                         <label class="form-label" for="regionSelect">Region</label>
                         <select class="form-select" id="regionSelect" name="region">
-                            <option value="GB &amp; IRE" @(regionValue == "GB & IRE" ? "selected" : string.Empty)>GB &amp; IRE</option>
-                            <option value="USA" @(regionValue == "USA" ? "selected" : string.Empty)>USA</option>
-                            <option value="RSA" @(regionValue == "RSA" ? "selected" : string.Empty)>RSA</option>
-                            <option value="FRA" @(regionValue == "FRA" ? "selected" : string.Empty)>FRA</option>
-                            <option value="All" @(regionValue == "All" ? "selected" : string.Empty)>All</option>
+                            @foreach (var option in HorseRacingML.Models.DayReportFilterViewModel.AvailableRegions)
+                            {
+                                if (string.Equals(regionValue, option, System.StringComparison.OrdinalIgnoreCase))
+                                {
+                                    <option value="@option" selected>@option</option>
+                                }
+                                else
+                                {
+                                    <option value="@option">@option</option>
+                                }
+                            }
                         </select>
                         <div class="form-text">Choose which Betfair region to expand automatically.</div>
                     </div>
