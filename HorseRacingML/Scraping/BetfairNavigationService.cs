@@ -37,6 +37,19 @@ namespace HorseRacingML.Scraping
         private static readonly TimeSpan MinimumAutomationDelay = TimeSpan.FromSeconds(30);
         private static readonly TimeSpan MaximumAutomationDelay = TimeSpan.FromMinutes(1.5);
         private static readonly Regex RaceTimeRegex = new(@"\b([01]?\d|2[0-3]):[0-5]\d\b", RegexOptions.Compiled);
+        private static readonly Regex ScheduleRegionCountSuffixRegex = new(@"\s*\(\s*\d+\s*\)\s*$", RegexOptions.Compiled);
+        private static readonly Regex CollapseWhitespaceRegex = new(@"\s+", RegexOptions.Compiled);
+        private static readonly string[] ScheduleRegionButtonSelectors =
+        {
+            "li.country-tab > div",
+            "li.country-tab > span",
+            "li.country-tab > button",
+            "li.country-tab > a",
+            "#main-wrapper > div > div.scrollable-panes-height-taker > div > ui-view > ui-view > div > div > div > div > div.content-page-center-column.racing-homepage-center-column > div:nth-child(2) > div > bf-todays-racing-mod > div > div > bf-todays-racing > section > div:nth-child(2) > div > div:nth-child(1) > ul > li.country-tab.active > div",
+            "#main-wrapper > div > div.scrollable-panes-height-taker > div > ui-view > ui-view > div > div > div > div > div.content-page-center-column.racing-homepage-center-column > div:nth-child(2) > div > bf-todays-racing-mod > div > div > bf-todays-racing > section > div:nth-child(2) > div > div:nth-child(1) > ul > li:nth-child(2) > div",
+            "#main-wrapper > div > div.scrollable-panes-height-taker > div > ui-view > ui-view > div > div > div > div > div.content-page-center-column.racing-homepage-center-column > div:nth-child(2) > div > bf-todays-racing-mod > div > div > bf-todays-racing > section > div:nth-child(2) > div > div:nth-child(1) > ul > li:nth-child(3) > div",
+            "#main-wrapper > div > div.scrollable-panes-height-taker > div > ui-view > ui-view > div > div > div > div > div.content-page-center-column.racing-homepage-center-column > div:nth-child(2) > div > bf-todays-racing-mod > div > div > bf-todays-racing > section > div:nth-child(2) > div > div:nth-child(1) > ul > li:nth-child(4) > div"
+        };
         private readonly object _automationLock = new();
         private CancellationTokenSource? _automationCancellation;
         private Task? _automationTask;
@@ -707,6 +720,11 @@ namespace HorseRacingML.Scraping
 
             ReturnToPrimaryWindow();
             EnsureSchedulePageReady();
+            var scheduleRegionChanged = await TrySelectScheduleRegionAsync(scheduleRegion);
+            if (scheduleRegionChanged)
+            {
+                await Task.Delay(200);
+            }
             CaptureRaceGoingFromSchedule();
             static string? ExtractTimeToken(string? value)
             {
@@ -998,6 +1016,226 @@ namespace HorseRacingML.Scraping
                 }
             }
         }
+        private async Task<bool> TrySelectScheduleRegionAsync(string? region)
+        {
+            if (string.IsNullOrWhiteSpace(region))
+            {
+                return false;
+            }
+
+            var normalizedTarget = NormalizeScheduleRegionText(region);
+            if (normalizedTarget.Length == 0 || normalizedTarget.Equals("All", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            const int maxAttempts = 5;
+            for (var attempt = 0; attempt < maxAttempts; attempt++)
+            {
+                IReadOnlyCollection<IWebElement> candidates;
+                try
+                {
+                    candidates = FindScheduleRegionButtons();
+                }
+                catch (WebDriverException)
+                {
+                    candidates = Array.Empty<IWebElement>();
+                }
+
+                if (candidates.Count == 0)
+                {
+                    await Task.Delay(200);
+                    continue;
+                }
+
+                foreach (var candidate in candidates)
+                {
+                    try
+                    {
+                        var candidateText = NormalizeScheduleRegionText(GetElementTextSafe(candidate));
+                        if (candidateText.Length == 0)
+                        {
+                            continue;
+                        }
+
+                        if (!candidateText.Equals(normalizedTarget, StringComparison.OrdinalIgnoreCase))
+                        {
+                            continue;
+                        }
+
+                        ((IJavaScriptExecutor)_driver).ExecuteScript("arguments[0].scrollIntoView({block:'center'});", candidate);
+
+                        try
+                        {
+                            if (candidate.Enabled)
+                            {
+                                candidate.Click();
+                            }
+                            else
+                            {
+                                ((IJavaScriptExecutor)_driver).ExecuteScript("arguments[0].click();", candidate);
+                            }
+                        }
+                        catch (Exception)
+                        {
+                            ((IJavaScriptExecutor)_driver).ExecuteScript("arguments[0].click();", candidate);
+                        }
+
+                        try
+                        {
+                            var wait = new WebDriverWait(_driver, TimeSpan.FromSeconds(5))
+                            {
+                                PollingInterval = TimeSpan.FromMilliseconds(200)
+                            };
+                            wait.IgnoreExceptionTypes(
+                                typeof(StaleElementReferenceException),
+                                typeof(NoSuchElementException));
+                            wait.Until(d => IsScheduleRegionActive(d, normalizedTarget));
+                        }
+                        catch (WebDriverTimeoutException)
+                        {
+                            // Ignore if the active state does not update within the timeout.
+                        }
+
+                        return true;
+                    }
+                    catch (StaleElementReferenceException)
+                    {
+                        break;
+                    }
+                }
+
+                await Task.Delay(200);
+            }
+
+            return false;
+        }
+
+        private IReadOnlyCollection<IWebElement> FindScheduleRegionButtons()
+        {
+            try
+            {
+                var general = _driver.FindElements(By.CssSelector("li.country-tab > div, li.country-tab > span, li.country-tab > button, li.country-tab > a"));
+                if (general.Count > 0)
+                {
+                    return general;
+                }
+            }
+            catch (WebDriverException)
+            {
+                // Ignore if the general selector is invalid for the current page layout.
+            }
+
+            foreach (var selector in ScheduleRegionButtonSelectors)
+            {
+                try
+                {
+                    var candidates = _driver.FindElements(By.CssSelector(selector));
+                    if (candidates.Count > 0)
+                    {
+                        return candidates;
+                    }
+                }
+                catch (WebDriverException)
+                {
+                    // Ignore selectors that are not valid for the current layout.
+                }
+            }
+
+            return Array.Empty<IWebElement>();
+        }
+
+        private static string NormalizeScheduleRegionText(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            var trimmed = value.Trim();
+            trimmed = ScheduleRegionCountSuffixRegex.Replace(trimmed, string.Empty);
+            trimmed = CollapseWhitespaceRegex.Replace(trimmed, " ");
+            return trimmed.Trim();
+        }
+
+        private static string GetElementTextSafe(IWebElement element)
+        {
+            if (element == null)
+            {
+                return string.Empty;
+            }
+
+            try
+            {
+                var text = element.Text;
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    return text;
+                }
+            }
+            catch (WebDriverException)
+            {
+            }
+
+            try
+            {
+                var text = element.GetAttribute("innerText");
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    return text;
+                }
+            }
+            catch (WebDriverException)
+            {
+            }
+
+            try
+            {
+                var text = element.GetAttribute("textContent");
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    return text;
+                }
+            }
+            catch (WebDriverException)
+            {
+            }
+
+            return string.Empty;
+        }
+
+        private static bool IsScheduleRegionActive(IWebDriver driver, string normalizedRegion)
+        {
+            if (string.IsNullOrWhiteSpace(normalizedRegion))
+            {
+                return false;
+            }
+
+            try
+            {
+                var activeElements = driver.FindElements(By.CssSelector("li.country-tab.active > div, li.country-tab.active > span, li.country-tab.active > button, li.country-tab.active > a"));
+                foreach (var element in activeElements)
+                {
+                    var text = NormalizeScheduleRegionText(GetElementTextSafe(element));
+                    if (text.Length == 0)
+                    {
+                        continue;
+                    }
+
+                    if (text.Equals(normalizedRegion, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+            }
+            catch (WebDriverException)
+            {
+                return false;
+            }
+
+            return false;
+        }
+
         private void EnsureSchedulePageReady()
         {
             const int maxAttempts = 2;

@@ -135,7 +135,8 @@ namespace HorseRacingML.Controllers
             }
             await betfair.OpenHorseRaceMeetingsInNewTabsAsync(
                 scheduleStartTime: startTimeSpan,
-                scheduleEndTime: endTimeSpan);
+                scheduleEndTime: endTimeSpan,
+                scheduleRegion: normalizedRegion);
 
 
             var report = betfair.GenerateDayReport(_repository, trainer);
