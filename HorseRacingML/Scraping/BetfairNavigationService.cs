@@ -142,7 +142,8 @@ namespace HorseRacingML.Scraping
         public async Task<RaceDayReport?> RefreshRaceAsync(
             string raceUrl,
             RacingRepository repo,
-            HyperparameterTrainer trainer)
+            HyperparameterTrainer trainer,
+            bool includeAiProbabilities = true)
         {
             if (string.IsNullOrWhiteSpace(raceUrl))
             {
@@ -217,7 +218,8 @@ namespace HorseRacingML.Scraping
                     bankroll,
                     settings,
                     _useMarketFallbackForAiDegeneracy,
-                    GetRaceGoingSnapshot());
+                    GetRaceGoingSnapshot(),
+                    computeAiProbabilities: includeAiProbabilities);
                 var races = scraper.ScrapeOpenRaceTabsForReport(_driver, newHandles);
 
                 var targetMarketId = BetfairMarketScraper.ExtractMarketId(raceUrl);
@@ -309,6 +311,35 @@ namespace HorseRacingML.Scraping
                     }
                 }
             }
+        }
+        public bool ShouldRecalculateAiForMarket(string? marketId, string? currentGoing, out string? latestGoing)
+        {
+            latestGoing = null;
+
+            if (string.IsNullOrWhiteSpace(marketId))
+            {
+                return false;
+            }
+
+            var normalizedMarketId = marketId.Trim();
+            if (normalizedMarketId.Length == 0)
+            {
+                return false;
+            }
+
+            var normalizedCurrent = string.IsNullOrWhiteSpace(currentGoing)
+                ? null
+                : currentGoing.Trim();
+
+            var snapshot = GetRaceGoingSnapshot();
+            if (!snapshot.TryGetValue(normalizedMarketId, out var knownGoing) || string.IsNullOrWhiteSpace(knownGoing))
+            {
+                latestGoing = string.IsNullOrWhiteSpace(knownGoing) ? null : knownGoing.Trim();
+                return false;
+            }
+
+            latestGoing = string.IsNullOrWhiteSpace(knownGoing) ? null : knownGoing.Trim();
+            return !string.Equals(latestGoing, normalizedCurrent, StringComparison.OrdinalIgnoreCase);
         }
         public IWebDriver Driver => _driver;
 

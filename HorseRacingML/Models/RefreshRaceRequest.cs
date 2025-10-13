@@ -4,5 +4,6 @@
     {
         public string? RaceUrl { get; set; }
         public string? MarketId { get; set; }
+        public string? CurrentGoing { get; set; }
     }
 }

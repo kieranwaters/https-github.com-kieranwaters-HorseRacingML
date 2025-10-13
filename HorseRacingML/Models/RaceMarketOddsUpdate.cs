@@ -8,6 +8,7 @@ namespace HorseRacingML.Models
         public decimal? BackBookPercentage { get; set; }
         public decimal? LayBookPercentage { get; set; }
         public List<RunnerMarketOddsUpdate> Runners { get; set; } = new();
+        public string? Going { get; set; }
     }
 
     public class RunnerMarketOddsUpdate

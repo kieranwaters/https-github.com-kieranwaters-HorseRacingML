@@ -453,6 +453,7 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                             class="btn btn-sm btn-outline-secondary refresh-market-only-btn"
                             data-market-id="@race.MarketId"
                             data-race-url="@race.RaceUrl"
+                            data-current-going="@goingText"
                             @(string.IsNullOrWhiteSpace(race.RaceUrl) ? "disabled" : string.Empty)>
                             Refresh market odds
                         </button>
@@ -1725,6 +1726,26 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                         }
                     }
                 }
+                if (typeof update.going === 'string') {
+                    const infoContainer = card.querySelector('.card-header .small.text-muted');
+                    const goingText = update.going.trim();
+                    if (infoContainer) {
+                        const spans = Array.from(infoContainer.querySelectorAll('span'));
+                        const goingSpan = spans.find(span => span.textContent && span.textContent.trim().startsWith('Going:'));
+                        if (goingSpan) {
+                            goingSpan.textContent = goingText.length > 0 ? `Going: ${goingText}` : 'Going: -';
+                        }
+                    }
+
+                    const refreshButtons = card.querySelectorAll('.refresh-market-only-btn, .refresh-race-btn');
+                    refreshButtons.forEach(btn => {
+                        if (goingText.length > 0) {
+                            btn.dataset.currentGoing = goingText;
+                        } else {
+                            delete btn.dataset.currentGoing;
+                        }
+                    });
+                }
 
                 const rows = card.querySelectorAll('tbody tr');
                 const runners = Array.isArray(update.runners) ? update.runners : [];
@@ -1846,6 +1867,10 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
 
                         const raceUrl = button.dataset.raceUrl;
                         const marketId = button.dataset.marketId;
+                        const rawGoing = button.dataset.currentGoing;
+                        const currentGoing = (typeof rawGoing === 'string' && rawGoing.trim().length > 0)
+                            ? rawGoing.trim()
+                            : null;
                         const card = button.closest('.card');
 
                         if (!raceUrl) {
@@ -1868,7 +1893,7 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                 headers: {
                                     'Content-Type': 'application/json'
                                 },
-                                body: JSON.stringify({ raceUrl, marketId })
+                                body: JSON.stringify({ raceUrl, marketId, currentGoing })
                             });
 
                             if (!response.ok) {
@@ -1878,6 +1903,31 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                             const payload = await response.json();
                             if (payload?.success && payload?.update) {
                                 applyMarketOddsUpdate(card, payload.update);
+                                const newGoing = typeof payload.newGoing === 'string'
+                                    ? payload.newGoing.trim()
+                                    : '';
+
+                                if (newGoing.length > 0) {
+                                    button.dataset.currentGoing = newGoing;
+                                } else {
+                                    delete button.dataset.currentGoing;
+                                }
+
+                                const fullRefreshButton = card.querySelector('.refresh-race-btn');
+                                if (fullRefreshButton) {
+                                    if (newGoing.length > 0) {
+                                        fullRefreshButton.dataset.currentGoing = newGoing;
+                                    } else {
+                                        delete fullRefreshButton.dataset.currentGoing;
+                                    }
+                                }
+
+                                if (payload.goingChanged) {
+                                    const message = newGoing.length > 0
+                                        ? `Track going changed to "${newGoing}". AI odds were refreshed.`
+                                        : 'Track going changed. AI odds were refreshed.';
+                                    alert(message);
+                                }
                                 return;
                             }
 

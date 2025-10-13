@@ -440,7 +440,8 @@ namespace HorseRacingML.Controllers
             return RedirectToAction("Index");
         }
         [HttpPost]
-        public async Task<IActionResult> RefreshRaceMarketOdds(
+        [ActionName("RefreshRaceMarketOdds")]
+        public async Task<IActionResult> RefreshRaceMarketOddsAction(
             [FromBody] RefreshRaceRequest request,
             [FromServices] BetfairNavigationService betfair,
             [FromServices] HyperparameterTrainer trainer)
@@ -490,10 +491,10 @@ namespace HorseRacingML.Controllers
             return View();
         }
         [HttpPost]
-        public async Task<IActionResult> RefreshRaceOdds(
-                    [FromBody] RefreshRaceRequest request,
-                    [FromServices] BetfairNavigationService betfair,
-                    [FromServices] HyperparameterTrainer trainer)
+        public async Task<IActionResult> RefreshRaceMarketOdds(
+            [FromBody] RefreshRaceRequest request,
+            [FromServices] BetfairNavigationService betfair,
+            [FromServices] HyperparameterTrainer trainer)
         {
             if (request == null || string.IsNullOrWhiteSpace(request.RaceUrl))
             {
@@ -502,18 +503,63 @@ namespace HorseRacingML.Controllers
 
             try
             {
-                var refreshed = await betfair.RefreshRaceAsync(request.RaceUrl, _repository, trainer);
+                bool shouldRecalculateAi = false;
+                string? latestGoing = null;
+                var marketId = request.MarketId?.Trim();
+                if (!string.IsNullOrWhiteSpace(marketId))
+                {
+                    shouldRecalculateAi = betfair.ShouldRecalculateAiForMarket(marketId, request.CurrentGoing, out latestGoing);
+                }
+
+                var refreshed = await betfair.RefreshRaceAsync(
+                    request.RaceUrl,
+                    _repository,
+                    trainer,
+                    includeAiProbabilities: shouldRecalculateAi);
                 if (refreshed == null)
                 {
                     return NotFound(new { success = false, message = "Unable to refresh market data for the selected race." });
                 }
 
-                return Json(new { success = true, race = refreshed });
+                var update = new RaceMarketOddsUpdate
+                {
+                    MarketId = refreshed.MarketId,
+                    BackBookPercentage = refreshed.BackBookPercentage,
+                    LayBookPercentage = refreshed.LayBookPercentage,
+                    Going = string.IsNullOrWhiteSpace(refreshed.Going) ? null : refreshed.Going.Trim(),
+                    Runners = refreshed.Runners?.Select(runner => new RunnerMarketOddsUpdate
+                    {
+                        SelectionId = runner.SelectionId,
+                        HorseName = runner.HorseName,
+                        MarketDecimalOdds = runner.MarketDecimalOdds,
+                        LayDecimalOdds = runner.LayDecimalOdds,
+                        MarketProbability = runner.MarketProbability ??
+                            (runner.MarketDecimalOdds.HasValue && runner.MarketDecimalOdds.Value > 0m
+                                ? (double?)(1.0m / runner.MarketDecimalOdds.Value)
+                                : null)
+                    }).ToList() ?? new List<RunnerMarketOddsUpdate>()
+                };
+
+                var normalizedUpdatedGoing = string.IsNullOrWhiteSpace(update.Going) ? null : update.Going.Trim();
+                if (normalizedUpdatedGoing == null && !string.IsNullOrWhiteSpace(latestGoing))
+                {
+                    normalizedUpdatedGoing = latestGoing.Trim();
+                }
+                var normalizedRequestGoing = string.IsNullOrWhiteSpace(request.CurrentGoing) ? null : request.CurrentGoing.Trim();
+                var goingChanged = !string.Equals(normalizedUpdatedGoing, normalizedRequestGoing, StringComparison.OrdinalIgnoreCase);
+
+                return Json(new
+                {
+                    success = true,
+                    update,
+                    goingChanged,
+                    newGoing = normalizedUpdatedGoing
+                });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to refresh race odds for URL {RaceUrl}.", request.RaceUrl);
-                return StatusCode(500, new { success = false, message = "An unexpected error occurred while refreshing the race." });
+                _logger.LogError(ex, "Failed to refresh market-only odds for URL {RaceUrl}.", request.RaceUrl);
+                return StatusCode(500, new { success = false, message = "An unexpected error occurred while refreshing the market odds." });
             }
         }
         public IActionResult Privacy()
