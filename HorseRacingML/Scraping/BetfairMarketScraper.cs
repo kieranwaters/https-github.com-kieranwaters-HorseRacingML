@@ -203,10 +203,10 @@ namespace HorseRacingML.Scraping
                 _upcomingByMarketIdCache[upcoming.MarketId.Trim()] = upcoming;
             }
 
-            if (upcoming.RaceDate.HasValue)
+            if (upcoming.RaceDate != default)
             {
                 var key = new UpcomingRaceLookupKey(
-                    upcoming.RaceDate.Value.Date,
+                    upcoming.RaceDate.Date,
                     RacingRepository.NormalizeLookupKey(upcoming.Title),
                     RacingRepository.NormalizeLookupKey(upcoming.VenueName));
                 _upcomingByMetadataCache[key] = upcoming;

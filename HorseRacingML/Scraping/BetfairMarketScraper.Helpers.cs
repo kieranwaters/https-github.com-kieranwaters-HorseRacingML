@@ -1379,8 +1379,8 @@ const hasBackAllContext = target => {
                 var parsed = ParseBulkExpansionResult(bulkResults[i]);
                 if (parsed == null)
                 {
-                    var expanded = TryExpandRunnerDetailsWithScript(js, row, i);
-                    if (!expanded)
+                    var expansionSucceeded = TryExpandRunnerDetailsWithScript(js, row, i);
+                    if (!expansionSucceeded)
                     {
                         TryFallbackRunnerDetailsClick(js, row);
                     }
