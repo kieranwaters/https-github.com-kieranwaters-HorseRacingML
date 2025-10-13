@@ -608,22 +608,47 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                             <div class="text-muted small">Selection ID: @runner.SelectionId</div>
                                         }
 
-                                        @if (runner.FeatureValues != null && runner.FeatureValues.Count > 0)
-                                        {
-                                            <details class="small mt-1">
-                                                <summary class="text-muted">Feature inputs</summary>
-                                                <dl class="row mb-0">
-                                                    @foreach (var feature in runner.FeatureValues.OrderBy(f => f.Key))
-                                                    {
-                                                        var valueText = feature.Value switch
-                                                        {
-                                                            null => "-",
-                                                            IFormattable formattable => formattable.ToString(null, CultureInfo.CurrentCulture),
-                                                            _ => feature.Value.ToString() ?? string.Empty
-                                                        };
+                                        @{
+                                            var featurePopulation = runner.FeaturePopulation;
+                                            var hasFeatureValues = runner.FeatureValues != null && runner.FeatureValues.Count > 0;
+                                            var hasPopulationData = featurePopulation != null && featurePopulation.HasData;
+                                        }
 
-                                                        <dt class="col-sm-5">@feature.Key</dt>
-                                                        <dd class="col-sm-7">@valueText</dd>
+                                        @if (hasFeatureValues || hasPopulationData)
+                                        {
+                                            var summaryLabel = "Feature inputs";
+                                            if (featurePopulation != null && featurePopulation.HasData)
+                                            {
+                                                summaryLabel = featurePopulation.MissingCount > 0
+                                                ? $"Feature inputs ({featurePopulation.PopulatedCount} populated, {featurePopulation.MissingCount} missing)"
+                                                : $"Feature inputs ({featurePopulation.PopulatedCount} populated)";
+                                            }
+
+                                            <details class="small mt-1">
+                                                <summary class="text-muted">@summaryLabel</summary>
+                                                <dl class="row mb-0">
+                                                    @if (hasFeatureValues)
+                                                    {
+                                                        @foreach (var feature in runner.FeatureValues.OrderBy(f => f.Key))
+                                                        {
+                                                            var valueText = feature.Value switch
+                                                            {
+                                                                null => "-",
+                                                                IFormattable formattable => formattable.ToString(null, CultureInfo.CurrentCulture),
+                                                                _ => feature.Value.ToString() ?? string.Empty
+                                                            };
+
+                                                            <dt class="col-sm-5">@feature.Key</dt>
+                                                            <dd class="col-sm-7">@valueText</dd>
+                                                        }
+                                                    }
+
+                                                    @if (featurePopulation != null && featurePopulation.MissingCount > 0)
+                                                    {
+                                                        <dt class="col-sm-5 text-danger">Missing inputs</dt>
+                                                        <dd class="col-sm-7 text-danger">
+                                                            @string.Join(", ", featurePopulation.MissingKeys)
+                                                        </dd>
                                                     }
                                                 </dl>
                                             </details>

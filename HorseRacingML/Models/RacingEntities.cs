@@ -127,7 +127,13 @@ namespace HorseRacingML.Models
         public string? WeightText { get; set; }
         public string? TrainerName { get; set; }
         public bool MatchedDatabaseRecord { get; set; }
+
+
+
+        public FeaturePopulationSummary FeaturePopulationSummary { get; set; } = FeaturePopulationSummary.Empty;
+
     }
+
     public class UpcomingRace
     {
         public int UpcomingRaceId { get; set; }
@@ -159,5 +165,6 @@ namespace HorseRacingML.Models
         public string? Title { get; set; }
         public string? CourseName { get; set; }
     }
+
 
 }

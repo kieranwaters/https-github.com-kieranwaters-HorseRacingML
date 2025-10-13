@@ -462,7 +462,8 @@ namespace HorseRacingML.Scraping
                 Draw = flow.Draw,
                 HorseName = flow.HorseName,
                 JockeyName = flow.JockeyName,
-                FeatureValues = CreateFeatureDictionary(flow.FeatureValues)
+                FeatureValues = CreateFeatureDictionary(flow.FeatureValues),
+                FeaturePopulation = (flow.FeaturePopulationSummary ?? FeaturePopulationSummary.Empty).WithSortedKeys()
             };
 
             if (flow.BackPrice1.HasValue && flow.BackPrice1.Value > 0m)
@@ -876,6 +877,7 @@ DateTime? raceDate,
 
                 flow.FeatureValues = featureVector;
                 flow.HasPreparedFeatures = featureVector.Count > 0;
+                flow.FeaturePopulationSummary = BuildFeaturePopulationSummary(featureVector);
 
                 if (!matchedPreparedRow && flow.HasPreparedFeatures)
                 {
@@ -990,7 +992,70 @@ DateTime? raceDate,
 
             return null;
         }
+        private static FeaturePopulationSummary BuildFeaturePopulationSummary(Dictionary<string, object?> featureVector)
+        {
+            if (featureVector == null)
+            {
+                return FeaturePopulationSummary.Empty;
+            }
 
+            var populated = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+            var missing = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var kvp in featureVector)
+            {
+                var key = kvp.Key;
+                if (string.IsNullOrWhiteSpace(key))
+                {
+                    continue;
+                }
+
+                var trimmedKey = key.Trim();
+                if (trimmedKey.Length == 0)
+                {
+                    continue;
+                }
+
+                if (HasMeaningfulValue(kvp.Value))
+                {
+                    populated.Add(trimmedKey);
+                }
+                else
+                {
+                    missing.Add(trimmedKey);
+                }
+            }
+
+            foreach (var key in HistoricalFeatureBackfillKeys)
+            {
+                if (string.IsNullOrWhiteSpace(key))
+                {
+                    continue;
+                }
+
+                if (populated.Contains(key))
+                {
+                    continue;
+                }
+
+                if (!featureVector.TryGetValue(key, out var value) || !HasMeaningfulValue(value))
+                {
+                    missing.Add(key);
+                }
+            }
+
+            return new FeaturePopulationSummary
+            {
+                PopulatedCount = populated.Count,
+                MissingCount = missing.Count,
+                PopulatedKeys = populated.Count > 0
+                    ? populated.ToList()
+                    : Array.Empty<string>(),
+                MissingKeys = missing.Count > 0
+                    ? missing.ToList()
+                    : Array.Empty<string>()
+            };
+        }
         private static void EnsureRaceAverageWinRateLast5(IReadOnlyList<RunnerFlow> flows)
         {
             if (flows == null || flows.Count == 0)

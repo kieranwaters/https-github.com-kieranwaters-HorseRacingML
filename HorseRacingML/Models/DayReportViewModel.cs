@@ -56,5 +56,6 @@ namespace HorseRacingML.Models
         public bool AiProbabilityMarketDerived { get; set; }
         public bool AiProbabilityClampedToMarket { get; set; }
         public string? AiProbabilityFallbackReason { get; set; }
+        public FeaturePopulationSummary FeaturePopulation { get; set; } = FeaturePopulationSummary.Empty;
     }
 }

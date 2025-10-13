@@ -1,0 +1,46 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace HorseRacingML.Models
+{
+    public class FeaturePopulationSummary
+    {
+        public static FeaturePopulationSummary Empty { get; } = new FeaturePopulationSummary();
+
+        public int PopulatedCount { get; init; }
+
+        public int MissingCount { get; init; }
+
+        public IReadOnlyList<string> PopulatedKeys { get; init; } = Array.Empty<string>();
+
+        public IReadOnlyList<string> MissingKeys { get; init; } = Array.Empty<string>();
+
+        public int TotalTrackedKeys => PopulatedCount + MissingCount;
+
+        public bool HasData => PopulatedCount > 0 || MissingCount > 0;
+
+        public FeaturePopulationSummary WithSortedKeys()
+        {
+            if (!HasData)
+            {
+                return this;
+            }
+
+            var populated = PopulatedKeys?.Count > 0
+                ? PopulatedKeys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase).ToArray()
+                : Array.Empty<string>();
+            var missing = MissingKeys?.Count > 0
+                ? MissingKeys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase).ToArray()
+                : Array.Empty<string>();
+
+            return new FeaturePopulationSummary
+            {
+                PopulatedCount = populated.Length,
+                MissingCount = missing.Length,
+                PopulatedKeys = populated,
+                MissingKeys = missing
+            };
+        }
+    }
+}
