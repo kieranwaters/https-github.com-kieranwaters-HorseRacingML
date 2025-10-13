@@ -1764,6 +1764,7 @@ namespace HorseRacingML.ML
             var validFlows = new List<RunnerFlow>(flows.Count);
             var horseNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             var jockeyNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var trainerNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             var horseIdsByName = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             var horseIdsByFlow = new Dictionary<RunnerFlow, int>();
             var explicitHorseIds = new HashSet<int>();
@@ -1802,6 +1803,14 @@ namespace HorseRacingML.ML
                 {
                     jockeyNames[flow.JockeyName!] = flow.JockeyName!;
                 }
+                if (!string.IsNullOrWhiteSpace(flow.TrainerName))
+                {
+                    var trainerName = flow.TrainerName!.Trim();
+                    if (!string.IsNullOrWhiteSpace(trainerName) && !trainerNames.ContainsKey(trainerName))
+                    {
+                        trainerNames[trainerName] = trainerName;
+                    }
+                }
             }
 
             var horseNameList = horseNames.Values.ToList();
@@ -1810,6 +1819,103 @@ namespace HorseRacingML.ML
             var horseIdLookup = lookupData.HorseIds;
             var jockeyIdLookup = lookupData.JockeyIds;
             var runnerSnapshots = lookupData.RunnerSnapshots;
+            var trainerIdLookup = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+            if (trainerNames.Count > 0)
+            {
+                var trainerCandidateMap = BuildNameCandidateMap(trainerNames);
+                if (trainerCandidateMap.Count > 0)
+                {
+                    const string trainerSql = "SELECT Name, MIN(TrainerId) AS TrainerId FROM Trainer WHERE Name IN @Names GROUP BY Name";
+                    var trainerCandidateList = trainerCandidateMap.Keys.ToArray();
+                    foreach (var (name, trainerId) in conn.Query<(string Name, int TrainerId)>(trainerSql, new { Names = trainerCandidateList }))
+                    {
+                        if (!trainerCandidateMap.TryGetValue(name, out var originals) || originals == null)
+                        {
+                            continue;
+                        }
+
+                        foreach (var original in originals)
+                        {
+                            if (!trainerIdLookup.ContainsKey(original))
+                            {
+                                trainerIdLookup[original] = trainerId;
+                            }
+                        }
+                    }
+                }
+
+                var unmatched = new HashSet<string>(trainerNames.Keys, StringComparer.OrdinalIgnoreCase);
+                foreach (var matched in trainerIdLookup.Keys)
+                {
+                    unmatched.Remove(matched);
+                }
+
+                if (unmatched.Count > 0)
+                {
+                    var normalizedMap = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var original in unmatched)
+                    {
+                        if (string.IsNullOrWhiteSpace(original))
+                        {
+                            continue;
+                        }
+
+                        IEnumerable<string> candidates = trainerCandidateMap.Count > 0
+                            ? trainerCandidateMap.Where(kvp => kvp.Value.Contains(original)).Select(kvp => kvp.Key)
+                            : RacingRepository.BuildHistoricalNameCandidates(original);
+
+                        foreach (var candidate in candidates)
+                        {
+                            var normalized = RacingRepository.NormalizeHistoricalNameKey(candidate);
+                            if (string.IsNullOrEmpty(normalized))
+                            {
+                                continue;
+                            }
+
+                            if (!normalizedMap.TryGetValue(normalized, out var originals))
+                            {
+                                originals = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                                normalizedMap[normalized] = originals;
+                            }
+
+                            originals.Add(original);
+                        }
+                    }
+
+                    if (normalizedMap.Count > 0)
+                    {
+                        const string normalizedTrainerSql = @"SELECT lookup.Normalized,
+       MIN(t.TrainerId) AS TrainerId
+FROM Trainer t
+CROSS APPLY (
+    SELECT Normalized = LOWER(
+        REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(t.Name, ' ', ''), '-', ''), '\'', ''), '’', ''), '.', ''), ',', ''), '&', 'and'), '(', ''), ')', ''), '/', '')
+    )
+) AS lookup
+WHERE lookup.Normalized IN @Names
+GROUP BY lookup.Normalized";
+
+                        var normalizedKeys = normalizedMap.Keys.ToArray();
+                        foreach (var row in conn.Query<(string Normalized, int TrainerId)>(normalizedTrainerSql, new { Names = normalizedKeys }))
+                        {
+                            if (!normalizedMap.TryGetValue(row.Normalized, out var originals) || originals == null)
+                            {
+                                continue;
+                            }
+
+                            foreach (var original in originals)
+                            {
+                                if (!trainerIdLookup.ContainsKey(original))
+                                {
+                                    trainerIdLookup[original] = row.TrainerId;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
 
             foreach (var pair in horseIdsByName)
             {
@@ -1933,6 +2039,19 @@ namespace HorseRacingML.ML
                     {
                         row["OfficialRating"] = Convert.ToInt32(snapshot.OfficialRating.Value);
                     }
+                    var trainerNameKey = flow.TrainerName?.Trim();
+                    if ((row["TrainerId"] == null || !PreparedDataset.TryConvertToInt32(row["TrainerId"], out _)) &&
+                        !string.IsNullOrWhiteSpace(trainerNameKey) &&
+                        trainerIdLookup.TryGetValue(trainerNameKey, out var trainerId))
+                    {
+                        row["TrainerId"] = trainerId;
+                    }
+
+                    if (row["TrainerName"] == null && !string.IsNullOrWhiteSpace(trainerNameKey))
+                    {
+                        row["TrainerName"] = trainerNameKey;
+                    }
+
                 }
                 rows.Add(row);
             }
