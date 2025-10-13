@@ -1975,6 +1975,7 @@ GROUP BY lookup.Normalized";
                 row["Purse"] = null;
                 row["TrainerId"] = null;
                 row["TrainerName"] = null;
+                var trainerNameKey = flow.TrainerName?.Trim();
 
                 int? resolvedHorseId = null;
                 if (horseIdsByFlow.TryGetValue(flow, out var horseIdFromFlow))
@@ -2040,20 +2041,20 @@ GROUP BY lookup.Normalized";
                     {
                         row["OfficialRating"] = Convert.ToInt32(snapshot.OfficialRating.Value);
                     }
-                    var trainerNameKey = flow.TrainerName?.Trim();
-                    if ((row["TrainerId"] == null || !PreparedDataset.TryConvertToInt32(row["TrainerId"], out _)) &&
-                        !string.IsNullOrWhiteSpace(trainerNameKey) &&
-                        trainerIdLookup.TryGetValue(trainerNameKey, out var trainerId))
-                    {
-                        row["TrainerId"] = trainerId;
-                    }
-
-                    if (row["TrainerName"] == null && !string.IsNullOrWhiteSpace(trainerNameKey))
-                    {
-                        row["TrainerName"] = trainerNameKey;
-                    }
-
                 }
+
+                if ((row["TrainerId"] == null || !PreparedDataset.TryConvertToInt32(row["TrainerId"], out _)) &&
+                    !string.IsNullOrWhiteSpace(trainerNameKey) &&
+                    trainerIdLookup.TryGetValue(trainerNameKey, out var trainerId))
+                {
+                    row["TrainerId"] = trainerId;
+                }
+
+                if (row["TrainerName"] == null && !string.IsNullOrWhiteSpace(trainerNameKey))
+                {
+                    row["TrainerName"] = trainerNameKey;
+                }
+
                 rows.Add(row);
             }
             return rows;

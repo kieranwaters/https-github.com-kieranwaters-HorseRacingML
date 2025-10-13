@@ -651,6 +651,54 @@ GROUP BY h.Name;";
             {
                 candidates.Add(key);
             }
+            if (!string.IsNullOrEmpty(normalized))
+            {
+                var tokens = normalized
+                    .Split(new[] { ' ', '\t', '\u00A0' }, StringSplitOptions.RemoveEmptyEntries);
+                if (tokens.Length > 1)
+                {
+                    var surname = tokens[^1].Trim();
+                    if (!string.IsNullOrEmpty(surname))
+                    {
+                        static char? TryGetInitial(string token)
+                        {
+                            foreach (var c in token)
+                            {
+                                if (char.IsLetter(c))
+                                {
+                                    return char.ToUpperInvariant(c);
+                                }
+                            }
+
+                            return null;
+                        }
+
+                        var initials = new List<char>();
+                        for (int i = 0; i < tokens.Length - 1; i++)
+                        {
+                            var initial = TryGetInitial(tokens[i]);
+                            if (initial.HasValue)
+                            {
+                                initials.Add(initial.Value);
+                            }
+                        }
+
+                        if (initials.Count > 0)
+                        {
+                            var primaryInitial = initials[0].ToString();
+                            candidates.Add($"{primaryInitial} {surname}");
+                            candidates.Add($"{primaryInitial}{surname}");
+
+                            if (initials.Count > 1)
+                            {
+                                var combined = new string(initials.ToArray());
+                                candidates.Add($"{combined} {surname}");
+                                candidates.Add($"{combined}{surname}");
+                            }
+                        }
+                    }
+                }
+            }
             return candidates;
         }
         internal static string NormalizeHistoricalNameKey(string? value)
