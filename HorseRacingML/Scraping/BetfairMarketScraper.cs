@@ -91,8 +91,8 @@ namespace HorseRacingML.Scraping
                 settings?.MaxStakeMode ?? MaxStakeMode.None,
                 settings?.MaxStakePercentOfBankroll,
                 settings?.MaxStakeFixedAmount,
-                raceGoingLookup,
-                computeAiProbabilities)
+                computeAiProbabilities,
+                raceGoingLookup)
         {
             if (settings == null)
             {
