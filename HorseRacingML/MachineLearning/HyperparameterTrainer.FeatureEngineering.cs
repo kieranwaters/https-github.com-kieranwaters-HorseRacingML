@@ -872,7 +872,7 @@ namespace HorseRacingML.ML
                                 row["TrainerJockeyWinRate"] = trainerJockeyDefaultWinRate;
                                 row["TrainerJockeySurfaceWinRate"] = trainerJockeyDefaultWinRate;
                                 row["TrainerJockeyCourseWinRate"] = trainerJockeyDefaultWinRate;
-                            }
+                            
                                 if (updateState)
                                 {
                                     jockeyStat.Starts++;
