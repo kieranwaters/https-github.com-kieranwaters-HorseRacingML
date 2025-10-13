@@ -440,8 +440,7 @@ namespace HorseRacingML.Controllers
             return RedirectToAction("Index");
         }
         [HttpPost]
-        [ActionName("RefreshRaceMarketOdds")]
-        public async Task<IActionResult> RefreshRaceMarketOddsAction(
+        public async Task<IActionResult> RefreshRaceMarketOddsMarketOnly(
             [FromBody] RefreshRaceRequest request,
             [FromServices] BetfairNavigationService betfair,
             [FromServices] HyperparameterTrainer trainer)

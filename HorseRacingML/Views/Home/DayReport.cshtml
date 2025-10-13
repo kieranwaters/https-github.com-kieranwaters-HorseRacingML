@@ -886,7 +886,7 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
             }
 
             const refreshEndpoint = '@Url.Action("RefreshRaceOdds")';
-            const refreshMarketEndpoint = '@Url.Action("RefreshRaceMarketOdds")';
+            const refreshMarketEndpoint = '@Url.Action("RefreshRaceMarketOddsMarketOnly")';
 
             const cssEscape = (value) => {
                 const text = typeof value === 'string' ? value : String(value ?? '');
