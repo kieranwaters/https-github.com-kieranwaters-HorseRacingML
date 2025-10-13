@@ -847,6 +847,7 @@ DateTime? raceDate,
                     flow,
                     raceDate,
                     lastDistanceCache);
+                ApplyNeutralFeatureFallbacks(featureVector);
 
                 flow.FeatureValues = featureVector;
                 flow.HasPreparedFeatures = featureVector.Count > 0;

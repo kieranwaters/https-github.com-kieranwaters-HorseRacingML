@@ -786,7 +786,6 @@ namespace HorseRacingML.Scraping
             {
                 MarkMissing("race date");
             }
-            ApplyNeutralFeatureFallbacks(featureVector);
         }
 
         private static void ApplyNeutralFeatureFallbacks(Dictionary<string, object?> featureVector)

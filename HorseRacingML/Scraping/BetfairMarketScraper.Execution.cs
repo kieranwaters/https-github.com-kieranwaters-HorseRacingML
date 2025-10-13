@@ -632,10 +632,12 @@ namespace HorseRacingML.Scraping
                     runnerEntries.Add((row, runnerFlow)); // keep mapping
                 }
 
+                var effectiveRaceDate = parsedRaceDate ?? DateTime.Today;
+
                 if (_computeAiProbabilities && aiCalculator != null)
                 {
                     PopulateFeatureVectors(
-                        parsedRaceDate,
+                        effectiveRaceDate,
                         title,
                         venueName,
                         venueCountry,
@@ -810,7 +812,7 @@ namespace HorseRacingML.Scraping
                         title,
                         venueName,
                         venueCountry,
-                        parsedRaceDate,
+                        effectiveRaceDate,
                         offTime,
                         cleanedRaceDetails,
                         raceTypeText,
@@ -824,7 +826,7 @@ namespace HorseRacingML.Scraping
                     result.Races.Add(report); // collect report
                 }
 
-                var raceRecommendations = CreateRecommendations(flows, marketId, title, venueName, parsedRaceDate, executeBets)
+                var raceRecommendations = CreateRecommendations(flows, marketId, title, venueName, effectiveRaceDate, executeBets)
                     .OrderByDescending(r => r.Differential)
                     .ThenByDescending(r => r.KellyFraction)
                     .ToList(); // rank recs

@@ -504,6 +504,64 @@ namespace HorseRacingML.Tests
             Assert.Equal(0.52f, Convert.ToSingle(runner.FeatureValues["CourseWinRateLast5"]));
         }
         [Fact]
+        public void PopulateFeatureVectors_FallbackPreservesTrainerStatistics()
+        {
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:HorseRacingDb"] = "Server=(local);Database=HorseRacingMLTest;Trusted_Connection=True;"
+                })
+                .Build();
+
+            var fallbackRow = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["HorseName"] = "Neutral Override",
+                ["SelectionId"] = "321",
+                ["TrainerName"] = "Sample Trainer",
+                ["TrainerId"] = 77,
+                ["TrainerWinRate"] = 0.37f,
+                ["TrainerSurfaceWinRate"] = 0.41f,
+                ["TrainerGoingWinRate"] = 0.35f,
+                ["TrainerDistanceBucketWinRate"] = 0.33f
+            };
+            var fallbackRace = new PreparedRace(901, new List<Dictionary<string, object?>> { fallbackRow });
+
+            var trainer = new NeutralOverrideTrainer(configuration, fallbackRace);
+            var repo = new MinimalRacingRepository();
+            var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
+            var scraper = new BetfairMarketScraper(repo, trainer, bankroll: 10m, settings);
+            var flows = new List<RunnerFlow>
+            {
+                new RunnerFlow
+                {
+                    HorseName = "Neutral Override",
+                    SelectionId = "321",
+                    TrainerName = "Sample Trainer"
+                }
+            };
+
+            var report = scraper.TestBuildRaceReport(
+                marketId: "1.555",
+                raceTitle: "Neutral Stakes",
+                venueName: "Neutral Park",
+                venueCountry: "GB",
+                raceDate: new DateTime(2024, 7, 10),
+                offTime: new TimeSpan(12, 30, 0),
+                raceDetails: "Handicap",
+                going: "Good",
+                backBookPercentage: 102m,
+                layBookPercentage: 105m,
+                raceUrl: null,
+                flows: flows);
+
+            var runner = Assert.Single(report.Runners);
+            Assert.Equal(77, Convert.ToInt32(runner.FeatureValues["TrainerId"]));
+            Assert.Equal(0.37f, Convert.ToSingle(runner.FeatureValues["TrainerWinRate"]));
+            Assert.Equal(0.41f, Convert.ToSingle(runner.FeatureValues["TrainerSurfaceWinRate"]));
+            Assert.Equal(0.35f, Convert.ToSingle(runner.FeatureValues["TrainerGoingWinRate"]));
+            Assert.Equal(0.33f, Convert.ToSingle(runner.FeatureValues["TrainerDistanceBucketWinRate"]));
+        }
+        [Fact]
         public void PopulateFeatureVectors_ComputesRaceAverageWinRateLast5()
         {
             var configuration = new ConfigurationBuilder()
@@ -1161,5 +1219,35 @@ namespace HorseRacingML.Tests
                 return _fallbackRace;
             }
         }
+        private sealed class NeutralOverrideTrainer : HorseRacingML.ML.HyperparameterTrainer
+        {
+            private readonly PreparedRace _fallbackRace;
+            private int _callCount;
+
+            public NeutralOverrideTrainer(IConfiguration configuration, PreparedRace fallbackRace)
+                : base(configuration)
+            {
+                _fallbackRace = fallbackRace ?? throw new ArgumentNullException(nameof(fallbackRace));
+            }
+
+            public override IReadOnlyList<PreparedRace?> PrepareUpcomingRaces(
+                IReadOnlyList<(UpcomingRace upcoming, IReadOnlyList<RunnerFlow> flows)> requests)
+            {
+                if (requests is null)
+                {
+                    throw new ArgumentNullException(nameof(requests));
+                }
+
+                _callCount++;
+                var results = new PreparedRace?[requests.Count];
+                for (int i = 0; i < results.Length; i++)
+                {
+                    results[i] = _callCount == 1 ? null : _fallbackRace;
+                }
+
+                return results;
+            }
+        }
     }
 }
+
