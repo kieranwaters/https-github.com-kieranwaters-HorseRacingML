@@ -1815,6 +1815,7 @@ namespace HorseRacingML.ML
 
             var horseNameList = horseNames.Values.ToList();
             var jockeyNameList = jockeyNames.Values.ToList();
+            var trainerNameList = trainerNames.Values.ToList();
             var lookupData = LoadRunnerLookupData(conn, upcoming, runnerColumns, horseNameList, jockeyNameList, explicitHorseIds);
             var horseIdLookup = lookupData.HorseIds;
             var jockeyIdLookup = lookupData.JockeyIds;
@@ -1823,7 +1824,7 @@ namespace HorseRacingML.ML
 
             if (trainerNames.Count > 0)
             {
-                var trainerCandidateMap = BuildNameCandidateMap(trainerNames);
+                var trainerCandidateMap = BuildNameCandidateMap(trainerNameList);
                 if (trainerCandidateMap.Count > 0)
                 {
                     const string trainerSql = "SELECT Name, MIN(TrainerId) AS TrainerId FROM Trainer WHERE Name IN @Names GROUP BY Name";
