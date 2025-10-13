@@ -813,6 +813,7 @@ DateTime? raceDate,
                 }
                 flow.MatchedDatabaseRecord = matchedDatabaseRow;
                 IReadOnlyList<string> missingHistoricalKeys = Array.Empty<string>();
+                Dictionary<string, object?>? fallbackFeatures = null;
                 if (NeedsHistoricalFeatureBackfill(featureVector))
                 {
                     if (!fallbackAttempted)
@@ -836,7 +837,7 @@ DateTime? raceDate,
 
                     if (fallbackLookup != FeatureLookup.Empty)
                     {
-                        var fallbackFeatures = fallbackLookup.FindBySelectionId(flow.SelectionId)
+                    fallbackFeatures = fallbackLookup.FindBySelectionId(flow.SelectionId)
                             ?? fallbackLookup.FindByHorse(flow.HorseName);
 
                         if (fallbackFeatures != null)
