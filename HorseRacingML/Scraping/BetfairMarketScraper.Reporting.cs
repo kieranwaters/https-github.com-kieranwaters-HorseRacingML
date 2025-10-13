@@ -249,14 +249,11 @@ namespace HorseRacingML.Scraping
             {
                 try
                 {
-                    var byMarket = GetUpcomingRaceByMarketIdCached(marketId);
-                    if (upcoming != null)
+                    var byMetadata = FindUpcomingRaceCached(raceDate.Value, raceTitle, venueName);
+                    if (byMetadata != null)
                     {
-                        Console.WriteLine($"    Located UpcomingRaces row: UpcomingRaceId={upcoming.UpcomingRaceId}, MarketId={upcoming.MarketId ?? "<null>"}.");
-                    }
-                    else
-                    {
-                        Console.WriteLine($"    No UpcomingRaces row matched date/title/venue search (RaceDate, Title, VenueName).");
+                        upcoming = byMetadata;
+                        Console.WriteLine($"    Located UpcomingRaces row: UpcomingRaceId={byMetadata.UpcomingRaceId}, MarketId={byMetadata.MarketId ?? "<null>"}.");
                     }
                 }
                 catch (Exception ex)

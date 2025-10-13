@@ -591,21 +591,35 @@ WHERE h.Name IN @Names;";
                 throw new ArgumentNullException(nameof(horseNames));
             }
 
-            var candidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var name in horseNames)
-            {
-                foreach (var candidate in BuildHistoricalNameCandidates(name))
-                {
-                    candidates.Add(candidate);
-                }
-            }
-
-            if (candidates.Count == 0)
+            var originalNames = new HashSet<string>(horseNames.Where(n => !string.IsNullOrWhiteSpace(n)), StringComparer.OrdinalIgnoreCase);
+            if (originalNames.Count == 0)
             {
                 return new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             }
 
-            const string sql = @"
+            // Map every generated candidate back to the original horse name so we can
+            // attribute query results correctly and later expose all candidate spellings.
+            var candidateMap = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+            foreach (var original in originalNames)
+            {
+                foreach (var candidate in BuildHistoricalNameCandidates(original))
+                {
+                    if (!candidateMap.TryGetValue(candidate, out var originals))
+                    {
+                        originals = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                        candidateMap[candidate] = originals;
+                    }
+
+                    originals.Add(original);
+                }
+            }
+
+            if (candidateMap.Count == 0)
+            {
+                return new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            }
+
+            const string baseSql = @"
 SELECT h.Name,
        COUNT(*) AS RaceCount
 FROM RunnerResult rr
@@ -614,14 +628,101 @@ WHERE h.Name IN @Names
 GROUP BY h.Name;";
 
             using var conn = OpenConnection();
-            var rows = conn.Query(sql, new { Names = candidates.ToArray() });
+            var countsByOriginal = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
-            var results = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-            foreach (var row in rows)
+            // First attempt an exact match using the generated candidate spellings.
+            var candidateList = candidateMap.Keys.ToArray();
+            if (candidateList.Length > 0)
             {
-                var name = (string)row.Name;
-                var count = (int)row.RaceCount;
-                results[name] = count;
+                foreach (var row in conn.Query(baseSql, new { Names = candidateList }))
+                {
+                    var name = (string)row.Name;
+                    var count = (int)row.RaceCount;
+
+                    if (!candidateMap.TryGetValue(name, out var originals) || originals == null)
+                    {
+                        continue;
+                    }
+
+                    foreach (var original in originals)
+                    {
+                        countsByOriginal[original] = count;
+                    }
+                }
+            }
+
+            // For any names that still remain unmatched, fall back to a normalized lookup
+            // that mirrors the logic used when preparing feature vectors.
+            var unmatched = originalNames
+                .Where(name => !countsByOriginal.ContainsKey(name))
+                .ToList();
+
+            if (unmatched.Count > 0)
+            {
+                var normalizedMap = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+                foreach (var original in unmatched)
+                {
+                    var normalized = NormalizeHistoricalNameKey(original);
+                    if (string.IsNullOrEmpty(normalized))
+                    {
+                        continue;
+                    }
+
+                    if (!normalizedMap.TryGetValue(normalized, out var originals))
+                    {
+                        originals = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                        normalizedMap[normalized] = originals;
+                    }
+
+                    originals.Add(original);
+                }
+
+                if (normalizedMap.Count > 0)
+                {
+                    const string normalizedSql = @"
+SELECT lookup.Normalized,
+       COUNT(*) AS RaceCount
+FROM RunnerResult rr
+INNER JOIN Horse h ON h.HorseId = rr.HorseId
+CROSS APPLY (
+    SELECT Normalized = LOWER(
+        REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(h.Name, ' ', ''), '-', ''), '''', ''), '’', ''), '.', ''), ',', ''), '&', 'and'), '(', ''), ')', ''), '/', '')
+    )
+) AS lookup
+WHERE lookup.Normalized IN @Names
+GROUP BY lookup.Normalized;";
+
+                    var normalizedKeys = normalizedMap.Keys.ToArray();
+                    foreach (var row in conn.Query(normalizedSql, new { Names = normalizedKeys }))
+                    {
+                        var normalized = (string)row.Normalized;
+                        var count = (int)row.RaceCount;
+
+                        if (!normalizedMap.TryGetValue(normalized, out var originals) || originals == null)
+                        {
+                            continue;
+                        }
+
+                        foreach (var original in originals)
+                        {
+                            countsByOriginal[original] = count;
+                        }
+                    }
+                }
+            }
+
+            // Expose counts for every candidate spelling so callers can resolve matches
+            // using their preferred representation.
+            var results = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (original, count) in countsByOriginal)
+            {
+                foreach (var candidate in BuildHistoricalNameCandidates(original))
+                {
+                    if (!results.ContainsKey(candidate))
+                    {
+                        results[candidate] = count;
+                    }
+                }
             }
 
             return results;
