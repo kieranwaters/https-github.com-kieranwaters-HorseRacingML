@@ -8,6 +8,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using Tensorflow.Keras.Engine;
 using System.Text;
+using System.Collections;
 
 namespace HorseRacingML.Scraping
 {
@@ -966,9 +967,7 @@ namespace HorseRacingML.Scraping
                 ["gr2"] = "Grade 2",
                 ["gr3"] = "Grade 3"
             };
-        private const string RunnerDetailsExpansionScript = @"
-            const row = arguments[0];
-            const index = arguments[1];
+        private const string RunnerDetailsExpansionFunctionBody = @"
             if (!row) { return false; }
 
             const normalize = value => {
@@ -1070,6 +1069,60 @@ namespace HorseRacingML.Scraping
 
             const expandedNow = hasExpandedState(icon) || hasExpandedState(container) || hasVisibleDetails(container);
             return expandedNow;
+        ";
+        private const string RunnerDetailsExpansionScript = "const row = arguments[0]; const index = arguments[1];" + RunnerDetailsExpansionFunctionBody;
+
+        private const string BulkRunnerDetailsExpansionScript = @"
+            const rows = Array.from(arguments[0] || []);
+            const expandBody = arguments[1];
+            const expandSingle = new Function('row', 'index', expandBody);
+            const detailSelectors = [
+                '.runner-timeform-details',
+                '.runner-timeform',
+                '.timeform-expandable',
+                '.runner-expanded-details',
+                '.runner-info-expanded'
+            ];
+
+            const hasVisibleDetails = element => {
+                if (!element) { return false; }
+                for (const selector of detailSelectors) {
+                    const detail = element.querySelector && element.querySelector(selector);
+                    if (detail) {
+                        const style = window.getComputedStyle(detail);
+                        if (style && style.display !== 'none' && style.visibility !== 'hidden' && style.height !== '0px' && style.maxHeight !== '0px') {
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            };
+
+            const results = [];
+            for (let i = 0; i < rows.length; i++) {
+                const row = rows[i];
+                if (!row) {
+                    results.push({ expanded: false, needsFallback: false });
+                    continue;
+                }
+
+                let expanded = false;
+                try {
+                    expanded = !!expandSingle(row, i + 1);
+                } catch (error) {
+                    expanded = false;
+                }
+
+                if (expanded) {
+                    results.push({ expanded: true, needsFallback: false });
+                    continue;
+                }
+
+                const hasDetails = hasVisibleDetails(row);
+                results.push({ expanded: hasDetails, needsFallback: !hasDetails });
+            }
+
+            return results;
         ";
         private static IEnumerable<string> EnumerateDetailTokens(string? source)
         {
@@ -1285,29 +1338,123 @@ const hasBackAllContext = target => {
                 return;
             }
 
-            for (var i = 0; i < runnerRows.Count; i++)
+            var rowsArray = runnerRows.OfType<IWebElement>().ToArray();
+            if (rowsArray.Length == 0)
             {
-                var row = runnerRows[i];
+                return;
+            }
+
+            IReadOnlyList<object>? bulkResults = null;
+            try
+            {
+                var raw = js.ExecuteScript(BulkRunnerDetailsExpansionScript, rowsArray, RunnerDetailsExpansionFunctionBody);
+                if (raw is IReadOnlyList<object> list)
+                {
+                    bulkResults = list;
+                }
+                else if (raw is object[] array)
+                {
+                    bulkResults = array;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"\tFailed to expand runner details in bulk: {ex.Message}");
+            }
+
+            if (bulkResults == null || bulkResults.Count != rowsArray.Length)
+            {
+                LegacyExpandRunnerDetails(js, rowsArray);
+                return;
+            }
+
+            for (var i = 0; i < rowsArray.Length; i++)
+            {
+                var row = rowsArray[i];
                 if (row == null)
                 {
                     continue;
                 }
 
-                try
+                var parsed = ParseBulkExpansionResult(bulkResults[i]);
+                if (parsed == null)
                 {
-                    var result = js.ExecuteScript(RunnerDetailsExpansionScript, row, i + 1);
-                    var expanded = result is bool flag && flag;
-
+                    var expanded = TryExpandRunnerDetailsWithScript(js, row, i);
                     if (!expanded)
                     {
                         TryFallbackRunnerDetailsClick(js, row);
                     }
+
+                    continue;
                 }
-                catch (Exception ex)
+
+                var (expanded, needsFallback) = parsed.Value;
+                if (!expanded && needsFallback)
                 {
-                    Console.Error.WriteLine($"\tFailed to expand runner details for row {i + 1}: {ex.Message}");
+                    TryFallbackRunnerDetailsClick(js, row);
                 }
             }
+        }
+
+        private static void LegacyExpandRunnerDetails(IJavaScriptExecutor js, IReadOnlyList<IWebElement> rows)
+        {
+            for (var i = 0; i < rows.Count; i++)
+            {
+                var row = rows[i];
+                if (row == null)
+                {
+                    continue;
+                }
+
+                var expanded = TryExpandRunnerDetailsWithScript(js, row, i);
+                if (!expanded)
+                {
+                    TryFallbackRunnerDetailsClick(js, row);
+                }
+            }
+        }
+
+        private static bool TryExpandRunnerDetailsWithScript(IJavaScriptExecutor js, IWebElement row, int index)
+        {
+            try
+            {
+                var result = js.ExecuteScript(RunnerDetailsExpansionScript, row, index + 1);
+                return result is bool flag && flag;
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"\tFailed to expand runner details for row {index + 1}: {ex.Message}");
+                return false;
+            }
+        }
+
+        private static (bool Expanded, bool NeedsFallback)? ParseBulkExpansionResult(object? value)
+        {
+            if (value is IDictionary<string, object?> generic)
+            {
+                return (
+                    generic.TryGetValue("expanded", out var expandedObj) && expandedObj is bool expanded && expanded,
+                    generic.TryGetValue("needsFallback", out var fallbackObj) && fallbackObj is bool needsFallback && needsFallback);
+            }
+
+            if (value is IDictionary dictionary)
+            {
+                return (
+                    TryReadBoolean(dictionary, "expanded"),
+                    TryReadBoolean(dictionary, "needsFallback"));
+            }
+
+            return null;
+        }
+
+        private static bool TryReadBoolean(IDictionary dictionary, string key)
+        {
+            if (dictionary.Contains(key) && dictionary[key] is bool flag)
+            {
+                return flag;
+            }
+
+            return false;
         }
 
         private static void TryFallbackRunnerDetailsClick(IJavaScriptExecutor js, IWebElement row)

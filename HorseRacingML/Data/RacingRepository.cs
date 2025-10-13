@@ -726,9 +726,19 @@ GROUP BY h.Name;";
                                     FROM UpcomingRaces
                                     WHERE MarketId = @MarketId";
 
-            using var conn = OpenConnection();
-            EnsureUpcomingRaceTableExists(conn);
-            return conn.QueryFirstOrDefault<UpcomingRace>(sql, new { MarketId = marketId.Trim() });
+            var (connection, scope, ownsConnection) = GetScopedConnection();
+            try
+            {
+                EnsureUpcomingRaceTable(connection, scope);
+                return connection.QueryFirstOrDefault<UpcomingRace>(sql, new { MarketId = marketId.Trim() });
+            }
+            finally
+            {
+                if (ownsConnection)
+                {
+                    connection.Dispose();
+                }
+            }
         }
         
 
@@ -1319,40 +1329,52 @@ ORDER BY ISNULL(ValidationAccuracy, 0) DESC, RunDate DESC";
                                     FROM UpcomingRaces
                                     WHERE RaceDate = @RaceDate";
 
-            using var conn = OpenConnection();
-            var candidates = conn.Query<UpcomingRace>(sql, new { RaceDate = raceDate.Date }).ToList();
-            if (candidates.Count == 0)
+            var (connection, scope, ownsConnection) = GetScopedConnection();
+            try
             {
-                return null;
+                EnsureUpcomingRaceTable(connection, scope);
+                var candidates = connection.Query<UpcomingRace>(sql, new { RaceDate = raceDate.Date }).ToList();
+                if (candidates.Count == 0)
+                {
+                    return null;
+                }
+
+                var normalizedTitle = NormalizeLookupKey(title);
+                var normalizedVenue = NormalizeLookupKey(venueName);
+
+                var (best, bestScore, titleAligned, venueAligned) = SelectBestUpcomingRaceCandidate(
+                    candidates,
+                    normalizedTitle,
+                    normalizedVenue);
+
+                if (best is null)
+                {
+                    return null;
+                }
+
+                if (bestScore > 0)
+                {
+                    return null;
+                }
+
+                var hasTitle = !string.IsNullOrEmpty(normalizedTitle);
+                var hasVenue = !string.IsNullOrEmpty(normalizedVenue);
+                if ((hasTitle || hasVenue) && !titleAligned && !venueAligned)
+                {
+                    return null;
+                }
+
+                return best;
             }
-
-            var normalizedTitle = NormalizeLookupKey(title);
-            var normalizedVenue = NormalizeLookupKey(venueName);
-
-            var (best, bestScore, titleAligned, venueAligned) = SelectBestUpcomingRaceCandidate(
-                candidates,
-                normalizedTitle,
-                normalizedVenue);
-
-            if (best is null)
+            finally
             {
-                return null;
+                if (ownsConnection)
+                {
+                    connection.Dispose();
+                }
             }
-
-            if (bestScore > 0)
-            {
-                return null;
-            }
-
-            var hasTitle = !string.IsNullOrEmpty(normalizedTitle);
-            var hasVenue = !string.IsNullOrEmpty(normalizedVenue);
-            if ((hasTitle || hasVenue) && !titleAligned && !venueAligned)
-            {
-                return null;
-            }
-
-            return best;
         }
+
 
         internal static (UpcomingRace? Candidate, int Score, bool TitleAligned, bool VenueAligned) SelectBestUpcomingRaceCandidate(
             IEnumerable<UpcomingRace> candidates,

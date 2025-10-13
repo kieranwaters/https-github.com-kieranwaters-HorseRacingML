@@ -255,6 +255,7 @@ namespace HorseRacingML.Scraping
                         lock (_repoLock)
                         {
                             var upcomingId = _repo.UpsertUpcomingRace(persistedUpcoming);
+                            CacheUpcomingRace(persistedUpcoming);
                             persistedUpcoming.UpcomingRaceId = upcomingId;
                         }
 

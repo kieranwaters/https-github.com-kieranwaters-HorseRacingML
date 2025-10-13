@@ -31,7 +31,7 @@ namespace HorseRacingML.Scraping
             {
                 return;
             }
-
+            ResetUpcomingRaceLookupCache();
             foreach (var race in raceList)
             {
                 if (race == null)
@@ -60,6 +60,9 @@ namespace HorseRacingML.Scraping
                     var upcomingId = race.UpcomingRaceId?.ToString() ?? "n/a";
                     Console.WriteLine($"\t[DayReport] Race {raceName} is upcoming; recorded upcoming race id {upcomingId}. Using saved AI probabilities for reporting.");
                 }
+                var retainedProbabilityCount = 0;
+                var suppressedProbabilityCount = 0;
+                var backfilledMarketProbabilityCount = 0;
 
                 foreach (var runner in race.Runners)
                 {
@@ -68,17 +71,9 @@ namespace HorseRacingML.Scraping
                         continue;
                     }
 
-                    var runnerIdentifier = !string.IsNullOrWhiteSpace(runner.HorseName)
-                        ? runner.HorseName
-                        : (!string.IsNullOrWhiteSpace(runner.SelectionId) ? runner.SelectionId : "unknown");
-
-                    var historyDescription = runner.HistoricalRaceCount.HasValue
-                        ? runner.HistoricalRaceCount.Value.ToString("N0", CultureInfo.InvariantCulture)
-                        : "unknown";
-                    Console.WriteLine($"\t[DayReport] {runnerIdentifier}: historical races used for AI features = {historyDescription}.");
-
                     if (!runner.AiProbability.HasValue || !double.IsFinite(runner.AiProbability.Value) || runner.AiProbability.Value <= 0)
                     {
+                        suppressedProbabilityCount++;
                         runner.AiProbability = null;
                         runner.AiDecimalOdds = null;
                         runner.Differential = null;
@@ -86,6 +81,7 @@ namespace HorseRacingML.Scraping
                         runner.SuggestedStake = null;
                         continue;
                     }
+                    retainedProbabilityCount++;
 
                     if (!runner.AiDecimalOdds.HasValue)
                     {
@@ -95,6 +91,7 @@ namespace HorseRacingML.Scraping
                     if (!runner.MarketProbability.HasValue && runner.MarketDecimalOdds.HasValue && runner.MarketDecimalOdds.Value > 0m)
                     {
                         runner.MarketProbability = 1.0 / (double)runner.MarketDecimalOdds.Value;
+                        backfilledMarketProbabilityCount++;
                     }
 
                     runner.Differential = runner.MarketProbability.HasValue
@@ -119,7 +116,16 @@ namespace HorseRacingML.Scraping
                         runner.SuggestedStake = null;
                     }
                 }
+                Console.WriteLine($"\t[DayReport] {retainedProbabilityCount}/{race.Runners.Count} runner(s) retain valid AI probabilities.");
+                if (suppressedProbabilityCount > 0)
+                {
+                    Console.WriteLine($"\t[DayReport] Filtered {suppressedProbabilityCount} runner(s) due to missing or invalid AI probabilities.");
+                }
 
+                if (backfilledMarketProbabilityCount > 0)
+                {
+                    Console.WriteLine($"\t[DayReport] Backfilled market probabilities for {backfilledMarketProbabilityCount} runner(s) from decimal odds.");
+                }
                 var winner = race.Runners
                     .Where(r => r?.AiProbability.HasValue == true)
                     .OrderByDescending(r => r!.AiProbability!.Value)
@@ -195,6 +201,7 @@ namespace HorseRacingML.Scraping
                 {
                     upcoming = persistedUpcoming;
                     persistedAccepted = true;
+                    CacheUpcomingRace(persistedUpcoming);
                 }
                 else
                 {
@@ -206,7 +213,7 @@ namespace HorseRacingML.Scraping
             {
                 try
                 {
-                    var byMarket = _repo.GetUpcomingRaceByMarketId(marketId);
+                    var byMarket = GetUpcomingRaceByMarketIdCached(marketId);
                     if (byMarket != null)
                     {
                         upcoming = byMarket;
@@ -233,7 +240,7 @@ namespace HorseRacingML.Scraping
             {
                 try
                 {
-                    upcoming = _repo.FindUpcomingRace(raceDate.Value, raceTitle, venueName);
+                    var byMarket = GetUpcomingRaceByMarketIdCached(marketId);
                     if (upcoming != null)
                     {
                         Console.WriteLine($"    Located UpcomingRaces row: UpcomingRaceId={upcoming.UpcomingRaceId}, MarketId={upcoming.MarketId ?? "<null>"}.");
@@ -367,7 +374,7 @@ namespace HorseRacingML.Scraping
             {
                 try
                 {
-                    var byMarket = _repo.GetUpcomingRaceByMarketId(marketId);
+                    var byMarket = GetUpcomingRaceByMarketIdCached(marketId);
                     if (byMarket != null)
                     {
                         upcoming = byMarket;
@@ -394,7 +401,7 @@ namespace HorseRacingML.Scraping
             {
                 try
                 {
-                    upcoming = _repo.FindUpcomingRace(raceDate.Value, raceTitle, venueName);
+                    upcoming = FindUpcomingRaceCached(raceDate.Value, raceTitle, venueName);
                 }
                 catch (Exception ex)
                 {
@@ -556,6 +563,7 @@ namespace HorseRacingML.Scraping
                 lock (_repoLock)
                 {
                     var upcomingId = _repo.UpsertUpcomingRace(upcoming);
+                    CacheUpcomingRace(upcoming);
                     Console.WriteLine($"\t[DayReport] Recorded upcoming race {upcomingId} for {race.VenueName?.Trim() ?? "unknown venue"} on {race.RaceDate:yyyy-MM-dd}.");
                     return upcomingId;
                 }

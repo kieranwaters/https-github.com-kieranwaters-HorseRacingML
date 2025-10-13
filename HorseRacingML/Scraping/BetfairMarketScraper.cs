@@ -24,6 +24,11 @@ namespace HorseRacingML.Scraping
         private readonly bool _computeAiProbabilities;
         private readonly Dictionary<RacePreparationKey, FeatureLookup> _featureLookupCache = new();
         private readonly object _featureLookupCacheLock = new();
+        private readonly Dictionary<string, HandleScheduleMetadata> _handleScheduleCache = new(StringComparer.Ordinal);
+        private readonly object _handleScheduleCacheLock = new();
+        private readonly Dictionary<string, UpcomingRace?> _upcomingByMarketIdCache = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<UpcomingRaceLookupKey, UpcomingRace?> _upcomingByMetadataCache = new();
+        private readonly object _upcomingCacheLock = new();
         private decimal _availableBankroll;
         private int _betSlipSelectionsFilled;
         private readonly HashSet<string> _missingScrapedFieldDescriptions = new(StringComparer.OrdinalIgnoreCase);
@@ -121,6 +126,171 @@ namespace HorseRacingML.Scraping
                 handlesToProcess: handlesToProcess);
             return result.Recommendations.AsReadOnly();
         }
+        private sealed class HandleScheduleMetadata
+        {
+            public HandleScheduleMetadata(DateTime sortKey, string? url, DateTime capturedUtc)
+            {
+                SortKey = sortKey;
+                Url = url;
+                CapturedUtc = capturedUtc;
+            }
+
+            public DateTime SortKey { get; }
+            public string? Url { get; }
+            public DateTime CapturedUtc { get; }
+        }
+
+        private readonly struct UpcomingRaceLookupKey : IEquatable<UpcomingRaceLookupKey>
+        {
+            public UpcomingRaceLookupKey(DateTime raceDate, string titleKey, string venueKey)
+            {
+                RaceDate = raceDate;
+                TitleKey = titleKey;
+                VenueKey = venueKey;
+            }
+
+            public DateTime RaceDate { get; }
+            public string TitleKey { get; }
+            public string VenueKey { get; }
+
+            public bool Equals(UpcomingRaceLookupKey other)
+            {
+                return RaceDate.Equals(other.RaceDate) &&
+                       string.Equals(TitleKey, other.TitleKey, StringComparison.Ordinal) &&
+                       string.Equals(VenueKey, other.VenueKey, StringComparison.Ordinal);
+            }
+
+            public override bool Equals(object? obj) => obj is UpcomingRaceLookupKey other && Equals(other);
+
+            public override int GetHashCode()
+            {
+                unchecked
+                {
+                    var hash = RaceDate.GetHashCode();
+                    hash = (hash * 397) ^ StringComparer.Ordinal.GetHashCode(TitleKey);
+                    hash = (hash * 397) ^ StringComparer.Ordinal.GetHashCode(VenueKey);
+                    return hash;
+                }
+            }
+        }
+
+        private void ResetUpcomingRaceLookupCache()
+        {
+            lock (_upcomingCacheLock)
+            {
+                _upcomingByMarketIdCache.Clear();
+                _upcomingByMetadataCache.Clear();
+            }
+        }
+
+        private void CacheUpcomingRace(UpcomingRace? upcoming)
+        {
+            if (upcoming == null)
+            {
+                return;
+            }
+
+            lock (_upcomingCacheLock)
+            {
+                CacheUpcomingRaceUnsafe(upcoming);
+            }
+        }
+
+        private void CacheUpcomingRaceUnsafe(UpcomingRace upcoming)
+        {
+            if (!string.IsNullOrWhiteSpace(upcoming.MarketId))
+            {
+                _upcomingByMarketIdCache[upcoming.MarketId.Trim()] = upcoming;
+            }
+
+            if (upcoming.RaceDate.HasValue)
+            {
+                var key = new UpcomingRaceLookupKey(
+                    upcoming.RaceDate.Value.Date,
+                    RacingRepository.NormalizeLookupKey(upcoming.Title),
+                    RacingRepository.NormalizeLookupKey(upcoming.VenueName));
+                _upcomingByMetadataCache[key] = upcoming;
+            }
+        }
+
+        private void CacheUpcomingRaceLookupResult(string? marketId, UpcomingRaceLookupKey? metadataKey, UpcomingRace? result)
+        {
+            lock (_upcomingCacheLock)
+            {
+                if (!string.IsNullOrWhiteSpace(marketId))
+                {
+                    _upcomingByMarketIdCache[marketId.Trim()] = result;
+                }
+
+                if (metadataKey.HasValue)
+                {
+                    _upcomingByMetadataCache[metadataKey.Value] = result;
+                }
+
+                if (result != null)
+                {
+                    CacheUpcomingRaceUnsafe(result);
+                }
+            }
+        }
+
+        private UpcomingRace? GetUpcomingRaceByMarketIdCached(string marketId)
+        {
+            var trimmed = marketId.Trim();
+
+            lock (_upcomingCacheLock)
+            {
+                if (_upcomingByMarketIdCache.TryGetValue(trimmed, out var cached))
+                {
+                    return cached;
+                }
+            }
+
+            UpcomingRace? result = null;
+            try
+            {
+                result = _repo.GetUpcomingRaceByMarketId(trimmed);
+            }
+            catch
+            {
+                CacheUpcomingRaceLookupResult(trimmed, null, null);
+                throw;
+            }
+
+            CacheUpcomingRaceLookupResult(trimmed, null, result);
+            return result;
+        }
+
+        private UpcomingRace? FindUpcomingRaceCached(DateTime raceDate, string? raceTitle, string? venueName)
+        {
+            var key = new UpcomingRaceLookupKey(
+                raceDate.Date,
+                RacingRepository.NormalizeLookupKey(raceTitle),
+                RacingRepository.NormalizeLookupKey(venueName));
+
+            lock (_upcomingCacheLock)
+            {
+                if (_upcomingByMetadataCache.TryGetValue(key, out var cached))
+                {
+                    return cached;
+                }
+            }
+
+            UpcomingRace? result = null;
+            try
+            {
+                result = _repo.FindUpcomingRace(raceDate, raceTitle, venueName);
+            }
+            catch
+            {
+                CacheUpcomingRaceLookupResult(null, key, null);
+                throw;
+            }
+
+            CacheUpcomingRaceLookupResult(null, key, result);
+            return result;
+        }
+
 
     }
 }

@@ -9,9 +9,11 @@ namespace HorseRacingML.Scraping
 {
     public partial class BetfairMarketScraper
     {
+        private static readonly TimeSpan HandleScheduleCacheLifetime = TimeSpan.FromSeconds(45);
+
         private IReadOnlyList<string> OrderHandlesByScheduledStart(IWebDriver driver, IReadOnlyList<string> handles)
         {
-            if (handles == null || handles.Count <= 1)
+            if (handles == null || handles.Count <= 2)
             {
                 return handles ?? Array.Empty<string>();
             }
@@ -27,16 +29,39 @@ namespace HorseRacingML.Scraping
             }
 
             var metadata = new List<(string Handle, DateTime SortKey, int Index)>(handles.Count);
+            var now = DateTime.UtcNow;
+            var handleSet = new HashSet<string>(handles);
+            var switched = false;
 
             for (int i = 0; i < handles.Count; i++)
             {
                 var handle = handles[i];
                 var sortKey = DateTime.MaxValue;
 
+                HandleScheduleMetadata? cached = null;
+                lock (_handleScheduleCacheLock)
+                {
+                    if (_handleScheduleCache.TryGetValue(handle, out var existing) &&
+                        now - existing.CapturedUtc <= HandleScheduleCacheLifetime)
+                    {
+                        cached = existing;
+                        _handleScheduleCache[handle] = new HandleScheduleMetadata(existing.SortKey, existing.Url, now);
+                    }
+                }
+
+                if (cached != null)
+                {
+                    metadata.Add((handle, cached.SortKey, i));
+                    continue;
+                }
+
+                string? url = null;
+
                 try
                 {
                     driver.SwitchTo().Window(handle);
-                    var url = driver.Url;
+                    switched = true;
+                    url = driver.Url;
                     if (!string.IsNullOrWhiteSpace(url) && url.Contains("/horse-racing/", StringComparison.OrdinalIgnoreCase))
                     {
                         var scheduled = TryResolveScheduledStart(driver);
@@ -52,13 +77,35 @@ namespace HorseRacingML.Scraping
                 }
 
                 metadata.Add((handle, sortKey, i));
+                lock (_handleScheduleCacheLock)
+                {
+                    _handleScheduleCache[handle] = new HandleScheduleMetadata(sortKey, url, now);
+                }
+            }
+
+            var staleThreshold = TimeSpan.FromTicks(HandleScheduleCacheLifetime.Ticks * 4);
+
+            lock (_handleScheduleCacheLock)
+            {
+                var keysToRemove = _handleScheduleCache
+                    .Where(kvp => !handleSet.Contains(kvp.Key) || now - kvp.Value.CapturedUtc > staleThreshold)
+                    .Select(kvp => kvp.Key)
+                    .ToList();
+
+                foreach (var key in keysToRemove)
+                {
+                    _handleScheduleCache.Remove(key);
+                }
             }
 
             if (!string.IsNullOrEmpty(originalHandle))
             {
                 try
                 {
-                    driver.SwitchTo().Window(originalHandle);
+                    if (switched)
+                    {
+                        driver.SwitchTo().Window(originalHandle);
+                    }
                 }
                 catch (WebDriverException)
                 {
