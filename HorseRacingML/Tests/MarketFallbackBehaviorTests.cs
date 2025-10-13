@@ -112,6 +112,41 @@ namespace HorseRacingML.Tests
             const string expected = "All AI win probabilities defaulted to market-implied odds for this race. Reason: Degenerate model outputs; using market-implied probability.";
             Assert.Equal(expected, report.RaceFallbackSummary);
         }
+        [Fact]
+        public void ApplyScrapedFeatureFallbacks_OverridesTrainerAndWeightWithLiveValues()
+        {
+            var repo = new StubRepository();
+            var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
+            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), bankroll: 25m, settings);
+
+            var featureVector = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["TrainerName"] = "Historical Trainer",
+                ["WeightLbs"] = 118,
+                ["WeightText"] = "8-6",
+                ["WeightMissing"] = false
+            };
+
+            var flow = new RunnerFlow
+            {
+                HorseName = "Runner Alpha",
+                TrainerName = "Live Trainer",
+                WeightLbs = 132,
+                WeightText = "9-6"
+            };
+
+            scraper.TestApplyScrapedFeatureFallbacks(
+                featureVector,
+                flow,
+                raceDate: new DateTime(2024, 6, 1),
+                raceDetails: "Handicap",
+                flows: new List<RunnerFlow> { flow });
+
+            Assert.Equal("Live Trainer", Assert.IsType<string>(featureVector["TrainerName"]));
+            Assert.Equal(132, Convert.ToInt32(featureVector["WeightLbs"]));
+            Assert.Equal("9-6", Assert.IsType<string>(featureVector["WeightText"]));
+            Assert.False(Convert.ToBoolean(featureVector["WeightMissing"]));
+        }
 
         [Fact]
         public void BuildRaceReport_SummarizesPartialMarketFallbackReason()

@@ -147,5 +147,37 @@ namespace HorseRacingML.Scraping
         {
             ApplyMarketFallbackForUnmatchedRunners(flows);
         }
+        internal void TestApplyScrapedFeatureFallbacks(
+            Dictionary<string, object?> featureVector,
+            RunnerFlow flow,
+            DateTime? raceDate = null,
+            TimeSpan? scheduledOff = null,
+            string? raceTitle = null,
+            string? raceDetails = null,
+            string? raceType = null,
+            string? going = null,
+            string? venueName = null,
+            string? venueCountry = null,
+            decimal? backBookPercentage = null,
+            decimal? layBookPercentage = null,
+            IReadOnlyList<RunnerFlow>? flows = null,
+            ISet<string>? missingScrapeFields = null)
+        {
+            ApplyScrapedFeatureFallbacks(
+                featureVector,
+                flow,
+                raceDate,
+                scheduledOff,
+                raceTitle,
+                raceDetails,
+                raceType,
+                going,
+                venueName,
+                venueCountry,
+                backBookPercentage,
+                layBookPercentage,
+                flows,
+                missingScrapeFields);
+        }
     }
 }

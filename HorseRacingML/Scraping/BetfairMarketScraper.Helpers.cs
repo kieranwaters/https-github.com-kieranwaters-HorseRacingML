@@ -543,26 +543,47 @@ namespace HorseRacingML.Scraping
             if (flow?.WeightLbs.HasValue == true)
             {
                 SetIfMissing("WeightLbs", flow.WeightLbs.Value);
+                featureVector["WeightLbs"] = flow.WeightLbs.Value;
+
                 if (!string.IsNullOrWhiteSpace(flow.WeightText))
                 {
-                    SetIfMissing("WeightText", flow.WeightText.Trim());
+                    var trimmedWeight = flow.WeightText.Trim();
+                    SetIfMissing("WeightText", trimmedWeight);
+                    featureVector["WeightText"] = trimmedWeight;
                 }
+
                 SetIfMissing("WeightMissing", false);
+                featureVector["WeightMissing"] = false;
             }
             else
             {
                 if (!string.IsNullOrWhiteSpace(flow?.WeightText))
                 {
-                    SetIfMissing("WeightText", flow.WeightText!.Trim());
+                    var trimmedWeight = flow!.WeightText!.Trim();
+                    SetIfMissing("WeightText", trimmedWeight);
+                    featureVector["WeightText"] = trimmedWeight;
+                }
+                else if (featureVector.ContainsKey("WeightText"))
+                {
+                    featureVector.Remove("WeightText");
                 }
 
                 SetIfMissing("WeightMissing", true);
+                featureVector["WeightMissing"] = true;
+                if (featureVector.ContainsKey("WeightLbs"))
+                {
+                    featureVector.Remove("WeightLbs");
+                }
+
                 MarkMissing("runner weight");
             }
 
             if (!string.IsNullOrWhiteSpace(flow?.TrainerName))
             {
-                SetIfMissing("TrainerName", flow!.TrainerName!.Trim());
+                var trimmedTrainer = flow!.TrainerName!.Trim();
+                SetIfMissing("TrainerName", trimmedTrainer);
+                featureVector["TrainerName"] = trimmedTrainer;
+            
             }
             else
             {
