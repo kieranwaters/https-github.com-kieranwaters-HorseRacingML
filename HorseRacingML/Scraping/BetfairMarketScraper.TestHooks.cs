@@ -141,7 +141,15 @@ namespace HorseRacingML.Scraping
                 preparedRows,
                 persistedUpcoming);
 
-            return flows.Count > 0 ? lookup.FindByHorse(flows[0].HorseName) : null;
+            if (flows.Count == 0)
+            {
+                return null;
+            }
+
+            var flow = flows[0];
+
+            return lookup.FindBySelectionId(flow.SelectionId)
+                ?? lookup.FindByHorse(flow.HorseName);
         }
         internal void TestApplyMarketFallback(IReadOnlyList<RunnerFlow> flows)
         {

@@ -3041,7 +3041,35 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
 
             return null;
         }
+        private static string DescribeRunner(RunnerFlow? flow)
+        {
+            if (flow == null)
+            {
+                return "unknown";
+            }
 
+            if (!string.IsNullOrWhiteSpace(flow.HorseName))
+            {
+                return flow.HorseName!.Trim();
+            }
+
+            if (flow.ClothNumber.HasValue)
+            {
+                return $"cloth #{flow.ClothNumber.Value.ToString(CultureInfo.InvariantCulture)}";
+            }
+
+            if (flow.Draw.HasValue)
+            {
+                return $"draw #{flow.Draw.Value.ToString(CultureInfo.InvariantCulture)}";
+            }
+
+            if (!string.IsNullOrWhiteSpace(flow.SelectionId))
+            {
+                return flow.SelectionId!.Trim();
+            }
+
+            return "unknown";
+        }
         internal static string? ExtractMarketId(string url)
         {
             // Betfair have changed their URL structure over time.  In some cases the
