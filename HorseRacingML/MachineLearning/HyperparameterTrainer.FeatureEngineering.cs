@@ -630,9 +630,19 @@ namespace HorseRacingML.ML
                             double pref = winDist.count > 0 ? winDist.sum / winDist.count : (allDist.count > 0 ? allDist.sum / allDist.count : distanceYards);
                             row["DistanceFromPreferred"] = (float)Math.Abs(distanceYards - pref);
 
+                            var globalDefaultWinRate = _trainer.SmoothedWinRate(0, 0);
+                            RollingStat trainerStat = default;
+                            bool hasTrainerStat = false;
+                            float trainerDefaultWinRate = globalDefaultWinRate;
+
                             // Trainer statistics
                             if (trainerId.HasValue)
                             {
+                                if (!_trainerStats.TryGetValue(trainerId.Value, out trainerStat))
+                                    trainerStat = new RollingStat();
+                                hasTrainerStat = true;
+                                trainerDefaultWinRate = _trainer.SmoothedWinRate(trainerStat.Wins, trainerStat.Starts);
+
                                 if (!_trainerSurfaceStats.TryGetValue(trainerId.Value, out var tsDict))
                                 {
                                     tsDict = new();
@@ -640,7 +650,9 @@ namespace HorseRacingML.ML
                                 }
                                 if (!tsDict.TryGetValue(surface, out var tsStats))
                                     tsStats = (0, 0, 0f, 0f);
-                                row["TrainerSurfaceWinRate"] = _trainer.SmoothedWinRate(tsStats.wins, tsStats.starts);
+                                row["TrainerSurfaceWinRate"] = tsStats.starts > 0
+                                    ? _trainer.SmoothedWinRate(tsStats.wins, tsStats.starts)
+                                    : trainerDefaultWinRate;
                                 row["TrainerSurfaceAvgNorm"] = tsStats.starts > 0 ? tsStats.sumNorm / tsStats.starts : 0f;
                                 row["LastTrainerSurfaceNormPos"] = tsStats.lastNorm;
 
@@ -651,7 +663,9 @@ namespace HorseRacingML.ML
                                 }
                                 if (!tgDict.TryGetValue(going, out var tgStats))
                                     tgStats = (0, 0, 0f, 0f);
-                                row["TrainerGoingWinRate"] = _trainer.SmoothedWinRate(tgStats.wins, tgStats.starts);
+                                row["TrainerGoingWinRate"] = tgStats.starts > 0
+                                    ? _trainer.SmoothedWinRate(tgStats.wins, tgStats.starts)
+                                    : trainerDefaultWinRate;
                                 row["TrainerGoingAvgNorm"] = tgStats.starts > 0 ? tgStats.sumNorm / tgStats.starts : 0f;
                                 row["LastTrainerGoingNormPos"] = tgStats.lastNorm;
 
@@ -662,11 +676,11 @@ namespace HorseRacingML.ML
                                 }
                                 if (!tdDict.TryGetValue(bucket, out var tdStats))
                                     tdStats = (0, 0, 0f, 0f);
-                                row["TrainerDistanceBucketWinRate"] = _trainer.SmoothedWinRate(tdStats.wins, tdStats.starts);
+                                row["TrainerDistanceBucketWinRate"] = tdStats.starts > 0
+                                    ? _trainer.SmoothedWinRate(tdStats.wins, tdStats.starts)
+                                    : trainerDefaultWinRate;
                                 row["TrainerDistanceBucketAvgNorm"] = tdStats.starts > 0 ? tdStats.sumNorm / tdStats.starts : 0f;
                                 row["LastTrainerDistanceBucketNormPos"] = tdStats.lastNorm;
-                                if (!_trainerStats.TryGetValue(trainerId.Value, out var trainerStat))
-                                    trainerStat = new RollingStat();
                                 while (trainerStat.Recent.Count > 0 &&
                                                         (date - trainerStat.Recent.Peek().date).TotalDays > TrainerJockeyRecentDays)
                                     trainerStat.Recent.Dequeue();
@@ -676,7 +690,7 @@ namespace HorseRacingML.ML
                                 int tWinsRecent = tRecent.Skip(tRecent.Count - tCount).Count(r => r.win);
                                 row[$"TrainerWinRateLast{TrainerJockeyRecentStarts}"] = _trainer.SmoothedWinRate(tWinsRecent, tCount);
                                 row["TrainerWinRateRecentDays"] = _trainer.SmoothedWinRate(tRecent.Count(r => r.win), tRecent.Count);
-                                row["TrainerWinRate"] = _trainer.SmoothedWinRate(trainerStat.Wins, trainerStat.Starts);
+                                row["TrainerWinRate"] = trainerDefaultWinRate;
 
                                 if (updateState)
                                 {
@@ -691,21 +705,30 @@ namespace HorseRacingML.ML
                             }
                             else
                             {
-                                row["TrainerWinRate"] = 0f;
-                                row[$"TrainerWinRateLast{TrainerJockeyRecentStarts}"] = 0f;
-                                row["TrainerWinRateRecentDays"] = 0f;
-                                row["TrainerSurfaceWinRate"] = 0f;
+                                row["TrainerWinRate"] = globalDefaultWinRate;
+                                row[$"TrainerWinRateLast{TrainerJockeyRecentStarts}"] = globalDefaultWinRate;
+                                row["TrainerWinRateRecentDays"] = globalDefaultWinRate;
+                                row["TrainerSurfaceWinRate"] = globalDefaultWinRate;
                                 row["TrainerSurfaceAvgNorm"] = 0f;
                                 row["LastTrainerSurfaceNormPos"] = 0f;
-                                row["TrainerGoingWinRate"] = 0f;
+                                row["TrainerGoingWinRate"] = globalDefaultWinRate;
                                 row["TrainerGoingAvgNorm"] = 0f;
                                 row["LastTrainerGoingNormPos"] = 0f;
-                                row["TrainerDistanceBucketWinRate"] = 0f;
+                                row["TrainerDistanceBucketWinRate"] = globalDefaultWinRate;
                                 row["TrainerDistanceBucketAvgNorm"] = 0f;
                                 row["LastTrainerDistanceBucketNormPos"] = 0f;
                             }
+                            RollingStat jockeyStat = default;
+                            bool hasJockeyStat = false;
+                            float jockeyDefaultWinRate = globalDefaultWinRate;
+
                             if (jockeyId.HasValue)
                             {
+                                if (!_jockeyStats.TryGetValue(jockeyId.Value, out jockeyStat))
+                                    jockeyStat = new RollingStat();
+                                hasJockeyStat = true;
+                                jockeyDefaultWinRate = _trainer.SmoothedWinRate(jockeyStat.Wins, jockeyStat.Starts);
+
                                 if (!_jockeySurfaceStats.TryGetValue(jockeyId.Value, out var jsDict))
                                 {
                                     jsDict = new();
@@ -713,7 +736,9 @@ namespace HorseRacingML.ML
                                 }
                                 if (!jsDict.TryGetValue(surface, out var jsStats))
                                     jsStats = (0, 0, 0f, 0f);
-                                row["JockeySurfaceWinRate"] = _trainer.SmoothedWinRate(jsStats.wins, jsStats.starts);
+                                row["JockeySurfaceWinRate"] = jsStats.starts > 0
+                                    ? _trainer.SmoothedWinRate(jsStats.wins, jsStats.starts)
+                                    : jockeyDefaultWinRate;
                                 row["JockeySurfaceAvgNorm"] = jsStats.starts > 0 ? jsStats.sumNorm / jsStats.starts : 0f;
                                 row["LastJockeySurfaceNormPos"] = jsStats.lastNorm;
 
@@ -724,7 +749,9 @@ namespace HorseRacingML.ML
                                 }
                                 if (!jgDict.TryGetValue(going, out var jgStats))
                                     jgStats = (0, 0, 0f, 0f);
-                                row["JockeyGoingWinRate"] = _trainer.SmoothedWinRate(jgStats.wins, jgStats.starts);
+                                row["JockeyGoingWinRate"] = jgStats.starts > 0
+                                    ? _trainer.SmoothedWinRate(jgStats.wins, jgStats.starts)
+                                    : jockeyDefaultWinRate;
                                 row["JockeyGoingAvgNorm"] = jgStats.starts > 0 ? jgStats.sumNorm / jgStats.starts : 0f;
                                 row["LastJockeyGoingNormPos"] = jgStats.lastNorm;
 
@@ -735,19 +762,21 @@ namespace HorseRacingML.ML
                                 }
                                 if (!jdDict.TryGetValue(bucket, out var jdStats))
                                     jdStats = (0, 0, 0f, 0f);
-                                row["JockeyDistanceBucketWinRate"] = _trainer.SmoothedWinRate(jdStats.wins, jdStats.starts);
+                                row["JockeyDistanceBucketWinRate"] = jdStats.starts > 0
+                                    ? _trainer.SmoothedWinRate(jdStats.wins, jdStats.starts)
+                                    : jockeyDefaultWinRate;
                                 row["JockeyDistanceBucketAvgNorm"] = jdStats.starts > 0 ? jdStats.sumNorm / jdStats.starts : 0f;
                                 row["LastJockeyDistanceBucketNormPos"] = jdStats.lastNorm;
                                 var jockeyGoingDistanceKey = (jockeyId.Value, going, bucket);
                                 if (!_jockeyGoingDistanceStats.TryGetValue(jockeyGoingDistanceKey, out var jockeyGoingDistanceStat))
                                     jockeyGoingDistanceStat = (0, 0, 0f, 0f);
-                                row["JockeyGoingDistanceWinRate"] = _trainer.SmoothedWinRate(jockeyGoingDistanceStat.wins, jockeyGoingDistanceStat.starts);
+                                row["JockeyGoingDistanceWinRate"] = jockeyGoingDistanceStat.starts > 0
+                                    ? _trainer.SmoothedWinRate(jockeyGoingDistanceStat.wins, jockeyGoingDistanceStat.starts)
+                                    : jockeyDefaultWinRate;
                                 row["JockeyGoingDistanceAvgNorm"] = jockeyGoingDistanceStat.starts > 0
                                     ? jockeyGoingDistanceStat.sumNorm / jockeyGoingDistanceStat.starts
                                     : 0f;
                                 row["LastJockeyGoingDistanceNormPos"] = jockeyGoingDistanceStat.lastNorm;
-                                if (!_jockeyStats.TryGetValue(jockeyId.Value, out var jockeyStat))
-                                    jockeyStat = new RollingStat();
 
                                 while (jockeyStat.Recent.Count > 0 &&
                                        (date - jockeyStat.Recent.Peek().date).TotalDays > TrainerJockeyRecentDays)
@@ -758,8 +787,92 @@ namespace HorseRacingML.ML
                                 int jWinsRecent = jRecent.Skip(jRecent.Count - jCount).Count(r => r.win);
                                 row[$"JockeyWinRateLast{TrainerJockeyRecentStarts}"] = _trainer.SmoothedWinRate(jWinsRecent, jCount);
                                 row["JockeyWinRateRecentDays"] = _trainer.SmoothedWinRate(jRecent.Count(r => r.win), jRecent.Count);
-                                row["JockeyWinRate"] = _trainer.SmoothedWinRate(jockeyStat.Wins, jockeyStat.Starts);
+                                row["JockeyWinRate"] = jockeyDefaultWinRate;
 
+                                if (updateState)
+                                {
+                                    jockeyStat.Starts++;
+                                    bool jWin = finish.HasValue && finish.Value == 1;
+                                    if (jWin) jockeyStat.Wins++;
+                                    jockeyStat.Recent.Enqueue((date, jWin));
+                                    while (jockeyStat.Recent.Count > TrainerJockeyRecentStarts)
+                                        jockeyStat.Recent.Dequeue();
+                                    _jockeyStats[jockeyId.Value] = jockeyStat;
+                                }
+                            }
+                            else
+                            {
+                                row["JockeyWinRate"] = globalDefaultWinRate;
+                                row[$"JockeyWinRateLast{TrainerJockeyRecentStarts}"] = globalDefaultWinRate;
+                                row["JockeyWinRateRecentDays"] = globalDefaultWinRate;
+                                row["JockeySurfaceWinRate"] = globalDefaultWinRate;
+                                row["JockeySurfaceAvgNorm"] = 0f;
+                                row["LastJockeySurfaceNormPos"] = 0f;
+                                row["JockeyGoingWinRate"] = globalDefaultWinRate;
+                                row["JockeyGoingAvgNorm"] = 0f;
+                                row["LastJockeyGoingNormPos"] = 0f;
+                                row["JockeyDistanceBucketWinRate"] = globalDefaultWinRate;
+                                row["JockeyDistanceBucketAvgNorm"] = 0f;
+                                row["LastJockeyDistanceBucketNormPos"] = 0f;
+                                row["JockeyGoingDistanceWinRate"] = globalDefaultWinRate;
+                                row["JockeyGoingDistanceAvgNorm"] = 0f;
+                                row["LastJockeyGoingDistanceNormPos"] = 0f;
+                            }
+                            if (trainerId.HasValue)
+                            {
+                                var tcKey = (trainerId.Value, courseId);
+                                _trainerCourseStats.TryGetValue(tcKey, out var tcStat);
+                                row["TrainerCourseWinRate"] = tcStat.starts > 0
+                                    ? _trainer.SmoothedWinRate(tcStat.wins, tcStat.starts)
+                                    : (hasTrainerStat ? trainerDefaultWinRate : globalDefaultWinRate);
+                            }
+                            else
+                            {
+                                row["TrainerCourseWinRate"] = globalDefaultWinRate;
+                            }
+                            if (jockeyId.HasValue)
+                            {
+                                var jcKey = (jockeyId.Value, courseId);
+                                if (!_jockeyCourseStats.TryGetValue(jcKey, out var jcStat))
+                                {
+                                    jcStat = (0, 0);
+                                }
+                                row["JockeyCourseWinRate"] = jcStat.starts > 0
+                                    ? _trainer.SmoothedWinRate(jcStat.wins, jcStat.starts)
+                                    : (hasJockeyStat ? jockeyDefaultWinRate : globalDefaultWinRate);
+                            }
+                            else
+                            {
+                                row["JockeyCourseWinRate"] = globalDefaultWinRate;
+                            }
+                            float trainerJockeyDefaultWinRate = hasTrainerStat && hasJockeyStat
+                                ? (trainerDefaultWinRate + jockeyDefaultWinRate) / 2f
+                                : hasTrainerStat ? trainerDefaultWinRate
+                                : hasJockeyStat ? jockeyDefaultWinRate
+                                : globalDefaultWinRate;
+
+                            if (trainerId.HasValue && jockeyId.HasValue)
+                            {
+                                var pairKey = (trainerId.Value, jockeyId.Value);
+                                if (!_trainerJockeyStats.TryGetValue(pairKey, out var pairStat))
+                                    pairStat = (0, 0);
+                                row["TrainerJockeyWinRate"] = pairStat.starts > 0
+                                    ? _trainer.SmoothedWinRate(pairStat.wins, pairStat.starts)
+                                    : trainerJockeyDefaultWinRate;
+                                var trainerJockeySurfaceKey = (trainerId.Value, jockeyId.Value, surface);
+                                if (!_trainerJockeySurfaceStats.TryGetValue(trainerJockeySurfaceKey, out var pairSurfaceStat))
+                                    pairSurfaceStat = (0, 0);
+                                row["TrainerJockeySurfaceWinRate"] =
+                                    pairSurfaceStat.starts > 0
+                                        ? _trainer.SmoothedWinRate(pairSurfaceStat.wins, pairSurfaceStat.starts)
+                                        : trainerJockeyDefaultWinRate;
+                            }
+                            else
+                            {
+                                row["TrainerJockeyWinRate"] = trainerJockeyDefaultWinRate;
+                                row["TrainerJockeySurfaceWinRate"] = trainerJockeyDefaultWinRate;
+                                row["TrainerJockeyCourseWinRate"] = trainerJockeyDefaultWinRate;
+                            }
                                 if (updateState)
                                 {
                                     jockeyStat.Starts++;
