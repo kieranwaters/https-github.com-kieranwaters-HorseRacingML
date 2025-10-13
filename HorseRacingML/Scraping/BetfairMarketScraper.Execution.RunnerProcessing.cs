@@ -258,7 +258,33 @@ namespace HorseRacingML.Scraping
 
             return null;
         }
+        private static Dictionary<string, object?> CreateFeatureDictionary(IDictionary<string, object?>? source)
+        {
+            var result = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
 
+            if (source == null)
+            {
+                return result;
+            }
+
+            foreach (var entry in source)
+            {
+                if (entry.Key == null)
+                {
+                    continue;
+                }
+
+                var trimmedKey = entry.Key.Trim();
+                if (trimmedKey.Length == 0)
+                {
+                    continue;
+                }
+
+                result[trimmedKey] = entry.Value;
+            }
+
+            return result;
+        }
         private RaceDayReport BuildRaceReport(
             string marketId,
             string? raceTitle,
@@ -436,9 +462,7 @@ namespace HorseRacingML.Scraping
                 Draw = flow.Draw,
                 HorseName = flow.HorseName,
                 JockeyName = flow.JockeyName,
-                FeatureValues = flow.FeatureValues != null
-                    ? new Dictionary<string, object?>(flow.FeatureValues, StringComparer.OrdinalIgnoreCase)
-                    : new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+                FeatureValues = CreateFeatureDictionary(flow.FeatureValues)
             };
 
             if (flow.BackPrice1.HasValue && flow.BackPrice1.Value > 0m)
@@ -776,11 +800,11 @@ DateTime? raceDate,
                 Dictionary<string, object?> featureVector;
                 if (matchedPreparedRow)
                 {
-                    featureVector = new Dictionary<string, object?>(matchedFeatures!, StringComparer.OrdinalIgnoreCase);
+                    featureVector = CreateFeatureDictionary(matchedFeatures);
                 }
                 else
                 {
-                    featureVector = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+                    featureVector = CreateFeatureDictionary(null);
                     var missingFeatureIdentifier = !string.IsNullOrWhiteSpace(flow.HorseName)
                         ? flow.HorseName!
                         : (flow.SelectionId ?? "unknown");
@@ -824,7 +848,7 @@ DateTime? raceDate,
 
                 if (runnerCount > 0)
                 {
-                    featureVector["RunnerCount"] = runnerCount;
+                    BackfillHistoricalFeatures(featureVector, CreateFeatureDictionary(fallbackFeatures));
                 }
 
                 ApplyScrapedFeatureFallbacks(
