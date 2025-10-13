@@ -1120,6 +1120,70 @@ DateTime? raceDate,
                 }
             }
         }
+        private static readonly HashSet<string> HistoricalFeatureBackfillKeySet =
+           new(HistoricalFeatureBackfillKeys, StringComparer.OrdinalIgnoreCase);
+        private static bool TryGetMeaningfulValue(
+                    Dictionary<string, object?>? source,
+                    string key,
+                    out object? value)
+        {
+            value = null;
+            if (source == null || string.IsNullOrWhiteSpace(key))
+            {
+                return false;
+            }
+
+            if (!source.TryGetValue(key, out var existing) || !HasMeaningfulValue(existing))
+            {
+                return false;
+            }
+
+            if (HistoricalFeatureBackfillKeySet.Contains(key) && IsNeutralFallbackValue(key, existing))
+            {
+                return false;
+            }
+
+            value = existing;
+            return true;
+        }
+
+        private static bool IsNeutralFallbackValue(string key, object? value)
+        {
+            if (value == null)
+            {
+                return false;
+            }
+
+            if (!NeutralFeatureFallbacks.TryGetValue(key, out var fallback) || fallback == null)
+            {
+                return false;
+            }
+
+            if (value is string valueText && fallback is string fallbackText)
+            {
+                return string.Equals(
+                    valueText.Trim(),
+                    fallbackText.Trim(),
+                    StringComparison.OrdinalIgnoreCase);
+            }
+
+            if (value is IConvertible convertibleValue && fallback is IConvertible convertibleFallback)
+            {
+                try
+                {
+                    var numericValue = convertibleValue.ToDouble(CultureInfo.InvariantCulture);
+                    var numericFallback = convertibleFallback.ToDouble(CultureInfo.InvariantCulture);
+                    return Math.Abs(numericValue - numericFallback) < 1e-9;
+                }
+                catch
+                {
+                    // ignored - fall through to equality comparison
+                }
+            }
+
+            return Equals(value, fallback);
+        }
+
         private static readonly string[] HistoricalFeatureBackfillKeys =
         {
            "Class",
@@ -1252,26 +1316,7 @@ DateTime? raceDate,
             }
         }
 
-        private static bool TryGetMeaningfulValue(
-            Dictionary<string, object?>? source,
-            string key,
-            out object? value)
-        {
-            value = null;
-            if (source == null || string.IsNullOrWhiteSpace(key))
-            {
-                return false;
-            }
-
-            if (!source.TryGetValue(key, out var existing) || !HasMeaningfulValue(existing))
-            {
-                return false;
-            }
-
-            value = existing;
-            return true;
-        }
-
+        
         private static bool HasMeaningfulValue(object? value)
         {
             if (value == null)
