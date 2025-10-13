@@ -76,8 +76,12 @@ namespace HorseRacingML.Scraping
                 var seenCandidate = false;
                 var candidateGracePeriod = TimeSpan.FromSeconds(1.5); // allow a short window for banners to appear
 
-                var result = wait.Until<bool?>(d =>
+                bool? evaluationResult = null;
+
+                wait.Until(d =>
                 {
+                    evaluationResult = null;
+
                     try
                     {
                         var buttons = d.FindElements(By.XPath("//button|//a"));
@@ -127,6 +131,7 @@ namespace HorseRacingML.Scraping
 
                             if (clicked)
                             {
+                                evaluationResult = true;
                                 return true;
                             }
                         }
@@ -138,23 +143,25 @@ namespace HorseRacingML.Scraping
 
                         if (!seenCandidate && stopwatch.Elapsed >= candidateGracePeriod)
                         {
-                            return false;
+                            evaluationResult = false;
+                            return true;
                         }
 
-                        return null;
+                        return false;
                     }
                     catch (WebDriverException)
                     {
                         if (!seenCandidate && stopwatch.Elapsed >= candidateGracePeriod)
                         {
-                            return false;
+                            evaluationResult = false;
+                            return true;
                         }
 
-                        return null;
+                        return false;
                     }
                 });
 
-                return result ?? false;
+                return evaluationResult ?? false;
             }
             catch (WebDriverTimeoutException)
             {
@@ -165,6 +172,7 @@ namespace HorseRacingML.Scraping
                 return false;
             }
         }
+
         private void MaybeEmitEstimate()
         {
             var nowUtc = DateTime.UtcNow;

@@ -699,7 +699,8 @@ namespace HorseRacingML.Scraping
             TimeSpan? raceWindow = null,
             DateTime? windowReferenceUtc = null,
             TimeSpan? scheduleStartTime = null,
-            TimeSpan? scheduleEndTime = null)
+            TimeSpan? scheduleEndTime = null,
+            string? scheduleRegion = null)
         {
             if (raceWindow.HasValue && (scheduleStartTime.HasValue || scheduleEndTime.HasValue))
             {
