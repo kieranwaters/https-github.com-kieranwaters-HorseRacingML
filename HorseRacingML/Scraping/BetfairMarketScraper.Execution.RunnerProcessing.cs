@@ -1182,7 +1182,7 @@ DateTime? raceDate,
             return Equals(value, fallback);
         }
 
-        private static readonly string[] HistoricalFeatureBackfillKeys =
+        private static readonly Lazy<string[]> HistoricalFeatureBackfillKeysLazy = new(() =>
              new[]
              {
                 "Class",
@@ -1237,12 +1237,17 @@ DateTime? raceDate,
                 "SpeedMissing",
                 "SpeedDiff",
                 "SpeedRatio"
-             }
-             .Concat(PerformanceWindowPrefixes.SelectMany(prefix =>
-                 PerformanceWindowSizes.Select(window => prefix + window)))
-             .ToArray();
-        private static readonly HashSet<string> HistoricalFeatureBackfillKeySet =
-            new(HistoricalFeatureBackfillKeys, StringComparer.OrdinalIgnoreCase);
+            }
+            .Concat(PerformanceWindowPrefixes.SelectMany(prefix =>
+                PerformanceWindowSizes.Select(window => prefix + window)))
+            .ToArray());
+
+        private static readonly Lazy<HashSet<string>> HistoricalFeatureBackfillKeySetLazy = new(() =>
+            new HashSet<string>(HistoricalFeatureBackfillKeys, StringComparer.OrdinalIgnoreCase));
+
+        private static string[] HistoricalFeatureBackfillKeys => HistoricalFeatureBackfillKeysLazy.Value;
+
+        private static HashSet<string> HistoricalFeatureBackfillKeySet => HistoricalFeatureBackfillKeySetLazy.Value;
 
         private static readonly HashSet<string> HistoricalFeatureBackfillExcludedKeys = new(
             new[]
