@@ -873,75 +873,7 @@ namespace HorseRacingML.ML
                                 row["TrainerJockeySurfaceWinRate"] = trainerJockeyDefaultWinRate;
                                 row["TrainerJockeyCourseWinRate"] = trainerJockeyDefaultWinRate;
                             
-                                if (updateState)
-                                {
-                                    jockeyStat.Starts++;
-                                    bool jWin = finish.HasValue && finish.Value == 1;
-                                    if (jWin) jockeyStat.Wins++;
-                                    jockeyStat.Recent.Enqueue((date, jWin));
-                                    while (jockeyStat.Recent.Count > TrainerJockeyRecentStarts)
-                                        jockeyStat.Recent.Dequeue();
-                                    _jockeyStats[jockeyId.Value] = jockeyStat;
-                                }
-                            }
-                            else
-                            {
-                                row["JockeyWinRate"] = 0f;
-                                row[$"JockeyWinRateLast{TrainerJockeyRecentStarts}"] = 0f;
-                                row["JockeyWinRateRecentDays"] = 0f;
-                                row["JockeySurfaceWinRate"] = 0f;
-                                row["JockeySurfaceAvgNorm"] = 0f;
-                                row["LastJockeySurfaceNormPos"] = 0f;
-                                row["JockeyGoingWinRate"] = 0f;
-                                row["JockeyGoingAvgNorm"] = 0f;
-                                row["LastJockeyGoingNormPos"] = 0f;
-                                row["JockeyDistanceBucketWinRate"] = 0f;
-                                row["JockeyDistanceBucketAvgNorm"] = 0f;
-                                row["LastJockeyDistanceBucketNormPos"] = 0f;
-                                row["JockeyGoingDistanceWinRate"] = 0f;
-                                row["JockeyGoingDistanceAvgNorm"] = 0f;
-                                row["LastJockeyGoingDistanceNormPos"] = 0f;
-                            }
-                            if (trainerId.HasValue)
-                            {
-                                var tcKey = (trainerId.Value, courseId);
-                                _trainerCourseStats.TryGetValue(tcKey, out var tcStat);
-                                row["TrainerCourseWinRate"] = _trainer.SmoothedWinRate(tcStat.wins, tcStat.starts);
-                            }
-                            else
-                            {
-                                row["TrainerCourseWinRate"] = 0f;
-                            }
-                            if (jockeyId.HasValue)
-                            {
-                                var jcKey = (jockeyId.Value, courseId);
-                                if (!_jockeyCourseStats.TryGetValue(jcKey, out var jcStat))
-                                {
-                                    jcStat = (0, 0);
-                                }
-                                row["JockeyCourseWinRate"] = _trainer.SmoothedWinRate(jcStat.wins, jcStat.starts);
-                            }
-                            else
-                            {
-                                row["JockeyCourseWinRate"] = 0f;
-                            }
-                            if (trainerId.HasValue && jockeyId.HasValue)
-                            {
-                                var pairKey = (trainerId.Value, jockeyId.Value);
-                                if (!_trainerJockeyStats.TryGetValue(pairKey, out var pairStat))
-                                    pairStat = (0, 0);
-                                row["TrainerJockeyWinRate"] = _trainer.SmoothedWinRate(pairStat.wins, pairStat.starts);
-                                var trainerJockeySurfaceKey = (trainerId.Value, jockeyId.Value, surface);
-                                if (!_trainerJockeySurfaceStats.TryGetValue(trainerJockeySurfaceKey, out var pairSurfaceStat))
-                                    pairSurfaceStat = (0, 0);
-                                row["TrainerJockeySurfaceWinRate"] =
-                                    _trainer.SmoothedWinRate(pairSurfaceStat.wins, pairSurfaceStat.starts);
-                            }
-                            else
-                            {
-                                row["TrainerJockeyWinRate"] = 0f;
-                                row["TrainerJockeySurfaceWinRate"] = 0f;
-                                row["TrainerJockeyCourseWinRate"] = 0f;
+                                
                             }
                             if (updateState)
                             {
