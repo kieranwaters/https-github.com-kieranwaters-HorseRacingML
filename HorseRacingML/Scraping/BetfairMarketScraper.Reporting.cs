@@ -57,8 +57,17 @@ namespace HorseRacingML.Scraping
                 }
                 else
                 {
-                    var upcomingId = race.UpcomingRaceId?.ToString() ?? "n/a";
-                    Console.WriteLine($"\t[DayReport] Race {raceName} is upcoming; recorded upcoming race id {upcomingId}. Using saved AI probabilities for reporting.");
+                    int? recordedUpcomingId = TryRecordUpcomingRace(race);
+                    if (recordedUpcomingId.HasValue)
+                    {
+                        race.UpcomingRaceId = recordedUpcomingId.Value;
+                        Console.WriteLine($"        [DayReport] Recorded upcoming race {recordedUpcomingId.Value} for market {race.MarketId ?? "<unknown>"} to backfill features.");
+                    }
+                    else
+                    {
+                        var upcomingId = race.UpcomingRaceId?.ToString() ?? "n/a";
+                        Console.WriteLine($"\t[DayReport] Race {raceName} is upcoming; recorded upcoming race id {upcomingId}. Using saved AI probabilities for reporting.");
+                    }
                 }
                 var retainedProbabilityCount = 0;
                 var suppressedProbabilityCount = 0;
