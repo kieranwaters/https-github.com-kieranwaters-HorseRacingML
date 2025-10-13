@@ -894,8 +894,9 @@ namespace HorseRacingML.Scraping
                 }
 
                 result.Recommendations.AddRange(recommendations.OrderByDescending(r => r.Differential).ThenByDescending(r => r.KellyFraction)); // finalize ordering
-                return result; // done
             }
+
+            return result; // done
         }
     }
 }
