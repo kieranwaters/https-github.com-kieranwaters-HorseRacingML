@@ -290,45 +290,11 @@ namespace HorseRacingML.Scraping
 
                 foreach (var row in rows)
                 {
-                    string? selectionId = null; // selection id holder
-
-                    foreach (var attribute in SelectionIdAttributes)
-                    {
-                        selectionId = row.GetAttribute(attribute); // read attr
-                        if (!string.IsNullOrEmpty(selectionId)) { break; } // found
-                    }
-
-                    if (string.IsNullOrEmpty(selectionId))
-                    {
-                        foreach (var attribute in SelectionIdAttributes)
-                        {
-                            try
-                            {
-                                var childWithId = row.FindElement(By.CssSelector($"[{attribute}]")); // search child
-                                selectionId = childWithId.GetAttribute(attribute); // read id
-                                if (!string.IsNullOrEmpty(selectionId)) { break; } // stop if found
-                            }
-                            catch (NoSuchElementException)
-                            {
-                                selectionId = null; // ignore
-                            }
-                        }
-                    }
-
-                    var selectionIdMissing = string.IsNullOrWhiteSpace(selectionId); // missing id?
-                    if (selectionIdMissing) { selectionId = null; } // normalize
-
                     var js = (IJavaScriptExecutor)driver; // cast to JS
                     const string runnerExtractionScript = @"
         const row = arguments[0];
-        const selectionKey = arguments.length > 1 && arguments[1] ? String(arguments[1]) : '';
         const textOrEmpty = el => el && el.textContent ? el.textContent.trim() : '';
         const normalizeSpaces = value => value ? value.replace(/\s+/g, ' ').trim() : '';
-        const escapeAttributeValue = value => {
-            const str = String(value || '');
-            if (window.CSS && CSS.escape) { return CSS.escape(str); }
-            return str.replace(/['\\]/g, '\\$&');
-        };
         const detailRootSet = new Set();
         const detailRoots = [];
         const addRoot = node => {
@@ -373,31 +339,6 @@ namespace HorseRacingML.Scraping
         if (row.nextElementSibling) { addRelated(row.nextElementSibling); }
         const tableRow = row.closest ? row.closest('tr') : null;
         if (tableRow && tableRow.nextElementSibling) { addRelated(tableRow.nextElementSibling); }
-        if (selectionKey) {
-            const escapedKey = escapeAttributeValue(selectionKey);
-            const selectionAttributes = [
-                'data-selection-id',
-                'data-selection-key',
-                'data-selection-uid',
-                'data-selectionid',
-                'data-runner-id'
-            ];
-            for (const attr of selectionAttributes) {
-                const selector = `[${attr}='${escapedKey}']`;
-                const matches = document.querySelectorAll(selector);
-                if (!matches || matches.length === 0) { continue; }
-                matches.forEach(el => {
-                    addRelated(el);
-                    if (el.parentElement) { addRelated(el.parentElement); }
-                    if (el.previousElementSibling) { addRelated(el.previousElementSibling); }
-                    if (el.nextElementSibling) { addRelated(el.nextElementSibling); }
-                    if (el.closest) {
-                        const expanded = el.closest('.runner-expanded-details, .runner-info-expanded');
-                        if (expanded) { addRelated(expanded); }
-                    }
-                });
-            }
-        }
         const queryWithin = (root, selector) => {
             if (!root || !selector) { return null; }
             if (root instanceof Element && root.matches(selector)) { return root; }
@@ -606,13 +547,12 @@ namespace HorseRacingML.Scraping
         return result;
     ";
 
-                    var elementData = (IDictionary<string, object>)js.ExecuteScript(runnerExtractionScript, row, selectionId ?? string.Empty); // execute script
+                    var elementData = (IDictionary<string, object>)js.ExecuteScript(runnerExtractionScript, row); // execute script
                     string Get(string key) => elementData.TryGetValue(key, out var v) ? v?.ToString() ?? string.Empty : string.Empty; // helper
 
                     var runnerFlow = new RunnerFlow // create flow
                     {
                         MarketId = marketId, // market id
-                        SelectionId = selectionId, // selection id
                         ClothNumber = TryParseByte(Get("cloth")), // cloth
                         Draw = TryParseByte(Get("draw")), // draw
                         HorseName = Get("horse"), // horse
@@ -653,18 +593,6 @@ namespace HorseRacingML.Scraping
                     runnerFlow.WeightLbs = weightLbs;
                     runnerFlow.WeightText = string.IsNullOrWhiteSpace(weightText) ? null : weightText.Trim();
                     runnerFlow.TrainerName = NormalizeTrainerName(Get("trainer"));
-
-                    if (selectionIdMissing)
-                    {
-                        if (string.IsNullOrWhiteSpace(runnerFlow.HorseName))
-                        {
-                            Console.Error.WriteLine($"\tRunner in market {marketId} missing both selection id and horse name; skipping row.");
-                            continue;
-                        }
-
-                        var fallbackIdentifier = DescribeRunner(runnerFlow);
-                        Console.WriteLine($"\tRunner {fallbackIdentifier} in market {marketId} missing selection id; using horse name for identification.");
-                    }
 
                     flows.Add(runnerFlow); // add to list
                     runnerEntries.Add((row, runnerFlow)); // keep mapping

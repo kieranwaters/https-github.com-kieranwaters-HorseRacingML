@@ -118,7 +118,6 @@ namespace HorseRacingML.Models
         public byte? RunnerCount { get; set; }
         public decimal? BackBookPercentage { get; set; }
         public decimal? LayBookPercentage { get; set; }
-        public string? SelectionId { get; set; }
         public byte? ClothNumber { get; set; }
         public byte? Draw { get; set; }
         public string? HorseName { get; set; }

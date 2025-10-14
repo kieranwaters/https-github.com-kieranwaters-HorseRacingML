@@ -465,7 +465,6 @@ namespace HorseRacingML.Controllers
                     LayBookPercentage = refreshed.LayBookPercentage,
                     Runners = refreshed.Runners?.Select(runner => new RunnerMarketOddsUpdate
                     {
-                        SelectionId = runner.SelectionId,
                         HorseName = runner.HorseName,
                         MarketDecimalOdds = runner.MarketDecimalOdds,
                         LayDecimalOdds = runner.LayDecimalOdds,
@@ -528,7 +527,6 @@ namespace HorseRacingML.Controllers
                     Going = string.IsNullOrWhiteSpace(refreshed.Going) ? null : refreshed.Going.Trim(),
                     Runners = refreshed.Runners?.Select(runner => new RunnerMarketOddsUpdate
                     {
-                        SelectionId = runner.SelectionId,
                         HorseName = runner.HorseName,
                         MarketDecimalOdds = runner.MarketDecimalOdds,
                         LayDecimalOdds = runner.LayDecimalOdds,

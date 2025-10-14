@@ -13,7 +13,6 @@ namespace HorseRacingML.Models
 
     public class RunnerMarketOddsUpdate
     {
-        public string? SelectionId { get; set; }
         public string? HorseName { get; set; }
         public decimal? MarketDecimalOdds { get; set; }
         public decimal? LayDecimalOdds { get; set; }

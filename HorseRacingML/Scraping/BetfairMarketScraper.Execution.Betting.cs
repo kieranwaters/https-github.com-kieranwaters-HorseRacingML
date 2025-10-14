@@ -147,7 +147,7 @@ namespace HorseRacingML.Scraping
             {
                 var identifier = !string.IsNullOrWhiteSpace(flow.HorseName)
                     ? flow.HorseName!
-                    : (flow.SelectionId ?? "unknown");
+                    : "unknown";
 
                 if (!flow.AiOdds.HasValue || !double.IsFinite(flow.AiOdds.Value) || flow.AiOdds.Value <= 0)
                 {
@@ -210,7 +210,6 @@ namespace HorseRacingML.Scraping
                 recommendations.Add(new BetRecommendation
                 {
                     MarketId = marketId,
-                    SelectionId = flow.SelectionId,
                     HorseName = flow.HorseName,
                     RunnerKey = runnerKey,
                     RaceTitle = raceTitle,

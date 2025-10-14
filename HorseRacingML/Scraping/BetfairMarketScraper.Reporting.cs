@@ -146,7 +146,7 @@ namespace HorseRacingML.Scraping
 
                 var identifier = !string.IsNullOrWhiteSpace(winner.HorseName)
                     ? winner.HorseName
-                    : (!string.IsNullOrWhiteSpace(winner.SelectionId) ? winner.SelectionId : "unknown");
+                    : "unknown";
 
                 var aiProb = winner.AiProbability!.Value;
                 var aiOddsStr = winner.AiDecimalOdds?.ToString("F3") ?? "n/a";

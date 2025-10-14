@@ -368,49 +368,6 @@ namespace HorseRacingML.Scraping
 
             return null;
         }
-        private static string? ExtractSelectionIdFromRow(IWebElement row)
-        {
-            if (row == null)
-            {
-                return null;
-            }
-
-            foreach (var attribute in SelectionIdAttributes)
-            {
-                try
-                {
-                    var value = row.GetAttribute(attribute);
-                    if (!string.IsNullOrWhiteSpace(value))
-                    {
-                        return value.Trim();
-                    }
-                }
-                catch (Exception)
-                {
-                }
-            }
-
-            foreach (var attribute in SelectionIdAttributes)
-            {
-                try
-                {
-                    var child = TryFindElement(row, By.CssSelector($"[{attribute}]"));
-                    if (child != null)
-                    {
-                        var value = child.GetAttribute(attribute);
-                        if (!string.IsNullOrWhiteSpace(value))
-                        {
-                            return value.Trim();
-                        }
-                    }
-                }
-                catch (Exception)
-                {
-                }
-            }
-
-            return null;
-        }
         private static Dictionary<string, object?> CreateFeatureDictionary(IDictionary<string, object?>? source)
         {
             var result = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
@@ -610,7 +567,6 @@ namespace HorseRacingML.Scraping
         {
             var runner = new RunnerDayReport
             {
-                SelectionId = flow.SelectionId,
                 ClothNumber = flow.ClothNumber,
                 Draw = flow.Draw,
                 HorseName = flow.HorseName,
@@ -1419,7 +1375,6 @@ DateTime? raceDate,
                 "TrainerId",
                 "JockeyName",
                 "JockeyId",
-                "SelectionId",
                 "RaceId",
                 "RaceDate",
                 "RunnerResultId",

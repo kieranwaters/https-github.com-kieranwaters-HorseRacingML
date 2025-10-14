@@ -647,7 +647,7 @@ namespace HorseRacingML.ML
                 trainBrier,
                 validationBrier);
         }
-        public record RunnerProbability(int RaceId, int? ClothNumber, string? HorseName, string? SelectionId, double Probability);
+        public record RunnerProbability(int RaceId, int? ClothNumber, string? HorseName, double Probability);
 
         public TrainedModel? LoadLatestTrainedModel()
         {
@@ -729,19 +729,13 @@ namespace HorseRacingML.ML
                     clothNumber = cloth;
                 }
 
-                string? selectionId = null;
-                if (row.TryGetValue("SelectionId", out var selectionObj) && selectionObj is not null)
-                {
-                    selectionId = selectionObj.ToString();
-                }
-
                 string? horseName = null;
                 if (row.TryGetValue("HorseName", out var horseObj) && horseObj is not null)
                 {
                     horseName = horseObj.ToString();
                 }
 
-                results.Add(new RunnerProbability(race.RaceId, clothNumber, horseName, selectionId, probability));
+                results.Add(new RunnerProbability(race.RaceId, clothNumber, horseName, probability));
             }
 
             return results;

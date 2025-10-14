@@ -193,7 +193,7 @@ namespace HorseRacingML.Data
                 return;
             }
 
-            const string header = @"INSERT INTO RunnerFlow(MarketId, UpcomingRaceId, RaceDate, ScheduledOff, VenueName, VenueCountry, RaceTitle, RaceDetails, RaceType, Class, AgeRestriction, Surface, Going, DistanceYards, DistanceText, RunnerCount, BackBookPercentage, LayBookPercentage, SelectionId, ClothNumber, Draw, HorseName, JockeyName, BackPrice1, BackPrice2, BackPrice3, LayPrice1, LayPrice2, LayPrice3, AiOdds, Age, WeightLbs, WeightText, TrainerName)
+            const string header = @"INSERT INTO RunnerFlow(MarketId, UpcomingRaceId, RaceDate, ScheduledOff, VenueName, VenueCountry, RaceTitle, RaceDetails, RaceType, Class, AgeRestriction, Surface, Going, DistanceYards, DistanceText, RunnerCount, BackBookPercentage, LayBookPercentage, ClothNumber, Draw, HorseName, JockeyName, BackPrice1, BackPrice2, BackPrice3, LayPrice1, LayPrice2, LayPrice3, AiOdds, Age, WeightLbs, WeightText, TrainerName)
 VALUES";
 
             var sqlBuilder = new StringBuilder(header.Length + flowList.Count * 128);
@@ -224,7 +224,6 @@ VALUES";
                     .Append(", @RunnerCount").Append(suffix)
                     .Append(", @BackBookPercentage").Append(suffix)
                     .Append(", @LayBookPercentage").Append(suffix)
-                    .Append(", @SelectionId").Append(suffix)
                     .Append(", @ClothNumber").Append(suffix)
                     .Append(", @Draw").Append(suffix)
                     .Append(", @HorseName").Append(suffix)
@@ -265,7 +264,6 @@ VALUES";
                 parameters.Add($"RunnerCount{suffix}", flow.RunnerCount);
                 parameters.Add($"BackBookPercentage{suffix}", flow.BackBookPercentage);
                 parameters.Add($"LayBookPercentage{suffix}", flow.LayBookPercentage);
-                parameters.Add($"SelectionId{suffix}", flow.SelectionId);
                 parameters.Add($"ClothNumber{suffix}", flow.ClothNumber);
                 parameters.Add($"Draw{suffix}", flow.Draw);
                 parameters.Add($"HorseName{suffix}", flow.HorseName);
@@ -1232,7 +1230,6 @@ BEGIN
         RunnerCount        TINYINT       NULL,
         BackBookPercentage DECIMAL(9,2)  NULL,
         LayBookPercentage  DECIMAL(9,2)  NULL,
-        SelectionId        NVARCHAR(32)  NULL,
         ClothNumber        TINYINT       NULL,
         Draw               TINYINT       NULL,
         HorseName          NVARCHAR(256) NULL,

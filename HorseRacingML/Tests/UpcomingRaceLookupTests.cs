@@ -115,16 +115,14 @@ namespace HorseRacingML.Tests
                     HorseName = "Known Runner",
                     JockeyName = "Known Jockey",
                     ClothNumber = 1,
-                    Draw = 3,
-                    SelectionId = "101"
+                    Draw = 3
                 },
                 new RunnerFlow
                 {
                     HorseName = "Unknown Runner",
                     JockeyName = "Unknown Jockey",
                     ClothNumber = 2,
-                    Draw = 7,
-                    SelectionId = "202"
+                    Draw = 7
                 }
             };
             var runnerColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -249,7 +247,6 @@ namespace HorseRacingML.Tests
             var fallbackRow = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
             {
                 ["HorseName"] = "Fallback Hero",
-                ["SelectionId"] = "321",
                 ["Class"] = 3,
                 ["Going"] = "Soft",
                 ["HasLastWin"] = true,
@@ -274,8 +271,7 @@ namespace HorseRacingML.Tests
             {
                 new RunnerFlow
                 {
-                    HorseName = "Fallback Hero",
-                    SelectionId = "321"
+                    HorseName = "Fallback Hero"
                 }
             };
 
@@ -324,7 +320,6 @@ namespace HorseRacingML.Tests
             var preparedRow = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
             {
                 ["HorseName"] = "Repository Hero",
-                ["SelectionId"] = "321",
                 ["DistanceYards"] = 2200
             };
 
@@ -341,8 +336,7 @@ namespace HorseRacingML.Tests
             {
                 new RunnerFlow
                 {
-                    HorseName = "Repository Hero",
-                    SelectionId = "321"
+                    HorseName = "Repository Hero"
                 }
             };
 
@@ -377,14 +371,12 @@ namespace HorseRacingML.Tests
             var primaryRow = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
             {
                 ["HorseName"] = "Backfill Hero",
-                ["SelectionId"] = "654"
             };
             var primaryRace = new PreparedRace(888, new List<Dictionary<string, object?>> { primaryRow });
 
             var fallbackRow = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
             {
                 ["HorseName"] = "Backfill Hero",
-                ["SelectionId"] = "654",
                 ["Class"] = 4,
                 ["Going"] = "Good",
                 ["HasLastWin"] = true,
@@ -439,7 +431,6 @@ namespace HorseRacingML.Tests
                 new RunnerFlow
                 {
                     HorseName = "Backfill Hero",
-                    SelectionId = "654",
                     ClothNumber = 3
                 }
             };
@@ -516,7 +507,6 @@ namespace HorseRacingML.Tests
             var fallbackRow = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
             {
                 ["HorseName"] = "Neutral Override",
-                ["SelectionId"] = "321",
                 ["TrainerName"] = "Sample Trainer",
                 ["TrainerId"] = 77,
                 ["TrainerWinRate"] = 0.37f,
@@ -535,7 +525,6 @@ namespace HorseRacingML.Tests
                 new RunnerFlow
                 {
                     HorseName = "Neutral Override",
-                    SelectionId = "321",
                     TrainerName = "Sample Trainer"
                 }
             };
@@ -574,14 +563,12 @@ namespace HorseRacingML.Tests
             var row1 = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
             {
                 ["HorseName"] = "Alpha Runner",
-                ["SelectionId"] = "100",
                 ["WinRateLast5"] = 0.4f
             };
 
             var row2 = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
             {
                 ["HorseName"] = "Beta Runner",
-                ["SelectionId"] = "200",
                 ["WinRateLast5"] = 0.6f
             };
 
@@ -594,8 +581,8 @@ namespace HorseRacingML.Tests
 
             var flows = new List<RunnerFlow>
             {
-                new RunnerFlow { HorseName = "Alpha Runner", SelectionId = "100" },
-                new RunnerFlow { HorseName = "Beta Runner", SelectionId = "200" }
+new RunnerFlow { HorseName = "Alpha Runner" },
+                new RunnerFlow { HorseName = "Beta Runner" }
             };
 
             var report = scraper.TestBuildRaceReport(
@@ -637,14 +624,12 @@ namespace HorseRacingML.Tests
             var primaryRow = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
             {
                 ["HorseName"] = "Metadata Marvel",
-                ["SelectionId"] = "987"
             };
             var primaryRace = new PreparedRace(890, new List<Dictionary<string, object?>> { primaryRow });
 
             var fallbackRow = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
             {
                 ["HorseName"] = "Metadata Marvel",
-                ["SelectionId"] = "987",
                 ["Class"] = (byte)4,
                 ["RaceType"] = "Handicap",
                 ["AgeRestriction"] = "3yo+",
@@ -668,7 +653,6 @@ namespace HorseRacingML.Tests
                 new RunnerFlow
                 {
                     HorseName = "Metadata Marvel",
-                    SelectionId = "987"
                 }
             };
 
@@ -741,7 +725,6 @@ namespace HorseRacingML.Tests
                 {
                     HorseName = "Cached Runner",
                     ClothNumber = 1,
-                    SelectionId = "111"
                 }
             };
 

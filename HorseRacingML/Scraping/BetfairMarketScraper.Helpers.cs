@@ -2371,7 +2371,7 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
                     continue; // retain existing AI odds when available
                 }
 
-                var identifier = !string.IsNullOrWhiteSpace(flow.HorseName) ? flow.HorseName! : (flow.SelectionId ?? "unknown"); // determine identifier
+                var identifier = !string.IsNullOrWhiteSpace(flow.HorseName) ? flow.HorseName! : "unknown"; // determine identifier
 
                 if (flow.BackPrice1.HasValue && flow.BackPrice1.Value > 1m)
                 {
@@ -2626,7 +2626,7 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
 
             var winnerName = !string.IsNullOrWhiteSpace(winner.HorseName)
                 ? winner.HorseName!
-                : (winner.SelectionId ?? "unknown");
+                : "unknown";
 
             if (substitutedWinnerProbability)
             {
@@ -2674,16 +2674,6 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
                     {
                         return flow;
                     }
-                }
-            }
-
-            var selectionHint = FindFirstFeatureString(flowList, "AiLikelyWinnerSelectionId", "LikelyWinnerSelectionId", "PredictedWinnerSelectionId");
-            if (!string.IsNullOrWhiteSpace(selectionHint))
-            {
-                var match = flowList.FirstOrDefault(f => !string.IsNullOrWhiteSpace(f.SelectionId) && string.Equals(f.SelectionId, selectionHint, StringComparison.OrdinalIgnoreCase));
-                if (match != null)
-                {
-                    return match;
                 }
             }
 

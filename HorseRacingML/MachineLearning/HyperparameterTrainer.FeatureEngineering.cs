@@ -1652,8 +1652,7 @@ namespace HorseRacingML.ML
                 "JockeyName",
                 "JockeyId",
                 "SaddleclothNumber",
-                "Draw",
-                "SelectionId"
+                "Draw"
             };
 
             var featureState = new FeatureEngineeringState(this, identifierKeys);
@@ -1924,7 +1923,6 @@ namespace HorseRacingML.ML
                     ["Status"] = null,
                     ["WinningTimeMs"] = null,
                     ["HorseName"] = horseName,
-                    ["SelectionId"] = flow.SelectionId,
                     ["JockeyName"] = flow.JockeyName,
                     ["SaddleclothNumber"] = flow.ClothNumber,
                     ["Draw"] = flow.Draw,

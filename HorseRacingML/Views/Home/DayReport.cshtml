@@ -559,7 +559,6 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                         ? "runner-edge-lay"
                                         : string.Empty;
 
-                                var selectionIdAttr = runner.SelectionId?.Trim() ?? string.Empty;
                                 var horseNameAttr = runner.HorseName?.Trim() ?? string.Empty;
                                 var aiProbabilityAttr = runner.AiProbability.HasValue
                                     ? runner.AiProbability.Value.ToString("0.################", CultureInfo.InvariantCulture)
@@ -595,7 +594,6 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                     ? displayedStakeValue.Value.ToString("0.00", CultureInfo.InvariantCulture)
                                     : string.Empty;
                                 <tr class="@rowClass"
-                                    data-selection-id="@selectionIdAttr"
                                     data-horse-name="@horseNameAttr"
                                     data-ai-probability="@aiProbabilityAttr"
                                     data-market-probability="@marketProbabilityAttr">
@@ -603,11 +601,6 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                     <td>@draw</td>
                                     <td>
                                         <div class="fw-semibold">@runner.HorseName</div>
-                                        @if (!string.IsNullOrWhiteSpace(runner.SelectionId))
-                                        {
-                                            <div class="text-muted small">Selection ID: @runner.SelectionId</div>
-                                        }
-
                                         @{
                                             var featurePopulation = runner.FeaturePopulation;
                                             var hasFeatureValues = runner.FeatureValues != null && runner.FeatureValues.Count > 0;

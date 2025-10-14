@@ -39,15 +39,6 @@ namespace HorseRacingML.Scraping
         private const string ConfirmBetsButtonSelector = "#main-wrapper > div > div.scrollable-panes-height-taker > div > ui-view > div > div > div.bf-col-xxl-7-24.bf-col-xl-8-24.bf-col-lg-8-24.bf-col-md-9-24.bf-col-sm-10-24.bf-col-10-24.right-side-column > div > div > bf-aside > div > div.bf-row.aside-top-row.no-bottom-gutter > div > betslip > div > bf-tabs > section > div:nth-child(2) > div > div > section > confirmation > section > betslip-confirmation-footer > footer > div.confirmation-footer__actions > highlighted-button > ours-button > button";
         private HyperparameterSummary? _loadedHyperparameters;
 
-        private static readonly string[] SelectionIdAttributes =
-        {
-            "data-selection-id",
-            "data-selection-key",
-            "data-selection-uid",
-            "data-selectionid",
-            "data-runner-id"
-        };
-
         public BetfairMarketScraper(
             IRacingRepository repo,
             HyperparameterTrainer trainer,

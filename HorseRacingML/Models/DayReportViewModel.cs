@@ -36,7 +36,6 @@ namespace HorseRacingML.Models
 
     public class RunnerDayReport
     {
-        public string? SelectionId { get; set; }
         public byte? ClothNumber { get; set; }
         public byte? Draw { get; set; }
         public string? HorseName { get; set; }
