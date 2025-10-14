@@ -101,6 +101,23 @@ namespace HorseRacingML.Models
     {
         public long RunnerFlowId { get; set; }
         public string? MarketId { get; set; }
+        public int? UpcomingRaceId { get; set; }
+        public DateTime? RaceDate { get; set; }
+        public TimeSpan? ScheduledOff { get; set; }
+        public string? VenueName { get; set; }
+        public string? VenueCountry { get; set; }
+        public string? RaceTitle { get; set; }
+        public string? RaceDetails { get; set; }
+        public string? RaceType { get; set; }
+        public byte? Class { get; set; }
+        public string? AgeRestriction { get; set; }
+        public string? Surface { get; set; }
+        public string? Going { get; set; }
+        public short? DistanceYards { get; set; }
+        public string? DistanceText { get; set; }
+        public byte? RunnerCount { get; set; }
+        public decimal? BackBookPercentage { get; set; }
+        public decimal? LayBookPercentage { get; set; }
         public string? SelectionId { get; set; }
         public byte? ClothNumber { get; set; }
         public byte? Draw { get; set; }

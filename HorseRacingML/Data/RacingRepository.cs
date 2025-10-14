@@ -193,7 +193,7 @@ namespace HorseRacingML.Data
                 return;
             }
 
-            const string header = @"INSERT INTO RunnerFlow(MarketId, SelectionId, ClothNumber, Draw, HorseName, JockeyName, BackPrice1, BackPrice2, BackPrice3, LayPrice1, LayPrice2, LayPrice3, AiOdds, Age, WeightLbs, WeightText, TrainerName)
+            const string header = @"INSERT INTO RunnerFlow(MarketId, UpcomingRaceId, RaceDate, ScheduledOff, VenueName, VenueCountry, RaceTitle, RaceDetails, RaceType, Class, AgeRestriction, Surface, Going, DistanceYards, DistanceText, RunnerCount, BackBookPercentage, LayBookPercentage, SelectionId, ClothNumber, Draw, HorseName, JockeyName, BackPrice1, BackPrice2, BackPrice3, LayPrice1, LayPrice2, LayPrice3, AiOdds, Age, WeightLbs, WeightText, TrainerName)
 VALUES";
 
             var sqlBuilder = new StringBuilder(header.Length + flowList.Count * 128);
@@ -207,6 +207,23 @@ VALUES";
                 var suffix = i.ToString(CultureInfo.InvariantCulture);
 
                 sqlBuilder.Append("(@MarketId").Append(suffix)
+                    .Append(", @UpcomingRaceId").Append(suffix)
+                    .Append(", @RaceDate").Append(suffix)
+                    .Append(", @ScheduledOff").Append(suffix)
+                    .Append(", @VenueName").Append(suffix)
+                    .Append(", @VenueCountry").Append(suffix)
+                    .Append(", @RaceTitle").Append(suffix)
+                    .Append(", @RaceDetails").Append(suffix)
+                    .Append(", @RaceType").Append(suffix)
+                    .Append(", @Class").Append(suffix)
+                    .Append(", @AgeRestriction").Append(suffix)
+                    .Append(", @Surface").Append(suffix)
+                    .Append(", @Going").Append(suffix)
+                    .Append(", @DistanceYards").Append(suffix)
+                    .Append(", @DistanceText").Append(suffix)
+                    .Append(", @RunnerCount").Append(suffix)
+                    .Append(", @BackBookPercentage").Append(suffix)
+                    .Append(", @LayBookPercentage").Append(suffix)
                     .Append(", @SelectionId").Append(suffix)
                     .Append(", @ClothNumber").Append(suffix)
                     .Append(", @Draw").Append(suffix)
@@ -231,6 +248,23 @@ VALUES";
                 }
 
                 parameters.Add($"MarketId{suffix}", flow.MarketId);
+                parameters.Add($"UpcomingRaceId{suffix}", flow.UpcomingRaceId);
+                parameters.Add($"RaceDate{suffix}", flow.RaceDate);
+                parameters.Add($"ScheduledOff{suffix}", flow.ScheduledOff);
+                parameters.Add($"VenueName{suffix}", flow.VenueName);
+                parameters.Add($"VenueCountry{suffix}", flow.VenueCountry);
+                parameters.Add($"RaceTitle{suffix}", flow.RaceTitle);
+                parameters.Add($"RaceDetails{suffix}", flow.RaceDetails);
+                parameters.Add($"RaceType{suffix}", flow.RaceType);
+                parameters.Add($"Class{suffix}", flow.Class);
+                parameters.Add($"AgeRestriction{suffix}", flow.AgeRestriction);
+                parameters.Add($"Surface{suffix}", flow.Surface);
+                parameters.Add($"Going{suffix}", flow.Going);
+                parameters.Add($"DistanceYards{suffix}", flow.DistanceYards);
+                parameters.Add($"DistanceText{suffix}", flow.DistanceText);
+                parameters.Add($"RunnerCount{suffix}", flow.RunnerCount);
+                parameters.Add($"BackBookPercentage{suffix}", flow.BackBookPercentage);
+                parameters.Add($"LayBookPercentage{suffix}", flow.LayBookPercentage);
                 parameters.Add($"SelectionId{suffix}", flow.SelectionId);
                 parameters.Add($"ClothNumber{suffix}", flow.ClothNumber);
                 parameters.Add($"Draw{suffix}", flow.Draw);
@@ -1151,25 +1185,58 @@ IF OBJECT_ID(N'dbo.RunnerFlow', 'U') IS NULL
 BEGIN
     CREATE TABLE dbo.RunnerFlow
     (
-        RunnerFlowId BIGINT        IDENTITY(1,1) PRIMARY KEY,
-        MarketId     NVARCHAR(32)  NULL,
-        SelectionId  NVARCHAR(32)  NULL,
-        ClothNumber  TINYINT       NULL,
-        Draw         TINYINT       NULL,
-        HorseName    NVARCHAR(256) NULL,
-        JockeyName   NVARCHAR(256) NULL,
-        BackPrice1   DECIMAL(9,2)  NULL,
-        BackPrice2   DECIMAL(9,2)  NULL,
-        BackPrice3   DECIMAL(9,2)  NULL,
-        LayPrice1    DECIMAL(9,2)  NULL,
-        LayPrice2    DECIMAL(9,2)  NULL,
-        LayPrice3    DECIMAL(9,2)  NULL,
-        AiOdds       FLOAT         NULL,
-        Age          TINYINT       NULL,
-        WeightLbs    TINYINT       NULL,
-        WeightText   NVARCHAR(32)  NULL,
-        TrainerName  NVARCHAR(256) NULL
+        RunnerFlowId       BIGINT        IDENTITY(1,1) PRIMARY KEY,
+        MarketId           NVARCHAR(32)  NULL,
+        UpcomingRaceId     INT           NULL,
+        RaceDate           DATE          NULL,
+        ScheduledOff       TIME(0)       NULL,
+        VenueName          NVARCHAR(256) NULL,
+        VenueCountry       NVARCHAR(128) NULL,
+        RaceTitle          NVARCHAR(512) NULL,
+        RaceDetails        NVARCHAR(MAX) NULL,
+        RaceType           NVARCHAR(128) NULL,
+        Class              TINYINT       NULL,
+        AgeRestriction     NVARCHAR(64)  NULL,
+        Surface            NVARCHAR(64)  NULL,
+        Going              NVARCHAR(30)  NULL,
+        DistanceYards      SMALLINT      NULL,
+        DistanceText       NVARCHAR(64)  NULL,
+        RunnerCount        TINYINT       NULL,
+        BackBookPercentage DECIMAL(9,2)  NULL,
+        LayBookPercentage  DECIMAL(9,2)  NULL,
+        SelectionId        NVARCHAR(32)  NULL,
+        ClothNumber        TINYINT       NULL,
+        Draw               TINYINT       NULL,
+        HorseName          NVARCHAR(256) NULL,
+        JockeyName         NVARCHAR(256) NULL,
+        BackPrice1         DECIMAL(9,2)  NULL,
+        BackPrice2         DECIMAL(9,2)  NULL,
+        BackPrice3         DECIMAL(9,2)  NULL,
+        LayPrice1          DECIMAL(9,2)  NULL,
+        LayPrice2          DECIMAL(9,2)  NULL,
+        LayPrice3          DECIMAL(9,2)  NULL,
+        AiOdds             FLOAT         NULL,
+        Age                TINYINT       NULL,
+        WeightLbs          TINYINT       NULL,
+        WeightText         NVARCHAR(32)  NULL,
+        TrainerName        NVARCHAR(256) NULL
     );
+END
+IF COL_LENGTH(N'dbo.RunnerFlow', 'HorseName') IS NULL
+BEGIN
+    IF COL_LENGTH(N'dbo.RunnerFlow', 'RunnerName') IS NOT NULL
+    BEGIN
+        EXEC sp_rename 'dbo.RunnerFlow.RunnerName', 'HorseName', 'COLUMN';
+    END
+    ELSE
+    BEGIN
+        ALTER TABLE dbo.RunnerFlow ADD HorseName NVARCHAR(256) NULL;
+    END
+END
+
+IF COL_LENGTH(N'dbo.RunnerFlow', 'AiOdds') IS NULL
+BEGIN
+    ALTER TABLE dbo.RunnerFlow ADD AiOdds FLOAT NULL;
 END
 
 IF COL_LENGTH(N'dbo.RunnerFlow', 'Age') IS NULL
@@ -1190,6 +1257,91 @@ END
 IF COL_LENGTH(N'dbo.RunnerFlow', 'TrainerName') IS NULL
 BEGIN
     ALTER TABLE dbo.RunnerFlow ADD TrainerName NVARCHAR(256) NULL;
+END
+
+IF COL_LENGTH(N'dbo.RunnerFlow', 'UpcomingRaceId') IS NULL
+BEGIN
+    ALTER TABLE dbo.RunnerFlow ADD UpcomingRaceId INT NULL;
+END
+
+IF COL_LENGTH(N'dbo.RunnerFlow', 'RaceDate') IS NULL
+BEGIN
+    ALTER TABLE dbo.RunnerFlow ADD RaceDate DATE NULL;
+END
+
+IF COL_LENGTH(N'dbo.RunnerFlow', 'ScheduledOff') IS NULL
+BEGIN
+    ALTER TABLE dbo.RunnerFlow ADD ScheduledOff TIME(0) NULL;
+END
+
+IF COL_LENGTH(N'dbo.RunnerFlow', 'VenueName') IS NULL
+BEGIN
+    ALTER TABLE dbo.RunnerFlow ADD VenueName NVARCHAR(256) NULL;
+END
+
+IF COL_LENGTH(N'dbo.RunnerFlow', 'VenueCountry') IS NULL
+BEGIN
+    ALTER TABLE dbo.RunnerFlow ADD VenueCountry NVARCHAR(128) NULL;
+END
+
+IF COL_LENGTH(N'dbo.RunnerFlow', 'RaceTitle') IS NULL
+BEGIN
+    ALTER TABLE dbo.RunnerFlow ADD RaceTitle NVARCHAR(512) NULL;
+END
+
+IF COL_LENGTH(N'dbo.RunnerFlow', 'RaceDetails') IS NULL
+BEGIN
+    ALTER TABLE dbo.RunnerFlow ADD RaceDetails NVARCHAR(MAX) NULL;
+END
+
+IF COL_LENGTH(N'dbo.RunnerFlow', 'RaceType') IS NULL
+BEGIN
+    ALTER TABLE dbo.RunnerFlow ADD RaceType NVARCHAR(128) NULL;
+END
+
+IF COL_LENGTH(N'dbo.RunnerFlow', 'Class') IS NULL
+BEGIN
+    ALTER TABLE dbo.RunnerFlow ADD Class TINYINT NULL;
+END
+
+IF COL_LENGTH(N'dbo.RunnerFlow', 'AgeRestriction') IS NULL
+BEGIN
+    ALTER TABLE dbo.RunnerFlow ADD AgeRestriction NVARCHAR(64) NULL;
+END
+
+IF COL_LENGTH(N'dbo.RunnerFlow', 'Surface') IS NULL
+BEGIN
+    ALTER TABLE dbo.RunnerFlow ADD Surface NVARCHAR(64) NULL;
+END
+
+IF COL_LENGTH(N'dbo.RunnerFlow', 'Going') IS NULL
+BEGIN
+    ALTER TABLE dbo.RunnerFlow ADD Going NVARCHAR(30) NULL;
+END
+
+IF COL_LENGTH(N'dbo.RunnerFlow', 'DistanceYards') IS NULL
+BEGIN
+    ALTER TABLE dbo.RunnerFlow ADD DistanceYards SMALLINT NULL;
+END
+
+IF COL_LENGTH(N'dbo.RunnerFlow', 'DistanceText') IS NULL
+BEGIN
+    ALTER TABLE dbo.RunnerFlow ADD DistanceText NVARCHAR(64) NULL;
+END
+
+IF COL_LENGTH(N'dbo.RunnerFlow', 'RunnerCount') IS NULL
+BEGIN
+    ALTER TABLE dbo.RunnerFlow ADD RunnerCount TINYINT NULL;
+END
+
+IF COL_LENGTH(N'dbo.RunnerFlow', 'BackBookPercentage') IS NULL
+BEGIN
+    ALTER TABLE dbo.RunnerFlow ADD BackBookPercentage DECIMAL(9,2) NULL;
+END
+
+IF COL_LENGTH(N'dbo.RunnerFlow', 'LayBookPercentage') IS NULL
+BEGIN
+    ALTER TABLE dbo.RunnerFlow ADD LayBookPercentage DECIMAL(9,2) NULL;
 END";
 
                 conn.Execute(sql);

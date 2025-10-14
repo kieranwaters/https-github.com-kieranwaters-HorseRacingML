@@ -209,42 +209,60 @@ namespace HorseRacingML.Scraping
 
                 Console.WriteLine($"\tFound {rows.Count} runners for market {marketId}"); // log count
                 ExpandRunnerTimeformDetails(driver, rows); // ensure details expanded for all runners
+                var trimmedTitle = string.IsNullOrWhiteSpace(title) ? null : title.Trim();
+                var trimmedRaceDetails = string.IsNullOrWhiteSpace(cleanedRaceDetails) ? null : cleanedRaceDetails.Trim();
+                var trimmedRaceType = string.IsNullOrWhiteSpace(raceTypeText) ? null : raceTypeText.Trim();
+                var trimmedGoing = string.IsNullOrWhiteSpace(goingText) ? null : goingText.Trim();
+                var trimmedVenueName = string.IsNullOrWhiteSpace(venueName) ? null : venueName.Trim();
+                var trimmedVenueCountry = string.IsNullOrWhiteSpace(venueCountry) ? null : venueCountry.Trim();
+                var runnerCount = rows.Count > 0
+                    ? (byte)Math.Min(rows.Count, byte.MaxValue)
+                    : (byte?)null;
+
+                var metadataSource = new RaceDayReport
+                {
+                    RaceTitle = trimmedTitle,
+                    RaceDetails = trimmedRaceDetails,
+                    RaceType = trimmedRaceType,
+                    Going = trimmedGoing
+                };
+
+                ParsedRaceMetadata? parsedMetadata = null;
+                try
+                {
+                    parsedMetadata = ParseRaceMetadata(metadataSource);
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"\tFailed to parse race metadata for market {marketId}: {ex.Message}");
+                }
+
                 UpcomingRace? persistedUpcoming = null;
                 if (parsedRaceDate.HasValue)
                 {
                     try
                     {
-                        var metadataSource = new RaceDayReport
-                        {
-                            RaceTitle = title,
-                            RaceDetails = string.IsNullOrWhiteSpace(cleanedRaceDetails) ? null : cleanedRaceDetails.Trim(),
-                            RaceType = string.IsNullOrWhiteSpace(raceTypeText) ? null : raceTypeText.Trim(),
-                            Going = string.IsNullOrWhiteSpace(goingText) ? null : goingText
-                        };
-                        var metadata = ParseRaceMetadata(metadataSource);
+                        var metadata = parsedMetadata ?? ParseRaceMetadata(metadataSource);
+                        parsedMetadata = metadata;
 
                         short? distanceYards = metadata.DistanceYards > 0
                             ? (short)Math.Min(metadata.DistanceYards, short.MaxValue)
                             : null;
-
-                        byte? runnerCount = rows.Count > 0
-                            ? (byte)Math.Min(rows.Count, byte.MaxValue)
-                            : (byte?)null;
 
                         persistedUpcoming = new UpcomingRace
                         {
                             MarketId = marketId,
                             RaceDate = parsedRaceDate.Value.Date,
                             ScheduledOff = offTime,
-                            VenueName = string.IsNullOrWhiteSpace(venueName) ? null : venueName.Trim(),
-                            VenueCountry = string.IsNullOrWhiteSpace(venueCountry) ? null : venueCountry.Trim(),
-                            Title = string.IsNullOrWhiteSpace(title) ? null : title.Trim(),
-                            RaceDetails = string.IsNullOrWhiteSpace(cleanedRaceDetails) ? null : cleanedRaceDetails.Trim(),
+                            VenueName = trimmedVenueName,
+                            VenueCountry = trimmedVenueCountry,
+                            Title = trimmedTitle,
+                            RaceDetails = trimmedRaceDetails,
                             RaceType = metadata.RaceType,
                             Class = metadata.Class,
                             AgeRestriction = metadata.AgeRestriction,
                             Surface = metadata.Surface,
-                            Going = string.IsNullOrWhiteSpace(goingText) ? metadata.Going : goingText,
+                            Going = string.IsNullOrWhiteSpace(goingText) ? metadata.Going : trimmedGoing,
                             DistanceYards = distanceYards,
                             DistanceText = metadata.DistanceText,
                             RunnerCount = runnerCount,
@@ -606,6 +624,30 @@ namespace HorseRacingML.Scraping
                         LayPrice2 = ParseDecimal(Get("lay2")), // l2
                         LayPrice3 = ParseDecimal(Get("lay3")) // l3
                     };
+                    runnerFlow.UpcomingRaceId = persistedUpcoming?.UpcomingRaceId;
+                    runnerFlow.RaceDate = persistedUpcoming?.RaceDate ?? parsedRaceDate?.Date;
+                    runnerFlow.ScheduledOff = persistedUpcoming?.ScheduledOff ?? offTime;
+                    runnerFlow.VenueName = persistedUpcoming?.VenueName ?? trimmedVenueName;
+                    runnerFlow.VenueCountry = persistedUpcoming?.VenueCountry ?? trimmedVenueCountry;
+                    runnerFlow.RaceTitle = persistedUpcoming?.Title ?? trimmedTitle;
+                    runnerFlow.RaceDetails = persistedUpcoming?.RaceDetails ?? trimmedRaceDetails;
+                    runnerFlow.RaceType = persistedUpcoming?.RaceType ?? trimmedRaceType ?? parsedMetadata?.RaceType;
+                    runnerFlow.Class = persistedUpcoming?.Class ?? parsedMetadata?.Class;
+                    runnerFlow.AgeRestriction = persistedUpcoming?.AgeRestriction ?? parsedMetadata?.AgeRestriction;
+                    runnerFlow.Surface = persistedUpcoming?.Surface ?? parsedMetadata?.Surface;
+                    runnerFlow.Going = persistedUpcoming?.Going ?? trimmedGoing ?? parsedMetadata?.Going;
+                    var parsedDistance = parsedMetadata?.DistanceYards;
+                    if (!parsedDistance.HasValue && persistedUpcoming?.DistanceYards.HasValue == true)
+                    {
+                        parsedDistance = persistedUpcoming.DistanceYards;
+                    }
+                    runnerFlow.DistanceYards = parsedDistance.HasValue && parsedDistance.Value > 0
+                        ? (short)Math.Min(parsedDistance.Value, short.MaxValue)
+                        : null;
+                    runnerFlow.DistanceText = persistedUpcoming?.DistanceText ?? parsedMetadata?.DistanceText;
+                    runnerFlow.RunnerCount = persistedUpcoming?.RunnerCount ?? runnerCount;
+                    runnerFlow.BackBookPercentage = persistedUpcoming?.BackBookPercentage ?? backBookPercentage;
+                    runnerFlow.LayBookPercentage = persistedUpcoming?.LayBookPercentage ?? layBookPercentage;
                     var (age, weightLbs, weightText) = ParseRunnerAgeWeight(Get("ageWeight"));
                     runnerFlow.Age = age;
                     runnerFlow.WeightLbs = weightLbs;

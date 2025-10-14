@@ -708,15 +708,13 @@ namespace HorseRacingML.Scraping
                     _useMarketFallbackForAiDegeneracy,
                     GetRaceGoingSnapshot());
                 var races = scraper.ScrapeOpenRaceTabsForReport(_driver);
-                orderedRaces = races
+                var deduplicatedRaces = RaceDayReportDeduplicator.ByMarketId(races);
+                scraper.PopulateWinnerProbabilities(deduplicatedRaces);
+                orderedRaces = deduplicatedRaces
                     .OrderBy(r => GetRaceScheduleSortKey(r))
                     .ThenBy(r => r.RaceTitle ?? string.Empty, StringComparer.OrdinalIgnoreCase)
                     .ThenBy(r => r.MarketId, StringComparer.Ordinal)
                     .ToList();
-                var deduplicatedRaces = RaceDayReportDeduplicator.ByMarketId(result.Races);
-                PopulateWinnerProbabilities(deduplicatedRaces);
-                result.Races.Clear();
-                result.Races.AddRange(deduplicatedRaces);
                 hyperparameters = scraper.LoadedHyperparameters;
                 ReturnToPrimaryWindow();
             }
