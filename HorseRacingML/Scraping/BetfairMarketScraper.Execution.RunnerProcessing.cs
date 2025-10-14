@@ -807,9 +807,10 @@ DateTime? raceDate,
                         $"\t\tNo prepared feature row matched for {missingFeatureIdentifier}; synthesizing feature vector from live scrape.");
                 }
                 flow.MatchedDatabaseRecord = matchedDatabaseRow;
-                IReadOnlyList<string> missingHistoricalKeys = Array.Empty<string>();
+                var missingHistoricalKeys = GetMissingHistoricalFeatureKeys(featureVector);
                 Dictionary<string, object?>? fallbackFeatures = null;
-                if (NeedsHistoricalFeatureBackfill(featureVector))
+                var appliedFallback = false;
+                if (missingHistoricalKeys.Count > 0)
                 {
                     if (!fallbackAttempted)
                     {
@@ -834,84 +835,94 @@ DateTime? raceDate,
                     {
                         var missingFeatureIdentifier = DescribeRunner(flow);
 
-                        if (fallbackFeatures != null)
+                        var fallbackCandidate = fallbackLookup.FindByRunner(flow)
+                                 ?? (!string.IsNullOrWhiteSpace(flow?.HorseName)
+                                     ? fallbackLookup.FindByHorse(flow.HorseName)
+                                     : null);
+
+                        if (fallbackCandidate != null)
                         {
+                            fallbackFeatures = CreateFeatureDictionary(fallbackCandidate);
                             BackfillHistoricalFeatures(featureVector, fallbackFeatures);
+                            appliedFallback = true;
+                            missingHistoricalKeys = GetMissingHistoricalFeatureKeys(featureVector);
+                        }
+
+                        if (missingHistoricalKeys.Count > 0)
+                        {
+                            var missingSummary = string.Join(", ", missingHistoricalKeys);
+                            Console.WriteLine(
+                                $"\t\tUnable to backfill {missingHistoricalKeys.Count} historical feature(s) for {missingFeatureIdentifier}: {missingSummary}.");
+                        }
+
+                        ApplyScrapedFeatureFallbacks(
+                            featureVector,
+                            flow,
+                            raceDate,
+                            scheduledOff,
+                            raceTitle,
+                            raceDetails,
+                            raceType,
+                            going,
+                            venueName,
+                            venueCountry,
+                            backBookPercentage,
+                            layBookPercentage,
+                            flows,
+                            raceMissingFields);
+                        EnsureDistanceChangeFromLast(
+                            featureVector,
+                            flow,
+                            raceDate,
+                            lastDistanceCache);
+                        ApplyNeutralFeatureFallbacks(featureVector);
+
+                        flow.FeatureValues = featureVector;
+                        flow.HasPreparedFeatures = featureVector.Count > 0;
+                        flow.FeaturePopulationSummary = BuildFeaturePopulationSummary(featureVector);
+
+                        if (!matchedPreparedRow && flow.HasPreparedFeatures)
+                        {
+                            Console.WriteLine(
+                                $"\t\tUsing scraped fallback feature vector for {identifier}; attempting neural model scoring with live data only.");
+                        }
+
+                        int? resolvedCareerStarts = null;
+                        if (featureVector.TryGetValue("CareerStarts", out var careerStartsValue))
+                        {
+                            resolvedCareerStarts = TryConvertToInt32(careerStartsValue);
+                        }
+
+                        if (!resolvedCareerStarts.HasValue && flow.HistoricalRaceCount.HasValue)
+                        {
+                            resolvedCareerStarts = flow.HistoricalRaceCount.Value;
+                        }
+
+                        if (!resolvedCareerStarts.HasValue)
+                        {
+                            resolvedCareerStarts = ResolveHistoricalRaceCountFromPrefetch(flow, prefetchedCounts)
+                                ?? ResolveHistoricalRaceCount(flow);
+                        }
+
+                        if (resolvedCareerStarts.HasValue)
+                        {
+                            featureVector["CareerStarts"] = resolvedCareerStarts.Value;
+                            flow.HistoricalRaceCount = resolvedCareerStarts.Value;
+                        }
+                        else
+                        {
+                            flow.HistoricalRaceCount = null;
                         }
                     }
-                }
-
-                if (runnerCount > 0)
-                {
-                    BackfillHistoricalFeatures(featureVector, CreateFeatureDictionary(fallbackFeatures));
-                }
-
-                ApplyScrapedFeatureFallbacks(
-                    featureVector,
-                    flow,
-                    raceDate,
-                    scheduledOff,
-                    raceTitle,
-                    raceDetails,
-                    raceType,
-                    going,
-                    venueName,
-                    venueCountry,
-                    backBookPercentage,
-                    layBookPercentage,
-                    flows,
-                    raceMissingFields);
-                EnsureDistanceChangeFromLast(
-                    featureVector,
-                    flow,
-                    raceDate,
-                    lastDistanceCache);
-                ApplyNeutralFeatureFallbacks(featureVector);
-
-                flow.FeatureValues = featureVector;
-                flow.HasPreparedFeatures = featureVector.Count > 0;
-                flow.FeaturePopulationSummary = BuildFeaturePopulationSummary(featureVector);
-
-                if (!matchedPreparedRow && flow.HasPreparedFeatures)
-                {
-                    Console.WriteLine(
-                        $"\t\tUsing scraped fallback feature vector for {identifier}; attempting neural model scoring with live data only.");
-                }
-
-                int? resolvedCareerStarts = null;
-                if (featureVector.TryGetValue("CareerStarts", out var careerStartsValue))
-                {
-                    resolvedCareerStarts = TryConvertToInt32(careerStartsValue);
-                }
-
-                if (!resolvedCareerStarts.HasValue && flow.HistoricalRaceCount.HasValue)
-                {
-                    resolvedCareerStarts = flow.HistoricalRaceCount.Value;
-                }
-
-                if (!resolvedCareerStarts.HasValue)
-                {
-                    resolvedCareerStarts = ResolveHistoricalRaceCountFromPrefetch(flow, prefetchedCounts)
-                        ?? ResolveHistoricalRaceCount(flow);
-                }
-
-                if (resolvedCareerStarts.HasValue)
-                {
-                    featureVector["CareerStarts"] = resolvedCareerStarts.Value;
-                    flow.HistoricalRaceCount = resolvedCareerStarts.Value;
-                }
-                else
-                {
-                    flow.HistoricalRaceCount = null;
-                }
-            }
-            if (raceMissingFields.Count > 0)
-            {
-                foreach (var entry in raceMissingFields)
-                {
-                    if (!string.IsNullOrWhiteSpace(entry))
+                    if (raceMissingFields.Count > 0)
                     {
-                        _missingScrapedFieldDescriptions.Add(entry);
+                        foreach (var entry in raceMissingFields)
+                        {
+                            if (!string.IsNullOrWhiteSpace(entry))
+                            {
+                                _missingScrapedFieldDescriptions.Add(entry);
+                            }
+                        }
                     }
                 }
             }
