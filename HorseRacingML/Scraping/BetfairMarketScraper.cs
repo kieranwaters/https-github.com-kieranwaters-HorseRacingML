@@ -23,6 +23,7 @@ namespace HorseRacingML.Scraping
         private readonly decimal? _maxStakeFixedAmount;
         private readonly bool _computeAiProbabilities;
         private readonly Dictionary<RacePreparationKey, FeatureLookup> _featureLookupCache = new();
+        private readonly Dictionary<RacePreparationKey, string?> _featureLookupErrorCache = new();
         private readonly object _featureLookupCacheLock = new();
         private readonly Dictionary<string, HandleScheduleMetadata> _handleScheduleCache = new(StringComparer.Ordinal);
         private readonly object _handleScheduleCacheLock = new();
@@ -37,6 +38,7 @@ namespace HorseRacingML.Scraping
         private const string MarketHeaderXPath = "/html/body/ui-view/div/div/div[2]/div/ui-view/div/div/div[1]/div[1]/div/bf-sports-header/div/div/div/div[1]/div/span[1]";
         private const string PlaceBetsButtonSelector = "#main-wrapper > div > div.scrollable-panes-height-taker > div > ui-view > div > div > div.bf-col-xxl-7-24.bf-col-xl-8-24.bf-col-lg-8-24.bf-col-md-9-24.bf-col-sm-10-24.bf-col-10-24.right-side-column > div > div > bf-aside > div > div.bf-row.aside-top-row.no-bottom-gutter > div > betslip > div > bf-tabs > section > div:nth-child(2) > div > div > section > potentials > section > form > betslip-potentials-footer > footer > div.potentials-footer__actions > div > highlighted-button > ours-button > button";
         private const string ConfirmBetsButtonSelector = "#main-wrapper > div > div.scrollable-panes-height-taker > div > ui-view > div > div > div.bf-col-xxl-7-24.bf-col-xl-8-24.bf-col-lg-8-24.bf-col-md-9-24.bf-col-sm-10-24.bf-col-10-24.right-side-column > div > div > bf-aside > div > div.bf-row.aside-top-row.no-bottom-gutter > div > betslip > div > bf-tabs > section > div:nth-child(2) > div > div > section > confirmation > section > betslip-confirmation-footer > footer > div.confirmation-footer__actions > highlighted-button > ours-button > button";
+        private string? _lastFallbackFeatureError;
         private HyperparameterSummary? _loadedHyperparameters;
 
         public BetfairMarketScraper(
@@ -119,6 +121,24 @@ namespace HorseRacingML.Scraping
                 captureReport: false,
                 handlesToProcess: handlesToProcess);
             return result.Recommendations.AsReadOnly();
+        }
+        private void SetFallbackFeatureError(string? message)
+        {
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                _lastFallbackFeatureError = null;
+            }
+            else
+            {
+                _lastFallbackFeatureError = message.Trim();
+            }
+        }
+
+        private string BuildMissingHistoricalFeatureReason()
+        {
+            return string.IsNullOrWhiteSpace(_lastFallbackFeatureError)
+                ? "Missing historical features; database coverage required."
+                : $"Missing historical features; {_lastFallbackFeatureError}";
         }
         private sealed class HandleScheduleMetadata
         {

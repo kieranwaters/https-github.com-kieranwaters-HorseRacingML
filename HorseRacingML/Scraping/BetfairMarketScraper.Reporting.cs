@@ -338,6 +338,7 @@ namespace HorseRacingML.Scraping
         {
             if (!raceDate.HasValue || flows == null || flows.Count == 0)
             {
+                SetFallbackFeatureError("insufficient race metadata was available to build fallback feature vectors.");
                 return FeatureLookup.Empty;
             }
 
@@ -410,7 +411,32 @@ namespace HorseRacingML.Scraping
 
             if (upcoming == null)
             {
+                SetFallbackFeatureError("no upcoming race metadata matched the scraped race; fallback feature synthesis skipped.");
                 return FeatureLookup.Empty;
+            }
+
+            var cacheKey = new RacePreparationKey(
+                upcoming.RaceDate,
+                upcoming.Title ?? raceTitle,
+                upcoming.VenueName ?? venueName,
+                upcoming.VenueCountry ?? venueCountry);
+
+            lock (_featureLookupCacheLock)
+            {
+                if (_featureLookupCache.TryGetValue(cacheKey, out var cachedLookup))
+                {
+                    if (_featureLookupErrorCache.TryGetValue(cacheKey, out var cachedError))
+                    {
+                        SetFallbackFeatureError(cachedError);
+                    }
+                    else
+                    {
+                        SetFallbackFeatureError(null);
+                    }
+
+                    Console.WriteLine($"  Using cached synthetic feature rows for upcoming race {upcoming.MarketId ?? marketId ?? "<unknown>"}.");
+                    return cachedLookup;
+                }
             }
 
             try
@@ -418,17 +444,41 @@ namespace HorseRacingML.Scraping
                 var prepared = _trainer.PrepareUpcomingRace(upcoming, flows);
                 if (prepared == null || prepared.Rows.Count == 0)
                 {
+                    const string error = "trainer returned no rows when preparing fallback features; check that the HorseRacingDb connection string points to a populated SQL Server database.";
+                    SetFallbackFeatureError(error);
+                    lock (_featureLookupCacheLock)
+                    {
+                        _featureLookupCache[cacheKey] = FeatureLookup.Empty;
+                        _featureLookupErrorCache[cacheKey] = error;
+                    }
+
                     return FeatureLookup.Empty;
                 }
 
-                return FeatureLookup.FromPreparedRace(prepared);
+                var lookup = FeatureLookup.FromPreparedRace(prepared);
+                SetFallbackFeatureError(null);
+                lock (_featureLookupCacheLock)
+                {
+                    _featureLookupCache[cacheKey] = lookup;
+                    _featureLookupErrorCache[cacheKey] = null;
+                }
+
+                return lookup;
             }
             catch (Exception ex)
             {
+                var message = $"trainer failed to build fallback feature vectors ({ex.Message}). Ensure the HorseRacingDb connection string is valid and the database is accessible.";
+                SetFallbackFeatureError(message);
                 Console.Error.WriteLine($"      Failed to build fallback synthetic feature vector for upcoming race {upcoming.MarketId ?? marketId ?? "<unknown>"}:{ex.Message}");
+                lock (_featureLookupCacheLock)
+                {
+                    _featureLookupCache[cacheKey] = FeatureLookup.Empty;
+                    _featureLookupErrorCache[cacheKey] = message;
+                }
                 return FeatureLookup.Empty;
             }
         }
+
 
         private static bool IsFutureRace(DateTime raceDate, TimeSpan? offTime)
         {
