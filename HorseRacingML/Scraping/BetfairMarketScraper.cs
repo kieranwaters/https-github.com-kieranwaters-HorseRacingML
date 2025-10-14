@@ -112,7 +112,10 @@ namespace HorseRacingML.Scraping
         public IReadOnlyList<RaceDayReport> ScrapeOpenRaceTabsForReport(IWebDriver driver, IEnumerable<string>? handlesToProcess = null)
         {
             var result = ScrapeOpenRaceTabsInternal(driver, executeBets: false, captureReport: true, handlesToProcess: handlesToProcess);
-            PopulateWinnerProbabilities(result.Races);
+            var deduplicatedRaces = RaceDayReportDeduplicator.ByMarketId(result.Races);
+            PopulateWinnerProbabilities(deduplicatedRaces);
+            result.Races.Clear();
+            result.Races.AddRange(deduplicatedRaces);
             return result.Races.AsReadOnly();
         }
         public IReadOnlyList<BetRecommendation> ScrapeOpenRaceTabs(
