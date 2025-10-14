@@ -1891,7 +1891,7 @@ namespace HorseRacingML.ML
 FROM Trainer t
 CROSS APPLY (
     SELECT Normalized = LOWER(
-        REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(t.Name, ' ', ''), '-', ''), '\'', ''), '’', ''), '.', ''), ',', ''), '&', 'and'), '(', ''), ')', ''), '/', '')
+        REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(t.Name, ' ', ''), '-', ''), CHAR(39), ''), NCHAR(8217), ''), '.', ''), ',', ''), '&', 'and'), '(', ''), ')', ''), '/', '')
     )
 ) AS lookup
 WHERE lookup.Normalized IN @Names
