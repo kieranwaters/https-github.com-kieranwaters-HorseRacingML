@@ -148,7 +148,7 @@ namespace HorseRacingML.Scraping
 
             var flow = flows[0];
 
-            return lookup.FindBySelectionId(flow.SelectionId)
+            return lookup.FindByRunner(flow)
                 ?? lookup.FindByHorse(flow.HorseName);
         }
         internal void TestApplyMarketFallback(IReadOnlyList<RunnerFlow> flows)

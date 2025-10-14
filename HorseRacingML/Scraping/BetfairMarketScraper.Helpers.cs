@@ -3048,27 +3048,34 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
                 return "unknown";
             }
 
+            var parts = new List<string>();
+
             if (!string.IsNullOrWhiteSpace(flow.HorseName))
             {
-                return flow.HorseName!.Trim();
+                parts.Add(flow.HorseName!.Trim());
             }
 
             if (flow.ClothNumber.HasValue)
             {
-                return $"cloth #{flow.ClothNumber.Value.ToString(CultureInfo.InvariantCulture)}";
+                parts.Add($"cloth #{flow.ClothNumber.Value.ToString(CultureInfo.InvariantCulture)}");
             }
 
             if (flow.Draw.HasValue)
             {
-                return $"draw #{flow.Draw.Value.ToString(CultureInfo.InvariantCulture)}";
+                parts.Add($"draw #{flow.Draw.Value.ToString(CultureInfo.InvariantCulture)}");
             }
 
-            if (!string.IsNullOrWhiteSpace(flow.SelectionId))
+            if (!string.IsNullOrWhiteSpace(flow.JockeyName))
             {
-                return flow.SelectionId!.Trim();
+                parts.Add($"jockey {flow.JockeyName!.Trim()}");
             }
 
-            return "unknown";
+            if (!string.IsNullOrWhiteSpace(flow.TrainerName))
+            {
+                parts.Add($"trainer {flow.TrainerName!.Trim()}");
+            }
+
+            return parts.Count > 0 ? string.Join(", ", parts) : "unknown";
         }
         internal static string? ExtractMarketId(string url)
         {

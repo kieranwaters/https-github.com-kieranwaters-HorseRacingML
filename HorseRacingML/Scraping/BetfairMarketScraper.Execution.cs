@@ -658,9 +658,7 @@ namespace HorseRacingML.Scraping
                             {
                                 rf.FeatureValues["RunnerCount"] = rows.Count; // ensure runner count
                             }
-                            var rfIdentifier = !string.IsNullOrWhiteSpace(rf.HorseName)
-                                ? rf.HorseName!
-                                : (rf.SelectionId ?? "unknown");
+                            var rfIdentifier = DescribeRunner(rf);
                             if (hasAnyBackPrice && !rf.BackPrice1.HasValue)
                             {
                                 Console.WriteLine($"            No back price available for {rfIdentifier}; assuming this runner is a non-runner and excluding it from analysis.");
@@ -688,10 +686,7 @@ namespace HorseRacingML.Scraping
                             var parallelOptions = new ParallelOptions { MaxDegreeOfParallelism = 6 };
                             Parallel.ForEach(evaluationCandidates, parallelOptions, rf =>
                             {
-                                var rfIdentifier = !string.IsNullOrWhiteSpace(rf.HorseName)
-                                        ? rf.HorseName!
-                                        : (rf.SelectionId ?? "unknown");
-
+                                var rfIdentifier = DescribeRunner(rf);
                                 try
                                 {
                                     var probability = aiCalculator.CalculateOdds(rf); // compute AI odds
@@ -719,7 +714,7 @@ namespace HorseRacingML.Scraping
                                     rf.AiProbabilityFallbackReason = null;
                                     rf.AiProbabilityClampedToMarket = false;
                                     rf.AiProbabilityClampTarget = null;
-                                    Console.Error.WriteLine($"  Failed to calculate AI odds for selection {rfIdentifier} in market {marketId}: {ex.Message}"); // log
+                                    Console.Error.WriteLine($"  Failed to calculate AI odds for runner {rfIdentifier} in market {marketId}: {ex.Message}"); // log
                                 }
 
                                 if (rf.AiOdds.HasValue && double.IsFinite(rf.AiOdds.Value) && rf.AiOdds.Value > 0 && rf.AiOdds.Value < LowAiProbabilityClampThreshold)
@@ -739,9 +734,7 @@ namespace HorseRacingML.Scraping
                                 continue;
                             }
 
-                            var rfIdentifier = !string.IsNullOrWhiteSpace(rf.HorseName)
-                                ? rf.HorseName!
-                                : (rf.SelectionId ?? "unknown");
+                            var rfIdentifier = DescribeRunner(rf);
                             string aiText;
                             if (rf.AiOdds.HasValue)
                             {
@@ -789,9 +782,7 @@ namespace HorseRacingML.Scraping
 
                         foreach (var rf in flowsSnapshot)
                         {
-                            var rfIdentifier = !string.IsNullOrWhiteSpace(rf.HorseName)
-                                ? rf.HorseName!
-                                : (rf.SelectionId ?? "unknown");
+                            var rfIdentifier = DescribeRunner(rf);
 
                             if (hasAnyBackPrice && !rf.BackPrice1.HasValue)
                             {
@@ -875,9 +866,7 @@ namespace HorseRacingML.Scraping
 
                         foreach (var inner in flows)
                         {
-                            var innerIdentifier = !string.IsNullOrWhiteSpace(inner.HorseName)
-                                ? inner.HorseName!.Trim()
-                                : (!string.IsNullOrWhiteSpace(inner.SelectionId) ? inner.SelectionId! : "unknown");
+                            var innerIdentifier = DescribeRunner(inner);
                             Console.WriteLine($"\tInserted runner {innerIdentifier} for market {marketId}"); // log ok
                         }
                     }
@@ -885,9 +874,7 @@ namespace HorseRacingML.Scraping
                     {
                         foreach (var inner in flows)
                         {
-                            var innerIdentifier = !string.IsNullOrWhiteSpace(inner.HorseName)
-                                ? inner.HorseName!.Trim()
-                                : (inner.SelectionId ?? "unknown");
+                            var innerIdentifier = DescribeRunner(inner);
                             Console.Error.WriteLine($"\tInsertRunnerFlow failed for market {marketId}, runner {innerIdentifier}: {ex.Message}"); // log error
                         }
                     }

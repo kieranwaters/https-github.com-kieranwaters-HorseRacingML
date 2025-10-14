@@ -386,14 +386,6 @@ namespace HorseRacingML.ML
             {
                 parts.Add(flow.HorseName!.Trim());
             }
-            else if (!string.IsNullOrWhiteSpace(flow.SelectionId))
-            {
-                parts.Add(flow.SelectionId!.Trim());
-            }
-            else
-            {
-                parts.Add("unknown runner");
-            }
 
             if (flow.ClothNumber.HasValue)
             {
@@ -404,7 +396,20 @@ namespace HorseRacingML.ML
             {
                 parts.Add($"draw {flow.Draw.Value}");
             }
+            if (!string.IsNullOrWhiteSpace(flow.JockeyName))
+            {
+                parts.Add($"jockey {flow.JockeyName!.Trim()}");
+            }
 
+            if (!string.IsNullOrWhiteSpace(flow.TrainerName))
+            {
+                parts.Add($"trainer {flow.TrainerName!.Trim()}");
+            }
+
+            if (parts.Count == 0)
+            {
+                parts.Add("unknown runner");
+            }
             return string.Join(", ", parts);
         }
         public AIOddsCalculator(string path)

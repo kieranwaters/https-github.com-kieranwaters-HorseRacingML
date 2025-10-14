@@ -738,19 +738,14 @@ namespace HorseRacingML.Scraping
 
         private sealed class FeatureLookup
         {
-            private readonly Dictionary<string, Dictionary<string, object?>> _byHorse;
-            private readonly Dictionary<string, Dictionary<string, object?>> _bySelectionId;
+            private readonly Dictionary<string, Dictionary<string, object?>> _byIdentifier;
 
-            private FeatureLookup(
-                Dictionary<string, Dictionary<string, object?>> byHorse,
-                Dictionary<string, Dictionary<string, object?>> bySelectionId)
+            private FeatureLookup(Dictionary<string, Dictionary<string, object?>> byIdentifier)
             {
-                _byHorse = byHorse;
-                _bySelectionId = bySelectionId;
+                _byIdentifier = byIdentifier;
             }
 
             public static FeatureLookup Empty { get; } = new FeatureLookup(
-                new Dictionary<string, Dictionary<string, object?>>(StringComparer.OrdinalIgnoreCase),
                 new Dictionary<string, Dictionary<string, object?>>(StringComparer.OrdinalIgnoreCase));
 
             public static FeatureLookup FromPreparedRace(PreparedRace race)
@@ -758,32 +753,13 @@ namespace HorseRacingML.Scraping
                 if (race == null)
                     throw new ArgumentNullException(nameof(race));
 
-                var byHorse = new Dictionary<string, Dictionary<string, object?>>(StringComparer.OrdinalIgnoreCase);
-                var bySelection = new Dictionary<string, Dictionary<string, object?>>(StringComparer.OrdinalIgnoreCase);
-
+                var lookup = new Dictionary<string, Dictionary<string, object?>>(StringComparer.OrdinalIgnoreCase);
                 foreach (var row in race.Rows)
                 {
-                    var copy = new Dictionary<string, object?>(row, StringComparer.OrdinalIgnoreCase);
-
-                    if (row.TryGetValue("HorseName", out var horseObj) && horseObj is string horse && !string.IsNullOrWhiteSpace(horse))
-                    {
-                        var normalized = NormalizeName(horse);
-                        if (!string.IsNullOrEmpty(normalized) && !byHorse.ContainsKey(normalized))
-                        {
-                            byHorse[normalized] = copy;
-                        }
-                    }
-
-                    var normalizedSelection = NormalizeSelectionId(row.TryGetValue("SelectionId", out var selectionObj)
-                        ? selectionObj
-                        : null);
-                    if (!string.IsNullOrEmpty(normalizedSelection) && !bySelection.ContainsKey(normalizedSelection))
-                    {
-                        bySelection[normalizedSelection] = copy;
-                    }
+                    AddRowIdentifiers(lookup, row);
                 }
 
-                return new FeatureLookup(byHorse, bySelection);
+                return new FeatureLookup(lookup);
             }
 
             public static FeatureLookup FromRows(IReadOnlyList<IDictionary<string, object?>> rows)
@@ -796,89 +772,222 @@ namespace HorseRacingML.Scraping
                     return Empty;
                 }
 
-                var byHorse = new Dictionary<string, Dictionary<string, object?>>(StringComparer.OrdinalIgnoreCase);
-                var bySelection = new Dictionary<string, Dictionary<string, object?>>(StringComparer.OrdinalIgnoreCase);
-
+                var lookup = new Dictionary<string, Dictionary<string, object?>>(StringComparer.OrdinalIgnoreCase);
                 foreach (var row in rows)
                 {
-                    if (row == null)
-                    {
-                        continue;
-                    }
-
-                    var copy = row is Dictionary<string, object?> dict
-                        ? new Dictionary<string, object?>(dict, StringComparer.OrdinalIgnoreCase)
-                        : new Dictionary<string, object?>(row, StringComparer.OrdinalIgnoreCase);
-
-                    if (copy.TryGetValue("HorseName", out var horseObj) && horseObj is string horse && !string.IsNullOrWhiteSpace(horse))
-                    {
-                        var normalized = NormalizeName(horse);
-                        if (!string.IsNullOrEmpty(normalized) && !byHorse.ContainsKey(normalized))
-                        {
-                            byHorse[normalized] = copy;
-                        }
-                    }
-
-                    var normalizedSelection = NormalizeSelectionId(copy.TryGetValue("SelectionId", out var selectionObj)
-                        ? selectionObj
-                        : null);
-                    if (!string.IsNullOrEmpty(normalizedSelection) && !bySelection.ContainsKey(normalizedSelection))
-                    {
-                        bySelection[normalizedSelection] = copy;
-                    }
+                    AddRowIdentifiers(lookup, row);
                 }
 
-                return new FeatureLookup(byHorse, bySelection);
+                return new FeatureLookup(lookup);
             }
 
-            public Dictionary<string, object?>? FindBySelectionId(string? selectionId)
+            public Dictionary<string, object?>? FindByRunner(RunnerFlow? flow)
             {
-                var normalized = NormalizeSelectionId(selectionId);
-                if (string.IsNullOrEmpty(normalized))
+                if (flow == null)
                 {
                     return null;
                 }
 
-                return _bySelectionId.TryGetValue(normalized, out var features) ? features : null;
+                var normalizedHorse = NormalizeName(flow.HorseName);
+                var normalizedJockey = NormalizeName(flow.JockeyName);
+                var normalizedTrainer = NormalizeName(flow.TrainerName);
+                var clothKey = flow.ClothNumber.HasValue
+                    ? flow.ClothNumber.Value.ToString(CultureInfo.InvariantCulture)
+                    : null;
+                var drawKey = flow.Draw.HasValue
+                    ? flow.Draw.Value.ToString(CultureInfo.InvariantCulture)
+                    : null;
+
+                return FindByIdentifiers(normalizedHorse, normalizedJockey, normalizedTrainer, clothKey, drawKey);
             }
 
-            private static string? NormalizeSelectionId(object? value)
+            public Dictionary<string, object?>? FindByHorse(string? horseName)
+            {
+                var normalizedHorse = NormalizeName(horseName);
+                if (string.IsNullOrEmpty(normalizedHorse))
+                {
+                    return null;
+                }
+
+                return FindByIdentifiers(normalizedHorse, null, null, null, null);
+            }
+
+            private Dictionary<string, object?>? FindByIdentifiers(
+                string? normalizedHorse,
+                string? normalizedJockey,
+                string? normalizedTrainer,
+                string? clothKey,
+                string? drawKey)
+            {
+                foreach (var key in BuildIdentifierKeys(normalizedHorse, normalizedJockey, normalizedTrainer, clothKey, drawKey))
+                {
+                    if (_byIdentifier.TryGetValue(key, out var features))
+                    {
+                        return features;
+                    }
+                }
+
+                return null;
+            }
+
+            private static void AddRowIdentifiers(
+                Dictionary<string, Dictionary<string, object?>> lookup,
+                IDictionary<string, object?>? row)
+            {
+                if (row == null)
+                {
+                    return;
+                }
+
+                var copy = row is Dictionary<string, object?> dict
+                    ? new Dictionary<string, object?>(dict, StringComparer.OrdinalIgnoreCase)
+                    : new Dictionary<string, object?>(row, StringComparer.OrdinalIgnoreCase);
+
+                string? horseName = null;
+                if (copy.TryGetValue("HorseName", out var horseObj) && horseObj is string horseText)
+                {
+                    horseName = horseText;
+                }
+
+                string? jockeyName = null;
+                if (copy.TryGetValue("JockeyName", out var jockeyObj) && jockeyObj is string jockeyText)
+                {
+                    jockeyName = jockeyText;
+                }
+
+                string? trainerName = null;
+                if (copy.TryGetValue("TrainerName", out var trainerObj) && trainerObj is string trainerText)
+                {
+                    trainerName = trainerText;
+                }
+
+                var clothKey = NormalizeNumeric(copy.TryGetValue("SaddleclothNumber", out var clothObj)
+                    ? clothObj
+                    : null);
+                var drawKey = NormalizeNumeric(copy.TryGetValue("Draw", out var drawObj)
+                    ? drawObj
+                    : null);
+
+                var normalizedHorse = NormalizeName(horseName);
+                var normalizedJockey = NormalizeName(jockeyName);
+                var normalizedTrainer = NormalizeName(trainerName);
+
+                foreach (var key in BuildIdentifierKeys(normalizedHorse, normalizedJockey, normalizedTrainer, clothKey, drawKey))
+                {
+                    if (!lookup.ContainsKey(key))
+                    {
+                        lookup[key] = copy;
+                    }
+                }
+            }
+
+            private static IEnumerable<string> BuildIdentifierKeys(
+                string? normalizedHorse,
+                string? normalizedJockey,
+                string? normalizedTrainer,
+                string? clothKey,
+                string? drawKey)
+            {
+                var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var keys = new List<string>();
+
+                void TryAdd(string? candidate)
+                {
+                    if (string.IsNullOrEmpty(candidate))
+                    {
+                        return;
+                    }
+
+                    if (seen.Add(candidate))
+                    {
+                        keys.Add(candidate);
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(normalizedHorse))
+                {
+                    TryAdd($"horse:{normalizedHorse}");
+
+                    if (!string.IsNullOrEmpty(clothKey))
+                    {
+                        TryAdd($"horse+cloth:{normalizedHorse}|{clothKey}");
+                    }
+
+                    if (!string.IsNullOrEmpty(drawKey))
+                    {
+                        TryAdd($"horse+draw:{normalizedHorse}|{drawKey}");
+                    }
+
+                    if (!string.IsNullOrEmpty(normalizedJockey))
+                    {
+                        TryAdd($"horse+jockey:{normalizedHorse}|{normalizedJockey}");
+                    }
+
+                    if (!string.IsNullOrEmpty(normalizedTrainer))
+                    {
+                        TryAdd($"horse+trainer:{normalizedHorse}|{normalizedTrainer}");
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(clothKey))
+                {
+                    TryAdd($"cloth:{clothKey}");
+                }
+
+                if (!string.IsNullOrEmpty(drawKey))
+                {
+                    TryAdd($"draw:{drawKey}");
+                }
+
+                if (!string.IsNullOrEmpty(normalizedJockey))
+                {
+                    TryAdd($"jockey:{normalizedJockey}");
+                }
+
+                if (!string.IsNullOrEmpty(normalizedTrainer))
+                {
+                    TryAdd($"trainer:{normalizedTrainer}");
+                }
+
+                return keys;
+            }
+
+            private static string? NormalizeNumeric(object? value)
             {
                 if (value == null)
                 {
                     return null;
                 }
 
-                if (value is string s)
+                try
                 {
-                    var trimmed = s.Trim();
-                    return trimmed.Length == 0 ? null : trimmed;
-                }
+                    switch (value)
+                    {
+                        case byte b:
+                            return b.ToString(CultureInfo.InvariantCulture);
+                        case short s:
+                            return s.ToString(CultureInfo.InvariantCulture);
+                        case int i:
+                            return i.ToString(CultureInfo.InvariantCulture);
+                        case long l:
+                            return l.ToString(CultureInfo.InvariantCulture);
+                        case float f:
+                            return ((int)Math.Round(f)).ToString(CultureInfo.InvariantCulture);
+                        case double d:
+                            return ((int)Math.Round(d)).ToString(CultureInfo.InvariantCulture);
+                        case decimal m:
+                            return ((int)Math.Round(m)).ToString(CultureInfo.InvariantCulture);
+                        case string s when int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed):
+                            return parsed.ToString(CultureInfo.InvariantCulture);
+                    }
 
-                var text = Convert.ToString(value, CultureInfo.InvariantCulture);
-                if (string.IsNullOrWhiteSpace(text))
+                    var converted = Convert.ToInt32(value, CultureInfo.InvariantCulture);
+                    return converted.ToString(CultureInfo.InvariantCulture);
+                }
+                catch
                 {
                     return null;
                 }
-
-                var normalized = text.Trim();
-                return normalized.Length == 0 ? null : normalized;
-            }
-
-            public Dictionary<string, object?>? FindByHorse(string? horseName)
-            {
-                if (string.IsNullOrWhiteSpace(horseName))
-                {
-                    return null;
-                }
-
-                var normalized = NormalizeName(horseName);
-                if (string.IsNullOrEmpty(normalized))
-                {
-                    return null;
-                }
-
-                return _byHorse.TryGetValue(normalized, out var features) ? features : null;
             }
         }
     }

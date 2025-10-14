@@ -621,7 +621,7 @@ namespace HorseRacingML.Scraping
                 }
                 catch (Exception ex)
                 {
-                    var identifier = flow.HorseName ?? flow.SelectionId ?? "unknown";
+                    var identifier = DescribeRunner(flow);
                     Console.Error.WriteLine($"\tFailed to resolve historical race count for {identifier}: {ex.Message}");
                 }
             }
@@ -757,13 +757,10 @@ DateTime? raceDate,
             var fallbackAttempted = false;
             foreach (var flow in flows)
             {
-                var matchedFeatures = featureLookup.FindBySelectionId(flow.SelectionId)
-                   ?? featureLookup.FindByHorse(flow.HorseName);
+                var matchedFeatures = featureLookup.FindByRunner(flow);
                 var matchedPreparedRow = matchedFeatures != null;
                 var matchedDatabaseRow = matchedPreparedRow;
-                var identifier = !string.IsNullOrWhiteSpace(flow?.HorseName)
-                   ? flow!.HorseName!
-                   : (flow?.SelectionId ?? "unknown");
+                var identifier = DescribeRunner(flow);
 
                 if (!matchedPreparedRow)
                 {
@@ -788,8 +785,7 @@ DateTime? raceDate,
 
                     if (fallbackLookup != FeatureLookup.Empty)
                     {
-                        matchedFeatures = fallbackLookup.FindBySelectionId(flow.SelectionId)
-                            ?? fallbackLookup.FindByHorse(flow.HorseName);
+                        matchedFeatures = fallbackLookup.FindByRunner(flow);
                         matchedPreparedRow = matchedFeatures != null;
                         if (matchedPreparedRow)
                         {
@@ -806,9 +802,7 @@ DateTime? raceDate,
                 else
                 {
                     featureVector = CreateFeatureDictionary(null);
-                    var missingFeatureIdentifier = !string.IsNullOrWhiteSpace(flow.HorseName)
-                        ? flow.HorseName!
-                        : (flow.SelectionId ?? "unknown");
+                    var missingFeatureIdentifier = DescribeRunner(flow);
                     Console.WriteLine(
                         $"\t\tNo prepared feature row matched for {missingFeatureIdentifier}; synthesizing feature vector from live scrape.");
                 }
@@ -838,8 +832,7 @@ DateTime? raceDate,
 
                     if (fallbackLookup != FeatureLookup.Empty)
                     {
-                    fallbackFeatures = fallbackLookup.FindBySelectionId(flow.SelectionId)
-                            ?? fallbackLookup.FindByHorse(flow.HorseName);
+                        var missingFeatureIdentifier = DescribeRunner(flow);
 
                         if (fallbackFeatures != null)
                         {
@@ -1412,7 +1405,7 @@ DateTime? raceDate,
                 {
                     var identifier = !string.IsNullOrWhiteSpace(horseName)
                         ? horseName
-                        : (!string.IsNullOrWhiteSpace(flow?.SelectionId) ? flow!.SelectionId! : "<unknown runner>");
+                        : DescribeRunner(flow);
                     Console.Error.WriteLine($"  Failed to resolve last race distance for {identifier}: {ex.Message}");
                     lastDistance = null;
                 }
