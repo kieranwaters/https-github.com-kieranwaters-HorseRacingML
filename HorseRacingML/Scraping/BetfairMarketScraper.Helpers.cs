@@ -3041,6 +3041,235 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
 
             return null;
         }
+        private static bool AreNamesEquivalent(string? left, string? right)
+        {
+            if (string.IsNullOrWhiteSpace(left) || string.IsNullOrWhiteSpace(right))
+            {
+                return false;
+            }
+
+            var normalizedLeft = NormalizeName(left);
+            var normalizedRight = NormalizeName(right);
+
+            if (string.IsNullOrEmpty(normalizedLeft) || string.IsNullOrEmpty(normalizedRight))
+            {
+                return false;
+            }
+
+            return string.Equals(normalizedLeft, normalizedRight, StringComparison.Ordinal);
+        }
+
+        private readonly record struct RunnerMatchScore(int Score, int MatchedFields)
+        {
+            public bool IsValid => Score > 0 && MatchedFields > 0;
+        }
+
+        private static RunnerMatchScore CalculateRunnerMatchScore(
+            RunnerFlow flow,
+            string? horseName,
+            byte? clothNumber,
+            byte? draw,
+            string? jockeyName,
+            string? trainerName)
+        {
+            if (flow == null)
+            {
+                return default;
+            }
+
+            var score = 0;
+            var matchedFields = 0;
+
+            if (!string.IsNullOrWhiteSpace(horseName) && !string.IsNullOrWhiteSpace(flow.HorseName))
+            {
+                if (AreNamesEquivalent(flow.HorseName, horseName))
+                {
+                    score += 100;
+                    matchedFields++;
+                }
+                else
+                {
+                    return default;
+                }
+            }
+
+            if (clothNumber.HasValue && flow.ClothNumber.HasValue)
+            {
+                if (clothNumber.Value == flow.ClothNumber.Value)
+                {
+                    score += 25;
+                    matchedFields++;
+                }
+                else
+                {
+                    return default;
+                }
+            }
+
+            if (draw.HasValue && flow.Draw.HasValue)
+            {
+                if (draw.Value == flow.Draw.Value)
+                {
+                    score += 20;
+                    matchedFields++;
+                }
+                else
+                {
+                    return default;
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(jockeyName) && !string.IsNullOrWhiteSpace(flow.JockeyName))
+            {
+                if (AreNamesEquivalent(flow.JockeyName, jockeyName))
+                {
+                    score += 10;
+                    matchedFields++;
+                }
+                else
+                {
+                    return default;
+                }
+            }
+
+            var normalizedTrainer = NormalizeTrainerName(trainerName);
+            var normalizedFlowTrainer = NormalizeTrainerName(flow.TrainerName);
+
+            if (!string.IsNullOrWhiteSpace(normalizedTrainer) && !string.IsNullOrWhiteSpace(normalizedFlowTrainer))
+            {
+                if (AreNamesEquivalent(normalizedFlowTrainer, normalizedTrainer))
+                {
+                    score += 10;
+                    matchedFields++;
+                }
+                else
+                {
+                    return default;
+                }
+            }
+
+            return new RunnerMatchScore(score, matchedFields);
+        }
+
+        private static RunnerFlow? FindBestRunnerMatch(
+            IEnumerable<RunnerFlow> candidates,
+            string? horseName,
+            byte? clothNumber,
+            byte? draw,
+            string? jockeyName,
+            string? trainerName)
+        {
+            if (candidates == null)
+            {
+                return null;
+            }
+
+            RunnerFlow? best = null;
+            var bestScore = 0;
+            var bestMatchedFields = 0;
+
+            foreach (var candidate in candidates)
+            {
+                var score = CalculateRunnerMatchScore(candidate, horseName, clothNumber, draw, jockeyName, trainerName);
+                if (!score.IsValid)
+                {
+                    continue;
+                }
+
+                if (score.Score > bestScore || (score.Score == bestScore && score.MatchedFields > bestMatchedFields))
+                {
+                    best = candidate;
+                    bestScore = score.Score;
+                    bestMatchedFields = score.MatchedFields;
+                }
+            }
+
+            return best;
+        }
+
+        private static IEnumerable<string> BuildRunnerMatchKeys(
+            string? horseName,
+            byte? clothNumber,
+            byte? draw,
+            string? jockeyName,
+            string? trainerName)
+        {
+            var results = new List<string>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            void Add(string? key)
+            {
+                if (string.IsNullOrWhiteSpace(key))
+                {
+                    return;
+                }
+
+                if (seen.Add(key))
+                {
+                    results.Add(key);
+                }
+            }
+
+            Add(BuildRunnerMatchKeyInternal(horseName, clothNumber, draw, jockeyName, trainerName));
+            Add(BuildRunnerMatchKeyInternal(horseName, clothNumber, draw, jockeyName, null));
+            Add(BuildRunnerMatchKeyInternal(horseName, clothNumber, draw, null, trainerName));
+            Add(BuildRunnerMatchKeyInternal(horseName, clothNumber, draw, null, null));
+            Add(BuildRunnerMatchKeyInternal(horseName, clothNumber, null, null, null));
+            Add(BuildRunnerMatchKeyInternal(horseName, null, null, null, null));
+            Add(BuildRunnerMatchKeyInternal(null, clothNumber, draw, null, null));
+            Add(BuildRunnerMatchKeyInternal(null, clothNumber, null, null, null));
+            Add(BuildRunnerMatchKeyInternal(null, null, draw, null, null));
+            Add(BuildRunnerMatchKeyInternal(null, null, null, jockeyName, trainerName));
+            Add(BuildRunnerMatchKeyInternal(null, null, null, jockeyName, null));
+            Add(BuildRunnerMatchKeyInternal(null, null, null, null, trainerName));
+
+            return results;
+        }
+
+        private static string? GetPrimaryRunnerMatchKey(
+            string? horseName,
+            byte? clothNumber,
+            byte? draw,
+            string? jockeyName,
+            string? trainerName) =>
+            BuildRunnerMatchKeys(horseName, clothNumber, draw, jockeyName, trainerName).FirstOrDefault();
+
+        private static string BuildRunnerMatchKeyInternal(
+            string? horseName,
+            byte? clothNumber,
+            byte? draw,
+            string? jockeyName,
+            string? trainerName)
+        {
+            var parts = new List<string>();
+
+            if (!string.IsNullOrWhiteSpace(horseName))
+            {
+                parts.Add($"horse:{horseName.Trim()}");
+            }
+
+            if (clothNumber.HasValue)
+            {
+                parts.Add($"cloth:{clothNumber.Value.ToString(CultureInfo.InvariantCulture)}");
+            }
+
+            if (draw.HasValue)
+            {
+                parts.Add($"draw:{draw.Value.ToString(CultureInfo.InvariantCulture)}");
+            }
+
+            if (!string.IsNullOrWhiteSpace(jockeyName))
+            {
+                parts.Add($"jockey:{jockeyName.Trim()}");
+            }
+
+            if (!string.IsNullOrWhiteSpace(trainerName))
+            {
+                parts.Add($"trainer:{trainerName.Trim()}");
+            }
+
+            return parts.Count > 0 ? string.Join("|", parts) : string.Empty;
+        }
         private static string DescribeRunner(RunnerFlow? flow)
         {
             if (flow == null)

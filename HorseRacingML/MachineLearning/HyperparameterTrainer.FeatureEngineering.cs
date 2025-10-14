@@ -1898,20 +1898,27 @@ WHERE lookup.Normalized IN @Names
 GROUP BY lookup.Normalized";
 
                         var normalizedKeys = normalizedMap.Keys.ToArray();
-                        foreach (var row in conn.Query<(string Normalized, int TrainerId)>(normalizedTrainerSql, new { Names = normalizedKeys }))
+                        try
                         {
-                            if (!normalizedMap.TryGetValue(row.Normalized, out var originals) || originals == null)
+                            foreach (var row in conn.Query<(string Normalized, int TrainerId)>(normalizedTrainerSql, new { Names = normalizedKeys }))
                             {
-                                continue;
-                            }
-
-                            foreach (var original in originals)
-                            {
-                                if (!trainerIdLookup.ContainsKey(original))
+                                if (!normalizedMap.TryGetValue(row.Normalized, out var originals) || originals == null)
                                 {
-                                    trainerIdLookup[original] = row.TrainerId;
+                                    continue;
+                                }
+
+                                foreach (var original in originals)
+                                {
+                                    if (!trainerIdLookup.ContainsKey(original))
+                                    {
+                                        trainerIdLookup[original] = row.TrainerId;
+                                    }
                                 }
                             }
+                        }
+                        catch (SqlException sqlEx) when (IsMissingLowerArgument(sqlEx))
+                        {
+                            throw CreateMissingLowerArgumentException("trainer", normalizedMap, sqlEx);
                         }
                     }
                 }
@@ -2155,20 +2162,27 @@ WHERE lookup.Normalized IN @Names
 GROUP BY lookup.Normalized";
 
                         var normalizedKeys = normalizedMap.Keys.ToArray();
-                        foreach (var row in conn.Query<(string Normalized, int HorseId)>(normalizedHorseSql, new { Names = normalizedKeys }))
+                        try
                         {
-                            if (!normalizedMap.TryGetValue(row.Normalized, out var originals))
+                            foreach (var row in conn.Query<(string Normalized, int HorseId)>(normalizedHorseSql, new { Names = normalizedKeys }))
                             {
-                                continue;
-                            }
-
-                            foreach (var original in originals)
-                            {
-                                if (!horseIdLookup.ContainsKey(original))
+                                if (!normalizedMap.TryGetValue(row.Normalized, out var originals))
                                 {
-                                    horseIdLookup[original] = row.HorseId;
+                                    continue;
+                                }
+
+                                foreach (var original in originals)
+                                {
+                                    if (!horseIdLookup.ContainsKey(original))
+                                    {
+                                        horseIdLookup[original] = row.HorseId;
+                                    }
                                 }
                             }
+                        }
+                        catch (SqlException sqlEx) when (IsMissingLowerArgument(sqlEx))
+                        {
+                            throw CreateMissingLowerArgumentException("horse", normalizedMap, sqlEx);
                         }
                     }
                 }
@@ -2254,20 +2268,27 @@ WHERE lookup.Normalized IN @Names
 GROUP BY lookup.Normalized";
 
                         var normalizedKeys = normalizedMap.Keys.ToArray();
-                        foreach (var row in conn.Query<(string Normalized, int JockeyId)>(normalizedJockeySql, new { Names = normalizedKeys }))
+                        try
                         {
-                            if (!normalizedMap.TryGetValue(row.Normalized, out var originals))
+                            foreach (var row in conn.Query<(string Normalized, int JockeyId)>(normalizedJockeySql, new { Names = normalizedKeys }))
                             {
-                                continue;
-                            }
-
-                            foreach (var original in originals)
-                            {
-                                if (!jockeyIdLookup.ContainsKey(original))
+                                if (!normalizedMap.TryGetValue(row.Normalized, out var originals))
                                 {
-                                    jockeyIdLookup[original] = row.JockeyId;
+                                    continue;
+                                }
+
+                                foreach (var original in originals)
+                                {
+                                    if (!jockeyIdLookup.ContainsKey(original))
+                                    {
+                                        jockeyIdLookup[original] = row.JockeyId;
+                                    }
                                 }
                             }
+                        }
+                        catch (SqlException sqlEx) when (IsMissingLowerArgument(sqlEx))
+                        {
+                            throw CreateMissingLowerArgumentException("jockey", normalizedMap, sqlEx);
                         }
                     }
                 }
@@ -2340,6 +2361,43 @@ GROUP BY lookup.Normalized";
             }
 
             return new RunnerLookupData(horseIdLookup, jockeyIdLookup, runnerSnapshots);
+        }
+        private static bool IsMissingLowerArgument(SqlException sqlException)
+        {
+            var message = sqlException.Message;
+            return !string.IsNullOrEmpty(message) &&
+                   message.IndexOf("lower function requires 1 argument", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static InvalidOperationException CreateMissingLowerArgumentException(
+            string entityType,
+            IReadOnlyDictionary<string, HashSet<string>> normalizedMap,
+            SqlException innerException)
+        {
+            var sanitizedKeys = normalizedMap.Keys
+                .Where(key => !string.IsNullOrWhiteSpace(key))
+                .Take(5)
+                .ToArray();
+
+            var originalNames = normalizedMap.Values
+                .Where(set => set != null)
+                .SelectMany(set => set)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Take(5)
+                .ToArray();
+
+            var sanitizedList = sanitizedKeys.Length > 0 ? string.Join(", ", sanitizedKeys) : "<none>";
+            var originalsList = originalNames.Length > 0 ? string.Join(", ", originalNames) : "<none>";
+
+            var detail =
+                $"The fallback lookup for {entityType} names normalizes values with SQL Server's LOWER(REPLACE(...)) expression." +
+                " The database reported that LOWER was invoked without an argument." +
+                " The missing argument is the sanitized name expression produced from the runner metadata." +
+                $" Example sanitized keys: {sanitizedList}. Example original names: {originalsList}." +
+                " Ensure the racing database is running on SQL Server (or a compatible dialect) or adjust the normalization query.";
+
+            return new InvalidOperationException(detail, innerException);
         }
         private static Dictionary<string, HashSet<string>> BuildNameCandidateMap(IReadOnlyCollection<string> names)
         {

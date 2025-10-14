@@ -136,9 +136,7 @@ namespace HorseRacingML.Scraping
 
             if (zeroHistoryRunner != null)
             {
-                var identifier = !string.IsNullOrWhiteSpace(zeroHistoryRunner.HorseName)
-                    ? zeroHistoryRunner.HorseName!.Trim()
-                    : (zeroHistoryRunner.SelectionId ?? "unknown");
+                var identifier = DescribeRunner(zeroHistoryRunner);
                 Console.WriteLine($"\tSkipping market {marketId}: runner {identifier} has zero recorded historical races; skipping bets for this race.");
                 return Enumerable.Empty<BetRecommendation>();
             }
@@ -208,12 +206,13 @@ namespace HorseRacingML.Scraping
                 }
 
                 Console.WriteLine($"\t\tAccepted {identifier}: Kelly fraction {kellyFraction.ToString("0.####", CultureInfo.InvariantCulture)} (commission not yet deducted).");
-
+                var runnerKey = GetPrimaryRunnerMatchKey(flow.HorseName, flow.ClothNumber, flow.Draw, flow.JockeyName, flow.TrainerName);
                 recommendations.Add(new BetRecommendation
                 {
                     MarketId = marketId,
                     SelectionId = flow.SelectionId,
                     HorseName = flow.HorseName,
+                    RunnerKey = runnerKey,
                     RaceTitle = raceTitle,
                     VenueName = venueName,
                     RaceDate = raceDate,
@@ -243,7 +242,7 @@ namespace HorseRacingML.Scraping
 
             foreach (var recommendation in recommendations)
             {
-                var identifier = recommendation.HorseName ?? recommendation.SelectionId ?? "unknown";
+                var identifier = recommendation.HorseName ?? recommendation.RunnerKey ?? "unknown";
 
                 if (recommendation.Differential <= 0)
                 {
@@ -270,17 +269,15 @@ namespace HorseRacingML.Scraping
                     continue;
                 }
                 var match = runnerEntries.FirstOrDefault(entry =>
-                    (!string.IsNullOrEmpty(recommendation.SelectionId) &&
-                        string.Equals(entry.Flow.SelectionId, recommendation.SelectionId, StringComparison.Ordinal)) ||
-                    (!string.IsNullOrWhiteSpace(recommendation.HorseName) &&
-                        !string.IsNullOrWhiteSpace(entry.Flow.HorseName) &&
-                        string.Equals(entry.Flow.HorseName, recommendation.HorseName, StringComparison.OrdinalIgnoreCase)));
+                    DoesRecommendationMatchFlow(entry.Flow, recommendation));
 
                 if (match.Row == null)
                 {
-                    Console.Error.WriteLine($"\tUnable to locate row for {recommendation.HorseName ?? recommendation.SelectionId ?? "unknown"} to click Back-All");
+                    Console.Error.WriteLine($"\tUnable to locate row for {identifier} to click Back-All");
                     continue;
                 }
+
+                identifier = DescribeRunner(match.Flow);
 
                 if (TryClickBackAllButton(driver, match.Row, recommendation))
                 {
@@ -303,9 +300,34 @@ namespace HorseRacingML.Scraping
             }
             return clicked;
         }
+        private static bool DoesRecommendationMatchFlow(RunnerFlow? flow, BetRecommendation recommendation)
+        {
+            if (flow == null)
+            {
+                return false;
+            }
+
+            if (!string.IsNullOrWhiteSpace(recommendation.RunnerKey))
+            {
+                foreach (var key in BuildRunnerMatchKeys(flow.HorseName, flow.ClothNumber, flow.Draw, flow.JockeyName, flow.TrainerName))
+                {
+                    if (string.Equals(key, recommendation.RunnerKey, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            if (AreNamesEquivalent(flow.HorseName, recommendation.HorseName))
+            {
+                return true;
+            }
+
+            return false;
+        }
         private bool TryClickBackAllButton(IWebDriver driver, IWebElement row, BetRecommendation recommendation)
         {
-            var identifier = recommendation.HorseName ?? recommendation.SelectionId ?? "unknown";
+            var identifier = recommendation.HorseName ?? recommendation.RunnerKey ?? "unknown";
 
             try
             {
@@ -639,7 +661,7 @@ namespace HorseRacingML.Scraping
                 var recommendation = recommendations[i];
                 var stake = CalculateStakeWithLimits(remainingPot, recommendation.KellyFraction);
                 var input = available[i];
-                var identifier = recommendation.HorseName ?? recommendation.SelectionId ?? "unknown";
+                var identifier = recommendation.HorseName ?? recommendation.RunnerKey ?? "unknown";
                 Console.WriteLine($"\tBet slip allocation for {identifier}: remaining pot {remainingPot.ToString("0.##", CultureInfo.InvariantCulture)}, stake {stake.ToString("0.##", CultureInfo.InvariantCulture)}");
                 try
                 {

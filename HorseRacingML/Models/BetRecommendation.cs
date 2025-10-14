@@ -13,6 +13,7 @@ namespace HorseRacingML.Models
         public string MarketId { get; init; } = string.Empty;
         public string? SelectionId { get; init; }
         public string? HorseName { get; init; }
+        public string? RunnerKey { get; init; }
         public string? RaceTitle { get; init; }
         public string? VenueName { get; init; }
         public DateTime? RaceDate { get; init; }

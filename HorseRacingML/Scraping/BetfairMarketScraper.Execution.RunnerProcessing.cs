@@ -8,11 +8,50 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using Tensorflow;
 
 namespace HorseRacingML.Scraping
 {
     public partial class BetfairMarketScraper
     {
+        private static readonly string[] RunnerClothSelectors =
+        {
+            ".cloth-number",
+            ".runner-numbers .saddle-cloth",
+            ".runner-numbers.double p.saddle-cloth",
+            "p.saddle-cloth",
+            ".saddle-cloth"
+        };
+
+        private static readonly string[] RunnerDrawSelectors =
+        {
+            ".draw",
+            ".runner-numbers .draw",
+            ".runner-numbers.double p.stall-draw",
+            "p.stall-draw",
+            ".stall-draw"
+        };
+
+        private static readonly string[] RunnerJockeySelectors =
+        {
+            ".name .jockey-name",
+            ".runner-info-expanded [data-testid='horse-jockey']",
+            ".runner-info-expanded [data-testid='runner-jockey']",
+            "[data-testid='runner-jockey']",
+            ".runner-timeform-wrapper__details--jockey"
+        };
+
+        private static readonly string[] RunnerTrainerSelectors =
+        {
+            ".runner-timeform-wrapper__horse-details .runner-timeform-wrapper__details.runner-timeform-wrapper__trainer",
+            ".runner-timeform-wrapper__details.runner-timeform-wrapper__trainer",
+            ".runner-expanded-details .runner-timeform-wrapper__details.runner-timeform-wrapper__trainer",
+            ".runner-expanded-details .runner-timeform-wrapper__details--trainer",
+            ".runner-info-expanded [data-testid='horse-trainer']",
+            ".runner-info-expanded .runner-timeform-wrapper__details--trainer",
+            "[data-testid='runner-trainer']",
+            "[data-test-id='runner-trainer']"
+        };
         private bool TryRefreshRunnerEntriesForBetting(
             IWebDriver driver,
             string marketId,
@@ -113,9 +152,8 @@ namespace HorseRacingML.Scraping
                 Console.Error.WriteLine($"\tNo runner rows found after refreshing market {marketId}.");
                 return false;
             }
-
-            var bySelectionId = new Dictionary<string, RunnerFlow>(StringComparer.OrdinalIgnoreCase);
-            var byHorseName = new Dictionary<string, RunnerFlow>(StringComparer.OrdinalIgnoreCase);
+            var byMatchKey = new Dictionary<string, List<RunnerFlow>>(StringComparer.OrdinalIgnoreCase);
+            var matchedFlows = new HashSet<RunnerFlow>();
 
             foreach (var flow in flows)
             {
@@ -124,46 +162,89 @@ namespace HorseRacingML.Scraping
                     continue;
                 }
 
-                if (!string.IsNullOrWhiteSpace(flow.SelectionId))
+                foreach (var key in BuildRunnerMatchKeys(flow.HorseName, flow.ClothNumber, flow.Draw, flow.JockeyName, flow.TrainerName))
                 {
-                    var key = flow.SelectionId!.Trim();
-                    if (key.Length > 0 && !bySelectionId.ContainsKey(key))
+                    if (!byMatchKey.TryGetValue(key, out var list))
                     {
-                        bySelectionId[key] = flow;
+                        list = new List<RunnerFlow>();
+                        byMatchKey[key] = list;
                     }
-                }
 
-                if (!string.IsNullOrWhiteSpace(flow.HorseName))
-                {
-                    var key = flow.HorseName!.Trim();
-                    if (key.Length > 0 && !byHorseName.ContainsKey(key))
+                    if (!list.Contains(flow))
                     {
-                        byHorseName[key] = flow;
+                        list.Add(flow);
                     }
                 }
             }
 
             foreach (var row in rows)
             {
-                var selectionId = ExtractSelectionIdFromRow(row);
-                RunnerFlow? matched = null;
+                var horseName = TryExtractRunnerName(row);
+                var clothNumber = TryExtractRunnerNumber(row, RunnerClothSelectors);
+                var draw = TryExtractRunnerNumber(row, RunnerDrawSelectors);
+                var jockey = TryExtractRunnerDetail(row, RunnerJockeySelectors);
+                var trainer = TryExtractRunnerDetail(row, RunnerTrainerSelectors);
 
-                if (!string.IsNullOrWhiteSpace(selectionId) && bySelectionId.TryGetValue(selectionId, out var flowById))
+                var candidateList = new List<RunnerFlow>();
+                var seenCandidates = new HashSet<RunnerFlow>();
+
+                foreach (var key in BuildRunnerMatchKeys(horseName, clothNumber, draw, jockey, trainer))
                 {
-                    matched = flowById;
-                }
-                else
-                {
-                    var horseName = TryExtractRunnerName(row);
-                    if (!string.IsNullOrWhiteSpace(horseName) && byHorseName.TryGetValue(horseName, out var flowByName))
+                    if (!byMatchKey.TryGetValue(key, out var flowsByKey))
                     {
-                        matched = flowByName;
+                        continue;
+                    }
+
+                    foreach (var candidate in flowsByKey)
+                    {
+                        if (candidate == null || matchedFlows.Contains(candidate))
+                        {
+                            continue;
+                        }
+
+                        if (seenCandidates.Add(candidate))
+                        {
+                            candidateList.Add(candidate);
+                        }
                     }
                 }
+
+                if (candidateList.Count == 0 && !string.IsNullOrWhiteSpace(horseName))
+                {
+                    foreach (var flow in flows)
+                    {
+                        if (flow == null || matchedFlows.Contains(flow))
+                        {
+                            continue;
+                        }
+
+                        if (AreNamesEquivalent(flow.HorseName, horseName) && seenCandidates.Add(flow))
+                        {
+                            candidateList.Add(flow);
+                        }
+                    }
+                }
+
+                var matched = FindBestRunnerMatch(candidateList, horseName, clothNumber, draw, jockey, trainer);
 
                 if (matched != null)
                 {
                     refreshedEntries.Add((row, matched));
+                    matchedFlows.Add(matched);
+
+                    foreach (var key in BuildRunnerMatchKeys(matched.HorseName, matched.ClothNumber, matched.Draw, matched.JockeyName, matched.TrainerName))
+                    {
+                        if (!byMatchKey.TryGetValue(key, out var flowsByKey))
+                        {
+                            continue;
+                        }
+
+                        flowsByKey.Remove(matched);
+                        if (flowsByKey.Count == 0)
+                        {
+                            byMatchKey.Remove(key);
+                        }
+                    }
                 }
             }
 
@@ -176,6 +257,117 @@ namespace HorseRacingML.Scraping
             return true;
         }
 
+        private static string? TryExtractRunnerName(IWebElement row)
+        {
+            if (row == null)
+            {
+                return null;
+            }
+
+            var selectors = new[]
+            {
+                ".name .runner-name",
+                "[data-testid='runner-name']",
+                ".runner-name",
+                ".name"
+            };
+
+            foreach (var selector in selectors)
+            {
+                try
+                {
+                    var element = TryFindElement(row, By.CssSelector(selector));
+                    if (element == null)
+                    {
+                        continue;
+                    }
+
+                    var text = element.Text;
+                    if (!string.IsNullOrWhiteSpace(text))
+                    {
+                        return text.Trim();
+                    }
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            return null;
+        }
+
+        private static byte? TryExtractRunnerNumber(IWebElement row, IReadOnlyList<string> selectors)
+        {
+            if (row == null || selectors == null)
+            {
+                return null;
+            }
+
+            foreach (var selector in selectors)
+            {
+                if (string.IsNullOrWhiteSpace(selector))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    var element = TryFindElement(row, By.CssSelector(selector));
+                    if (element == null)
+                    {
+                        continue;
+                    }
+
+                    var text = element.Text;
+                    var parsed = TryParseByte(text);
+                    if (parsed.HasValue)
+                    {
+                        return parsed;
+                    }
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            return null;
+        }
+
+        private static string? TryExtractRunnerDetail(IWebElement row, IReadOnlyList<string> selectors)
+        {
+            if (row == null || selectors == null)
+            {
+                return null;
+            }
+
+            foreach (var selector in selectors)
+            {
+                if (string.IsNullOrWhiteSpace(selector))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    var element = TryFindElement(row, By.CssSelector(selector));
+                    if (element == null)
+                    {
+                        continue;
+                    }
+
+                    var text = element.Text;
+                    if (!string.IsNullOrWhiteSpace(text))
+                    {
+                        return text.Trim();
+                    }
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            return null;
+        }
         private static string? ExtractSelectionIdFromRow(IWebElement row)
         {
             if (row == null)
@@ -210,45 +402,6 @@ namespace HorseRacingML.Scraping
                         {
                             return value.Trim();
                         }
-                    }
-                }
-                catch (Exception)
-                {
-                }
-            }
-
-            return null;
-        }
-
-        private static string? TryExtractRunnerName(IWebElement row)
-        {
-            if (row == null)
-            {
-                return null;
-            }
-
-            var selectors = new[]
-            {
-                ".name .runner-name",
-                "[data-testid='runner-name']",
-                ".runner-name",
-                ".name"
-            };
-
-            foreach (var selector in selectors)
-            {
-                try
-                {
-                    var element = TryFindElement(row, By.CssSelector(selector));
-                    if (element == null)
-                    {
-                        continue;
-                    }
-
-                    var text = element.Text;
-                    if (!string.IsNullOrWhiteSpace(text))
-                    {
-                        return text.Trim();
                     }
                 }
                 catch (Exception)
