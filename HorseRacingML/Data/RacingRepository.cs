@@ -714,15 +714,43 @@ GROUP BY h.Name;";
                 if (normalizedMap.Count > 0)
                 {
                     const string normalizedSql = @"
-SELECT lookup.Normalized,COUNT(*) AS RaceCount
+SELECT lookup.Normalized,
+       COUNT(*) AS RaceCount
 FROM RunnerResult rr
-INNER JOIN Horse h ON h.HorseId=rr.HorseId
+INNER JOIN Horse h ON h.HorseId = rr.HorseId
 CROSS APPLY (
-    SELECT LOWER(
-        REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(h.Name, ' ', ''), '-', ''), CHAR(39), ''), NCHAR(8217), ''), '.', ''), ',', ''), '&', 'and'), '(', ''), ')', ''), '/', '')
-    ) AS Normalized
+    SELECT Normalized = LOWER(
+        REPLACE(
+            REPLACE(
+                REPLACE(
+                    REPLACE(
+                        REPLACE(
+                            REPLACE(
+                                REPLACE(
+                                    REPLACE(
+                                        REPLACE(
+                                            REPLACE(h.Name, ' ', ''),
+                                            '-', ''
+                                        ),
+                                        CHAR(39), ''
+                                    ),
+                                    NCHAR(8217), ''
+                                ),
+                                '.', ''
+                            ),
+                            ',', ''
+                        ),
+                        '&', 'and'
+                    ),
+                    '(', ''
+                ),
+                ')', ''
+            ),
+            '/', ''
+        )
+    )
 ) AS lookup
-INNER JOIN @Names n ON n.Name=lookup.Normalized -- @Names should be a table variable/TVP with a column [Name]
+WHERE lookup.Normalized IN @Names
 GROUP BY lookup.Normalized;
 ";
 
