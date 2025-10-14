@@ -664,261 +664,268 @@ namespace HorseRacingML.Scraping
 
                         var fallbackIdentifier = DescribeRunner(runnerFlow);
                         Console.WriteLine($"\tRunner {fallbackIdentifier} in market {marketId} missing selection id; using horse name for identification.");
-
-                        flows.Add(runnerFlow); // add to list
-                        runnerEntries.Add((row, runnerFlow)); // keep mapping
                     }
 
-                    var effectiveRaceDate = parsedRaceDate ?? DateTime.Today;
+                    flows.Add(runnerFlow); // add to list
+                    runnerEntries.Add((row, runnerFlow)); // keep mapping
+                }
 
-                    if (_computeAiProbabilities && aiCalculator != null)
+                if (flows.Count == 0)
+                {
+                    Console.WriteLine($"\tNo runners captured for market {marketId}; skipping AI processing.");
+                    continue;
+                }
+
+                var effectiveRaceDate = parsedRaceDate ?? DateTime.Today;
+
+                if (_computeAiProbabilities && aiCalculator != null)
+                {
+                    PopulateFeatureVectors(
+                        effectiveRaceDate,
+                        title,
+                        venueName,
+                        venueCountry,
+                        offTime,
+                        cleanedRaceDetails,
+                        raceTypeText,
+                        goingText,
+                        backBookPercentage,
+                        layBookPercentage,
+                        marketId,
+                        flows,
+                        rows.Count,
+                        preparedRows: null,
+                        persistedUpcoming: persistedUpcoming); // build features
+
+                    var flowsSnapshot = flows.ToList(); // snapshot for safe iteration
+                    var hasAnyBackPrice = flowsSnapshot.Any(f => f.BackPrice1.HasValue); // detect available prices
+                    var evaluationCandidates = new List<RunnerFlow>();
+
+                    foreach (var rf in flowsSnapshot) // process each runner
                     {
-                        PopulateFeatureVectors(
-                            effectiveRaceDate,
-                            title,
-                            venueName,
-                            venueCountry,
-                            offTime,
-                            cleanedRaceDetails,
-                            raceTypeText,
-                            goingText,
-                            backBookPercentage,
-                            layBookPercentage,
-                            marketId,
-                            flows,
-                            rows.Count,
-                            preparedRows: null,
-                            persistedUpcoming: persistedUpcoming); // build features
-
-                        var flowsSnapshot = flows.ToList(); // snapshot for safe iteration
-                        var hasAnyBackPrice = flowsSnapshot.Any(f => f.BackPrice1.HasValue); // detect available prices
-                        var evaluationCandidates = new List<RunnerFlow>();
-
-                        foreach (var rf in flowsSnapshot) // process each runner
+                        if (rf.FeatureValues != null && !rf.FeatureValues.ContainsKey("RunnerCount") && rows.Count > 0)
                         {
-                            if (rf.FeatureValues != null && !rf.FeatureValues.ContainsKey("RunnerCount") && rows.Count > 0)
-                            {
-                                rf.FeatureValues["RunnerCount"] = rows.Count; // ensure runner count
-                            }
-                            var rfIdentifier = DescribeRunner(rf);
-                            if (hasAnyBackPrice && !rf.BackPrice1.HasValue)
-                            {
-                                Console.WriteLine($"            No back price available for {rfIdentifier}; assuming this runner is a non-runner and excluding it from analysis.");
-                                flows.Remove(rf); // drop non-runner from active list
-                                continue; // skip downstream processing
-                            }
-                            if (rf.FeatureValues != null)
-                            {
-                                if (rf.BackPrice1.HasValue) { rf.FeatureValues["BackPrice1"] = rf.BackPrice1.Value; } // copy b1
-                                if (rf.BackPrice2.HasValue) { rf.FeatureValues["BackPrice2"] = rf.BackPrice2.Value; } // copy b2
-                                if (rf.BackPrice3.HasValue) { rf.FeatureValues["BackPrice3"] = rf.BackPrice3.Value; } // copy b3
-                                if (rf.LayPrice1.HasValue) { rf.FeatureValues["LayPrice1"] = rf.LayPrice1.Value; } // copy l1
-                                if (rf.LayPrice2.HasValue) { rf.FeatureValues["LayPrice2"] = rf.LayPrice2.Value; } // copy l2
-                                if (rf.LayPrice3.HasValue) { rf.FeatureValues["LayPrice3"] = rf.LayPrice3.Value; } // copy l3
-                            }
-                            rf.AiProbabilityClampedToMarket = false;
-                            rf.AiProbabilityClampTarget = null;
-                            rf.AiProbabilityMarketDerived = false;
-                            rf.AiProbabilityFallbackReason = null;
-                            evaluationCandidates.Add(rf);
+                            rf.FeatureValues["RunnerCount"] = rows.Count; // ensure runner count
                         }
-
-                        if (evaluationCandidates.Count > 0)
+                        var rfIdentifier = DescribeRunner(rf);
+                        if (hasAnyBackPrice && !rf.BackPrice1.HasValue)
                         {
-                            var parallelOptions = new ParallelOptions { MaxDegreeOfParallelism = 6 };
-                            Parallel.ForEach(evaluationCandidates, parallelOptions, rf =>
+                            Console.WriteLine($"            No back price available for {rfIdentifier}; assuming this runner is a non-runner and excluding it from analysis.");
+                            flows.Remove(rf); // drop non-runner from active list
+                            continue; // skip downstream processing
+                        }
+                        if (rf.FeatureValues != null)
+                        {
+                            if (rf.BackPrice1.HasValue) { rf.FeatureValues["BackPrice1"] = rf.BackPrice1.Value; } // copy b1
+                            if (rf.BackPrice2.HasValue) { rf.FeatureValues["BackPrice2"] = rf.BackPrice2.Value; } // copy b2
+                            if (rf.BackPrice3.HasValue) { rf.FeatureValues["BackPrice3"] = rf.BackPrice3.Value; } // copy b3
+                            if (rf.LayPrice1.HasValue) { rf.FeatureValues["LayPrice1"] = rf.LayPrice1.Value; } // copy l1
+                            if (rf.LayPrice2.HasValue) { rf.FeatureValues["LayPrice2"] = rf.LayPrice2.Value; } // copy l2
+                            if (rf.LayPrice3.HasValue) { rf.FeatureValues["LayPrice3"] = rf.LayPrice3.Value; } // copy l3
+                        }
+                        rf.AiProbabilityClampedToMarket = false;
+                        rf.AiProbabilityClampTarget = null;
+                        rf.AiProbabilityMarketDerived = false;
+                        rf.AiProbabilityFallbackReason = null;
+                        evaluationCandidates.Add(rf);
+                    }
+
+                    if (evaluationCandidates.Count > 0)
+                    {
+                        var parallelOptions = new ParallelOptions { MaxDegreeOfParallelism = 6 };
+                        Parallel.ForEach(evaluationCandidates, parallelOptions, rf =>
+                        {
+                            var rfIdentifier = DescribeRunner(rf);
+                            try
                             {
-                                var rfIdentifier = DescribeRunner(rf);
-                                try
+                                var probability = aiCalculator.CalculateOdds(rf); // compute AI odds
+                                if (double.IsFinite(probability) && probability > 0 && probability <= 1)
                                 {
-                                    var probability = aiCalculator.CalculateOdds(rf); // compute AI odds
-                                    if (double.IsFinite(probability) && probability > 0 && probability <= 1)
-                                    {
-                                        rf.AiOdds = probability;
-                                        rf.AiProbabilityMarketDerived = false;
-                                        rf.AiProbabilityFallbackReason = null;
-                                    }
-                                    else
-                                    {
-                                        rf.AiOdds = null;
-                                        rf.AiProbabilityMarketDerived = false;
-                                        rf.AiProbabilityFallbackReason = null;
-                                        var probabilityText = double.IsFinite(probability)
-                                            ? probability.ToString("0.####", CultureInfo.InvariantCulture)
-                                            : "non-finite";
-                                        Console.WriteLine($"            Discarding non-positive AI probability {probabilityText} for {rfIdentifier}; treating as missing.");
-                                    }
-                                }
-                                catch (Exception ex)
-                                {
-                                    rf.AiOdds = null; // set null on fail
+                                    rf.AiOdds = probability;
                                     rf.AiProbabilityMarketDerived = false;
                                     rf.AiProbabilityFallbackReason = null;
-                                    rf.AiProbabilityClampedToMarket = false;
-                                    rf.AiProbabilityClampTarget = null;
-                                    Console.Error.WriteLine($"  Failed to calculate AI odds for runner {rfIdentifier} in market {marketId}: {ex.Message}"); // log
                                 }
-
-                                if (rf.AiOdds.HasValue && double.IsFinite(rf.AiOdds.Value) && rf.AiOdds.Value > 0 && rf.AiOdds.Value < LowAiProbabilityClampThreshold)
+                                else
                                 {
-                                    if (!TryClampLowAiProbabilityToMarket(rf))
-                                    {
-                                        Console.WriteLine($"            Unable to clamp low AI probability for {rfIdentifier}: market price unavailable.");
-                                    }
+                                    rf.AiOdds = null;
+                                    rf.AiProbabilityMarketDerived = false;
+                                    rf.AiProbabilityFallbackReason = null;
+                                    var probabilityText = double.IsFinite(probability)
+                                        ? probability.ToString("0.####", CultureInfo.InvariantCulture)
+                                        : "non-finite";
+                                    Console.WriteLine($"            Discarding non-positive AI probability {probabilityText} for {rfIdentifier}; treating as missing.");
                                 }
-                            });
-                        }
-
-                        foreach (var rf in flowsSnapshot)
-                        {
-                            if (!flows.Contains(rf))
+                            }
+                            catch (Exception ex)
                             {
-                                continue;
+                                rf.AiOdds = null; // set null on fail
+                                rf.AiProbabilityMarketDerived = false;
+                                rf.AiProbabilityFallbackReason = null;
+                                rf.AiProbabilityClampedToMarket = false;
+                                rf.AiProbabilityClampTarget = null;
+                                Console.Error.WriteLine($"  Failed to calculate AI odds for runner {rfIdentifier} in market {marketId}: {ex.Message}"); // log
                             }
 
-                            var rfIdentifier = DescribeRunner(rf);
-                            string aiText;
-                            if (rf.AiOdds.HasValue)
+                            if (rf.AiOdds.HasValue && double.IsFinite(rf.AiOdds.Value) && rf.AiOdds.Value > 0 && rf.AiOdds.Value < LowAiProbabilityClampThreshold)
                             {
-                                var rawProbability = rf.AiOdds.Value;
-                                aiText = rawProbability.ToString("0.####", CultureInfo.InvariantCulture);
-                                if (rawProbability > 0 && rawProbability < 1e-3)
+                                if (!TryClampLowAiProbabilityToMarket(rf))
                                 {
-                                    var scientific = rawProbability.ToString("0.###E+0", CultureInfo.InvariantCulture);
-                                    aiText = $"{aiText} (~{scientific})";
+                                    Console.WriteLine($"            Unable to clamp low AI probability for {rfIdentifier}: market price unavailable.");
                                 }
                             }
-                            else
-                            {
-                                aiText = "null";
-                            }
-                            var backText = rf.BackPrice1.HasValue ? rf.BackPrice1.Value.ToString("0.##", CultureInfo.InvariantCulture) : "null"; // back text
-                            Console.WriteLine($"\tRunner snapshot {rfIdentifier}: back1={backText}, aiProbabilityRaw={aiText}"); // per-runner log
-
-                            if (!rf.AiOdds.HasValue) { Console.WriteLine($"\t\tAI probability missing for {rfIdentifier}; downstream filters will treat this runner as zero edge."); } // warn missing ai
-                            if (!rf.BackPrice1.HasValue) { Console.WriteLine($"\t\tNo back price available for {rfIdentifier}; cannot compare against market probability."); } // warn missing price
-                        }
-
-                        var validAiBefore = flows.Where(f => f.AiOdds.HasValue && double.IsFinite(f.AiOdds.Value) && f.AiOdds.Value >= 0).Select(f => f.AiOdds!.Value).ToList(); // gather valid ai
-                        var missingAiCount = flows.Count - validAiBefore.Count; // count missing
-
-                        if (validAiBefore.Count == 0)
-                        {
-                            Console.WriteLine($"\tAll {flows.Count} runner(s) in market {marketId} are missing AI probabilities before normalization."); // summary
-                        }
-                        else
-                        {
-                            var sumProb = validAiBefore.Sum(); // sum
-                            var minProb = validAiBefore.Min(); // min
-                            var maxProb = validAiBefore.Max(); // max
-                            Console.WriteLine($"\tAI probability summary before normalization for market {marketId}: valid={validAiBefore.Count}, missing={missingAiCount}, sum={sumProb.ToString("0.####", CultureInfo.InvariantCulture)}, min={minProb.ToString("0.####", CultureInfo.InvariantCulture)}, max={maxProb.ToString("0.####", CultureInfo.InvariantCulture)}"); // log
-                        }
-
-                        NormalizeAiOdds(flows, _useMarketFallbackForAiDegeneracy); // normalize
-                        ApplyMarketFallbackForUnmatchedRunners(flows); // ensure unmatched runners use market odds
-                    }
-                    else
-                    {
-                        var flowsSnapshot = flows.ToList();
-                        var hasAnyBackPrice = flowsSnapshot.Any(f => f.BackPrice1.HasValue);
-
-                        foreach (var rf in flowsSnapshot)
-                        {
-                            var rfIdentifier = DescribeRunner(rf);
-
-                            if (hasAnyBackPrice && !rf.BackPrice1.HasValue)
-                            {
-                                Console.WriteLine($"            No back price available for {rfIdentifier}; assuming this runner is a non-runner and excluding it from analysis.");
-                                flows.Remove(rf);
-                            }
-                        }
-                    }
-                    if (captureReport)
-                    {
-                        var report = BuildRaceReport(
-                            marketId,
-                            title,
-                            venueName,
-                            venueCountry,
-                            effectiveRaceDate,
-                            offTime,
-                            cleanedRaceDetails,
-                            raceTypeText,
-                            goingText,
-                            backBookPercentage,
-                            layBookPercentage,
-                            raceUrl,
-                            flows
-                        ); // build report
-
-                        result.Races.Add(report); // collect report
+                        });
                     }
 
-                    var raceRecommendations = CreateRecommendations(flows, marketId, title, venueName, effectiveRaceDate, executeBets)
-                        .OrderByDescending(r => r.Differential)
-                        .ThenByDescending(r => r.KellyFraction)
-                        .ToList(); // rank recs
-
-                    Console.WriteLine($"\t{raceRecommendations.Count} runner(s) passed value filters for market {marketId}."); // log count
-
-                    if (!executeBets)
+                    foreach (var rf in flowsSnapshot)
                     {
-                        if (raceRecommendations.Count > 0) { Console.WriteLine("\tReport mode: positive expected value runner(s) identified; skipping bet execution."); } else { Console.WriteLine($"\tNo positive value opportunity identified for market {marketId}"); } // report only
-                    }
-                    else
-                    {
-                        if (raceRecommendations.Count > 1) { Console.WriteLine("\t\tMultiple runners qualified in the same market; sequential Kelly stakes will size each independently in tab order."); } // info
-
-                        if (raceRecommendations.Count > 0)
+                        if (!flows.Contains(rf))
                         {
-                            if (!TryRefreshRunnerEntriesForBetting(driver, marketId, raceUrl, flows, out var refreshedEntries))
-                            {
-                                Console.Error.WriteLine($"\tSkipping bet execution for market {marketId} because the refreshed runner list could not be resolved.");
-                                continue;
-                            }
+                            continue;
+                        }
 
-                            runnerEntries = refreshedEntries;
-                            var bankrollBeforeClicks = _availableBankroll; // snapshot bankroll
-                            var clickedRecommendations = ExecuteBackAllClicks(driver, runnerEntries, raceRecommendations); // click bets
-
-                            if (clickedRecommendations.Count > 0)
+                        var rfIdentifier = DescribeRunner(rf);
+                        string aiText;
+                        if (rf.AiOdds.HasValue)
+                        {
+                            var rawProbability = rf.AiOdds.Value;
+                            aiText = rawProbability.ToString("0.####", CultureInfo.InvariantCulture);
+                            if (rawProbability > 0 && rawProbability < 1e-3)
                             {
-                                var top = clickedRecommendations.First(); // first rec
-                                Console.WriteLine($"\tKelly stake {top.Stake.ToString("0.##", CultureInfo.InvariantCulture)} on {top.HorseName ?? "unknown"} (diff {top.Differential.ToString("0.####", CultureInfo.InvariantCulture)})"); // log stake
-                                recommendations.AddRange(clickedRecommendations); // keep all
-                                PopulateBetSlipStakes(driver, clickedRecommendations, bankrollBeforeClicks); // fill stakes
-                            }
-                            else
-                            {
-                                Console.WriteLine("\tNo qualifying Back-All clicks were executed for this market"); // none clicked
+                                var scientific = rawProbability.ToString("0.###E+0", CultureInfo.InvariantCulture);
+                                aiText = $"{aiText} (~{scientific})";
                             }
                         }
                         else
                         {
-                            Console.WriteLine($"\tNo positive value opportunity identified for market {marketId}"); // no value
+                            aiText = "null";
                         }
+                        var backText = rf.BackPrice1.HasValue ? rf.BackPrice1.Value.ToString("0.##", CultureInfo.InvariantCulture) : "null"; // back text
+                        Console.WriteLine($"\tRunner snapshot {rfIdentifier}: back1={backText}, aiProbabilityRaw={aiText}"); // per-runner log
+
+                        if (!rf.AiOdds.HasValue) { Console.WriteLine($"\t\tAI probability missing for {rfIdentifier}; downstream filters will treat this runner as zero edge."); } // warn missing ai
+                        if (!rf.BackPrice1.HasValue) { Console.WriteLine($"\t\tNo back price available for {rfIdentifier}; cannot compare against market probability."); } // warn missing price
                     }
 
-                    try
-                    {
-                        lock (_repoLock)
-                        {
-                            _repo.InsertRunnerFlows(flows);
-                        }
+                    var validAiBefore = flows.Where(f => f.AiOdds.HasValue && double.IsFinite(f.AiOdds.Value) && f.AiOdds.Value >= 0).Select(f => f.AiOdds!.Value).ToList(); // gather valid ai
+                    var missingAiCount = flows.Count - validAiBefore.Count; // count missing
 
-                        foreach (var inner in flows)
+                    if (validAiBefore.Count == 0)
+                    {
+                        Console.WriteLine($"\tAll {flows.Count} runner(s) in market {marketId} are missing AI probabilities before normalization."); // summary
+                    }
+                    else
+                    {
+                        var sumProb = validAiBefore.Sum(); // sum
+                        var minProb = validAiBefore.Min(); // min
+                        var maxProb = validAiBefore.Max(); // max
+                        Console.WriteLine($"\tAI probability summary before normalization for market {marketId}: valid={validAiBefore.Count}, missing={missingAiCount}, sum={sumProb.ToString("0.####", CultureInfo.InvariantCulture)}, min={minProb.ToString("0.####", CultureInfo.InvariantCulture)}, max={maxProb.ToString("0.####", CultureInfo.InvariantCulture)}"); // log
+                    }
+
+                    NormalizeAiOdds(flows, _useMarketFallbackForAiDegeneracy); // normalize
+                    ApplyMarketFallbackForUnmatchedRunners(flows); // ensure unmatched runners use market odds
+                }
+                else
+                {
+                    var flowsSnapshot = flows.ToList();
+                    var hasAnyBackPrice = flowsSnapshot.Any(f => f.BackPrice1.HasValue);
+
+                    foreach (var rf in flowsSnapshot)
+                    {
+                        var rfIdentifier = DescribeRunner(rf);
+
+                        if (hasAnyBackPrice && !rf.BackPrice1.HasValue)
                         {
-                            var innerIdentifier = DescribeRunner(inner);
-                            Console.WriteLine($"\tInserted runner {innerIdentifier} for market {marketId}"); // log ok
+                            Console.WriteLine($"            No back price available for {rfIdentifier}; assuming this runner is a non-runner and excluding it from analysis.");
+                            flows.Remove(rf);
                         }
                     }
-                    catch (Exception ex)
+                }
+
+                if (captureReport)
+                {
+                    var report = BuildRaceReport(
+                        marketId,
+                        title,
+                        venueName,
+                        venueCountry,
+                        effectiveRaceDate,
+                        offTime,
+                        cleanedRaceDetails,
+                        raceTypeText,
+                        goingText,
+                        backBookPercentage,
+                        layBookPercentage,
+                        raceUrl,
+                        flows
+                    ); // build report
+
+                    result.Races.Add(report); // collect report
+                }
+
+                var raceRecommendations = CreateRecommendations(flows, marketId, title, venueName, effectiveRaceDate, executeBets)
+                    .OrderByDescending(r => r.Differential)
+                    .ThenByDescending(r => r.KellyFraction)
+                    .ToList(); // rank recs
+
+                Console.WriteLine($"\t{raceRecommendations.Count} runner(s) passed value filters for market {marketId}."); // log count
+
+                if (!executeBets)
+                {
+                    if (raceRecommendations.Count > 0) { Console.WriteLine("\tReport mode: positive expected value runner(s) identified; skipping bet execution."); } else { Console.WriteLine($"\tNo positive value opportunity identified for market {marketId}"); } // report only
+                }
+                else
+                {
+                    if (raceRecommendations.Count > 1) { Console.WriteLine("\t\tMultiple runners qualified in the same market; sequential Kelly stakes will size each independently in tab order."); } // info
+
+                    if (raceRecommendations.Count > 0)
                     {
-                        foreach (var inner in flows)
+                        if (!TryRefreshRunnerEntriesForBetting(driver, marketId, raceUrl, flows, out var refreshedEntries))
                         {
-                            var innerIdentifier = DescribeRunner(inner);
-                            Console.Error.WriteLine($"\tInsertRunnerFlow failed for market {marketId}, runner {innerIdentifier}: {ex.Message}"); // log error
+                            Console.Error.WriteLine($"\tSkipping bet execution for market {marketId} because the refreshed runner list could not be resolved.");
+                            continue;
                         }
+
+                        runnerEntries = refreshedEntries;
+                        var bankrollBeforeClicks = _availableBankroll; // snapshot bankroll
+                        var clickedRecommendations = ExecuteBackAllClicks(driver, runnerEntries, raceRecommendations); // click bets
+
+                        if (clickedRecommendations.Count > 0)
+                        {
+                            var top = clickedRecommendations.First(); // first rec
+                            Console.WriteLine($"\tKelly stake {top.Stake.ToString("0.##", CultureInfo.InvariantCulture)} on {top.HorseName ?? "unknown"} (diff {top.Differential.ToString("0.####", CultureInfo.InvariantCulture)})"); // log stake
+                            recommendations.AddRange(clickedRecommendations); // keep all
+                            PopulateBetSlipStakes(driver, clickedRecommendations, bankrollBeforeClicks); // fill stakes
+                        }
+                        else
+                        {
+                            Console.WriteLine("\tNo qualifying Back-All clicks were executed for this market"); // none clicked
+                        }
+                    }
+                    else
+                    {
+                        Console.WriteLine($"\tNo positive value opportunity identified for market {marketId}"); // no value
+                    }
+                }
+
+                try
+                {
+                    lock (_repoLock)
+                    {
+                        _repo.InsertRunnerFlows(flows);
+                    }
+
+                    foreach (var inner in flows)
+                    {
+                        var innerIdentifier = DescribeRunner(inner);
+                        Console.WriteLine($"\tInserted runner {innerIdentifier} for market {marketId}"); // log ok
+                    }
+                }
+                catch (Exception ex)
+                {
+                    foreach (var inner in flows)
+                    {
+                        var innerIdentifier = DescribeRunner(inner);
+                        Console.Error.WriteLine($"\tInsertRunnerFlow failed for market {marketId}, runner {innerIdentifier}: {ex.Message}"); // log error
                     }
                 }
 
