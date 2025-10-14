@@ -1886,44 +1886,15 @@ namespace HorseRacingML.ML
 
                     if (normalizedMap.Count > 0)
                     {
-                        const string normalizedTrainerSql = @"SELECT lookup.Normalized,
-       MIN(t.TrainerId) AS TrainerId
-FROM Trainer t
-CROSS APPLY (
-    SELECT Normalized = LOWER(
-        REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(t.Name, ' ', ''), '-', ''), CHAR(39), ''), NCHAR(8217), ''), '.', ''), ',', ''), '&', 'and'), '(', ''), ')', ''), '/', '')
-    )
-) AS lookup
-WHERE lookup.Normalized IN @Names
-GROUP BY lookup.Normalized";
-
-                        var normalizedKeys = normalizedMap.Keys.ToArray();
-                        try
-                        {
-                            foreach (var row in conn.Query<(string Normalized, int TrainerId)>(normalizedTrainerSql, new { Names = normalizedKeys }))
-                            {
-                                if (!normalizedMap.TryGetValue(row.Normalized, out var originals) || originals == null)
-                                {
-                                    continue;
-                                }
-
-                                foreach (var original in originals)
-                                {
-                                    if (!trainerIdLookup.ContainsKey(original))
-                                    {
-                                        trainerIdLookup[original] = row.TrainerId;
-                                    }
-                                }
-                            }
-                        }
-                        catch (SqlException sqlEx) when (IsMissingLowerArgument(sqlEx))
-                        {
-                            throw CreateMissingLowerArgumentException("trainer", normalizedMap, sqlEx);
-                        }
+                        PopulateNormalizedLookup(
+                            conn,
+                            "Trainer",
+                            "TrainerId",
+                            normalizedMap,
+                            trainerIdLookup);
                     }
                 }
             }
-
 
             foreach (var pair in horseIdsByName)
             {
@@ -2150,40 +2121,12 @@ GROUP BY lookup.Normalized";
 
                     if (normalizedMap.Count > 0)
                     {
-                        const string normalizedHorseSql = @"SELECT lookup.Normalized,
-       MIN(h.HorseId) AS HorseId
-FROM Horse h
-CROSS APPLY (
-    SELECT Normalized = LOWER(
-        REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(h.Name, ' ', ''), '-', ''), '''', ''), '’', ''), '.', ''), ',', ''), '&', 'and'), '(', ''), ')', ''), '/', '')
-    )
-) AS lookup
-WHERE lookup.Normalized IN @Names
-GROUP BY lookup.Normalized";
-
-                        var normalizedKeys = normalizedMap.Keys.ToArray();
-                        try
-                        {
-                            foreach (var row in conn.Query<(string Normalized, int HorseId)>(normalizedHorseSql, new { Names = normalizedKeys }))
-                            {
-                                if (!normalizedMap.TryGetValue(row.Normalized, out var originals))
-                                {
-                                    continue;
-                                }
-
-                                foreach (var original in originals)
-                                {
-                                    if (!horseIdLookup.ContainsKey(original))
-                                    {
-                                        horseIdLookup[original] = row.HorseId;
-                                    }
-                                }
-                            }
-                        }
-                        catch (SqlException sqlEx) when (IsMissingLowerArgument(sqlEx))
-                        {
-                            throw CreateMissingLowerArgumentException("horse", normalizedMap, sqlEx);
-                        }
+                        PopulateNormalizedLookup(
+                            conn,
+                            "Horse",
+                            "HorseId",
+                            normalizedMap,
+                            horseIdLookup);
                     }
                 }
             }
@@ -2256,40 +2199,12 @@ GROUP BY lookup.Normalized";
 
                     if (normalizedMap.Count > 0)
                     {
-                        const string normalizedJockeySql = @"SELECT lookup.Normalized,
-       MIN(j.JockeyId) AS JockeyId
-FROM Jockey j
-CROSS APPLY (
-    SELECT Normalized = LOWER(
-        REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(j.Name, ' ', ''), '-', ''), '''', ''), '’', ''), '.', ''), ',', ''), '&', 'and'), '(', ''), ')', ''), '/', '')
-    )
-) AS lookup
-WHERE lookup.Normalized IN @Names
-GROUP BY lookup.Normalized";
-
-                        var normalizedKeys = normalizedMap.Keys.ToArray();
-                        try
-                        {
-                            foreach (var row in conn.Query<(string Normalized, int JockeyId)>(normalizedJockeySql, new { Names = normalizedKeys }))
-                            {
-                                if (!normalizedMap.TryGetValue(row.Normalized, out var originals))
-                                {
-                                    continue;
-                                }
-
-                                foreach (var original in originals)
-                                {
-                                    if (!jockeyIdLookup.ContainsKey(original))
-                                    {
-                                        jockeyIdLookup[original] = row.JockeyId;
-                                    }
-                                }
-                            }
-                        }
-                        catch (SqlException sqlEx) when (IsMissingLowerArgument(sqlEx))
-                        {
-                            throw CreateMissingLowerArgumentException("jockey", normalizedMap, sqlEx);
-                        }
+                        PopulateNormalizedLookup(
+                            conn,
+                            "Jockey",
+                            "JockeyId",
+                            normalizedMap,
+                            jockeyIdLookup);
                     }
                 }
             }
@@ -2362,42 +2277,57 @@ GROUP BY lookup.Normalized";
 
             return new RunnerLookupData(horseIdLookup, jockeyIdLookup, runnerSnapshots);
         }
-        private static bool IsMissingLowerArgument(SqlException sqlException)
-        {
-            var message = sqlException.Message;
-            return !string.IsNullOrEmpty(message) &&
-                   message.IndexOf("lower function requires 1 argument", StringComparison.OrdinalIgnoreCase) >= 0;
-        }
-
-        private static InvalidOperationException CreateMissingLowerArgumentException(
-            string entityType,
+        private static void PopulateNormalizedLookup(
+            SqlConnection conn,
+            string tableName,
+            string idColumn,
             IReadOnlyDictionary<string, HashSet<string>> normalizedMap,
-            SqlException innerException)
+            IDictionary<string, int> lookup)
         {
-            var sanitizedKeys = normalizedMap.Keys
-                .Where(key => !string.IsNullOrWhiteSpace(key))
-                .Take(5)
-                .ToArray();
+            if (normalizedMap == null || normalizedMap.Count == 0)
+            {
+                return;
+            }
 
-            var originalNames = normalizedMap.Values
-                .Where(set => set != null)
-                .SelectMany(set => set)
-                .Where(name => !string.IsNullOrWhiteSpace(name))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .Take(5)
-                .ToArray();
+            var pending = new HashSet<string>(normalizedMap.Keys, StringComparer.OrdinalIgnoreCase);
+            if (pending.Count == 0)
+            {
+                return;
+            }
 
-            var sanitizedList = sanitizedKeys.Length > 0 ? string.Join(", ", sanitizedKeys) : "<none>";
-            var originalsList = originalNames.Length > 0 ? string.Join(", ", originalNames) : "<none>";
+            var sql = $"SELECT {idColumn} AS Id, Name FROM {tableName} WHERE Name IS NOT NULL";
+            foreach (var (Id, Name) in conn.Query<(int Id, string Name)>(sql))
+            {
+                if (string.IsNullOrWhiteSpace(Name))
+                {
+                    continue;
+                }
 
-            var detail =
-                $"The fallback lookup for {entityType} names normalizes values with SQL Server's LOWER(REPLACE(...)) expression." +
-                " The database reported that LOWER was invoked without an argument." +
-                " The missing argument is the sanitized name expression produced from the runner metadata." +
-                $" Example sanitized keys: {sanitizedList}. Example original names: {originalsList}." +
-                " Ensure the racing database is running on SQL Server (or a compatible dialect) or adjust the normalization query.";
+                var normalized = RacingRepository.NormalizeHistoricalNameKey(Name);
+                if (string.IsNullOrEmpty(normalized) || !pending.Contains(normalized))
+                {
+                    continue;
+                }
 
-            return new InvalidOperationException(detail, innerException);
+                if (!normalizedMap.TryGetValue(normalized, out var originals) || originals == null)
+                {
+                    continue;
+                }
+
+                foreach (var original in originals)
+                {
+                    if (!lookup.ContainsKey(original))
+                    {
+                        lookup[original] = Id;
+                    }
+                }
+
+                pending.Remove(normalized);
+                if (pending.Count == 0)
+                {
+                    break;
+                }
+            }
         }
         private static Dictionary<string, HashSet<string>> BuildNameCandidateMap(IReadOnlyCollection<string> names)
         {
