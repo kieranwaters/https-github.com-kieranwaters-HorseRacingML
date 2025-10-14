@@ -67,9 +67,9 @@ namespace HorseRacingML.Scraping
                         Console.WriteLine($"\t[DayReport] Race {raceName} is upcoming; recorded upcoming race id {upcomingId}. Using saved AI probabilities for reporting.");
                     }
                 }
-                var retainedProbabilityCount = 0;
+                var totalRunners = race.Runners.Count;
+                var validRunners = new List<RunnerDayReport>();
                 var suppressedProbabilityCount = 0;
-                var backfilledMarketProbabilityCount = 0;
 
                 foreach (var runner in race.Runners)
                 {
@@ -81,93 +81,66 @@ namespace HorseRacingML.Scraping
                     if (!runner.AiProbability.HasValue || !double.IsFinite(runner.AiProbability.Value) || runner.AiProbability.Value <= 0)
                     {
                         suppressedProbabilityCount++;
-                        runner.AiProbability = null;
-                        runner.AiDecimalOdds = null;
-                        runner.Differential = null;
-                        runner.KellyFraction = null;
-                        runner.SuggestedStake = null;
                         continue;
                     }
-                    retainedProbabilityCount++;
 
-                    if (!runner.AiDecimalOdds.HasValue)
+                    validRunners.Add(runner);
+                }
+
+                var retainedProbabilityCount = validRunners.Count;
+                var backfilledMarketProbabilityCount = validRunners.Count(r =>
+                    r.MarketProbability.HasValue &&
+                    r.MarketDecimalOdds.HasValue &&
+                    r.MarketDecimalOdds.Value > 1m);
+
+                Console.WriteLine($"\t[DayReport] {retainedProbabilityCount}/{totalRunners} runner(s) retain valid AI probabilities.");
+                if (suppressedProbabilityCount > 0)
+                {
+                    Console.WriteLine($"\t[DayReport] {retainedProbabilityCount}/{race.Runners.Count} runner(s) retain valid AI probabilities.");
+                    if (suppressedProbabilityCount > 0)
                     {
-                        runner.AiDecimalOdds = BettingMath.CalculateAiDecimalOdds(runner.AiProbability.Value);
+                        Console.WriteLine($"\t[DayReport] Filtered {suppressedProbabilityCount} runner(s) due to missing or invalid AI probabilities.");
                     }
 
-                    if (!runner.MarketProbability.HasValue && runner.MarketDecimalOdds.HasValue && runner.MarketDecimalOdds.Value > 0m)
+                    if (backfilledMarketProbabilityCount > 0)
                     {
-                        runner.MarketProbability = 1.0 / (double)runner.MarketDecimalOdds.Value;
-                        backfilledMarketProbabilityCount++;
+                        Console.WriteLine($"\t[DayReport] Backfilled market probabilities for {backfilledMarketProbabilityCount} runner(s) from decimal odds.");
+                    }
+                    var winner = validRunners
+                         .OrderByDescending(r => r.AiProbability!.Value)
+                          .FirstOrDefault();
+
+                    if (winner == null)
+                    {
+                        Console.WriteLine("\t[DayReport] No runners produced AI probabilities; skipping race output.");
+                        continue;
                     }
 
-                    runner.Differential = runner.MarketProbability.HasValue
-                        ? runner.AiProbability.Value - runner.MarketProbability.Value
-                        : (double?)null;
+                    var identifier = !string.IsNullOrWhiteSpace(winner.HorseName)
+                        ? winner.HorseName
+                        : "unknown";
 
-                    if (runner.MarketDecimalOdds.HasValue && runner.MarketDecimalOdds.Value > 1m)
+                    var aiProb = winner.AiProbability!.Value;
+                    var aiOddsStr = winner.AiDecimalOdds?.ToString("F3") ?? "n/a";
+                    Console.WriteLine($"\t[DayReport] Top AI runner {identifier} => {aiProb:P4} (decimal odds {aiOddsStr}).");
+
+                    if (winner.MarketProbability.HasValue && winner.Differential.HasValue)
                     {
-                        var kelly = BettingMath.CalculateKellyFraction(runner.AiProbability.Value, (double)runner.MarketDecimalOdds.Value, _maxKellyFraction);
-                        runner.KellyFraction = kelly;
-                        runner.SuggestedStake = (kelly > 0m && _bankroll > 0m)
-                            ? CalculateStakeWithLimits(_bankroll, kelly)
-                            : (decimal?)null;
-                        if (runner.SuggestedStake <= 0m)
-                        {
-                            runner.SuggestedStake = null;
-                        }
+                        Console.WriteLine($"\t[DayReport] Market probability {winner.MarketProbability.Value:P4}; differential {winner.Differential.Value:P4}.");
                     }
                     else
                     {
-                        runner.KellyFraction = null;
-                        runner.SuggestedStake = null;
+                        Console.WriteLine("\t[DayReport] Market probability unavailable; differential not computed.");
                     }
-                }
-                Console.WriteLine($"\t[DayReport] {retainedProbabilityCount}/{race.Runners.Count} runner(s) retain valid AI probabilities.");
-                if (suppressedProbabilityCount > 0)
-                {
-                    Console.WriteLine($"\t[DayReport] Filtered {suppressedProbabilityCount} runner(s) due to missing or invalid AI probabilities.");
-                }
 
-                if (backfilledMarketProbabilityCount > 0)
-                {
-                    Console.WriteLine($"\t[DayReport] Backfilled market probabilities for {backfilledMarketProbabilityCount} runner(s) from decimal odds.");
-                }
-                var winner = race.Runners
-                    .Where(r => r?.AiProbability.HasValue == true)
-                    .OrderByDescending(r => r!.AiProbability!.Value)
-                    .FirstOrDefault();
-
-                if (winner == null)
-                {
-                    Console.WriteLine("\t[DayReport] No runners produced AI probabilities; skipping race output.");
-                    continue;
-                }
-
-                var identifier = !string.IsNullOrWhiteSpace(winner.HorseName)
-                    ? winner.HorseName
-                    : "unknown";
-
-                var aiProb = winner.AiProbability!.Value;
-                var aiOddsStr = winner.AiDecimalOdds?.ToString("F3") ?? "n/a";
-                Console.WriteLine($"\t[DayReport] Top AI runner {identifier} => {aiProb:P4} (decimal odds {aiOddsStr}).");
-
-                if (winner.MarketProbability.HasValue && winner.Differential.HasValue)
-                {
-                    Console.WriteLine($"\t[DayReport] Market probability {winner.MarketProbability.Value:P4}; differential {winner.Differential.Value:P4}.");
-                }
-                else
-                {
-                    Console.WriteLine("\t[DayReport] Market probability unavailable; differential not computed.");
-                }
-
-                if (winner.KellyFraction.HasValue)
-                {
-                    Console.WriteLine($"\t[DayReport] Kelly fraction {winner.KellyFraction.Value:P4}; suggested stake {(winner.SuggestedStake?.ToString("F2") ?? "n/a")} from bankroll {_bankroll:F2}.");
-                }
-                else
-                {
-                    Console.WriteLine("\t[DayReport] Kelly fraction unavailable; stake not suggested.");
+                    if (winner.KellyFraction.HasValue)
+                    {
+                        Console.WriteLine($"\t[DayReport] Kelly fraction {winner.KellyFraction.Value:P4}; suggested stake {(winner.SuggestedStake?.ToString("F2") ?? "n/a")} from bankroll {_bankroll:F2}.");
+                    }
+                    else
+                    {
+                        Console.WriteLine("\t[DayReport] Kelly fraction unavailable; stake not suggested.");
+                    }
                 }
             }
         }

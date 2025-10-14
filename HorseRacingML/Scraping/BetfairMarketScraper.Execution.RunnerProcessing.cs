@@ -575,63 +575,7 @@ namespace HorseRacingML.Scraping
                 FeaturePopulation = (flow.FeaturePopulationSummary ?? FeaturePopulationSummary.Empty).WithSortedKeys()
             };
 
-            if (flow.BackPrice1.HasValue && flow.BackPrice1.Value > 0m)
-            {
-                runner.MarketDecimalOdds = flow.BackPrice1.Value;
-                if (flow.BackPrice1.Value > 1m)
-                {
-                    runner.MarketProbability = 1.0 / (double)flow.BackPrice1.Value;
-                }
-            }
-            if (flow.LayPrice1.HasValue && flow.LayPrice1.Value > 0m)
-            {
-                runner.LayDecimalOdds = flow.LayPrice1.Value;
-            }
-            if (flow.AiOdds.HasValue && double.IsFinite(flow.AiOdds.Value) && flow.AiOdds.Value > 0)
-            {
-                runner.AiProbability = flow.AiOdds.Value;
-                runner.AiDecimalOdds = BettingMath.CalculateAiDecimalOdds(flow.AiOdds.Value);
-            }
-            runner.AiProbabilityMarketDerived = flow.AiProbabilityMarketDerived;
-            if (runner.AiProbability.HasValue && runner.MarketProbability.HasValue)
-            {
-                runner.Differential = runner.AiProbability.Value - runner.MarketProbability.Value;
-            }
-
-            if (runner.AiProbability.HasValue && runner.MarketDecimalOdds.HasValue && runner.MarketDecimalOdds.Value > 1m)
-            {
-                var kelly = BettingMath.CalculateKellyFraction(
-                    runner.AiProbability.Value,
-                    (double)runner.MarketDecimalOdds.Value,
-                    _maxKellyFraction);
-                runner.KellyFraction = kelly;
-                if (kelly > 0m && _bankroll > 0m)
-                {
-                    var stake = CalculateStakeWithLimits(_bankroll, kelly);
-                    runner.SuggestedStake = stake > 0m ? stake : null;
-                }
-            }
-            if (runner.AiProbability.HasValue && runner.LayDecimalOdds.HasValue && runner.LayDecimalOdds.Value > 1m)
-            {
-                var layKelly = BettingMath.CalculateLayKellyFraction(
-                    runner.AiProbability.Value,
-                    (double)runner.LayDecimalOdds.Value,
-                    _maxKellyFraction);
-
-                if (layKelly > 0m)
-                {
-                    runner.LayKellyFraction = layKelly;
-
-                    if (_bankroll > 0m)
-                    {
-                        var layStake = BettingMath.CalculateLayStake(_bankroll, layKelly, runner.LayDecimalOdds.Value);
-                        if (layStake > 0m)
-                        {
-                            runner.LaySuggestedStake = layStake;
-                        }
-                    }
-                }
-            }
+            PopulateRunnerPricing(flow, runner);
             void EnsureCareerStartsFeature(int count)
             {
                 if (runner.FeatureValues == null)
@@ -690,6 +634,100 @@ namespace HorseRacingML.Scraping
                 EnsureCareerStartsFeature(historyCount.Value);
             }
             return runner;
+        }
+        private void PopulateRunnerPricing(RunnerFlow flow, RunnerDayReport runner)
+        {
+            if (flow == null || runner == null)
+            {
+                return;
+            }
+
+            runner.AiProbabilityMarketDerived = flow.AiProbabilityMarketDerived;
+            runner.AiProbabilityClampedToMarket = flow.AiProbabilityClampedToMarket;
+            runner.AiProbabilityFallbackReason = flow.AiProbabilityFallbackReason;
+
+            runner.MarketDecimalOdds = null;
+            runner.MarketProbability = null;
+            if (flow.BackPrice1.HasValue && flow.BackPrice1.Value > 0m)
+            {
+                runner.MarketDecimalOdds = flow.BackPrice1.Value;
+                if (flow.BackPrice1.Value > 1m)
+                {
+                    runner.MarketProbability = 1.0 / (double)flow.BackPrice1.Value;
+                }
+            }
+
+            runner.LayDecimalOdds = null;
+            if (flow.LayPrice1.HasValue && flow.LayPrice1.Value > 0m)
+            {
+                runner.LayDecimalOdds = flow.LayPrice1.Value;
+            }
+
+            runner.AiProbability = null;
+            runner.AiDecimalOdds = null;
+            if (flow.AiOdds.HasValue && double.IsFinite(flow.AiOdds.Value))
+            {
+                var candidate = flow.AiOdds.Value;
+                if (candidate > 0 && candidate <= 1)
+                {
+                    runner.AiProbability = candidate;
+                    var decimalOdds = BettingMath.CalculateAiDecimalOdds(candidate);
+                    runner.AiDecimalOdds = decimalOdds > 0m ? decimalOdds : null;
+                }
+            }
+
+            runner.Differential = null;
+            if (runner.AiProbability.HasValue && runner.MarketProbability.HasValue)
+            {
+                runner.Differential = runner.AiProbability.Value - runner.MarketProbability.Value;
+            }
+
+            runner.KellyFraction = null;
+            runner.SuggestedStake = null;
+            if (runner.AiProbability.HasValue && runner.MarketDecimalOdds.HasValue && runner.MarketDecimalOdds.Value > 1m)
+            {
+                var kelly = BettingMath.CalculateKellyFraction(
+                    runner.AiProbability.Value,
+                    (double)runner.MarketDecimalOdds.Value,
+                    _maxKellyFraction);
+
+                if (kelly > 0m)
+                {
+                    runner.KellyFraction = kelly;
+                    if (_bankroll > 0m)
+                    {
+                        var stake = CalculateStakeWithLimits(_bankroll, kelly);
+                        if (stake > 0m)
+                        {
+                            runner.SuggestedStake = stake;
+                        }
+                    }
+                }
+            }
+
+            runner.LayKellyFraction = null;
+            runner.LaySuggestedStake = null;
+            if (runner.AiProbability.HasValue && runner.LayDecimalOdds.HasValue && runner.LayDecimalOdds.Value > 1m)
+            {
+                var layKelly = BettingMath.CalculateLayKellyFraction(
+                    runner.AiProbability.Value,
+                    (double)runner.LayDecimalOdds.Value,
+                    _maxKellyFraction);
+
+                if (layKelly > 0m)
+                {
+                    runner.LayKellyFraction = layKelly;
+
+                    if (_bankroll > 0m)
+                    {
+                        var layStake = BettingMath.CalculateLayStake(_bankroll, layKelly, runner.LayDecimalOdds.Value);
+                        if (layStake > 0m)
+                        {
+                            runner.LaySuggestedStake = layStake;
+                        }
+                    }
+                }
+            }
         }
         private static int? ResolveHistoricalRaceCountFromPrefetch(
             RunnerFlow flow,
