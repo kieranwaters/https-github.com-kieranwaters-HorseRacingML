@@ -708,9 +708,7 @@ namespace HorseRacingML.Scraping
                     _useMarketFallbackForAiDegeneracy,
                     GetRaceGoingSnapshot());
                 var races = scraper.ScrapeOpenRaceTabsForReport(_driver);
-                var deduplicatedRaces = RaceDayReportDeduplicator.ByMarketId(races);
-                scraper.PopulateWinnerProbabilities(deduplicatedRaces);
-                orderedRaces = deduplicatedRaces
+                orderedRaces = races
                     .OrderBy(r => GetRaceScheduleSortKey(r))
                     .ThenBy(r => r.RaceTitle ?? string.Empty, StringComparer.OrdinalIgnoreCase)
                     .ThenBy(r => r.MarketId, StringComparer.Ordinal)
