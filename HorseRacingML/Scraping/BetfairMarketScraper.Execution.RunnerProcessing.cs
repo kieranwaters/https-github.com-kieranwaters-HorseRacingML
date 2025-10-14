@@ -845,7 +845,6 @@ DateTime? raceDate,
             {
                 return;
             }
-            var raceMissingFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var lastDistanceCache = new Dictionary<(int? HorseId, string NameKey), int?>();
             IReadOnlyDictionary<string, int>? prefetchedCounts = null;
             try
@@ -942,6 +941,7 @@ DateTime? raceDate,
                     }
                 }
                 Dictionary<string, object?> featureVector;
+                bool usedTrainerFallback = false;
                 if (matchedPreparedRow)
                 {
                     featureVector = CreateFeatureDictionary(matchedFeatures);
@@ -949,14 +949,10 @@ DateTime? raceDate,
                 else
                 {
                     featureVector = CreateFeatureDictionary(null);
-                    var missingFeatureIdentifier = DescribeRunner(flow);
                     Console.WriteLine(
-                        $"\t\tNo prepared feature row matched for {missingFeatureIdentifier}; synthesizing feature vector from live scrape.");
+                        $"\t\tNo prepared feature row matched for {identifier}; feature vector requires database backfill.");
                 }
-                flow.MatchedDatabaseRecord = matchedDatabaseRow;
                 var missingHistoricalKeys = GetMissingHistoricalFeatureKeys(featureVector);
-                Dictionary<string, object?>? fallbackFeatures = null;
-                var appliedFallback = false;
                 if (missingHistoricalKeys.Count > 0)
                 {
                     if (!fallbackAttempted)
@@ -980,8 +976,6 @@ DateTime? raceDate,
 
                     if (fallbackLookup != FeatureLookup.Empty)
                     {
-                        var missingFeatureIdentifier = DescribeRunner(flow);
-
                         var fallbackCandidate = fallbackLookup.FindByRunner(flow)
                                  ?? (!string.IsNullOrWhiteSpace(flow?.HorseName)
                                      ? fallbackLookup.FindByHorse(flow.HorseName)
@@ -989,88 +983,79 @@ DateTime? raceDate,
 
                         if (fallbackCandidate != null)
                         {
-                            fallbackFeatures = CreateFeatureDictionary(fallbackCandidate);
+                            var fallbackFeatures = CreateFeatureDictionary(fallbackCandidate);
                             BackfillHistoricalFeatures(featureVector, fallbackFeatures);
-                            appliedFallback = true;
+                            usedTrainerFallback = true;
                             missingHistoricalKeys = GetMissingHistoricalFeatureKeys(featureVector);
-                        }
 
-                        if (missingHistoricalKeys.Count > 0)
-                        {
-                            var missingSummary = string.Join(", ", missingHistoricalKeys);
-                            Console.WriteLine(
-                                $"\t\tUnable to backfill {missingHistoricalKeys.Count} historical feature(s) for {missingFeatureIdentifier}: {missingSummary}.");
-                        }
-
-                        ApplyScrapedFeatureFallbacks(
-                            featureVector,
-                            flow,
-                            raceDate,
-                            scheduledOff,
-                            raceTitle,
-                            raceDetails,
-                            raceType,
-                            going,
-                            venueName,
-                            venueCountry,
-                            backBookPercentage,
-                            layBookPercentage,
-                            flows,
-                            raceMissingFields);
-                        EnsureDistanceChangeFromLast(
-                            featureVector,
-                            flow,
-                            raceDate,
-                            lastDistanceCache);
-                        ApplyNeutralFeatureFallbacks(featureVector);
-
-                        flow.FeatureValues = featureVector;
-                        flow.HasPreparedFeatures = featureVector.Count > 0;
-                        flow.FeaturePopulationSummary = BuildFeaturePopulationSummary(featureVector);
-
-                        if (!matchedPreparedRow && flow.HasPreparedFeatures)
-                        {
-                            Console.WriteLine(
-                                $"\t\tUsing scraped fallback feature vector for {identifier}; attempting neural model scoring with live data only.");
-                        }
-
-                        int? resolvedCareerStarts = null;
-                        if (featureVector.TryGetValue("CareerStarts", out var careerStartsValue))
-                        {
-                            resolvedCareerStarts = TryConvertToInt32(careerStartsValue);
-                        }
-
-                        if (!resolvedCareerStarts.HasValue && flow.HistoricalRaceCount.HasValue)
-                        {
-                            resolvedCareerStarts = flow.HistoricalRaceCount.Value;
-                        }
-
-                        if (!resolvedCareerStarts.HasValue)
-                        {
-                            resolvedCareerStarts = ResolveHistoricalRaceCountFromPrefetch(flow, prefetchedCounts)
-                                ?? ResolveHistoricalRaceCount(flow);
-                        }
-
-                        if (resolvedCareerStarts.HasValue)
-                        {
-                            featureVector["CareerStarts"] = resolvedCareerStarts.Value;
-                            flow.HistoricalRaceCount = resolvedCareerStarts.Value;
-                        }
-                        else
-                        {
-                            flow.HistoricalRaceCount = null;
-                        }
-                    }
-                    if (raceMissingFields.Count > 0)
-                    {
-                        foreach (var entry in raceMissingFields)
-                        {
-                            if (!string.IsNullOrWhiteSpace(entry))
+                            if (missingHistoricalKeys.Count == 0)
                             {
-                                _missingScrapedFieldDescriptions.Add(entry);
+                                Console.WriteLine(
+                                    $"\t\tUsing trainer fallback feature vector for {identifier}; database preparation succeeded.");
                             }
                         }
                     }
+
+                    if (missingHistoricalKeys.Count > 0)
+                    {
+                        var missingSummary = string.Join(", ", missingHistoricalKeys);
+                        Console.WriteLine(
+                            $"\t\tUnable to backfill {missingHistoricalKeys.Count} historical feature(s) for {identifier}: {missingSummary}.");
+
+                        flow.FeatureValues = featureVector;
+                        flow.HasPreparedFeatures = false;
+                        flow.FeaturePopulationSummary = BuildFeaturePopulationSummary(featureVector);
+                        flow.MatchedDatabaseRecord = matchedPreparedRow || usedTrainerFallback;
+                        flow.AiProbabilityFallbackReason = "Missing historical features; database coverage required.";
+                        continue;
+                    }
+                }
+
+                EnsureDistanceChangeFromLast(
+                    featureVector,
+                    flow,
+                    raceDate,
+                    lastDistanceCache);
+
+                flow.FeatureValues = featureVector;
+                flow.HasPreparedFeatures = featureVector.Count > 0;
+                flow.FeaturePopulationSummary = BuildFeaturePopulationSummary(featureVector);
+                flow.MatchedDatabaseRecord = matchedPreparedRow || usedTrainerFallback;
+
+                if (!matchedPreparedRow && !usedTrainerFallback)
+                {
+                    Console.WriteLine(
+                        $"\t\tSkipping AI scoring for {identifier} due to missing database-backed features.");
+                    flow.HasPreparedFeatures = false;
+                    flow.AiProbabilityFallbackReason = "Missing historical features; database coverage required.";
+                    continue;
+                }
+
+                int? resolvedCareerStarts = null;
+                if (featureVector.TryGetValue("CareerStarts", out var careerStartsValue))
+                {
+                    resolvedCareerStarts = TryConvertToInt32(careerStartsValue);
+                }
+
+                if (!resolvedCareerStarts.HasValue && flow.HistoricalRaceCount.HasValue)
+                {
+                    resolvedCareerStarts = flow.HistoricalRaceCount.Value;
+                }
+
+                if (!resolvedCareerStarts.HasValue)
+                {
+                    resolvedCareerStarts = ResolveHistoricalRaceCountFromPrefetch(flow, prefetchedCounts)
+                        ?? ResolveHistoricalRaceCount(flow);
+                }
+
+                if (resolvedCareerStarts.HasValue)
+                {
+                    featureVector["CareerStarts"] = resolvedCareerStarts.Value;
+                    flow.HistoricalRaceCount = resolvedCareerStarts.Value;
+                }
+                else
+                {
+                    flow.HistoricalRaceCount = null;
                 }
             }
         }

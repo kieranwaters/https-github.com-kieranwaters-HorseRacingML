@@ -705,6 +705,49 @@ new RunnerFlow { HorseName = "Alpha Runner" },
                     string.Equals(r.VenueName ?? string.Empty, venueName ?? string.Empty, StringComparison.OrdinalIgnoreCase));
             }
             [Fact]
+            public void PopulateFeatureVectors_SkipsScoringWhenTrainerDataMissing()
+            {
+                var configuration = new ConfigurationBuilder()
+                    .AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["ConnectionStrings:HorseRacingDb"] = "Server=(local);Database=HorseRacingMLTest;Trusted_Connection=True;"
+                    })
+                    .Build();
+
+                var trainer = new FakeTrainer(configuration, upcomingRace: null);
+                var repo = new MinimalRacingRepository();
+                var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
+                var scraper = new BetfairMarketScraper(repo, trainer, bankroll: 25m, settings);
+                var flows = new List<RunnerFlow>
+            {
+                new RunnerFlow
+                {
+                    HorseName = "Database Gap",
+                    BackPrice1 = 4m
+                }
+            };
+
+                var report = scraper.TestBuildRaceReport(
+                    marketId: "1.1001",
+                    raceTitle: "Gap Stakes",
+                    venueName: "Data Park",
+                    venueCountry: "GB",
+                    raceDate: new DateTime(2024, 10, 5),
+                    offTime: new TimeSpan(13, 15, 0),
+                    raceDetails: "Handicap",
+                    going: "Good",
+                    backBookPercentage: 101m,
+                    layBookPercentage: 103m,
+                    raceUrl: null,
+                    flows: flows);
+
+                var runner = Assert.Single(report.Runners);
+                Assert.False(runner.HasPreparedFeatures);
+                Assert.NotNull(runner.AiProbabilityFallbackReason);
+                Assert.Contains("Missing historical features; database coverage required.", runner.AiProbabilityFallbackReason);
+                Assert.True(runner.AiProbabilityMarketDerived);
+            }
+            [Fact]
             public void LoadFeatureLookup_CachesPreparedRaceByMetadata()
             {
                 var raceDate = new DateTime(2024, 9, 10);
