@@ -390,8 +390,6 @@ BEGIN
         Title = @Title,
         RaceDetails = @RaceDetails,
         RaceType = @RaceType,
-        Class = @Class,
-        AgeRestriction = @AgeRestriction,
         Surface = @Surface,
         Going = @Going,
         DistanceYards = @DistanceYards,
@@ -1387,9 +1385,9 @@ BEGIN
     ALTER TABLE dbo.RunnerFlow ADD RaceType NVARCHAR(128) NULL;
 END
 
-IF COL_LENGTH(N'dbo.RunnerFlow', 'Class') IS NULL
+IF COL_LENGTH(N'dbo.RunnerFlow', 'Class') IS NOT NULL
 BEGIN
-    ALTER TABLE dbo.RunnerFlow ADD Class TINYINT NULL;
+    ALTER TABLE dbo.RunnerFlow DROP COLUMN Class;
 END
 
 IF COL_LENGTH(N'dbo.RunnerFlow', 'AgeRestriction') IS NULL
