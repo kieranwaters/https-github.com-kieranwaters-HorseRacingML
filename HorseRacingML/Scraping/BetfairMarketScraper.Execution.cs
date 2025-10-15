@@ -204,57 +204,12 @@ namespace HorseRacingML.Scraping
                 Console.WriteLine($"\tScraping market {marketId} - {title}"); // progress
                 var originalRaceDetails = string.IsNullOrWhiteSpace(raceDetailsText) ? null : raceDetailsText.Trim();
                 var (raceTypeText, cleanedRaceDetails) = SplitRaceTypeFromDetails(originalRaceDetails);
-                try
-                {
-                    var screen = new RaceScreen
-                    {
-                        MarketId = marketId, // ids
-                        OffTime = offTime, // off time
-                        Title = title, // title
-                        RaceDate = parsedRaceDate ?? DateTime.Today, // date
-                        VenueName = venueName, // venue
-                        VenueCountry = venueCountry, // country
-                        EventDateText = string.IsNullOrWhiteSpace(eventDateText) ? null : eventDateText.Trim(), // raw text
-                        RaceDetails = string.IsNullOrWhiteSpace(cleanedRaceDetails) ? null : cleanedRaceDetails.Trim(),
-                        RaceType = string.IsNullOrWhiteSpace(raceTypeText) ? null : raceTypeText.Trim(),
-                        Going = string.IsNullOrWhiteSpace(goingText) ? null : goingText,
-                        BackBookPercentage = backBookPercentage, // %
-                        LayBookPercentage = layBookPercentage, // %
-                        RaceUrl = string.IsNullOrWhiteSpace(raceUrl) ? null : raceUrl.Trim() // url
-                    }; // init screen row
-
-                    lock (_repoLock) { _repo.InsertRaceScreen(screen); } // persist
-                    Console.WriteLine($"\tInserted race screen for {marketId}"); // log ok
-                }
-                catch (Exception ex)
-                {
-                    Console.Error.WriteLine($"\tInsertRaceScreen failed for market {marketId}: {ex.Message}"); // log error
-                    continue; // next tab
-                }
-
-                var rows = driver.FindElements(By.CssSelector(".runner-line")); // current runner rows
-                if (rows.Count == 0)
-                {
-                    Console.Error.WriteLine($"\tNo runner rows found for market {marketId}"); // guard
-                    continue; // next tab
-                }
-
-                Console.WriteLine($"\tFound {rows.Count} runners for market {marketId}"); // log count
-                ExpandRunnerTimeformDetails(driver, rows); // ensure details expanded for all runners
                 var trimmedTitle = string.IsNullOrWhiteSpace(title) ? null : title.Trim();
                 var trimmedRaceDetails = string.IsNullOrWhiteSpace(cleanedRaceDetails) ? null : cleanedRaceDetails.Trim();
                 var trimmedRaceType = string.IsNullOrWhiteSpace(raceTypeText) ? null : raceTypeText.Trim();
                 var trimmedGoing = string.IsNullOrWhiteSpace(goingText) ? null : goingText.Trim();
                 var trimmedVenueName = string.IsNullOrWhiteSpace(venueName) ? null : venueName.Trim();
                 var trimmedVenueCountry = string.IsNullOrWhiteSpace(venueCountry) ? null : venueCountry.Trim();
-                if (!string.IsNullOrWhiteSpace(_scheduleRegion))
-                {
-                    trimmedVenueCountry = _scheduleRegion;
-                    venueCountry = _scheduleRegion;
-                }
-                var runnerCount = rows.Count > 0
-                    ? (byte)Math.Min(rows.Count, byte.MaxValue)
-                    : (byte?)null;
 
                 var metadataSource = new RaceDayReport
                 {
@@ -274,6 +229,82 @@ namespace HorseRacingML.Scraping
                     Console.Error.WriteLine($"\tFailed to parse race metadata for market {marketId}: {ex.Message}");
                 }
 
+                var metadataGoing = parsedMetadata?.Going;
+                if (!string.IsNullOrWhiteSpace(metadataGoing))
+                {
+                    metadataGoing = metadataGoing.Trim();
+                }
+
+                var resolvedGoing = !string.IsNullOrWhiteSpace(trimmedGoing)
+                    ? trimmedGoing
+                    : metadataGoing;
+
+                var goingSource = !string.IsNullOrWhiteSpace(trimmedGoing)
+                    ? "race page"
+                    : (!string.IsNullOrWhiteSpace(metadataGoing) ? "parsed metadata" : "unavailable");
+
+                var goingDisplay = string.IsNullOrWhiteSpace(resolvedGoing) ? "<null>" : resolvedGoing;
+                if (string.IsNullOrWhiteSpace(trimmedGoing))
+                {
+                    if (string.IsNullOrWhiteSpace(resolvedGoing))
+                    {
+                        Console.WriteLine($"\t[DayReport] Going unavailable for market {marketId}; race page and metadata were empty.");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"\t[DayReport] Going missing on race page for market {marketId}; using {goingSource}: '{goingDisplay}'.");
+                    }
+                }
+                else
+                {
+                    Console.WriteLine($"\t[DayReport] Scraped going '{goingDisplay}' for market {marketId}.");
+                }
+                try
+                {
+                    var screen = new RaceScreen
+                    {
+                        MarketId = marketId, // ids
+                        OffTime = offTime, // off time
+                        Title = trimmedTitle ?? title, // title
+                        RaceDate = parsedRaceDate ?? DateTime.Today, // date
+                        VenueName = trimmedVenueName ?? venueName, // venue
+                        VenueCountry = trimmedVenueCountry ?? venueCountry, // country
+                        EventDateText = string.IsNullOrWhiteSpace(eventDateText) ? null : eventDateText.Trim(), // raw text
+                        RaceDetails = trimmedRaceDetails,
+                        RaceType = trimmedRaceType,
+                        Going = resolvedGoing,
+                        BackBookPercentage = backBookPercentage, // %
+                        LayBookPercentage = layBookPercentage, // %
+                        RaceUrl = string.IsNullOrWhiteSpace(raceUrl) ? null : raceUrl.Trim() // url
+                    }; // init screen row
+
+                    lock (_repoLock) { _repo.InsertRaceScreen(screen); } // persist
+                    Console.WriteLine($"\tInserted race screen for {marketId} with going '{goingDisplay}'."); // log ok
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"\tInsertRaceScreen failed for market {marketId}: {ex.Message}"); // log error
+                    continue; // next tab
+                }
+
+                var rows = driver.FindElements(By.CssSelector(".runner-line")); // current runner rows
+                if (rows.Count == 0)
+                {
+                    Console.Error.WriteLine($"\tNo runner rows found for market {marketId}"); // guard
+                    continue; // next tab
+                }
+
+                Console.WriteLine($"\tFound {rows.Count} runners for market {marketId}"); // log count
+                ExpandRunnerTimeformDetails(driver, rows); // ensure details expanded for all runners
+                if (!string.IsNullOrWhiteSpace(_scheduleRegion))
+                {
+                    trimmedVenueCountry = _scheduleRegion;
+                    venueCountry = _scheduleRegion;
+                }
+                var runnerCount = rows.Count > 0
+                    ? (byte)Math.Min(rows.Count, byte.MaxValue)
+                    : (byte?)null;
+
                 UpcomingRace? persistedUpcoming = null;
                 if (parsedRaceDate.HasValue)
                 {
@@ -281,11 +312,20 @@ namespace HorseRacingML.Scraping
                     {
                         var metadata = parsedMetadata ?? ParseRaceMetadata(metadataSource);
                         parsedMetadata = metadata;
-
+                        metadataGoing = string.IsNullOrWhiteSpace(metadata.Going) ? null : metadata.Going.Trim();
+                        if (string.IsNullOrWhiteSpace(resolvedGoing) && !string.IsNullOrWhiteSpace(metadataGoing))
+                        {
+                            resolvedGoing = metadataGoing;
+                            goingSource = "parsed metadata";
+                            goingDisplay = resolvedGoing;
+                            Console.WriteLine($"\t[DayReport] Falling back to metadata going for market {marketId}: '{goingDisplay}'.");
+                        }
                         short? distanceYards = metadata.DistanceYards > 0
                             ? (short)Math.Min(metadata.DistanceYards, short.MaxValue)
                             : null;
-
+                        var upcomingGoing = !string.IsNullOrWhiteSpace(resolvedGoing)
+                            ? resolvedGoing
+                            : metadataGoing;
                         persistedUpcoming = new UpcomingRace
                         {
                             MarketId = marketId,
@@ -299,7 +339,7 @@ namespace HorseRacingML.Scraping
                             Class = metadata.Class,
                             AgeRestriction = metadata.AgeRestriction,
                             Surface = metadata.Surface,
-                            Going = string.IsNullOrWhiteSpace(goingText) ? metadata.Going : trimmedGoing,
+                            Going = string.IsNullOrWhiteSpace(upcomingGoing) ? null : upcomingGoing,
                             DistanceYards = distanceYards,
                             DistanceText = metadata.DistanceText,
                             RunnerCount = runnerCount,
@@ -315,6 +355,13 @@ namespace HorseRacingML.Scraping
                         }
 
                         Console.WriteLine($"\tRecorded upcoming race {persistedUpcoming.UpcomingRaceId} for market {marketId}.");
+                        if (!string.IsNullOrWhiteSpace(persistedUpcoming.Going))
+                        {
+                            resolvedGoing = persistedUpcoming.Going.Trim();
+                            goingSource = "upcoming race record";
+                            goingDisplay = string.IsNullOrWhiteSpace(resolvedGoing) ? "<null>" : resolvedGoing;
+                            Console.WriteLine($"\t[DayReport] Updated going for market {marketId} from upcoming race record: '{goingDisplay}'.");
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -322,6 +369,8 @@ namespace HorseRacingML.Scraping
                         persistedUpcoming = null;
                     }
                 }
+                goingDisplay = string.IsNullOrWhiteSpace(resolvedGoing) ? "<null>" : resolvedGoing;
+                Console.WriteLine($"\t[DayReport] Resolved going for market {marketId}: '{goingDisplay}' (source: {goingSource}).");
                 var flows = new List<RunnerFlow>(); // collect runner flows
                 var runnerEntries = new List<(IWebElement Row, RunnerFlow Flow)>(); // row→flow mapping
 
@@ -612,7 +661,12 @@ namespace HorseRacingML.Scraping
                     runnerFlow.Class = persistedUpcoming?.Class ?? parsedMetadata?.Class;
                     runnerFlow.AgeRestriction = persistedUpcoming?.AgeRestriction ?? parsedMetadata?.AgeRestriction;
                     runnerFlow.Surface = persistedUpcoming?.Surface ?? parsedMetadata?.Surface;
-                    runnerFlow.Going = persistedUpcoming?.Going ?? trimmedGoing ?? parsedMetadata?.Going;
+                    var runnerGoing = !string.IsNullOrWhiteSpace(resolvedGoing)
+                        ? resolvedGoing
+                        : (!string.IsNullOrWhiteSpace(persistedUpcoming?.Going)
+                            ? persistedUpcoming.Going.Trim()
+                            : metadataGoing);
+                    runnerFlow.Going = string.IsNullOrWhiteSpace(runnerGoing) ? null : runnerGoing;
                     var parsedDistance = parsedMetadata?.DistanceYards;
                     if (!parsedDistance.HasValue && persistedUpcoming?.DistanceYards.HasValue == true)
                     {
@@ -653,7 +707,7 @@ namespace HorseRacingML.Scraping
                         offTime,
                         cleanedRaceDetails,
                         raceTypeText,
-                        goingText,
+                        resolvedGoing,
                         backBookPercentage,
                         layBookPercentage,
                         marketId,
@@ -817,7 +871,7 @@ namespace HorseRacingML.Scraping
                         offTime,
                         cleanedRaceDetails,
                         raceTypeText,
-                        goingText,
+                        resolvedGoing,
                         backBookPercentage,
                         layBookPercentage,
                         raceUrl,
