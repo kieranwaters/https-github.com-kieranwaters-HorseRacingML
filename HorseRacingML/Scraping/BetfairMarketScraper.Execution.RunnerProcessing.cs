@@ -825,24 +825,36 @@ namespace HorseRacingML.Scraping
             return null;
         }
         private void PopulateFeatureVectors(
-DateTime? raceDate,
-            string? raceTitle,
-            string? venueName,
-            string? venueCountry,
-            TimeSpan? scheduledOff,
-            string? raceDetails,
-            string? raceType,
-            string? going,
-            decimal? backBookPercentage,
-            decimal? layBookPercentage,
-            string? marketId,
-            IReadOnlyList<RunnerFlow> flows,
-            int runnerCount,
-            IReadOnlyList<IDictionary<string, object?>>? preparedRows = null,
-            UpcomingRace? persistedUpcoming = null)
+ DateTime? raceDate,
+             string? raceTitle,
+             string? venueName,
+             string? venueCountry,
+             TimeSpan? scheduledOff,
+             string? raceDetails,
+             string? raceType,
+             string? going,
+             decimal? backBookPercentage,
+             decimal? layBookPercentage,
+             string? marketId,
+             IReadOnlyList<RunnerFlow> flows,
+             int runnerCount,
+             IReadOnlyList<IDictionary<string, object?>>? preparedRows = null,
+             UpcomingRace? persistedUpcoming = null)
         {
+            var populationContext = string.Format(
+                CultureInfo.InvariantCulture,
+                "\t[FeaturePopulation] PopulateFeatureVectors invoked. MarketId={0}, RaceDate={1}, Title='{2}', Venue='{3}', RunnerCount={4}, ProvidedPreparedRows={5}.",
+                marketId ?? "<null>",
+                raceDate?.ToString(CultureInfo.InvariantCulture) ?? "<null>",
+                raceTitle ?? "<null>",
+                venueName ?? "<null>",
+                flows?.Count ?? 0,
+                preparedRows?.Count ?? 0);
+            Console.WriteLine(populationContext);
+
             if (flows == null || flows.Count == 0)
             {
+                Console.WriteLine("\t[FeaturePopulation] No runner flows provided; skipping feature population.");
                 return;
             }
             var lastDistanceCache = new Dictionary<(int? HorseId, string NameKey), int?>();
@@ -878,6 +890,16 @@ DateTime? raceDate,
                 if (missingNames.Count > 0)
                 {
                     prefetchedCounts = _repo.GetHistoricalRaceCountsByHorseNames(missingNames);
+                    var prefetchSummary = string.Format(
+                        CultureInfo.InvariantCulture,
+                        "\t[FeaturePopulation] Prefetched historical race counts for {0} runner name(s); repository returned {1} record(s).",
+                        missingNames.Count,
+                        prefetchedCounts?.Count ?? 0);
+                    Console.WriteLine(prefetchSummary);
+                }
+                else
+                {
+                    Console.WriteLine("\t[FeaturePopulation] All runners already contained historical counts; no prefetch required.");
                 }
             }
             catch (Exception ex)
@@ -899,6 +921,11 @@ DateTime? raceDate,
                 flows,
                 preparedRows,
                 persistedUpcoming);
+            var primaryLookupSummary = string.Format(
+                CultureInfo.InvariantCulture,
+                "\t[FeaturePopulation] Primary feature lookup contains {0} runner(s).",
+                featureLookup.Count);
+            Console.WriteLine(primaryLookupSummary);
             var fallbackLookup = FeatureLookup.Empty;
             var fallbackAttempted = false;
             foreach (var flow in flows)
@@ -907,6 +934,11 @@ DateTime? raceDate,
                 var matchedPreparedRow = matchedFeatures != null;
                 var matchedDatabaseRow = matchedPreparedRow;
                 var identifier = DescribeRunner(flow);
+
+                if (!matchedPreparedRow)
+                {
+                    Console.WriteLine($"\t\t[FeaturePopulation] No primary prepared row matched for {identifier}; fallback evaluation pending.");
+                }
 
                 if (!matchedPreparedRow)
                 {
@@ -927,6 +959,13 @@ DateTime? raceDate,
                             marketId,
                             flows,
                             persistedUpcoming);
+                        var fallbackStatus = fallbackLookup == FeatureLookup.Empty
+                            ? BuildMissingHistoricalFeatureReason()
+                            : string.Format(
+                                CultureInfo.InvariantCulture,
+                                "trainer lookup produced {0} runner feature set(s).",
+                                fallbackLookup.Count);
+                        Console.WriteLine($"\t\t[FeaturePopulation] Trainer fallback attempt completed; result={fallbackStatus}");
                     }
 
                     if (fallbackLookup != FeatureLookup.Empty)
@@ -1001,7 +1040,8 @@ DateTime? raceDate,
                         var missingSummary = string.Join(", ", missingHistoricalKeys);
                         Console.WriteLine(
                             $"\t\tUnable to backfill {missingHistoricalKeys.Count} historical feature(s) for {identifier}: {missingSummary}.");
-
+                        Console.WriteLine(
+                            $"\t\t[FeaturePopulation] Historical backfill failure reason: {BuildMissingHistoricalFeatureReason()}.");
                         flow.FeatureValues = featureVector;
                         flow.HasPreparedFeatures = false;
                         flow.FeaturePopulationSummary = BuildFeaturePopulationSummary(featureVector);
@@ -1026,6 +1066,8 @@ DateTime? raceDate,
                 {
                     Console.WriteLine(
                         $"\t\tSkipping AI scoring for {identifier} due to missing database-backed features.");
+                    Console.WriteLine(
+                        $"\t\t[FeaturePopulation] Runner missing features summary: {BuildFeaturePopulationSummary(featureVector)}.");
                     flow.HasPreparedFeatures = false;
                     flow.AiProbabilityFallbackReason = BuildMissingHistoricalFeatureReason();
                     continue;
@@ -1052,10 +1094,14 @@ DateTime? raceDate,
                 {
                     featureVector["CareerStarts"] = resolvedCareerStarts.Value;
                     flow.HistoricalRaceCount = resolvedCareerStarts.Value;
+                    Console.WriteLine(
+                        $"\t\t[FeaturePopulation] Resolved career starts for {identifier}: {resolvedCareerStarts.Value}.");
                 }
                 else
                 {
                     flow.HistoricalRaceCount = null;
+                    Console.WriteLine(
+                        $"\t\t[FeaturePopulation] Career starts remain unresolved for {identifier}; downstream scoring may fallback.");
                 }
             }
         }

@@ -336,9 +336,26 @@ namespace HorseRacingML.Scraping
             IReadOnlyList<RunnerFlow> flows,
             UpcomingRace? persistedUpcoming)
         {
+            var fallbackMetadata = string.Format(
+                CultureInfo.InvariantCulture,
+                "RaceDate={0}, Title='{1}', Venue='{2}', Country='{3}', Off={4}, RaceType='{5}', Going='{6}', BackBook={7}, LayBook={8}, MarketId='{9}', Flows={10}",
+                raceDate?.ToString(CultureInfo.InvariantCulture) ?? "<null>",
+                raceTitle ?? "<null>",
+                venueName ?? "<null>",
+                venueCountry ?? "<null>",
+                scheduledOff?.ToString() ?? "<null>",
+                raceType ?? "<null>",
+                going ?? "<null>",
+                backBookPercentage?.ToString(CultureInfo.InvariantCulture) ?? "<null>",
+                layBookPercentage?.ToString(CultureInfo.InvariantCulture) ?? "<null>",
+                marketId ?? "<null>",
+                flows?.Count ?? 0);
+            Console.WriteLine("    [FallbackLookup] Attempting to build fallback feature lookup with metadata: " + fallbackMetadata);
+
             if (!raceDate.HasValue || flows == null || flows.Count == 0)
             {
                 SetFallbackFeatureError("insufficient race metadata was available to build fallback feature vectors.");
+                Console.WriteLine("    [FallbackLookup] Skipping fallback preparation because race metadata or flows were missing.");
                 return FeatureLookup.Empty;
             }
 
@@ -346,6 +363,12 @@ namespace HorseRacingML.Scraping
             if (persistedUpcoming != null && ShouldUseUpcomingCandidate(persistedUpcoming, marketId, raceTitle, venueName))
             {
                 upcoming = persistedUpcoming;
+                var persistedMessage = string.Format(
+                    CultureInfo.InvariantCulture,
+                    "    [FallbackLookup] Using persisted upcoming race candidate: UpcomingRaceId={0}, MarketId={1}.",
+                    upcoming.UpcomingRaceId,
+                    upcoming.MarketId ?? "<null>");
+                Console.WriteLine(persistedMessage);
             }
 
             if (upcoming == null && !string.IsNullOrWhiteSpace(marketId))
@@ -377,6 +400,7 @@ namespace HorseRacingML.Scraping
 
             if (upcoming == null)
             {
+                Console.WriteLine("    [FallbackLookup] No persisted upcoming race matched; searching repository by metadata.");
                 try
                 {
                     upcoming = FindUpcomingRaceCached(raceDate.Value, raceTitle, venueName);
@@ -388,12 +412,14 @@ namespace HorseRacingML.Scraping
 
                 if (upcoming != null && !ShouldUseUpcomingCandidate(upcoming, marketId, raceTitle, venueName))
                 {
+                    Console.WriteLine("    [FallbackLookup] Repository upcoming race candidate rejected due to metadata mismatch.");
                     upcoming = null;
                 }
             }
 
             if (upcoming == null)
             {
+                Console.WriteLine("    [FallbackLookup] Attempting to build synthetic upcoming race metadata for fallback preparation.");
                 upcoming = BuildSyntheticUpcomingRace(
                     raceDate.Value,
                     raceTitle,
@@ -412,6 +438,7 @@ namespace HorseRacingML.Scraping
             if (upcoming == null)
             {
                 SetFallbackFeatureError("no upcoming race metadata matched the scraped race; fallback feature synthesis skipped.");
+                Console.WriteLine("    [FallbackLookup] Failed to resolve upcoming race metadata; fallback lookup is empty.");
                 return FeatureLookup.Empty;
             }
 
@@ -435,12 +462,25 @@ namespace HorseRacingML.Scraping
                     }
 
                     Console.WriteLine($"  Using cached synthetic feature rows for upcoming race {upcoming.MarketId ?? marketId ?? "<unknown>"}.");
+                    var cacheSummary = string.Format(
+                        CultureInfo.InvariantCulture,
+                        "    [FallbackLookup] Cached lookup entry contains {0} runner(s); error cache entry {1}.",
+                        cachedLookup.Count,
+                        cachedError == null ? "cleared" : "present");
+                    Console.WriteLine(cacheSummary);
                     return cachedLookup;
                 }
             }
 
             try
             {
+                var trainerMessage = string.Format(
+                    CultureInfo.InvariantCulture,
+                    "    [FallbackLookup] Preparing upcoming race via trainer with {0} runner flow(s). Using metadata: UpcomingRaceId={1}, MarketId={2}.",
+                    flows.Count,
+                    upcoming.UpcomingRaceId,
+                    upcoming.MarketId ?? marketId ?? "<unknown>");
+                Console.WriteLine(trainerMessage);
                 var prepared = _trainer.PrepareUpcomingRace(upcoming, flows);
                 if (prepared == null || prepared.Rows.Count == 0)
                 {
@@ -455,6 +495,11 @@ namespace HorseRacingML.Scraping
                     return FeatureLookup.Empty;
                 }
 
+                var preparedSummary = string.Format(
+                    CultureInfo.InvariantCulture,
+                    "    [FallbackLookup] Trainer prepared {0} row(s); building feature lookup for fallback usage.",
+                    prepared.Rows.Count);
+                Console.WriteLine(preparedSummary);
                 var lookup = FeatureLookup.FromPreparedRace(prepared);
                 SetFallbackFeatureError(null);
                 lock (_featureLookupCacheLock)
@@ -463,6 +508,11 @@ namespace HorseRacingML.Scraping
                     _featureLookupErrorCache[cacheKey] = null;
                 }
 
+                var lookupSummary = string.Format(
+                    CultureInfo.InvariantCulture,
+                    "    [FallbackLookup] Fallback lookup built successfully with {0} runner feature set(s).",
+                    lookup.Count);
+                Console.WriteLine(lookupSummary);
                 return lookup;
             }
             catch (Exception ex)
@@ -475,6 +525,7 @@ namespace HorseRacingML.Scraping
                     _featureLookupCache[cacheKey] = FeatureLookup.Empty;
                     _featureLookupErrorCache[cacheKey] = message;
                 }
+                Console.WriteLine("    [FallbackLookup] Trainer threw during preparation; cached empty lookup with error message.");
                 return FeatureLookup.Empty;
             }
         }
