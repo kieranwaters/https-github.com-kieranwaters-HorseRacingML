@@ -6,6 +6,7 @@ using OpenQA.Selenium;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Text.RegularExpressions;
 
 namespace HorseRacingML.Scraping
 {
@@ -35,6 +36,7 @@ namespace HorseRacingML.Scraping
         private readonly HashSet<string> _missingScrapedFieldDescriptions = new(StringComparer.OrdinalIgnoreCase);
         private readonly System.Collections.Generic.IReadOnlyDictionary<string, string?>? _raceGoingLookup;
         private readonly string? _scheduleRegion;
+        private readonly System.Collections.Generic.IReadOnlyDictionary<string, string?>? _raceGoingByVenueLookup;
 
         private const string MarketHeaderXPath = "/html/body/ui-view/div/div/div[2]/div/ui-view/div/div/div[1]/div[1]/div/bf-sports-header/div/div/div/div[1]/div/span[1]";
         private const string PlaceBetsButtonSelector = "#main-wrapper > div > div.scrollable-panes-height-taker > div > ui-view > div > div > div.bf-col-xxl-7-24.bf-col-xl-8-24.bf-col-lg-8-24.bf-col-md-9-24.bf-col-sm-10-24.bf-col-10-24.right-side-column > div > div > bf-aside > div > div.bf-row.aside-top-row.no-bottom-gutter > div > betslip > div > bf-tabs > section > div:nth-child(2) > div > div > section > potentials > section > form > betslip-potentials-footer > footer > div.potentials-footer__actions > div > highlighted-button > ours-button > button";
@@ -54,7 +56,8 @@ namespace HorseRacingML.Scraping
             decimal? maxStakeFixedAmount = null,
             bool computeAiProbabilities = true,
             System.Collections.Generic.IReadOnlyDictionary<string, string?>? raceGoingLookup = null,
-            string? scheduleRegion = null)
+            string? scheduleRegion = null,
+            System.Collections.Generic.IReadOnlyDictionary<string, string?>? raceGoingByVenueLookup = null)
         {
             _repo = repo ?? throw new ArgumentNullException(nameof(repo));
             _trainer = trainer ?? throw new ArgumentNullException(nameof(trainer));
@@ -70,6 +73,7 @@ namespace HorseRacingML.Scraping
             _maxStakePercentOfBankroll = maxStakePercentOfBankroll;
             _maxStakeFixedAmount = maxStakeFixedAmount;
             _raceGoingLookup = raceGoingLookup;
+            _raceGoingByVenueLookup = raceGoingByVenueLookup;
             _computeAiProbabilities = computeAiProbabilities;
             _scheduleRegion = string.IsNullOrWhiteSpace(scheduleRegion) ? null : scheduleRegion.Trim();
         }
@@ -95,12 +99,31 @@ namespace HorseRacingML.Scraping
                 settings?.MaxStakeFixedAmount,
                 computeAiProbabilities,
                raceGoingLookup,
-                scheduleRegion)
+                scheduleRegion,
+                raceGoingByVenueLookup)
         {
             if (settings == null)
             {
                 throw new ArgumentNullException(nameof(settings));
             }
+        }
+        internal static string? NormalizeVenueName(string? venue)
+        {
+            if (string.IsNullOrWhiteSpace(venue))
+            {
+                return null;
+            }
+
+            var normalized = Regex.Replace(venue, "\\s+", " ").Trim();
+            if (normalized.Length == 0)
+            {
+                return null;
+            }
+
+            normalized = Regex.Replace(normalized, @"\bgoing\b.*$", string.Empty, RegexOptions.IgnoreCase).Trim();
+            normalized = Regex.Replace(normalized, @"[\-|,:]$", string.Empty).Trim();
+
+            return normalized.Length == 0 ? null : normalized;
         }
 
         public HyperparameterSummary? LoadedHyperparameters => _loadedHyperparameters;

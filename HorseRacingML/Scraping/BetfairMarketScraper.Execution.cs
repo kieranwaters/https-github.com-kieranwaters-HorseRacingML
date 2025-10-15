@@ -40,6 +40,30 @@ namespace HorseRacingML.Scraping
 
             return null;
         }
+        private string? GetGoingForVenue(string? venue)
+        {
+            if (string.IsNullOrWhiteSpace(venue) || _raceGoingByVenueLookup == null)
+            {
+                return null;
+            }
+
+            var normalized = NormalizeVenueName(venue);
+            if (string.IsNullOrEmpty(normalized))
+            {
+                return null;
+            }
+
+            if (_raceGoingByVenueLookup.TryGetValue(normalized, out var going))
+            {
+                var trimmed = going?.Trim();
+                if (!string.IsNullOrEmpty(trimmed))
+                {
+                    return trimmed;
+                }
+            }
+
+            return null;
+        }
         private BetfairScrapeResult ScrapeOpenRaceTabsInternal(IWebDriver driver, bool executeBets, bool captureReport, IEnumerable<string>? handlesToProcess = null)
         {
             var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10)); // short explicit wait
@@ -151,6 +175,14 @@ namespace HorseRacingML.Scraping
                     title = title.Trim();
                 }
                 var venueText = TextOrEmpty(driver, By.CssSelector(".venue-name")); // venue text
+                if (string.IsNullOrWhiteSpace(goingText) && !string.IsNullOrWhiteSpace(venueText))
+                {
+                    var venueFallback = GetGoingForVenue(venueText);
+                    if (!string.IsNullOrWhiteSpace(venueFallback))
+                    {
+                        goingText = venueFallback;
+                    }
+                }
                 var eventDateText = TextOrEmpty(driver, By.CssSelector(".event-date")); // event date raw
                 var raceDetailsText = ReadFirstNonEmptyText(driver,
                     ".market-name",

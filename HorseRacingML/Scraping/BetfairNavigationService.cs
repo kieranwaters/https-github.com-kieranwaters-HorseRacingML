@@ -56,6 +56,7 @@ namespace HorseRacingML.Scraping
         private Task? _automationTask;
         private readonly Dictionary<string, string?> _raceGoingByMarketId = new(StringComparer.OrdinalIgnoreCase);
         private readonly object _raceGoingLock = new();
+        private readonly Dictionary<string, string?> _raceGoingByVenue = new(StringComparer.OrdinalIgnoreCase);
         private static readonly TimeSpan SchedulePageReadyTimeout = TimeSpan.FromSeconds(120);
         private string? _activeScheduleRegion;
 
@@ -115,6 +116,7 @@ namespace HorseRacingML.Scraping
                 lock (_raceGoingLock)
                 {
                     _raceGoingByMarketId.Clear();
+                    _raceGoingByVenue.Clear();
                 }
             }
         }
@@ -225,7 +227,8 @@ namespace HorseRacingML.Scraping
                     _useMarketFallbackForAiDegeneracy,
                     GetRaceGoingSnapshot(),
                     computeAiProbabilities: includeAiProbabilities,
-                    scheduleRegion: GetActiveScheduleRegion());
+                    scheduleRegion: GetActiveScheduleRegion(),
+                    raceGoingByVenueLookup: GetRaceGoingByVenueSnapshot());
                 var races = scraper.ScrapeOpenRaceTabsForReport(_driver, newHandles);
 
                 var targetMarketId = BetfairMarketScraper.ExtractMarketId(raceUrl);
@@ -364,7 +367,8 @@ namespace HorseRacingML.Scraping
                 settings,
                 _useMarketFallbackForAiDegeneracy,
                 GetRaceGoingSnapshot(),
-                scheduleRegion: GetActiveScheduleRegion());
+                scheduleRegion: GetActiveScheduleRegion(),
+                raceGoingByVenueLookup: GetRaceGoingByVenueSnapshot());
             var recommendations = scraper.ScrapeOpenRaceTabs(_driver);
             missingScrapeFields = scraper.MissingScrapeFieldDescriptions.ToArray();
             return recommendations;
@@ -714,7 +718,8 @@ namespace HorseRacingML.Scraping
                     settings,
                     _useMarketFallbackForAiDegeneracy,
                     GetRaceGoingSnapshot(),
-                    scheduleRegion: GetActiveScheduleRegion());
+                    scheduleRegion: GetActiveScheduleRegion(),
+                    raceGoingByVenueLookup: GetRaceGoingByVenueSnapshot());
                 var races = scraper.ScrapeOpenRaceTabsForReport(_driver);
                 orderedRaces = races
                     .OrderBy(r => GetRaceScheduleSortKey(r))
@@ -1512,9 +1517,94 @@ return text.trim();";
             return false;
         }
         private IReadOnlyDictionary<string, string?> GetRaceGoingSnapshot() { lock (_raceGoingLock) { return new Dictionary<string, string?>(_raceGoingByMarketId, StringComparer.OrdinalIgnoreCase); } }
-        private void RecordRaceGoing(string? href, string? going) { if (string.IsNullOrWhiteSpace(href)) { return; } var marketId = BetfairMarketScraper.ExtractMarketId(href); if (string.IsNullOrWhiteSpace(marketId)) { return; } var trimmedGoing = string.IsNullOrWhiteSpace(going) ? null : going!.Trim(); lock (_raceGoingLock) { if (!string.IsNullOrEmpty(trimmedGoing)) { _raceGoingByMarketId[marketId] = trimmedGoing; } else if (!_raceGoingByMarketId.ContainsKey(marketId)) { _raceGoingByMarketId[marketId] = null; } } }
-        private void CaptureRaceGoingFromSchedule() { lock (_raceGoingLock) { _raceGoingByMarketId.Clear(); } try { var js = (IJavaScriptExecutor)_driver; const string script = @"
+        private IReadOnlyDictionary<string, string?> GetRaceGoingByVenueSnapshot() { lock (_raceGoingLock) { return new Dictionary<string, string?>(_raceGoingByVenue, StringComparer.OrdinalIgnoreCase); } }
+        private void RecordRaceGoing(string? href, string? going, string? venue = null)
+        {
+            var trimmedGoing = string.IsNullOrWhiteSpace(going) ? null : going!.Trim();
+
+            lock (_raceGoingLock)
+            {
+                if (!string.IsNullOrWhiteSpace(href))
+                {
+                    var marketId = BetfairMarketScraper.ExtractMarketId(href);
+                    if (!string.IsNullOrWhiteSpace(marketId))
+                    {
+                        if (!string.IsNullOrEmpty(trimmedGoing))
+                        {
+                            _raceGoingByMarketId[marketId] = trimmedGoing;
+                        }
+                        else if (!_raceGoingByMarketId.ContainsKey(marketId))
+                        {
+                            _raceGoingByMarketId[marketId] = null;
+                        }
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(venue))
+                {
+                    var normalizedVenue = BetfairMarketScraper.NormalizeVenueName(venue);
+                    if (!string.IsNullOrEmpty(normalizedVenue))
+                    {
+                        if (!string.IsNullOrEmpty(trimmedGoing))
+                        {
+                            _raceGoingByVenue[normalizedVenue] = trimmedGoing;
+                        }
+                        else if (!_raceGoingByVenue.ContainsKey(normalizedVenue))
+                        {
+                            _raceGoingByVenue[normalizedVenue] = null;
+                        }
+                    }
+                }
+            }
+        }
+        private void CaptureRaceGoingFromSchedule() { lock (_raceGoingLock) { _raceGoingByMarketId.Clear(); _raceGoingByVenue.Clear(); } try { var js = (IJavaScriptExecutor)_driver; const string script = @"
 const textOrEmpty=node=>{if(!node)return '';const raw=node.textContent||node.innerText||'';return raw.trim();};
+const cleanseVenue=text=>{
+  if(!text)return '';
+  let normalized=text.replace(/\s+/g,' ').trim();
+  if(!normalized)return '';
+  normalized=normalized.replace(/\bgoing\b.*$/i,'').replace(/\|.*$/,'');
+  normalized=normalized.replace(/[\-–|,:]\s*$/,'').trim();
+  return normalized.trim();
+};
+const findVenue=container=>{
+  if(!container)return '';
+    const venueSelectors=[
+      ""[data-testid='meeting-header-course-name']"",
+      ""[data-testid='meetingTitle']"",
+      ""[data-testid='meeting-title']"",
+      ""[data-testid='meeting-name']"",
+    '.meeting-header__course-name',
+    '.meeting-description__title',
+    '.meeting-name',
+    '.meeting-title',
+    'h2',
+    'h3'
+  ];
+  for(const selector of venueSelectors){
+    if(!selector)continue;
+    const candidate=container.querySelector?container.querySelector(selector):null;
+    const text=textOrEmpty(candidate);
+    const venue=cleanseVenue(text);
+    if(venue)return venue;
+  }
+  const attrCandidates=['data-venue','data-course-name','data-event-name','data-name'];
+  for(const attr of attrCandidates){
+    if(container.hasAttribute&&container.hasAttribute(attr)){
+      const venue=cleanseVenue(container.getAttribute(attr));
+      if(venue)return venue;
+    }
+  }
+  const label=cleanseVenue(textOrEmpty(container));
+  if(label)return label;
+  let prev=container.previousElementSibling;
+  while(prev){
+    const text=cleanseVenue(textOrEmpty(prev));
+    if(text)return text;
+    prev=prev.previousElementSibling;
+  }
+  return '';
+};
 const findGoing=container=>{
   if(!container)return '';
   const explicit=textOrEmpty(container.querySelector(""div.racetrack-conditions, .racetrack-conditions, [data-testid='racetrack-conditions']""));
@@ -1528,10 +1618,11 @@ const results=[];
 const processed=new Set();
 const meetingDescriptions=Array.from(document.querySelectorAll(""div.meeting-description""));
 for(const description of meetingDescriptions){
-  const host=description.closest('li');
+  const host=description.closest('li')||description.parentElement;
   if(!host||processed.has(host))continue;
   processed.add(host);
   const going=findGoing(description);
+  const venue=findVenue(description);
   const seenLinks=new Set();
   const anchors=host.querySelectorAll(""a[href*='/horse-racing/']"");
   for(const anchor of anchors){
@@ -1539,7 +1630,7 @@ for(const description of meetingDescriptions){
     const href=anchor.href.trim();
     if(!href||seenLinks.has(href))continue;
     seenLinks.add(href);
-    results.push({href,going});
+    results.push({href,going,venue});
   }
   const linkish=host.querySelectorAll('[data-href],[data-url]');
   for(const node of linkish){
@@ -1551,10 +1642,12 @@ for(const description of meetingDescriptions){
     try{absolute=new URL(absolute, window.location.href).href;}catch(e){}
     if(!absolute||seenLinks.has(absolute))continue;
     seenLinks.add(absolute);
-    results.push({href:absolute,going});
+    results.push({href:absolute,going,venue});
   }
 }
-return results;"; var raw = js.ExecuteScript(script); if (raw is IEnumerable<object> entries) { foreach (var entry in entries) { string? href = null; string? going = null; switch (entry) { case IReadOnlyDictionary<string, object?> dict: if (dict.TryGetValue("href", out var hrefValue)) { href = hrefValue?.ToString(); } if (dict.TryGetValue("going", out var goingValue)) { going = goingValue?.ToString(); } break; case IDictionary legacyDict: if (legacyDict.Contains("href")) { href = legacyDict["href"]?.ToString(); } if (legacyDict.Contains("going")) { going = legacyDict["going"]?.ToString(); } break; } RecordRaceGoing(href, going); } } } catch (Exception ex) { Console.Error.WriteLine($"[Navigation] Failed to capture going information from schedule: {ex.Message}"); } }
+return results;"; var raw = js.ExecuteScript(script); if (raw is IEnumerable<object> entries) { foreach (var entry in entries) { string? href = null; string? going = null; string? venue = null; switch (entry) { case IReadOnlyDictionary<string, object?> dict: if (dict.TryGetValue("href", out var hrefValue)) { href = hrefValue?.ToString(); } if (dict.TryGetValue("going", out var goingValue)) { going = goingValue?.ToString(); } if (dict.TryGetValue("venue", out var venueValue)) { venue = venueValue?.ToString(); } break; case IDictionary legacyDict: if (legacyDict.Contains("href")) { href = legacyDict["href"]?.ToString(); } if (legacyDict.Contains("going")) { going = legacyDict["going"]?.ToString(); } if (legacyDict.Contains("venue")) { venue = legacyDict["venue"]?.ToString(); } break; } RecordRaceGoing(href, going, venue); } } } catch (Exception ex) { Console.Error.WriteLine($"[Navigation] Failed to capture going information from schedule: {ex.Message}"); } }
+        private void RecordRaceGoing(string? href, string? going) { if (string.IsNullOrWhiteSpace(href)) { return; } var marketId = BetfairMarketScraper.ExtractMarketId(href); if (string.IsNullOrWhiteSpace(marketId)) { return; } var trimmedGoing = string.IsNullOrWhiteSpace(going) ? null : going!.Trim(); lock (_raceGoingLock) { if (!string.IsNullOrEmpty(trimmedGoing)) { _raceGoingByMarketId[marketId] = trimmedGoing; } else if (!_raceGoingByMarketId.ContainsKey(marketId)) { _raceGoingByMarketId[marketId] = null; } } }
+        
         private string? ExtractGoingForElement(IWebElement element) { if (element == null) { return null; } try { var js = (IJavaScriptExecutor)_driver; const string script = @"
 const el=arguments[0];const selectors=['div.racetrack-conditions','.racetrack-conditions',""[data-testid='racetrack-conditions']""];const textOrEmpty=node=>{if(!node)return '';const raw=node.textContent||node.innerText||'';return raw.trim();};let current=el;while(current){for(const selector of selectors){const candidate=current.querySelector?current.querySelector(selector):null;if(candidate){const value=textOrEmpty(candidate);if(value){return value;}}}current=current.parentElement;}return '';"; var result = js.ExecuteScript(script, element); if (result is string text) { var trimmed = text.Trim(); return string.IsNullOrEmpty(trimmed) ? null : trimmed; } } catch (StaleElementReferenceException) { return null; } catch (Exception ex) { Console.Error.WriteLine($"[Navigation] Failed to extract going text: {ex.Message}"); } return null; }
 
