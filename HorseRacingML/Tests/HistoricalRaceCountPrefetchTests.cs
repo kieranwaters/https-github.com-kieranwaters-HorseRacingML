@@ -1,11 +1,13 @@
-﻿using System;
-using System.Collections.Generic;
-using HorseRacingML.Data;
+﻿using HorseRacingML.Data;
 using HorseRacingML.Models;
 using HorseRacingML.Scraping;
-using Microsoft.Extensions.Configuration;
-using Xunit;
 using HorseRacingML.Services;
+using Microsoft.Extensions.Configuration;
+using System.Collections.ObjectModel;
+using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using Xunit;
 using PreparedRace = HorseRacingML.ML.HyperparameterTrainer.TrainingDataset.PreparedDataset.PreparedRace;
 
 namespace HorseRacingML.Tests
@@ -135,11 +137,22 @@ namespace HorseRacingML.Tests
                 return SingleLookup?.Invoke(horseName);
             }
 
-            public IReadOnlyDictionary<string, int> GetHistoricalRaceCountsByHorseNames(IEnumerable<string> horseNames)
+            public HistoricalRaceCountPrefetchResult GetHistoricalRaceCountsByHorseNames(IEnumerable<string> horseNames)
             {
                 BulkCallCount++;
                 LastBulkNames = new List<string>(horseNames);
-                return new Dictionary<string, int>(BulkResult, StringComparer.OrdinalIgnoreCase);
+                var candidates = new Dictionary<string, int>(BulkResult, StringComparer.OrdinalIgnoreCase);
+                var originals = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var (name, count) in BulkResult)
+                {
+                    originals[name] = count;
+                }
+
+                return new HistoricalRaceCountPrefetchResult(
+                    new ReadOnlyDictionary<string, int>(candidates),
+                    new ReadOnlyDictionary<string, int>(originals),
+                    matchedHorseIdCount: BulkResult.Count);
             }
             public HorseDistanceStats? GetHorseDistanceStatsByHorseName(string? horseName)
             {

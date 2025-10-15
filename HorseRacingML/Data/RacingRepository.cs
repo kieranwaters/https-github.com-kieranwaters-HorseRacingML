@@ -10,6 +10,7 @@ using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Threading;
 using System.Globalization;
 using System.Text;
@@ -616,7 +617,7 @@ WHERE h.Name IN @Names;";
             return conn.QuerySingle<int>(sql, new { Names = candidates.ToArray() });
         }
 
-        public IReadOnlyDictionary<string, int> GetHistoricalRaceCountsByHorseNames(IEnumerable<string> horseNames)
+        public HistoricalRaceCountPrefetchResult GetHistoricalRaceCountsByHorseNames(IEnumerable<string> horseNames)
         {
             if (horseNames == null)
             {
@@ -626,7 +627,7 @@ WHERE h.Name IN @Names;";
             var originalNames = new HashSet<string>(horseNames.Where(n => !string.IsNullOrWhiteSpace(n)), StringComparer.OrdinalIgnoreCase);
             if (originalNames.Count == 0)
             {
-                return new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                return HistoricalRaceCountPrefetchResult.Empty;
             }
 
             // Map every generated candidate back to the original horse name so we can
@@ -648,74 +649,84 @@ WHERE h.Name IN @Names;";
 
             if (candidateMap.Count == 0)
             {
-                return new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                return HistoricalRaceCountPrefetchResult.Empty;
             }
 
-            const string baseSql = @"
-SELECT h.Name,
-       COUNT(*) AS RaceCount
-FROM RunnerResult rr
-INNER JOIN Horse h ON h.HorseId = rr.HorseId
-WHERE h.Name IN @Names
-GROUP BY h.Name;";
-
             using var conn = OpenConnection();
-            var countsByOriginal = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            var horseIdsByOriginal = new Dictionary<string, HashSet<int>>(StringComparer.OrdinalIgnoreCase);
 
-            // First attempt an exact match using the generated candidate spellings.
+            static void AddHorseId(Dictionary<string, HashSet<int>> lookup, string original, int horseId)
+            {
+                if (horseId <= 0)
+                {
+                    return;
+                }
+
+                if (!lookup.TryGetValue(original, out var ids))
+                {
+                    ids = new HashSet<int>();
+                    lookup[original] = ids;
+                }
+
+                ids.Add(horseId);
+            }
+
+            const string horseSql = @"
+SELECT Name,
+       HorseId
+FROM Horse
+WHERE Name IN @Names;";
+
             var candidateList = candidateMap.Keys.ToArray();
             if (candidateList.Length > 0)
             {
-                foreach (var row in conn.Query(baseSql, new { Names = candidateList }))
+                foreach (var (Name, HorseId) in conn.Query<(string Name, int HorseId)>(horseSql, new { Names = candidateList }))
                 {
-                    var name = (string)row.Name;
-                    var count = (int)row.RaceCount;
-
-                    if (!candidateMap.TryGetValue(name, out var originals) || originals == null)
+                    if (!candidateMap.TryGetValue(Name, out var originals) || originals == null)
                     {
                         continue;
                     }
 
                     foreach (var original in originals)
                     {
-                        countsByOriginal[original] = count;
+                        AddHorseId(horseIdsByOriginal, original, HorseId);
                     }
                 }
             }
 
-            // For any names that still remain unmatched, fall back to a normalized lookup
-            // that mirrors the logic used when preparing feature vectors.
-            var unmatched = originalNames
-                .Where(name => !countsByOriginal.ContainsKey(name))
+            var unmatchedOriginals = originalNames
+                .Where(name => !horseIdsByOriginal.ContainsKey(name))
                 .ToList();
 
-            if (unmatched.Count > 0)
+            if (unmatchedOriginals.Count > 0)
             {
                 var normalizedMap = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
-                foreach (var original in unmatched)
+                foreach (var original in unmatchedOriginals)
                 {
-                    var normalized = NormalizeHistoricalNameKey(original);
-                    if (string.IsNullOrEmpty(normalized))
+                    foreach (var candidate in BuildHistoricalNameCandidates(original))
                     {
-                        continue;
-                    }
+                        var normalized = NormalizeHistoricalNameKey(candidate);
+                        if (string.IsNullOrEmpty(normalized))
+                        {
+                            continue;
+                        }
 
-                    if (!normalizedMap.TryGetValue(normalized, out var originals))
-                    {
-                        originals = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                        normalizedMap[normalized] = originals;
-                    }
+                        if (!normalizedMap.TryGetValue(normalized, out var originals))
+                        {
+                            originals = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                            normalizedMap[normalized] = originals;
+                        }
 
-                    originals.Add(original);
+                        originals.Add(original);
+                    }
                 }
 
                 if (normalizedMap.Count > 0)
                 {
-                    const string normalizedSql = @"
+                    const string normalizedHorseSql = @"
 SELECT lookup.Normalized,
-       COUNT(*) AS RaceCount
-FROM RunnerResult rr
-INNER JOIN Horse h ON h.HorseId = rr.HorseId
+       h.HorseId
+FROM Horse h
 CROSS APPLY (
     SELECT Normalized = LOWER(
         REPLACE(
@@ -748,27 +759,78 @@ CROSS APPLY (
         )
     )
 ) AS lookup
-WHERE lookup.Normalized IN @Names
-GROUP BY lookup.Normalized;
-";
+WHERE lookup.Normalized IN @Names;";
 
                     var normalizedKeys = normalizedMap.Keys.ToArray();
-                    foreach (var row in conn.Query(normalizedSql, new { Names = normalizedKeys }))
+                    foreach (var (Normalized, HorseId) in conn.Query<(string Normalized, int HorseId)>(normalizedHorseSql, new { Names = normalizedKeys }))
                     {
-                        var normalized = (string)row.Normalized;
-                        var count = (int)row.RaceCount;
-
-                        if (!normalizedMap.TryGetValue(normalized, out var originals) || originals == null)
+                        if (!normalizedMap.TryGetValue(Normalized, out var originals) || originals == null)
                         {
                             continue;
                         }
 
                         foreach (var original in originals)
                         {
-                            countsByOriginal[original] = count;
+                            AddHorseId(horseIdsByOriginal, original, HorseId);
                         }
                     }
                 }
+            }
+
+            if (horseIdsByOriginal.Count == 0)
+            {
+                return HistoricalRaceCountPrefetchResult.Empty;
+            }
+
+            var distinctHorseIds = horseIdsByOriginal
+                .SelectMany(kvp => kvp.Value)
+                .Where(id => id > 0)
+                .Distinct()
+                .ToArray();
+
+            if (distinctHorseIds.Length == 0)
+            {
+                return HistoricalRaceCountPrefetchResult.Empty;
+            }
+
+            const string countSql = @"
+SELECT rr.HorseId,
+       COUNT(*) AS RaceCount
+FROM RunnerResult rr
+WHERE rr.HorseId IN @HorseIds
+GROUP BY rr.HorseId;";
+
+            var countsByHorseId = new Dictionary<int, int>();
+            foreach (var row in conn.Query(countSql, new { HorseIds = distinctHorseIds }))
+            {
+                var horseId = (int)row.HorseId;
+                var count = (int)row.RaceCount;
+                countsByHorseId[horseId] = count;
+            }
+
+            var countsByOriginal = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (original, horseIds) in horseIdsByOriginal)
+            {
+                if (horseIds == null || horseIds.Count == 0)
+                {
+                    continue;
+                }
+
+                var total = 0;
+                foreach (var horseId in horseIds)
+                {
+                    if (countsByHorseId.TryGetValue(horseId, out var count))
+                    {
+                        total += count;
+                    }
+                }
+
+                countsByOriginal[original] = total;
+            }
+
+            if (countsByOriginal.Count == 0)
+            {
+                return HistoricalRaceCountPrefetchResult.Empty;
             }
 
             // Expose counts for every candidate spelling so callers can resolve matches
@@ -785,7 +847,10 @@ GROUP BY lookup.Normalized;
                 }
             }
 
-            return results;
+            return new HistoricalRaceCountPrefetchResult(
+                new ReadOnlyDictionary<string, int>(results),
+                new ReadOnlyDictionary<string, int>(countsByOriginal),
+                matchedHorseIdCount: distinctHorseIds.Length);
         }
         internal static IReadOnlyCollection<string> BuildHistoricalNameCandidates(string? horseName)
         {

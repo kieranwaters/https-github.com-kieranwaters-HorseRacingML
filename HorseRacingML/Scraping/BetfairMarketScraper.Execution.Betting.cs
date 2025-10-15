@@ -31,7 +31,7 @@ namespace HorseRacingML.Scraping
                 return Enumerable.Empty<BetRecommendation>();
             }
 
-            IReadOnlyDictionary<string, int>? prefetchedCounts = null;
+            HistoricalRaceCountPrefetchResult? prefetchedCounts = null;
             try
             {
                 var missingNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

@@ -428,7 +428,7 @@ namespace HorseRacingML.Scraping
 
             var runnerList = flows as IList<RunnerFlow> ?? flows.ToList();
 
-            IReadOnlyDictionary<string, int>? prefetchedCounts = null;
+            HistoricalRaceCountPrefetchResult? prefetchedCounts = null;
             try
             {
                 var missingNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -460,6 +460,14 @@ namespace HorseRacingML.Scraping
                 if (missingNames.Count > 0)
                 {
                     prefetchedCounts = _repo.GetHistoricalRaceCountsByHorseNames(missingNames);
+                    var prefetchSummary = string.Format(
+                        CultureInfo.InvariantCulture,
+                        "\t[FeaturePopulation] Prefetched historical race counts for {0} runner name(s); matched {1} name(s) ({2} unique horse id(s)) spanning {3} historical race(s).",
+                        missingNames.Count,
+                        prefetchedCounts?.MatchedHorseCount ?? 0,
+                        prefetchedCounts?.MatchedHorseIdCount ?? 0,
+                        prefetchedCounts?.TotalHistoricalRaces ?? 0);
+                    Console.WriteLine(prefetchSummary);
                 }
             }
             catch (Exception ex)
@@ -563,8 +571,8 @@ namespace HorseRacingML.Scraping
 
         private RunnerDayReport CreateRunnerReport(
             RunnerFlow flow,
-            IReadOnlyDictionary<string, int>? prefetchedCounts)
-        {
+            HistoricalRaceCountPrefetchResult? prefetchedCounts)
+        { 
             var runner = new RunnerDayReport
             {
                 ClothNumber = flow.ClothNumber,
@@ -731,9 +739,9 @@ namespace HorseRacingML.Scraping
         }
         private static int? ResolveHistoricalRaceCountFromPrefetch(
             RunnerFlow flow,
-            IReadOnlyDictionary<string, int>? prefetchedCounts)
+            HistoricalRaceCountPrefetchResult? prefetchedCounts)
         {
-            if (prefetchedCounts == null || prefetchedCounts.Count == 0)
+            if (prefetchedCounts == null || prefetchedCounts.IsEmpty)
             {
                 return null;
             }
@@ -745,7 +753,7 @@ namespace HorseRacingML.Scraping
 
             foreach (var candidate in RacingRepository.BuildHistoricalNameCandidates(flow.HorseName))
             {
-                if (prefetchedCounts.TryGetValue(candidate, out var count))
+                if (prefetchedCounts.TryGetCountByCandidate(candidate, out var count))
                 {
                     return count;
                 }
@@ -858,7 +866,7 @@ namespace HorseRacingML.Scraping
                 return;
             }
             var lastDistanceCache = new Dictionary<(int? HorseId, string NameKey), int?>();
-            IReadOnlyDictionary<string, int>? prefetchedCounts = null;
+            HistoricalRaceCountPrefetchResult? prefetchedCounts = null;
             try
             {
                 var missingNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -892,14 +900,12 @@ namespace HorseRacingML.Scraping
                     prefetchedCounts = _repo.GetHistoricalRaceCountsByHorseNames(missingNames);
                     var prefetchSummary = string.Format(
                         CultureInfo.InvariantCulture,
-                        "\t[FeaturePopulation] Prefetched historical race counts for {0} runner name(s); repository returned {1} record(s).",
+                        "\t[FeaturePopulation] Prefetched historical race counts for {0} runner name(s); matched {1} name(s) ({2} unique horse id(s)) spanning {3} historical race(s).",
                         missingNames.Count,
-                        prefetchedCounts?.Count ?? 0);
+                        prefetchedCounts?.MatchedHorseCount ?? 0,
+                        prefetchedCounts?.MatchedHorseIdCount ?? 0,
+                        prefetchedCounts?.TotalHistoricalRaces ?? 0);
                     Console.WriteLine(prefetchSummary);
-                }
-                else
-                {
-                    Console.WriteLine("\t[FeaturePopulation] All runners already contained historical counts; no prefetch required.");
                 }
             }
             catch (Exception ex)
