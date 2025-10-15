@@ -1473,6 +1473,22 @@ namespace HorseRacingML.Scraping
         private static string[] HistoricalFeatureBackfillKeys => HistoricalFeatureBackfillKeysLazy.Value;
 
         private static HashSet<string> HistoricalFeatureBackfillKeySet => HistoricalFeatureBackfillKeySetLazy.Value;
+        private static readonly HashSet<string> HistoricalFeaturesAlwaysRequired = new(
+            new[]
+            {
+                "Class",
+                "RaceType",
+                "AgeRestriction",
+                "Surface",
+                "Going",
+                "DistanceYards",
+                "DistanceText",
+                "DistanceBucket",
+                "BackBookPercentage",
+                "LayBookPercentage",
+                "RunnerCount"
+            },
+            StringComparer.OrdinalIgnoreCase);
 
         private static readonly HashSet<string> HistoricalFeatureBackfillExcludedKeys = new(
             new[]
@@ -1603,6 +1619,16 @@ namespace HorseRacingML.Scraping
             {
                 return false;
             }
+            if (IsHistoricalDataMissing(featureVector) &&
+                !HistoricalFeaturesAlwaysRequired.Contains(key))
+            {
+                return false;
+            }
+
+            if (IsRaceMetadataUnavailable(featureVector, key))
+            {
+                return false;
+            }
 
             return true;
         }
@@ -1620,6 +1646,100 @@ namespace HorseRacingML.Scraping
             return key.StartsWith("AvgSpeed", StringComparison.OrdinalIgnoreCase) ||
                 key.StartsWith("AvgSpeedDiff", StringComparison.OrdinalIgnoreCase);
         }
+        private static bool IsHistoricalDataMissing(Dictionary<string, object?>? featureVector)
+        {
+            if (featureVector == null)
+            {
+                return true;
+            }
+
+            if (featureVector.TryGetValue("HistoricalDataMissing", out var missingObj) &&
+                missingObj is bool missing && missing)
+            {
+                return true;
+            }
+
+            if (featureVector.TryGetValue("CareerStarts", out var careerObj))
+            {
+                var starts = TryConvertToInt32(careerObj);
+                if (!starts.HasValue || starts.Value <= 0)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool HasMissingFlag(Dictionary<string, object?> featureVector, string flagKey)
+        {
+            return featureVector.TryGetValue(flagKey, out var flagValue) &&
+                   flagValue is bool flagBool && flagBool;
+        }
+
+        private static bool IsRaceMetadataUnavailable(Dictionary<string, object?> featureVector, string key)
+        {
+            if (featureVector == null || string.IsNullOrWhiteSpace(key))
+            {
+                return false;
+            }
+
+            if (HasMissingFlag(featureVector, "ClassMissing") &&
+                key.Contains("Class", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if (HasMissingFlag(featureVector, "AgeRestrictionMissing") &&
+                key.Contains("AgeRestriction", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if (HasMissingFlag(featureVector, "GoingMissing"))
+            {
+                if (key.Contains("Going", StringComparison.OrdinalIgnoreCase) ||
+                    key.StartsWith("LayoffNormalized_", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            if (HasMissingFlag(featureVector, "SurfaceMissing") &&
+                key.Contains("Surface", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if (HasMissingFlag(featureVector, "DistanceMissing"))
+            {
+                if (string.Equals(key, "DistanceYards", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(key, "DistanceText", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(key, "DistanceBucket", StringComparison.OrdinalIgnoreCase) ||
+                    key.Contains("DistanceBucket", StringComparison.OrdinalIgnoreCase) ||
+                    key.Contains("DistanceChange", StringComparison.OrdinalIgnoreCase) ||
+                    key.Contains("DistanceRatio", StringComparison.OrdinalIgnoreCase) ||
+                    key.Contains("GoingDistance", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            if (HasMissingFlag(featureVector, "BackBookPercentageMissing") &&
+                key.Contains("BackBook", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if (HasMissingFlag(featureVector, "LayBookPercentageMissing") &&
+                key.Contains("LayBook", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return false;
+        }
+
 
         private static bool IsDistanceBeatenSensitiveKey(string key) =>
             DistanceBeatenSensitiveFeatureKeys.Contains(key);
