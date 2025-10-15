@@ -1407,9 +1407,9 @@ new RunnerFlow { HorseName = "Alpha Runner" },
                 return null;
             }
 
-            public IReadOnlyDictionary<string, int> GetHistoricalRaceCountsByHorseNames(IEnumerable<string> horseNames)
+            public HistoricalRaceCountPrefetchResult GetHistoricalRaceCountsByHorseNames(IEnumerable<string> horseNames)
             {
-                return new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                return HistoricalRaceCountPrefetchResult.Empty;
             }
             public HorseDistanceStats? GetHorseDistanceStatsByHorseName(string? horseName)
             {

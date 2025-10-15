@@ -1574,10 +1574,13 @@ const findVenue=container=>{
       ""[data-testid='meetingTitle']"",
       ""[data-testid='meeting-title']"",
       ""[data-testid='meeting-name']"",
+      ""[data-testid='meetingLabel']"",
+      ""[data-testid='meeting-label']"",
     '.meeting-header__course-name',
     '.meeting-description__title',
     '.meeting-name',
     '.meeting-title',
+    '.meeting-label',
     'h2',
     'h3'
   ];
@@ -1605,24 +1608,56 @@ const findVenue=container=>{
   }
   return '';
 };
+const goingSelectors=[
+  ""div.racetrack-conditions"",
+  "".racetrack-conditions"",
+  ""[data-testid='racetrack-conditions']"",
+  ""[data-testid='going']"",
+  ""[data-test-id='going']"",
+  ""[data-testid='track-going']""
+];
+const normalizeGoing=text=>{
+  if(!text)return '';
+  let cleaned=text.trim();
+  if(!cleaned)return '';
+  cleaned=cleaned.replace(/^going\s*[:\-]?\s*/i,'');
+  const pipeIndex=cleaned.indexOf('|');
+  if(pipeIndex>=0){
+    cleaned=cleaned.substring(0,pipeIndex);
+  }
+  return cleaned.trim();
+};
 const findGoing=container=>{
   if(!container)return '';
-  const explicit=textOrEmpty(container.querySelector(""div.racetrack-conditions, .racetrack-conditions, [data-testid='racetrack-conditions']""));
-  if(explicit)return explicit;
-  const label=textOrEmpty(container);
-  if(!label)return '';
-  const match=label.match(/going\s*[:\-]?\s*([^|]+)/i);
-  return match?match[1].trim():'';
+  let current=container;
+  while(current){
+    for(const selector of goingSelectors){
+      if(!selector)continue;
+      const candidate=current.querySelector?current.querySelector(selector):null;
+      const value=normalizeGoing(textOrEmpty(candidate));
+      if(value)return value;
+    }
+    const label=normalizeGoing(textOrEmpty(current));
+    if(label)return label;
+    current=current.parentElement;
+  }
+  return '';
 };
 const results=[];
 const processed=new Set();
 const meetingDescriptions=Array.from(document.querySelectorAll(""div.meeting-description""));
 for(const description of meetingDescriptions){
-  const host=description.closest('li')||description.parentElement;
+  const host=description.closest('li')||description.closest(""[data-testid='meeting-card']"")||description.closest(""[data-testid='meeting']"")||description.parentElement;
   if(!host||processed.has(host))continue;
   processed.add(host);
-  const going=findGoing(description);
-  const venue=findVenue(description);
+  let going=findGoing(description);
+  if(!going){
+    going=findGoing(host);
+  }
+  let venue=findVenue(description);
+  if(!venue){
+    venue=findVenue(host);
+  }
   const seenLinks=new Set();
   const anchors=host.querySelectorAll(""a[href*='/horse-racing/']"");
   for(const anchor of anchors){
