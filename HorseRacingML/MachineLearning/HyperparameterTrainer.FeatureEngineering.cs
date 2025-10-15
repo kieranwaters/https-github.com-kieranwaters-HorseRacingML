@@ -546,11 +546,11 @@ namespace HorseRacingML.ML
                                 ? distanceYards / (float)winningMs.Value
                                 : 0f;
                             row["RaceSpeed"] = raceSpeed;
-                            bool distanceKnown = row.TryGetValue("DistanceBeatenKnown", out var distanceKnownObj) &&
+                            bool distanceBeatenKnown = row.TryGetValue("DistanceBeatenKnown", out var distanceKnownObj) &&
                                 distanceKnownObj is bool distanceKnownBool && distanceKnownBool;
 
-                            bool hasRunnerSpeed = winningTimeAvailable && distanceKnown;
-                            float runnerSpeed = 0f;
+                            bool hasRunnerSpeed = winningTimeAvailable && distanceBeatenKnown;
+                            runnerSpeed = 0f;
                             if (hasRunnerSpeed)
                             {
                                 float beaten = Convert.ToSingle(row["DistanceBeatenLengths"]);
