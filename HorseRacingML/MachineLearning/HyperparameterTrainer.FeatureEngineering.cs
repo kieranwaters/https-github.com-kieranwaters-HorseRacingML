@@ -247,7 +247,7 @@ namespace HorseRacingML.ML
                             row["ClassMissing"] = classMissing;
 
                             string? ageRestrictionValue = NormalizeStringValue(
-                                row.TryGetValue("AgeRestriction", out var ageObj) ? ageObj : null);
+                                row.TryGetValue("AgeRestriction", out var ageRestrictionObj) ? ageRestrictionObj : null);
                             bool ageRestrictionMissing = string.IsNullOrEmpty(ageRestrictionValue);
                             if (!ageRestrictionMissing)
                             {
