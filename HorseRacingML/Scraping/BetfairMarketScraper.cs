@@ -86,7 +86,8 @@ namespace HorseRacingML.Scraping
             bool useMarketFallbackForAiDegeneracy = true,
             System.Collections.Generic.IReadOnlyDictionary<string, string?>? raceGoingLookup = null,
             bool computeAiProbabilities = true,
-            string? scheduleRegion = null)
+            string? scheduleRegion = null,
+            System.Collections.Generic.IReadOnlyDictionary<string, string?>? raceGoingByVenueLookup = null)
             : this(
                 repo,
                 trainer,
