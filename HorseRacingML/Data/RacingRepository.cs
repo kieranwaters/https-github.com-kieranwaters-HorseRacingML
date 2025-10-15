@@ -194,7 +194,7 @@ namespace HorseRacingML.Data
                 return;
             }
 
-            const string header = @"INSERT INTO RunnerFlow(MarketId, UpcomingRaceId, RaceDate, ScheduledOff, VenueName, VenueCountry, RaceTitle, RaceDetails, RaceType, AgeRestriction, Surface, Going, DistanceYards, DistanceText, RunnerCount, BackBookPercentage, LayBookPercentage, ClothNumber, Draw, HorseName, JockeyName, BackPrice1, BackPrice2, BackPrice3, LayPrice1, LayPrice2, LayPrice3, AiOdds, Age, WeightLbs, WeightText, TrainerName)
+            const string header = @"INSERT INTO RunnerFlow(MarketId, UpcomingRaceId, RaceDate, ScheduledOff, VenueName, VenueCountry, RaceTitle, RaceDetails, RaceType, Surface, Going, DistanceYards, DistanceText, RunnerCount, BackBookPercentage, LayBookPercentage, ClothNumber, Draw, HorseName, JockeyName, BackPrice1, BackPrice2, BackPrice3, LayPrice1, LayPrice2, LayPrice3, AiOdds, Age, WeightLbs, WeightText, TrainerName)
 VALUES";
       
 
@@ -217,7 +217,6 @@ VALUES";
                     .Append(", @RaceTitle").Append(suffix)
                     .Append(", @RaceDetails").Append(suffix)
                     .Append(", @RaceType").Append(suffix)
-                    .Append(", @AgeRestriction").Append(suffix)
                     .Append(", @Surface").Append(suffix)
                     .Append(", @Going").Append(suffix)
                     .Append(", @DistanceYards").Append(suffix)

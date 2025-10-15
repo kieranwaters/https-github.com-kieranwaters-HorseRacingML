@@ -1649,6 +1649,7 @@ const normalizeGoing=text=>{
   return cleaned.trim();
 };
 const sequentialPairs=[];
+const fallbackPairs=[];
 const addSequentialPair=(venue,going)=>{
   if(!going)return;
   const cleanVenue=cleanseVenue(venue);
@@ -1782,38 +1783,6 @@ for(const description of meetingDescriptions){
     const sanitizedVenue=cleanseVenue(venue);
     if(sanitizedVenue){
       venue=sanitizedVenue;
-    }
-  }
-const results=[];
-const processed=new Set();
-const meetingDescriptions=Array.from(document.querySelectorAll(""div.meeting-description""));
-for(const description of meetingDescriptions){
-  const host=description.closest('li')||description.closest(""[data-testid='meeting-card']"")||description.closest(""[data-testid='meeting']"")||description.parentElement;
-  if(!host||processed.has(host))continue;
-  processed.add(host);
-  let going=findGoing(description);
-  if(!going){
-    going=findGoing(host);
-  }
-  let venue=findVenue(description);
-  if(!venue){
-    venue=findVenue(host);
-  }
-  if(!going&&fallbackPairs.length){
-    let match=null;
-    if(venue){
-      const normalizedVenue=cleanseVenue(venue).toLowerCase();
-      match=fallbackPairs.find(p=>!p.used&&p.venue&&p.venue.toLowerCase()===normalizedVenue);
-    }
-    if(!match){
-      match=fallbackPairs.find(p=>!p.used);
-    }
-    if(match){
-      going=match.going;
-      if(!venue&&match.venue){
-        venue=match.venue;
-      }
-      match.used=true;
     }
   }
   const seenLinks=new Set();
