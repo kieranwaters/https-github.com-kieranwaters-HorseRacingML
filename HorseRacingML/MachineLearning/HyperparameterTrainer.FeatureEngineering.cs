@@ -52,7 +52,8 @@ namespace HorseRacingML.ML
             int Age,
             bool Won,
             float Rating,
-            float Weight);
+            float Weight,
+            bool HasSpeed);
 
         private sealed class FeatureEngineeringState
         {
@@ -364,34 +365,46 @@ namespace HorseRacingML.ML
                             int speedCount = Math.Min(PastRaceCount, history.Count);
                             if (speedCount > 0)
                             {
-                                var recentSpeeds = history
+                                var recentSpeedEntries = history
                                     .GetRange(history.Count - speedCount, speedCount)
-                                    .Select(h => h.Speed)
+                                    .Where(h => h.HasSpeed)
                                     .ToList();
-                                float speedMean = recentSpeeds.Average();
-                                float variance = 0f;
-                                foreach (var s in recentSpeeds)
+
+                                if (recentSpeedEntries.Count > 0)
                                 {
-                                    float diff = s - speedMean;
-                                    variance += diff * diff;
-                                }
-                                row["SpeedStdDev"] = (float)Math.Sqrt(variance / recentSpeeds.Count);
-                                if (speedCount > 1)
-                                {
-                                    float xMean = (speedCount - 1) / 2f;
-                                    float num = 0f, den = 0f;
-                                    for (int j = 0; j < recentSpeeds.Count; j++)
+                                    var recentSpeeds = recentSpeedEntries
+                                        .Select(h => h.Speed)
+                                        .ToList();
+                                    float speedMean = recentSpeeds.Average();
+                                    float variance = 0f;
+                                    foreach (var s in recentSpeeds)
                                     {
-                                        float x = j;
-                                        float y = recentSpeeds[j];
-                                        num += (x - xMean) * (y - speedMean);
-                                        den += (x - xMean) * (x - xMean);
+                                        float diff = s - speedMean;
+                                        variance += diff * diff;
                                     }
-                                    row["SpeedSlope"] = den != 0f ? num / den : 0f;
+                                    row["SpeedStdDev"] = (float)Math.Sqrt(variance / recentSpeeds.Count);
+                                    if (recentSpeedEntries.Count > 1)
+                                    {
+                                        float xMean = (recentSpeedEntries.Count - 1) / 2f;
+                                        float num = 0f, den = 0f;
+                                        for (int j = 0; j < recentSpeeds.Count; j++)
+                                        {
+                                            float x = j;
+                                            float y = recentSpeeds[j];
+                                            num += (x - xMean) * (y - speedMean);
+                                            den += (x - xMean) * (x - xMean);
+                                        }
+                                        row["SpeedSlope"] = den != 0f ? num / den : 0f;
+                                    }
+                                    else
+                                    {
+                                        row["SpeedSlope"] = 0f;
+                                    }
                                 }
                                 else
                                 {
                                     row["SpeedSlope"] = 0f;
+                                    row["SpeedStdDev"] = 0f;
                                 }
                             }
                             else
@@ -448,8 +461,6 @@ namespace HorseRacingML.ML
 
                                     row[$"WinRateLast{window}"] = _trainer.SmoothedWinRate(wins, count);
                                     row[$"AvgNormPosLast{window}"] = recent.Sum(h => h.NormFinish) / count;
-                                    row[$"AvgSpeedLast{window}"] = recent.Sum(h => h.Speed) / count;
-                                    row[$"AvgSpeedDiffLast{window}"] = recent.Sum(h => h.SpeedDiff) / count;
                                     row[$"AvgRatingLast{window}"] = recent.Sum(h => h.Rating) / count;
 
                                 }
@@ -458,8 +469,6 @@ namespace HorseRacingML.ML
                                     recent = new();
                                     row[$"WinRateLast{window}"] = _trainer.SmoothedWinRate(0, 0);
                                     row[$"AvgNormPosLast{window}"] = 0f;
-                                    row[$"AvgSpeedLast{window}"] = 0f;
-                                    row[$"AvgSpeedDiffLast{window}"] = 0f;
                                     row[$"AvgRatingLast{window}"] = 0f;
 
                                 }
@@ -532,27 +541,31 @@ namespace HorseRacingML.ML
                             int? winningMs = row.TryGetValue("WinningTimeMs", out var winningObj) && PreparedDataset.TryConvertToInt32(winningObj, out var winningValue)
                                 ? winningValue
                             : (int?)null;
-                            bool speedMissing = !(winningMs.HasValue && winningMs.Value > 0);
-                            float raceSpeed = speedMissing
-                                ? 0f
-                                : distanceYards / (float)winningMs.Value;
+                            bool winningTimeAvailable = winningMs.HasValue && winningMs.Value > 0;
+                            float raceSpeed = winningTimeAvailable && distanceYards > 0
+                                ? distanceYards / (float)winningMs.Value
+                                : 0f;
                             row["RaceSpeed"] = raceSpeed;
-                            if (!speedMissing)
+                            bool distanceKnown = row.TryGetValue("DistanceBeatenKnown", out var distanceKnownObj) &&
+                                distanceKnownObj is bool distanceKnownBool && distanceKnownBool;
+
+                            bool hasRunnerSpeed = winningTimeAvailable && distanceKnown;
+                            float runnerSpeed = 0f;
+                            if (hasRunnerSpeed)
                             {
-                                float beaten = row["DistanceBeatenLengths"] != null ? Convert.ToSingle(row["DistanceBeatenLengths"]) : 0f;
-                                float runnerTime = winningMs.Value + beaten * MsPerLength;
+                                float beaten = Convert.ToSingle(row["DistanceBeatenLengths"]);
+                                float runnerTime = winningMs!.Value + beaten * MsPerLength;
                                 runnerSpeed = runnerTime > 0f ? distanceYards / runnerTime : 0f;
                                 row["RunnerSpeed"] = runnerSpeed;
                             }
                             else
                             {
-                                runnerSpeed = 0f;
                                 row["RunnerSpeed"] = 0f;
                             }
-                            float speedDiff = runnerSpeed - raceSpeed;
-                            row["SpeedMissing"] = speedMissing;
+                            float speedDiff = hasRunnerSpeed ? runnerSpeed - raceSpeed : 0f;
                             row["SpeedDiff"] = speedDiff;
-                            row["SpeedRatio"] = raceSpeed != 0f ? runnerSpeed / raceSpeed : 0f;
+                            row["SpeedRatio"] = hasRunnerSpeed && raceSpeed != 0f ? runnerSpeed / raceSpeed : 0f;
+                            row["SpeedMissing"] = !hasRunnerSpeed;
                             string bucket = DistanceBucket(distanceYards);
                             row["DistanceBucket"] = bucket;
                             row[$"RelativeDraw_{bucket}"] = (float)row["RelativeDraw"];
@@ -605,6 +618,17 @@ namespace HorseRacingML.ML
                                     row[$"DistanceBucketAvgNormLast{window}"] = bucketRecent.Count > 0
                                         ? bucketRecent.Sum(h => h.NormFinish) / bucketRecent.Count
                                         : 0f;
+                                    var speedRecent = recent.Where(h => h.HasSpeed).ToList();
+                                    if (speedRecent.Count > 0)
+                                    {
+                                        row[$"AvgSpeedLast{window}"] = speedRecent.Average(h => h.Speed);
+                                        row[$"AvgSpeedDiffLast{window}"] = speedRecent.Average(h => h.SpeedDiff);
+                                    }
+                                    else
+                                    {
+                                        row[$"AvgSpeedLast{window}"] = 0f;
+                                        row[$"AvgSpeedDiffLast{window}"] = 0f;
+                                    }
                                 }
                                 else
                                 {
@@ -616,6 +640,8 @@ namespace HorseRacingML.ML
                                     row[$"CourseAvgNormLast{window}"] = 0f;
                                     row[$"DistanceBucketWinRateLast{window}"] = _trainer.SmoothedWinRate(0, 0);
                                     row[$"DistanceBucketAvgNormLast{window}"] = 0f;
+                                    row[$"AvgSpeedLast{window}"] = 0f;
+                                    row[$"AvgSpeedDiffLast{window}"] = 0f;
                                 }
                             }
                             // Preferred distance deviation
@@ -895,7 +921,8 @@ namespace HorseRacingML.ML
                                     age,
                                     finish.HasValue && finish.Value == 1,
                                     rating,
-                                    weight));
+                                    weight,
+                                    hasRunnerSpeed));
                                 horseClassStat.starts++;
                                 horseClassStat.sumNorm += normFinish;
                                 if (finish.HasValue && finish.Value == 1) horseClassStat.wins++;

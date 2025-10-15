@@ -495,6 +495,222 @@ namespace HorseRacingML.Tests
             Assert.Equal(0.52f, Convert.ToSingle(runner.FeatureValues["CourseWinRateLast5"]));
         }
         [Fact]
+        public void PopulateFeatureVectors_AllowsMissingSpeedFeaturesWhenRawDataUnavailable()
+        {
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:HorseRacingDb"] = "Data Source=(localdb)\\MSSQLLocalDB;Initial Catalog=HorseRacingML;Integrated Security=True;Persist Security Info=False;Pooling=False;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Application Name=\"SQL Server Management Studio\";Command Timeout=30"
+                })
+                .Build();
+
+            var primaryRow = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["HorseName"] = "Speed Optional"
+            };
+            var primaryRace = new PreparedRace(910, new List<Dictionary<string, object?>> { primaryRow });
+
+            var fallbackRow = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["HorseName"] = "Speed Optional",
+                ["Class"] = 4,
+                ["Going"] = "Soft",
+                ["HasLastWin"] = false,
+                ["DistanceChangeFromLast"] = 1.5f,
+                ["DistanceRatioFromAverage"] = 1.02f,
+                ["CareerStarts"] = 11,
+                ["LifetimeWinRate"] = 0.182f,
+                ["IsTopWeight"] = false,
+                ["IsBottomWeight"] = false,
+                ["JockeyGoingDistanceWinRate"] = 0.33f,
+                ["JockeyGoingDistanceAvgNorm"] = 0.27f,
+                ["LastJockeyGoingDistanceNormPos"] = 0.21f,
+                ["TrainerJockeyCourseWinRate"] = 0.3f,
+                ["DistanceBeatenKnown"] = false,
+                ["DistanceBeatenLengths"] = 0f,
+                ["WinningTimeMs"] = 0f,
+                ["ClassWinRate"] = 0.41f,
+                ["ClassAvgNorm"] = 0.23f,
+                ["LastClassNormPos"] = 0.15f,
+                ["TrainerClassWinRate"] = 0.38f,
+                ["TrainerClassAvgNorm"] = 0.19f,
+                ["LastTrainerClassNormPos"] = 0.24f,
+                ["JockeyClassWinRate"] = 0.29f,
+                ["JockeyClassAvgNorm"] = 0.2f,
+                ["LastJockeyClassNormPos"] = 0.16f,
+                ["GoingCourseWinRate"] = 0.32f,
+                ["GoingCourseAvgNorm"] = 0.28f,
+                ["LastGoingCourseNormPos"] = 0.22f,
+                ["AgeRestrictionWinRate"] = 0.26f,
+                ["LastAgeRestrictionNormPos"] = 0.19f,
+                ["DistanceBucketWinRate"] = 0.35f,
+                ["LastDistanceBucketNormPos"] = 0.2f,
+                ["GoingDistanceWinRate"] = 0.31f,
+                ["GoingDistanceAvgNorm"] = 0.25f,
+                ["LastGoingDistanceNormPos"] = 0.2f,
+                ["RaceSpeed"] = 0f,
+                ["RunnerSpeed"] = 0f,
+                ["SpeedMissing"] = true,
+                ["SpeedDiff"] = 0f,
+                ["SpeedRatio"] = 0f,
+                ["CourseWinRateLast5"] = 0.44f,
+                ["TrainerWinRate"] = 0.21f,
+                ["TrainerWinRateLast50"] = 0.24f,
+                ["TrainerWinRateRecentDays"] = 0.2f,
+                ["TrainerSurfaceWinRate"] = 0.27f,
+                ["TrainerSurfaceAvgNorm"] = 0.18f,
+                ["LastTrainerSurfaceNormPos"] = 0.14f,
+                ["TrainerGoingWinRate"] = 0.25f,
+                ["TrainerGoingAvgNorm"] = 0.2f,
+                ["LastTrainerGoingNormPos"] = 0.18f,
+                ["TrainerDistanceBucketWinRate"] = 0.28f,
+                ["TrainerDistanceBucketAvgNorm"] = 0.19f,
+                ["LastTrainerDistanceBucketNormPos"] = 0.17f,
+                ["TrainerCourseWinRate"] = 0.23f,
+                ["TrainerJockeyWinRate"] = 0.27f,
+                ["TrainerJockeySurfaceWinRate"] = 0.25f,
+                ["TrainerJockeyCourseWinRate"] = 0.24f,
+                ["JockeyWinRate"] = 0.18f,
+                ["JockeyWinRateLast50"] = 0.2f,
+                ["JockeyWinRateRecentDays"] = 0.17f,
+                ["JockeySurfaceWinRate"] = 0.22f,
+                ["JockeySurfaceAvgNorm"] = 0.16f,
+                ["LastJockeySurfaceNormPos"] = 0.13f,
+                ["JockeyGoingWinRate"] = 0.2f,
+                ["JockeyGoingAvgNorm"] = 0.17f,
+                ["LastJockeyGoingNormPos"] = 0.15f,
+                ["JockeyDistanceBucketWinRate"] = 0.24f,
+                ["JockeyDistanceBucketAvgNorm"] = 0.18f,
+                ["LastJockeyDistanceBucketNormPos"] = 0.16f,
+                ["JockeyCourseWinRate"] = 0.19f,
+                ["JockeyClassWinRate"] = 0.23f,
+                ["JockeyClassAvgNorm"] = 0.18f,
+                ["LastJockeyClassNormPos"] = 0.16f,
+                ["JockeyGoingDistanceWinRate"] = 0.21f,
+                ["JockeyGoingDistanceAvgNorm"] = 0.18f,
+                ["LastJockeyGoingDistanceNormPos"] = 0.16f,
+                ["RaceAvgWinRateLast5"] = 0.27f,
+                ["GoingWinRateLast5"] = 0.29f,
+                ["GoingAvgNormLast5"] = 0.2f,
+                ["SurfaceWinRateLast5"] = 0.3f,
+                ["SurfaceAvgNormLast5"] = 0.22f,
+                ["CourseWinRateLast5"] = 0.28f,
+                ["CourseAvgNormLast5"] = 0.2f,
+                ["DistanceBucketWinRateLast5"] = 0.26f,
+                ["DistanceBucketAvgNormLast5"] = 0.19f,
+                ["WinRateLast5"] = 0.24f,
+                ["AvgNormPosLast5"] = 0.32f,
+                ["AvgSpeedLast5"] = 0f,
+                ["AvgSpeedDiffLast5"] = 0f,
+                ["AvgRatingLast5"] = 0.25f
+            };
+            var fallbackRace = new PreparedRace(911, new List<Dictionary<string, object?>> { fallbackRow });
+
+            var trainer = new BackfillTrainer(configuration, primaryRace, fallbackRace);
+            var repo = new MinimalRacingRepository();
+            var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
+            var scraper = new BetfairMarketScraper(repo, trainer, bankroll: 12m, settings);
+            var flows = new List<RunnerFlow>
+            {
+                new RunnerFlow
+                {
+                    HorseName = "Speed Optional",
+                    ClothNumber = 4
+                }
+            };
+
+            var report = scraper.TestBuildRaceReport(
+                marketId: "1.888",
+                raceTitle: "Speedless Stakes",
+                venueName: "Optional Park",
+                venueCountry: "GB",
+                raceDate: new DateTime(2024, 10, 3),
+                offTime: new TimeSpan(15, 20, 0),
+                raceDetails: "Handicap",
+                going: "Soft",
+                backBookPercentage: 103m,
+                layBookPercentage: 105m,
+                raceUrl: null,
+                flows: flows);
+
+            var runner = Assert.Single(report.Runners);
+            Assert.True(runner.HasPreparedFeatures);
+            Assert.True(Convert.ToBoolean(runner.FeatureValues["SpeedMissing"]));
+            Assert.DoesNotContain("WinningTimeMs", runner.FeaturePopulation.MissingKeys);
+            Assert.DoesNotContain("RaceSpeed", runner.FeaturePopulation.MissingKeys);
+            Assert.DoesNotContain("RunnerSpeed", runner.FeaturePopulation.MissingKeys);
+            Assert.DoesNotContain("SpeedDiff", runner.FeaturePopulation.MissingKeys);
+            Assert.DoesNotContain("SpeedRatio", runner.FeaturePopulation.MissingKeys);
+            Assert.DoesNotContain("DistanceBeatenLengths", runner.FeaturePopulation.MissingKeys);
+        }
+
+        [Fact]
+        public void PopulateFeatureVectors_RetainsRaceSpeedWhenRunnerSpeedUnavailable()
+        {
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:HorseRacingDb"] = "Data Source=(localdb)\\MSSQLLocalDB;Initial Catalog=HorseRacingML;Integrated Security=True;Persist Security Info=False;Pooling=False;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Application Name=\"SQL Server Management Studio\";Command Timeout=30"
+                })
+                .Build();
+
+            var primaryRow = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["HorseName"] = "Race Speed Only"
+            };
+            var primaryRace = new PreparedRace(915, new List<Dictionary<string, object?>> { primaryRow });
+
+            var fallbackRow = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["HorseName"] = "Race Speed Only",
+                ["Class"] = 3,
+                ["Going"] = "Good",
+                ["DistanceYards"] = 1760,
+                ["DistanceBeatenKnown"] = false,
+                ["DistanceBeatenLengths"] = 0f,
+                ["WinningTimeMs"] = 95600,
+                ["RaceSpeed"] = 1760f / 95600f,
+                ["RunnerSpeed"] = 0f,
+                ["SpeedMissing"] = true
+            };
+            var fallbackRace = new PreparedRace(916, new List<Dictionary<string, object?>> { fallbackRow });
+
+            var trainer = new BackfillTrainer(configuration, primaryRace, fallbackRace);
+            var repo = new MinimalRacingRepository();
+            var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
+            var scraper = new BetfairMarketScraper(repo, trainer, bankroll: 9m, settings);
+            var flows = new List<RunnerFlow>
+            {
+                new RunnerFlow
+                {
+                    HorseName = "Race Speed Only",
+                    ClothNumber = 2
+                }
+            };
+
+            var report = scraper.TestBuildRaceReport(
+                marketId: "1.889",
+                raceTitle: "Partial Speed Stakes",
+                venueName: "Speed Park",
+                venueCountry: "GB",
+                raceDate: new DateTime(2024, 11, 4),
+                offTime: new TimeSpan(13, 55, 0),
+                raceDetails: "Handicap",
+                going: "Good",
+                backBookPercentage: 101m,
+                layBookPercentage: 103m,
+                raceUrl: null,
+                flows: flows);
+
+            var runner = Assert.Single(report.Runners);
+            Assert.True(Convert.ToBoolean(runner.FeatureValues["SpeedMissing"]));
+            Assert.DoesNotContain("WinningTimeMs", runner.FeaturePopulation.MissingKeys);
+            Assert.DoesNotContain("RaceSpeed", runner.FeaturePopulation.MissingKeys);
+            Assert.DoesNotContain("RunnerSpeed", runner.FeaturePopulation.MissingKeys);
+            Assert.DoesNotContain("SpeedDiff", runner.FeaturePopulation.MissingKeys);
+            Assert.DoesNotContain("SpeedRatio", runner.FeaturePopulation.MissingKeys);
+        }
+        [Fact]
         public void PopulateFeatureVectors_FallbackPreservesTrainerStatistics()
         {
             var configuration = new ConfigurationBuilder()

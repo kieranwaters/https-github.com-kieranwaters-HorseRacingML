@@ -1219,6 +1219,10 @@ namespace HorseRacingML.Scraping
                 {
                     continue;
                 }
+                if (!ShouldRequireFeature(featureVector, key))
+                {
+                    continue;
+                }
 
                 if (!featureVector.TryGetValue(key, out var value) || !HasMeaningfulValue(value))
                 {
@@ -1333,7 +1337,10 @@ namespace HorseRacingML.Scraping
             {
                 return false;
             }
-
+            if (NeutralFallbackAllowedKeys.Contains(key))
+            {
+                return false;
+            }
             if (!NeutralFeatureFallbacks.TryGetValue(key, out var fallback) || fallback == null)
             {
                 return false;
@@ -1363,6 +1370,38 @@ namespace HorseRacingML.Scraping
 
             return Equals(value, fallback);
         }
+        private static readonly HashSet<string> NeutralFallbackAllowedKeys = new(
+            new[]
+            {
+                "SpeedMissing",
+                "DistanceBeatenKnown"
+            },
+            StringComparer.OrdinalIgnoreCase);
+
+        private static readonly HashSet<string> RaceSpeedFeatureKeys = new(
+            new[]
+            {
+                "WinningTimeMs",
+                "RaceSpeed"
+            },
+            StringComparer.OrdinalIgnoreCase);
+
+        private static readonly HashSet<string> RunnerSpeedFeatureKeys = new(
+            new[]
+            {
+                "RunnerSpeed",
+                "SpeedDiff",
+                "SpeedRatio"
+            },
+            StringComparer.OrdinalIgnoreCase);
+
+        private static readonly HashSet<string> DistanceBeatenSensitiveFeatureKeys = new(
+            new[]
+            {
+                "DistanceBeatenLengths",
+                "DistanceBeatenKnown"
+            },
+            StringComparer.OrdinalIgnoreCase);
 
         private static readonly Lazy<string[]> HistoricalFeatureBackfillKeysLazy = new(() =>
              new[]
@@ -1464,6 +1503,10 @@ namespace HorseRacingML.Scraping
 
             foreach (var key in HistoricalFeatureBackfillKeys)
             {
+                if (!ShouldRequireFeature(featureVector, key))
+                {
+                    continue;
+                }
                 if (!TryGetMeaningfulValue(featureVector, key, out _))
                 {
                     missing.Add(key);
@@ -1483,6 +1526,10 @@ namespace HorseRacingML.Scraping
 
             foreach (var key in HistoricalFeatureBackfillKeys)
             {
+                if (!ShouldRequireFeature(featureVector, key))
+                {
+                    continue;
+                }
                 if (!TryGetMeaningfulValue(target, key, out _) &&
                     TryGetMeaningfulValue(source, key, out var replacement))
                 {
@@ -1535,6 +1582,96 @@ namespace HorseRacingML.Scraping
 
             return true;
         }
+        private static bool ShouldRequireFeature(Dictionary<string, object?>? featureVector, string key)
+        {
+            if (featureVector == null || string.IsNullOrWhiteSpace(key))
+            {
+                return false;
+            }
+
+            if (IsRaceSpeedFeature(key) && IsWinningTimeUnavailable(featureVector))
+            {
+                return false;
+            }
+
+            if (IsRunnerSpeedFeature(key) && IsRunnerSpeedDataUnavailable(featureVector))
+            {
+                return false;
+            }
+
+            if (IsDistanceBeatenSensitiveKey(key) && IsDistanceBeatenDataUnavailable(featureVector))
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        private static bool IsRaceSpeedFeature(string key) =>
+            RaceSpeedFeatureKeys.Contains(key);
+
+        private static bool IsRunnerSpeedFeature(string key)
+        {
+            if (RunnerSpeedFeatureKeys.Contains(key))
+            {
+                return true;
+            }
+
+            return key.StartsWith("AvgSpeed", StringComparison.OrdinalIgnoreCase) ||
+                key.StartsWith("AvgSpeedDiff", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsDistanceBeatenSensitiveKey(string key) =>
+            DistanceBeatenSensitiveFeatureKeys.Contains(key);
+
+        private static bool IsWinningTimeUnavailable(Dictionary<string, object?> featureVector)
+        {
+            if (featureVector == null)
+            {
+                return true;
+            }
+
+            if (!featureVector.TryGetValue("WinningTimeMs", out var winningObj))
+            {
+                return true;
+            }
+
+            var winning = TryConvertToSingle(winningObj);
+            return !winning.HasValue || winning.Value <= 0f;
+        }
+
+        private static bool IsRunnerSpeedDataUnavailable(Dictionary<string, object?> featureVector)
+        {
+            if (featureVector == null)
+            {
+                return true;
+            }
+
+            if (featureVector.TryGetValue("SpeedMissing", out var speedMissingObj) &&
+                speedMissingObj is bool speedMissing && speedMissing)
+            {
+                return true;
+            }
+
+            if (!featureVector.TryGetValue("RunnerSpeed", out var runnerSpeedObj))
+            {
+                return true;
+            }
+
+            var runnerSpeed = TryConvertToSingle(runnerSpeedObj);
+            return !runnerSpeed.HasValue || runnerSpeed.Value <= 0f;
+        }
+
+        private static bool IsDistanceBeatenDataUnavailable(Dictionary<string, object?> featureVector)
+        {
+            if (!featureVector.TryGetValue("DistanceBeatenKnown", out var knownObj))
+            {
+                return false;
+            }
+
+            return knownObj is bool known && !known;
+        }
+
         private void EnsureDistanceChangeFromLast(
             Dictionary<string, object?> featureVector,
             RunnerFlow flow,
