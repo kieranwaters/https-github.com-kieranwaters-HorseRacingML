@@ -1515,15 +1515,45 @@ return text.trim();";
         private void RecordRaceGoing(string? href, string? going) { if (string.IsNullOrWhiteSpace(href)) { return; } var marketId = BetfairMarketScraper.ExtractMarketId(href); if (string.IsNullOrWhiteSpace(marketId)) { return; } var trimmedGoing = string.IsNullOrWhiteSpace(going) ? null : going!.Trim(); lock (_raceGoingLock) { if (!string.IsNullOrEmpty(trimmedGoing)) { _raceGoingByMarketId[marketId] = trimmedGoing; } else if (!_raceGoingByMarketId.ContainsKey(marketId)) { _raceGoingByMarketId[marketId] = null; } } }
         private void CaptureRaceGoingFromSchedule() { lock (_raceGoingLock) { _raceGoingByMarketId.Clear(); } try { var js = (IJavaScriptExecutor)_driver; const string script = @"
 const textOrEmpty=node=>{if(!node)return '';const raw=node.textContent||node.innerText||'';return raw.trim();};
-const meetingItems=Array.from(document.querySelectorAll('li')).filter(li=>li.querySelector('.meeting-description'));
+const findGoing=container=>{
+  if(!container)return '';
+  const explicit=textOrEmpty(container.querySelector(""div.racetrack-conditions, .racetrack-conditions, [data-testid='racetrack-conditions']""));
+  if(explicit)return explicit;
+  const label=textOrEmpty(container);
+  if(!label)return '';
+  const match=label.match(/going\s*[:\-]?\s*([^|]+)/i);
+  return match?match[1].trim():'';
+};
 const results=[];
-for(const item of meetingItems){
-const going=textOrEmpty(item.querySelector(""div.racetrack-conditions, .racetrack-conditions, [data-testid='racetrack-conditions']""));
-const seen=new Set();
-const anchors=item.querySelectorAll(""a[href*='/horse-racing/']"");
-for(const anchor of anchors){if(!anchor||!anchor.href)continue;const href=anchor.href.trim();if(!href||seen.has(href))continue;seen.add(href);results.push({href,going});}
-const buttons=item.querySelectorAll('button');
-for(const button of buttons){if(!button)continue;const link=button.closest(""a[href*='/horse-racing/']"");if(!link||!link.href)continue;const href=link.href.trim();if(!href||seen.has(href))continue;seen.add(href);results.push({href,going});}}
+const processed=new Set();
+const meetingDescriptions=Array.from(document.querySelectorAll(""div.meeting-description""));
+for(const description of meetingDescriptions){
+  const host=description.closest('li');
+  if(!host||processed.has(host))continue;
+  processed.add(host);
+  const going=findGoing(description);
+  const seenLinks=new Set();
+  const anchors=host.querySelectorAll(""a[href*='/horse-racing/']"");
+  for(const anchor of anchors){
+    if(!anchor||!anchor.href)continue;
+    const href=anchor.href.trim();
+    if(!href||seenLinks.has(href))continue;
+    seenLinks.add(href);
+    results.push({href,going});
+  }
+  const linkish=host.querySelectorAll('[data-href],[data-url]');
+  for(const node of linkish){
+    if(!node)continue;
+    const href=node.getAttribute('data-href')||node.getAttribute('data-url');
+    if(!href)continue;
+    let absolute=href.trim();
+    if(!absolute)continue;
+    try{absolute=new URL(absolute, window.location.href).href;}catch(e){}
+    if(!absolute||seenLinks.has(absolute))continue;
+    seenLinks.add(absolute);
+    results.push({href:absolute,going});
+  }
+}
 return results;"; var raw = js.ExecuteScript(script); if (raw is IEnumerable<object> entries) { foreach (var entry in entries) { string? href = null; string? going = null; switch (entry) { case IReadOnlyDictionary<string, object?> dict: if (dict.TryGetValue("href", out var hrefValue)) { href = hrefValue?.ToString(); } if (dict.TryGetValue("going", out var goingValue)) { going = goingValue?.ToString(); } break; case IDictionary legacyDict: if (legacyDict.Contains("href")) { href = legacyDict["href"]?.ToString(); } if (legacyDict.Contains("going")) { going = legacyDict["going"]?.ToString(); } break; } RecordRaceGoing(href, going); } } } catch (Exception ex) { Console.Error.WriteLine($"[Navigation] Failed to capture going information from schedule: {ex.Message}"); } }
         private string? ExtractGoingForElement(IWebElement element) { if (element == null) { return null; } try { var js = (IJavaScriptExecutor)_driver; const string script = @"
 const el=arguments[0];const selectors=['div.racetrack-conditions','.racetrack-conditions',""[data-testid='racetrack-conditions']""];const textOrEmpty=node=>{if(!node)return '';const raw=node.textContent||node.innerText||'';return raw.trim();};let current=el;while(current){for(const selector of selectors){const candidate=current.querySelector?current.querySelector(selector):null;if(candidate){const value=textOrEmpty(candidate);if(value){return value;}}}current=current.parentElement;}return '';"; var result = js.ExecuteScript(script, element); if (result is string text) { var trimmed = text.Trim(); return string.IsNullOrEmpty(trimmed) ? null : trimmed; } } catch (StaleElementReferenceException) { return null; } catch (Exception ex) { Console.Error.WriteLine($"[Navigation] Failed to extract going text: {ex.Message}"); } return null; }
