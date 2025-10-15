@@ -1526,7 +1526,7 @@ namespace HorseRacingML.Scraping
 
             foreach (var key in HistoricalFeatureBackfillKeys)
             {
-                if (!ShouldRequireFeature(featureVector, key))
+                if (!ShouldRequireFeature(target, key))
                 {
                     continue;
                 }
