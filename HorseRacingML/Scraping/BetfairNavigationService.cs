@@ -1648,13 +1648,73 @@ const normalizeGoing=text=>{
   }
   return cleaned.trim();
 };
-const fallbackPairs=[];
+const sequentialPairs=[];
+const addSequentialPair=(venue,going)=>{
+  if(!going)return;
+  const cleanVenue=cleanseVenue(venue);
+  const normalized=cleanVenue?cleanVenue.toLowerCase():'';
+  sequentialPairs.push({venue:cleanVenue,normalized,going,used:false});
+  fallbackPairs.push({venue:cleanVenue,normalized,going,used:false,sequential:true});
+};
+const addFallbackPair=(venue,going)=>{
+  if(!going)return;
+  const cleanVenue=cleanseVenue(venue);
+  const normalized=cleanVenue?cleanVenue.toLowerCase():'';
+  fallbackPairs.push({venue:cleanVenue,normalized,going,used:false});
+};
+const meetingLabelSelectors=[
+  ""[data-testid='meeting-label']"",
+  ""[data-testid='meetingLabel']"",
+  ""[data-testid='meeting-title']"",
+  ""[data-testid='meetingTitle']"",
+  ""[data-testid='meeting-name']"",
+  ""[data-testid='meetingName']"",
+  '.meeting-label',
+  '.meeting-title',
+  '.meeting-name',
+  '.meeting-header__course-name',
+  '.meeting-description__title',
+  'h2.meeting-label',
+  'h3.meeting-label'
+].join(',');
+const goingBlockSelectors=[
+  ""div.racetrack-conditions"",
+  ""div.racetrack-conditions__container"",
+  ""div.racetrack-conditions__content"",
+  "".racetrack-conditions"",
+  "".racetrack-conditions__container"",
+  "".racetrack-conditions__content"",
+  "".track-conditions"",
+  "".race-information__conditions"",
+  ""[data-testid='racetrack-conditions']"",
+  ""[data-testid='track-going']"",
+  ""[data-testid='going']"",
+  ""[data-test-id='going']""
+].join(',');
+if(meetingLabelSelectors&&goingBlockSelectors){
+  const meetingNodes=document.querySelectorAll(meetingLabelSelectors);
+  const goingNodes=document.querySelectorAll(goingBlockSelectors);
+  const count=Math.min(meetingNodes.length,goingNodes.length);
+  for(let i=0;i<count;i++){
+    const venueCandidate=cleanseVenue(textOrEmpty(meetingNodes[i]));
+    const goingCandidate=normalizeGoing(textOrEmpty(goingNodes[i]));
+    if(goingCandidate){
+      addSequentialPair(venueCandidate||'',goingCandidate);
+    }
+  }
+}
 for(let i=0;i<Math.max(fallbackVenueXPaths.length,fallbackGoingXPaths.length);i++){
   const venueRaw=fallbackVenueXPaths[i]?cleanseVenue(evaluateXPath(fallbackVenueXPaths[i])):'';
   const goingRaw=fallbackGoingXPaths[i]?evaluateXPath(fallbackGoingXPaths[i]):'';
   const goingClean=normalizeGoing(goingRaw);
   if(goingClean){
-    fallbackPairs.push({venue:venueRaw,going:goingClean,used:false});
+    addFallbackPair(venueRaw,goingClean);
+  }
+}
+const sequentialVenueMap=new Map();
+for(const pair of sequentialPairs){
+  if(pair.normalized&&!sequentialVenueMap.has(pair.normalized)){
+    sequentialVenueMap.set(pair.normalized,pair.going);
   }
 }
 
@@ -1674,6 +1734,56 @@ const findGoing=container=>{
   }
   return '';
 };
+const results=[];
+const processed=new Set();
+const meetingDescriptions=Array.from(document.querySelectorAll(""div.meeting-description""));
+for(const description of meetingDescriptions){
+  const host=description.closest('li')||description.closest(""[data-testid='meeting-card']"")||description.closest(""[data-testid='meeting']"")||description.parentElement;
+  if(!host||processed.has(host))continue;
+  processed.add(host);
+  let going=findGoing(description);
+  if(!going){
+    going=findGoing(host);
+  }
+  let venue=findVenue(description);
+  if(!venue){
+    venue=findVenue(host);
+  }
+  if(!going&&venue){
+    const normalizedVenueKey=cleanseVenue(venue).toLowerCase();
+    if(normalizedVenueKey&&sequentialVenueMap.has(normalizedVenueKey)){
+      going=sequentialVenueMap.get(normalizedVenueKey);
+      const seqMatch=fallbackPairs.find(p=>!p.used&&p.normalized===normalizedVenueKey&&p.going===going);
+      if(seqMatch){
+        seqMatch.used=true;
+      }
+    }
+  }
+  if(!going&&fallbackPairs.length){
+    let match=null;
+    if(venue){
+      const normalizedVenue=cleanseVenue(venue).toLowerCase();
+      if(normalizedVenue){
+        match=fallbackPairs.find(p=>!p.used&&p.normalized===normalizedVenue&&p.going);
+      }
+    }
+    if(!match){
+      match=fallbackPairs.find(p=>!p.used&&p.going);
+    }
+    if(match){
+      going=match.going;
+      if((!venue||!cleanseVenue(venue))&&match.venue){
+        venue=match.venue;
+      }
+      match.used=true;
+    }
+  }
+  if(venue){
+    const sanitizedVenue=cleanseVenue(venue);
+    if(sanitizedVenue){
+      venue=sanitizedVenue;
+    }
+  }
 const results=[];
 const processed=new Set();
 const meetingDescriptions=Array.from(document.querySelectorAll(""div.meeting-description""));
