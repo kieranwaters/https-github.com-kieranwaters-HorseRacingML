@@ -711,6 +711,61 @@ namespace HorseRacingML.Tests
             Assert.DoesNotContain("SpeedRatio", runner.FeaturePopulation.MissingKeys);
         }
         [Fact]
+        public void PopulateFeatureVectors_AllowsPartialHistoricalCoverage()
+        {
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:HorseRacingDb"] = "Data Source=(localdb)\\MSSQLLocalDB;Initial Catalog=HorseRacingML;Integrated Security=True;Persist Security Info=False;Pooling=False;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Application Name=\"SQL Server Management Studio\";Command Timeout=30"
+                })
+                .Build();
+
+            var preparedRow = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["HorseName"] = "Partial Coverage",
+                ["CareerStarts"] = 8,
+                ["WinRateLast5"] = 0.2f
+            };
+            var preparedRace = new PreparedRace(917, new List<Dictionary<string, object?>> { preparedRow });
+
+            var trainer = new FakeTrainer(configuration, preparedRace);
+            var repo = new MinimalRacingRepository();
+            var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
+            var scraper = new BetfairMarketScraper(repo, trainer, bankroll: 15m, settings);
+            var flows = new List<RunnerFlow>
+            {
+                new RunnerFlow
+                {
+                    HorseName = "Partial Coverage",
+                    ClothNumber = 3,
+                    BackPrice1 = 4.5m
+                }
+            };
+
+            var report = scraper.TestBuildRaceReport(
+                marketId: "1.901",
+                raceTitle: "Partial Feature Stakes",
+                venueName: "Partial Downs",
+                venueCountry: "GB",
+                raceDate: new DateTime(2024, 12, 1),
+                offTime: new TimeSpan(14, 0, 0),
+                raceDetails: "Handicap",
+                going: "Good",
+                backBookPercentage: 102m,
+                layBookPercentage: 104m,
+                raceUrl: null,
+                flows: flows);
+
+            var runner = Assert.Single(report.Runners);
+            Assert.True(runner.HasPreparedFeatures);
+            Assert.NotNull(runner.AiOdds);
+            Assert.DoesNotContain(
+                "Missing historical features",
+                runner.AiProbabilityFallbackReason ?? string.Empty,
+                StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("Class", runner.FeaturePopulation.MissingKeys, StringComparer.OrdinalIgnoreCase);
+        }
+        [Fact]
         public void PopulateFeatureVectors_FallbackPreservesTrainerStatistics()
         {
             var configuration = new ConfigurationBuilder()

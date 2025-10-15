@@ -1039,9 +1039,9 @@ namespace HorseRacingML.Scraping
                     {
                         var missingSummary = string.Join(", ", missingHistoricalKeys);
                         Console.WriteLine(
-                            $"\t\tUnable to backfill {missingHistoricalKeys.Count} historical feature(s) for {identifier}: {missingSummary}.");
+                             $"\t\tProceeding with {missingHistoricalKeys.Count} missing historical feature(s) for {identifier}: {missingSummary}.");
                         Console.WriteLine(
-                            $"\t\t[FeaturePopulation] Historical backfill failure reason: {BuildMissingHistoricalFeatureReason()}.");
+                            "\t\t[FeaturePopulation] Historical backfill remained incomplete; continuing with available data.");
                         flow.FeatureValues = featureVector;
                         flow.HasPreparedFeatures = false;
                         flow.FeaturePopulationSummary = BuildFeaturePopulationSummary(featureVector);
@@ -1607,12 +1607,12 @@ namespace HorseRacingML.Scraping
 
             if (IsRaceSpeedFeature(key) && IsWinningTimeUnavailable(featureVector))
             {
-                return false;
+                return true;
             }
 
             if (IsRunnerSpeedFeature(key) && IsRunnerSpeedDataUnavailable(featureVector))
             {
-                return false;
+                return true;
             }
 
             if (IsDistanceBeatenSensitiveKey(key) && IsDistanceBeatenDataUnavailable(featureVector))
