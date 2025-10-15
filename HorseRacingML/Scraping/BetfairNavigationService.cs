@@ -1567,6 +1567,17 @@ const cleanseVenue=text=>{
   normalized=normalized.replace(/[\-–|,:]\s*$/,'').trim();
   return normalized.trim();
 };
+const evaluateXPath=(xpath,context)=>{
+  if(!xpath)return '';
+  const doc=context&&context.ownerDocument?context.ownerDocument:document;
+  try{
+    const result=doc.evaluate(xpath,context||doc,null,XPathResult.FIRST_ORDERED_NODE_TYPE,null);
+    const node=result&&result.singleNodeValue;
+    return textOrEmpty(node);
+  }catch(e){
+    return '';
+  }
+};
 const findVenue=container=>{
   if(!container)return '';
     const venueSelectors=[
@@ -1616,6 +1627,16 @@ const goingSelectors=[
   ""[data-test-id='going']"",
   ""[data-testid='track-going']""
 ];
+const fallbackVenueXPaths=[
+  '/html/body/ui-view/div/div/div[2]/div/ui-view/ui-view/div/div/div/div/div[1]/div[2]/div/bf-todays-racing-mod/div/div/bf-todays-racing/section/div[2]/div/div[2]/div/li[1]/div/div[1]/div[1]',
+  '/html/body/ui-view/div/div/div[2]/div/ui-view/ui-view/div/div/div/div/div[1]/div[2]/div/bf-todays-racing-mod/div/div/bf-todays-racing/section/div[2]/div/div[2]/div/li[2]/div/div[1]/div[1]',
+  '/html/body/ui-view/div/div/div[2]/div/ui-view/ui-view/div/div/div/div/div[1]/div[2]/div/bf-todays-racing-mod/div/div/bf-todays-racing/section/div[2]/div/div[2]/div/li[3]/div/div[1]/div[1]'
+];
+const fallbackGoingXPaths=[
+  '/html/body/ui-view/div/div/div[2]/div/ui-view/ui-view/div/div/div/div/div[1]/div[2]/div/bf-todays-racing-mod/div/div/bf-todays-racing/section/div[2]/div/div[2]/div/li[1]/div/div[1]/div[2]',
+  '/html/body/ui-view/div/div/div[2]/div/ui-view/ui-view/div/div/div/div/div[1]/div[2]/div/bf-todays-racing-mod/div/div/bf-todays-racing/section/div[2]/div/div[2]/div/li[2]/div/div[1]/div[2]',
+  '/html/body/ui-view/div/div/div[2]/div/ui-view/ui-view/div/div/div/div/div[1]/div[2]/div/bf-todays-racing-mod/div/div/bf-todays-racing/section/div[2]/div/div[2]/div/li[3]/div/div[1]/div[2]'
+];
 const normalizeGoing=text=>{
   if(!text)return '';
   let cleaned=text.trim();
@@ -1627,6 +1648,16 @@ const normalizeGoing=text=>{
   }
   return cleaned.trim();
 };
+const fallbackPairs=[];
+for(let i=0;i<Math.max(fallbackVenueXPaths.length,fallbackGoingXPaths.length);i++){
+  const venueRaw=fallbackVenueXPaths[i]?cleanseVenue(evaluateXPath(fallbackVenueXPaths[i])):'';
+  const goingRaw=fallbackGoingXPaths[i]?evaluateXPath(fallbackGoingXPaths[i]):'';
+  const goingClean=normalizeGoing(goingRaw);
+  if(goingClean){
+    fallbackPairs.push({venue:venueRaw,going:goingClean,used:false});
+  }
+}
+
 const findGoing=container=>{
   if(!container)return '';
   let current=container;
@@ -1657,6 +1688,23 @@ for(const description of meetingDescriptions){
   let venue=findVenue(description);
   if(!venue){
     venue=findVenue(host);
+  }
+  if(!going&&fallbackPairs.length){
+    let match=null;
+    if(venue){
+      const normalizedVenue=cleanseVenue(venue).toLowerCase();
+      match=fallbackPairs.find(p=>!p.used&&p.venue&&p.venue.toLowerCase()===normalizedVenue);
+    }
+    if(!match){
+      match=fallbackPairs.find(p=>!p.used);
+    }
+    if(match){
+      going=match.going;
+      if(!venue&&match.venue){
+        venue=match.venue;
+      }
+      match.used=true;
+    }
   }
   const seenLinks=new Set();
   const anchors=host.querySelectorAll(""a[href*='/horse-racing/']"");
