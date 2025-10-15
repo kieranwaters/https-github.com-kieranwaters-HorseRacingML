@@ -23,6 +23,7 @@ namespace HorseRacingML.Scraping
             @"^\s*(?<type>(?:[A-Za-z'\-]+(?:\s+[A-Za-z'\-]+)*)|(?:G[1-3])|(?:Group\s+[1-3])|(?:Grade\s+[1-3]))",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex AgeParentheticalRegex = new(@"\((?<age>\d{1,2})\)", RegexOptions.Compiled);
+        private static readonly Regex AgeLabelRegex = new(@"\b(?:age|aged)\s*[:\-]?\s*(?<age>\d{1,2})\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex AgeWordRegex = new(@"\b(?<age>\d{1,2})\s*(?:yo|yr|yrs|year|years)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex AgeLeadingRegex = new(@"^(?<age>\d{1,2})(?=\s|$)", RegexOptions.Compiled);
         private static readonly Regex WeightDashRegex = new(@"\b(?<stone>\d{1,2})\s*[-/]\s*(?<pounds>\d{1,2})\b", RegexOptions.Compiled);
@@ -1738,7 +1739,14 @@ const hasBackAllContext = target => {
             {
                 age = TryParseByte(ageMatch.Groups["age"].Value);
             }
-
+            if (!age.HasValue)
+            {
+                var labeledMatch = AgeLabelRegex.Match(normalized);
+                if (labeledMatch.Success)
+                {
+                    age = TryParseByte(labeledMatch.Groups["age"].Value);
+                }
+            }
             if (!age.HasValue)
             {
                 var wordMatch = AgeWordRegex.Match(normalized);
