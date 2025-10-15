@@ -813,14 +813,19 @@ namespace HorseRacingML.Scraping
         private sealed class FeatureLookup
         {
             private readonly Dictionary<string, Dictionary<string, object?>> _byIdentifier;
+            private readonly int _rowCount;
 
-            private FeatureLookup(Dictionary<string, Dictionary<string, object?>> byIdentifier)
+            private FeatureLookup(
+                Dictionary<string, Dictionary<string, object?>> byIdentifier,
+                int rowCount)
             {
                 _byIdentifier = byIdentifier;
+                _rowCount = rowCount;
             }
 
             public static FeatureLookup Empty { get; } = new FeatureLookup(
-                new Dictionary<string, Dictionary<string, object?>>(StringComparer.OrdinalIgnoreCase));
+                new Dictionary<string, Dictionary<string, object?>>(StringComparer.OrdinalIgnoreCase),
+                rowCount: 0);
 
             public static FeatureLookup FromPreparedRace(PreparedRace race)
             {
@@ -833,7 +838,7 @@ namespace HorseRacingML.Scraping
                     AddRowIdentifiers(lookup, row);
                 }
 
-                return new FeatureLookup(lookup);
+                return new FeatureLookup(lookup, race.Rows.Count);
             }
 
             public static FeatureLookup FromRows(IReadOnlyList<IDictionary<string, object?>> rows)
@@ -852,8 +857,10 @@ namespace HorseRacingML.Scraping
                     AddRowIdentifiers(lookup, row);
                 }
 
-                return new FeatureLookup(lookup);
+                return new FeatureLookup(lookup, rows.Count);
             }
+
+            public int Count => _rowCount;
 
             public Dictionary<string, object?>? FindByRunner(RunnerFlow? flow)
             {
