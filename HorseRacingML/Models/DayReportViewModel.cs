@@ -43,6 +43,11 @@ namespace HorseRacingML.Models
         public decimal? MarketDecimalOdds { get; set; }
         public decimal? AiDecimalOdds { get; set; }
         public double? AiProbability { get; set; }
+        public double? AiOdds
+        {
+            get => AiProbability;
+            set => AiProbability = value;
+        }
         public double? MarketProbability { get; set; }
         public double? Differential { get; set; }
         public decimal? KellyFraction { get; set; }
