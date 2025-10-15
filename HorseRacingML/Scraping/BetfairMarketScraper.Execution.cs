@@ -656,8 +656,6 @@ namespace HorseRacingML.Scraping
                     runnerFlow.RaceTitle = persistedUpcoming?.Title ?? trimmedTitle;
                     runnerFlow.RaceDetails = persistedUpcoming?.RaceDetails ?? trimmedRaceDetails;
                     runnerFlow.RaceType = persistedUpcoming?.RaceType ?? trimmedRaceType ?? parsedMetadata?.RaceType;
-                    runnerFlow.Class = parsedMetadata?.Class;
-                    runnerFlow.AgeRestriction = parsedMetadata?.AgeRestriction;
                     runnerFlow.Surface = persistedUpcoming?.Surface ?? parsedMetadata?.Surface;
                     var runnerGoing = !string.IsNullOrWhiteSpace(resolvedGoing)
                         ? resolvedGoing

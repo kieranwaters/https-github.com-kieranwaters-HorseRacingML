@@ -194,8 +194,9 @@ namespace HorseRacingML.Data
                 return;
             }
 
-            const string header = @"INSERT INTO RunnerFlow(MarketId, UpcomingRaceId, RaceDate, ScheduledOff, VenueName, VenueCountry, RaceTitle, RaceDetails, RaceType, Class, AgeRestriction, Surface, Going, DistanceYards, DistanceText, RunnerCount, BackBookPercentage, LayBookPercentage, ClothNumber, Draw, HorseName, JockeyName, BackPrice1, BackPrice2, BackPrice3, LayPrice1, LayPrice2, LayPrice3, AiOdds, Age, WeightLbs, WeightText, TrainerName)
+            const string header = @"INSERT INTO RunnerFlow(MarketId, UpcomingRaceId, RaceDate, ScheduledOff, VenueName, VenueCountry, RaceTitle, RaceDetails, RaceType, AgeRestriction, Surface, Going, DistanceYards, DistanceText, RunnerCount, BackBookPercentage, LayBookPercentage, ClothNumber, Draw, HorseName, JockeyName, BackPrice1, BackPrice2, BackPrice3, LayPrice1, LayPrice2, LayPrice3, AiOdds, Age, WeightLbs, WeightText, TrainerName)
 VALUES";
+      
 
             var sqlBuilder = new StringBuilder(header.Length + flowList.Count * 128);
             sqlBuilder.Append(header);
@@ -216,7 +217,6 @@ VALUES";
                     .Append(", @RaceTitle").Append(suffix)
                     .Append(", @RaceDetails").Append(suffix)
                     .Append(", @RaceType").Append(suffix)
-                    .Append(", @Class").Append(suffix)
                     .Append(", @AgeRestriction").Append(suffix)
                     .Append(", @Surface").Append(suffix)
                     .Append(", @Going").Append(suffix)
@@ -256,8 +256,6 @@ VALUES";
                 parameters.Add($"RaceTitle{suffix}", flow.RaceTitle);
                 parameters.Add($"RaceDetails{suffix}", flow.RaceDetails);
                 parameters.Add($"RaceType{suffix}", flow.RaceType);
-                parameters.Add($"Class{suffix}", flow.Class);
-                parameters.Add($"AgeRestriction{suffix}", flow.AgeRestriction);
                 parameters.Add($"Surface{suffix}", flow.Surface);
                 parameters.Add($"Going{suffix}", flow.Going);
                 parameters.Add($"DistanceYards{suffix}", flow.DistanceYards);
