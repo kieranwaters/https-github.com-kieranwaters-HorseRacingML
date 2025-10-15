@@ -34,6 +34,7 @@ namespace HorseRacingML.Scraping
         private int _betSlipSelectionsFilled;
         private readonly HashSet<string> _missingScrapedFieldDescriptions = new(StringComparer.OrdinalIgnoreCase);
         private readonly System.Collections.Generic.IReadOnlyDictionary<string, string?>? _raceGoingLookup;
+        private readonly string? _scheduleRegion;
 
         private const string MarketHeaderXPath = "/html/body/ui-view/div/div/div[2]/div/ui-view/div/div/div[1]/div[1]/div/bf-sports-header/div/div/div/div[1]/div/span[1]";
         private const string PlaceBetsButtonSelector = "#main-wrapper > div > div.scrollable-panes-height-taker > div > ui-view > div > div > div.bf-col-xxl-7-24.bf-col-xl-8-24.bf-col-lg-8-24.bf-col-md-9-24.bf-col-sm-10-24.bf-col-10-24.right-side-column > div > div > bf-aside > div > div.bf-row.aside-top-row.no-bottom-gutter > div > betslip > div > bf-tabs > section > div:nth-child(2) > div > div > section > potentials > section > form > betslip-potentials-footer > footer > div.potentials-footer__actions > div > highlighted-button > ours-button > button";
@@ -50,9 +51,10 @@ namespace HorseRacingML.Scraping
             bool useMarketFallbackForAiDegeneracy = true,
             MaxStakeMode maxStakeMode = MaxStakeMode.None,
             decimal? maxStakePercentOfBankroll = null,
-            decimal? maxStakeFixedAmount = null,            
+            decimal? maxStakeFixedAmount = null,
             bool computeAiProbabilities = true,
-            System.Collections.Generic.IReadOnlyDictionary<string, string?>? raceGoingLookup = null)
+            System.Collections.Generic.IReadOnlyDictionary<string, string?>? raceGoingLookup = null,
+            string? scheduleRegion = null)
         {
             _repo = repo ?? throw new ArgumentNullException(nameof(repo));
             _trainer = trainer ?? throw new ArgumentNullException(nameof(trainer));
@@ -69,6 +71,7 @@ namespace HorseRacingML.Scraping
             _maxStakeFixedAmount = maxStakeFixedAmount;
             _raceGoingLookup = raceGoingLookup;
             _computeAiProbabilities = computeAiProbabilities;
+            _scheduleRegion = string.IsNullOrWhiteSpace(scheduleRegion) ? null : scheduleRegion.Trim();
         }
 
         public BetfairMarketScraper(
@@ -78,7 +81,8 @@ namespace HorseRacingML.Scraping
             AutomationSettingsSnapshot settings,
             bool useMarketFallbackForAiDegeneracy = true,
             System.Collections.Generic.IReadOnlyDictionary<string, string?>? raceGoingLookup = null,
-            bool computeAiProbabilities = true)
+            bool computeAiProbabilities = true,
+            string? scheduleRegion = null)
             : this(
                 repo,
                 trainer,
@@ -90,7 +94,8 @@ namespace HorseRacingML.Scraping
                 settings?.MaxStakePercentOfBankroll,
                 settings?.MaxStakeFixedAmount,
                 computeAiProbabilities,
-                raceGoingLookup)
+               raceGoingLookup,
+                scheduleRegion)
         {
             if (settings == null)
             {

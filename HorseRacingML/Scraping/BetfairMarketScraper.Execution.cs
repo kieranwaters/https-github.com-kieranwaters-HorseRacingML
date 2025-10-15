@@ -215,6 +215,11 @@ namespace HorseRacingML.Scraping
                 var trimmedGoing = string.IsNullOrWhiteSpace(goingText) ? null : goingText.Trim();
                 var trimmedVenueName = string.IsNullOrWhiteSpace(venueName) ? null : venueName.Trim();
                 var trimmedVenueCountry = string.IsNullOrWhiteSpace(venueCountry) ? null : venueCountry.Trim();
+                if (!string.IsNullOrWhiteSpace(_scheduleRegion))
+                {
+                    trimmedVenueCountry = _scheduleRegion;
+                    venueCountry = _scheduleRegion;
+                }
                 var runnerCount = rows.Count > 0
                     ? (byte)Math.Min(rows.Count, byte.MaxValue)
                     : (byte?)null;

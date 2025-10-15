@@ -57,6 +57,7 @@ namespace HorseRacingML.Scraping
         private readonly Dictionary<string, string?> _raceGoingByMarketId = new(StringComparer.OrdinalIgnoreCase);
         private readonly object _raceGoingLock = new();
         private static readonly TimeSpan SchedulePageReadyTimeout = TimeSpan.FromSeconds(120);
+        private string? _activeScheduleRegion;
 
         public BetfairNavigationService(IConfiguration config, AutomationSettingsService automationSettings)
         {
@@ -69,7 +70,10 @@ namespace HorseRacingML.Scraping
             _driver = CreateWebDriver();
             _primaryWindowHandle = _driver.CurrentWindowHandle;
         }
-
+        public string? GetActiveScheduleRegion()
+        {
+            return _activeScheduleRegion;
+        }
         private IWebDriver CreateWebDriver()
         {
             var options = new ChromeOptions();
@@ -220,7 +224,8 @@ namespace HorseRacingML.Scraping
                     settings,
                     _useMarketFallbackForAiDegeneracy,
                     GetRaceGoingSnapshot(),
-                    computeAiProbabilities: includeAiProbabilities);
+                    computeAiProbabilities: includeAiProbabilities,
+                    scheduleRegion: GetActiveScheduleRegion());
                 var races = scraper.ScrapeOpenRaceTabsForReport(_driver, newHandles);
 
                 var targetMarketId = BetfairMarketScraper.ExtractMarketId(raceUrl);
@@ -358,7 +363,8 @@ namespace HorseRacingML.Scraping
                 bankroll,
                 settings,
                 _useMarketFallbackForAiDegeneracy,
-                GetRaceGoingSnapshot());
+                GetRaceGoingSnapshot(),
+                scheduleRegion: GetActiveScheduleRegion());
             var recommendations = scraper.ScrapeOpenRaceTabs(_driver);
             missingScrapeFields = scraper.MissingScrapeFieldDescriptions.ToArray();
             return recommendations;
@@ -689,6 +695,7 @@ namespace HorseRacingML.Scraping
         public DayReportViewModel GenerateDayReport(RacingRepository repo, HyperparameterTrainer trainer)
         {
             ReturnToPrimaryWindow();
+            UpdateActiveScheduleRegion(CaptureActiveScheduleRegion());
             CaptureRaceGoingFromSchedule();
 
             decimal bankroll;
@@ -706,7 +713,8 @@ namespace HorseRacingML.Scraping
                     bankroll,
                     settings,
                     _useMarketFallbackForAiDegeneracy,
-                    GetRaceGoingSnapshot());
+                    GetRaceGoingSnapshot(),
+                    scheduleRegion: GetActiveScheduleRegion());
                 var races = scraper.ScrapeOpenRaceTabsForReport(_driver);
                 orderedRaces = races
                     .OrderBy(r => GetRaceScheduleSortKey(r))
@@ -753,11 +761,13 @@ namespace HorseRacingML.Scraping
 
             ReturnToPrimaryWindow();
             EnsureSchedulePageReady();
+            UpdateActiveScheduleRegion(CaptureActiveScheduleRegion());
             var scheduleRegionChanged = await TrySelectScheduleRegionAsync(scheduleRegion);
             if (scheduleRegionChanged)
             {
                 await Task.Delay(200);
             }
+            UpdateActiveScheduleRegion(CaptureActiveScheduleRegion());
             CaptureRaceGoingFromSchedule();
             static string? ExtractTimeToken(string? value)
             {
@@ -1053,12 +1063,21 @@ namespace HorseRacingML.Scraping
         {
             if (string.IsNullOrWhiteSpace(region))
             {
+                UpdateActiveScheduleRegion(CaptureActiveScheduleRegion());
                 return false;
             }
 
             var normalizedTarget = NormalizeScheduleRegionText(region);
             if (normalizedTarget.Length == 0 || normalizedTarget.Equals("All", StringComparison.OrdinalIgnoreCase))
             {
+                if (normalizedTarget.Equals("All", StringComparison.OrdinalIgnoreCase))
+                {
+                    UpdateActiveScheduleRegion(normalizedTarget);
+                }
+                else
+                {
+                    UpdateActiveScheduleRegion(CaptureActiveScheduleRegion());
+                }
                 return false;
             }
 
@@ -1129,7 +1148,7 @@ namespace HorseRacingML.Scraping
                         {
                             // Ignore if the active state does not update within the timeout.
                         }
-
+                        UpdateActiveScheduleRegion(normalizedTarget);
                         return true;
                     }
                     catch (StaleElementReferenceException)
@@ -1140,7 +1159,7 @@ namespace HorseRacingML.Scraping
 
                 await Task.Delay(200);
             }
-
+            UpdateActiveScheduleRegion(CaptureActiveScheduleRegion());
             return false;
         }
 
@@ -1190,7 +1209,52 @@ namespace HorseRacingML.Scraping
             trimmed = CollapseWhitespaceRegex.Replace(trimmed, " ");
             return trimmed.Trim();
         }
+        private void UpdateActiveScheduleRegion(string? value)
+        {
+            var normalized = NormalizeScheduleRegionText(value);
+            if (normalized.Length == 0 || normalized.Equals("All", StringComparison.OrdinalIgnoreCase))
+            {
+                _activeScheduleRegion = null;
+                return;
+            }
 
+            _activeScheduleRegion = normalized;
+        }
+
+        private string? CaptureActiveScheduleRegion()
+        {
+            try
+            {
+                var js = (IJavaScriptExecutor)_driver;
+                const string script = @"
+const active = document.querySelector('li.country-tab.active, li.country-tab.selected');
+if (!active) {
+    return '';
+}
+const target = active.querySelector('div, span, button, a');
+if (!target) {
+    return '';
+}
+const text = target.textContent || target.innerText || '';
+return text.trim();";
+                var result = js.ExecuteScript(script);
+                if (result is string text)
+                {
+                    var normalized = NormalizeScheduleRegionText(text);
+                    return normalized.Length == 0 ? null : normalized;
+                }
+            }
+            catch (WebDriverException)
+            {
+                // Ignore failures when attempting to detect the active schedule region.
+            }
+            catch (InvalidOperationException)
+            {
+                // Ignore if the driver is not in a valid state to execute script.
+            }
+
+            return null;
+        }
         private static string GetElementTextSafe(IWebElement element)
         {
             if (element == null)

@@ -1006,7 +1006,7 @@ DateTime? raceDate,
                         flow.HasPreparedFeatures = false;
                         flow.FeaturePopulationSummary = BuildFeaturePopulationSummary(featureVector);
                         flow.MatchedDatabaseRecord = matchedPreparedRow || usedTrainerFallback;
-                        flow.AiProbabilityFallbackReason = "Missing historical features; database coverage required.";
+                        flow.AiProbabilityFallbackReason = BuildMissingHistoricalFeatureReason();
                         continue;
                     }
                 }
@@ -1027,7 +1027,7 @@ DateTime? raceDate,
                     Console.WriteLine(
                         $"\t\tSkipping AI scoring for {identifier} due to missing database-backed features.");
                     flow.HasPreparedFeatures = false;
-                    flow.AiProbabilityFallbackReason = "Missing historical features; database coverage required.";
+                    flow.AiProbabilityFallbackReason = BuildMissingHistoricalFeatureReason();
                     continue;
                 }
 
