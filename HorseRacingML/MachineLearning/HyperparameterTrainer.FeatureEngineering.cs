@@ -64,6 +64,7 @@ namespace HorseRacingML.ML
             private readonly Dictionary<int, RollingStat> _jockeyStats = new();
             private readonly Dictionary<(int trainerId, int jockeyId), (int starts, int wins)> _trainerJockeyStats = new();
             private readonly Dictionary<(int trainerId, int jockeyId, string surface), (int starts, int wins)> _trainerJockeySurfaceStats = new();
+            private readonly Dictionary<(int trainerId, int jockeyId, int courseId), (int starts, int wins)> _trainerJockeyCourseStats = new();
             private readonly Dictionary<(int trainerId, int courseId), (int starts, int wins)> _trainerCourseStats = new();
             private readonly Dictionary<(int jockeyId, int courseId), (int starts, int wins)> _jockeyCourseStats = new();
             private readonly Dictionary<int, Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>> _surfaceStats = new();
@@ -980,6 +981,13 @@ namespace HorseRacingML.ML
                                 row["TrainerJockeySurfaceWinRate"] =
                                     pairSurfaceStat.starts > 0
                                         ? _trainer.SmoothedWinRate(pairSurfaceStat.wins, pairSurfaceStat.starts)
+                                        : trainerJockeyDefaultWinRate;
+                                var trainerJockeyCourseKey = (trainerId.Value, jockeyId.Value, courseId);
+                                if (!_trainerJockeyCourseStats.TryGetValue(trainerJockeyCourseKey, out var pairCourseStat))
+                                    pairCourseStat = (0, 0);
+                                row["TrainerJockeyCourseWinRate"] =
+                                    pairCourseStat.starts > 0
+                                        ? _trainer.SmoothedWinRate(pairCourseStat.wins, pairCourseStat.starts)
                                         : trainerJockeyDefaultWinRate;
                             }
                             else
