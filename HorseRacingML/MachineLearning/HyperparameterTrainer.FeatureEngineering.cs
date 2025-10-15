@@ -2094,8 +2094,6 @@ namespace HorseRacingML.ML
                     ["ActualOff"] = null,
                     ["Title"] = upcoming.Title,
                     ["RaceType"] = upcoming.RaceType,
-                    ["Class"] = upcoming.Class,
-                    ["AgeRestriction"] = upcoming.AgeRestriction,
                     ["Surface"] = upcoming.Surface,
                     ["Going"] = upcoming.Going,
                     ["DistanceYards"] = upcoming.DistanceYards,

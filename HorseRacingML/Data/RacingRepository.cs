@@ -353,8 +353,6 @@ BEGIN
         Title,
         RaceDetails,
         RaceType,
-        Class,
-        AgeRestriction,
         Surface,
         Going,
         DistanceYards,
@@ -373,8 +371,6 @@ BEGIN
         @Title,
         @RaceDetails,
         @RaceType,
-        @Class,
-        @AgeRestriction,
         @Surface,
         @Going,
         @DistanceYards,
@@ -453,8 +449,6 @@ BEGIN
         Title               NVARCHAR(512) NULL,
         RaceDetails         NVARCHAR(MAX) NULL,
         RaceType            NVARCHAR(128) NULL,
-        Class               TINYINT       NULL,
-        AgeRestriction      NVARCHAR(64)  NULL,
         Surface             NVARCHAR(64)  NULL,
         Going               NVARCHAR(30)  NULL,
         DistanceYards       SMALLINT      NULL,
@@ -466,7 +460,15 @@ BEGIN
         LastUpdatedUtc      DATETIME2(0)  NOT NULL DEFAULT SYSUTCDATETIME()
     );
 END;
+IF COL_LENGTH(N'dbo.UpcomingRaces', 'Class') IS NOT NULL
+BEGIN
+    ALTER TABLE dbo.UpcomingRaces DROP COLUMN Class;
+END;
 
+IF COL_LENGTH(N'dbo.UpcomingRaces', 'AgeRestriction') IS NOT NULL
+BEGIN
+    ALTER TABLE dbo.UpcomingRaces DROP COLUMN AgeRestriction;
+END;
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_UpcomingRaces_MarketId' AND object_id = OBJECT_ID(N'dbo.UpcomingRaces'))
 BEGIN
     CREATE UNIQUE INDEX IX_UpcomingRaces_MarketId ON dbo.UpcomingRaces(MarketId);
@@ -988,8 +990,6 @@ GROUP BY rr.HorseId;";
                                            Title,
                                            RaceDetails,
                                            RaceType,
-                                           Class,
-                                           AgeRestriction,
                                            Surface,
                                            Going,
                                            DistanceYards,
@@ -1708,8 +1708,6 @@ ORDER BY ISNULL(ValidationAccuracy, 0) DESC, RunDate DESC";
                                            Title,
                                            RaceDetails,
                                            RaceType,
-                                           Class,
-                                           AgeRestriction,
                                            Surface,
                                            Going,
                                            DistanceYards,

@@ -336,8 +336,6 @@ namespace HorseRacingML.Scraping
                             Title = trimmedTitle,
                             RaceDetails = trimmedRaceDetails,
                             RaceType = metadata.RaceType,
-                            Class = metadata.Class,
-                            AgeRestriction = metadata.AgeRestriction,
                             Surface = metadata.Surface,
                             Going = string.IsNullOrWhiteSpace(upcomingGoing) ? null : upcomingGoing,
                             DistanceYards = distanceYards,
@@ -658,8 +656,8 @@ namespace HorseRacingML.Scraping
                     runnerFlow.RaceTitle = persistedUpcoming?.Title ?? trimmedTitle;
                     runnerFlow.RaceDetails = persistedUpcoming?.RaceDetails ?? trimmedRaceDetails;
                     runnerFlow.RaceType = persistedUpcoming?.RaceType ?? trimmedRaceType ?? parsedMetadata?.RaceType;
-                    runnerFlow.Class = persistedUpcoming?.Class ?? parsedMetadata?.Class;
-                    runnerFlow.AgeRestriction = persistedUpcoming?.AgeRestriction ?? parsedMetadata?.AgeRestriction;
+                    runnerFlow.Class = parsedMetadata?.Class;
+                    runnerFlow.AgeRestriction = parsedMetadata?.AgeRestriction;
                     runnerFlow.Surface = persistedUpcoming?.Surface ?? parsedMetadata?.Surface;
                     var runnerGoing = !string.IsNullOrWhiteSpace(resolvedGoing)
                         ? resolvedGoing

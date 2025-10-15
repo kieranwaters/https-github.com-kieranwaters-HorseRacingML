@@ -109,8 +109,6 @@ namespace HorseRacingML.Models
         public string? RaceTitle { get; set; }
         public string? RaceDetails { get; set; }
         public string? RaceType { get; set; }
-        public byte? Class { get; set; }
-        public string? AgeRestriction { get; set; }
         public string? Surface { get; set; }
         public string? Going { get; set; }
         public short? DistanceYards { get; set; }
@@ -161,8 +159,6 @@ namespace HorseRacingML.Models
         public string? Title { get; set; }
         public string? RaceDetails { get; set; }
         public string? RaceType { get; set; }
-        public byte? Class { get; set; }
-        public string? AgeRestriction { get; set; }
         public string? Surface { get; set; }
         public string? Going { get; set; }
         public short? DistanceYards { get; set; }

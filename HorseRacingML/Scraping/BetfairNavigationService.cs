@@ -1732,8 +1732,19 @@ return results;"; var raw = js.ExecuteScript(script); if (raw is IEnumerable<obj
         private void RecordRaceGoing(string? href, string? going) { if (string.IsNullOrWhiteSpace(href)) { return; } var marketId = BetfairMarketScraper.ExtractMarketId(href); if (string.IsNullOrWhiteSpace(marketId)) { return; } var trimmedGoing = string.IsNullOrWhiteSpace(going) ? null : going!.Trim(); lock (_raceGoingLock) { if (!string.IsNullOrEmpty(trimmedGoing)) { _raceGoingByMarketId[marketId] = trimmedGoing; } else if (!_raceGoingByMarketId.ContainsKey(marketId)) { _raceGoingByMarketId[marketId] = null; } } }
         
         private string? ExtractGoingForElement(IWebElement element) { if (element == null) { return null; } try { var js = (IJavaScriptExecutor)_driver; const string script = @"
-const el=arguments[0];const selectors=['div.racetrack-conditions','.racetrack-conditions',""[data-testid='racetrack-conditions']""];const textOrEmpty=node=>{if(!node)return '';const raw=node.textContent||node.innerText||'';return raw.trim();};let current=el;while(current){for(const selector of selectors){const candidate=current.querySelector?current.querySelector(selector):null;if(candidate){const value=textOrEmpty(candidate);if(value){return value;}}}current=current.parentElement;}return '';"; var result = js.ExecuteScript(script, element); if (result is string text) { var trimmed = text.Trim(); return string.IsNullOrEmpty(trimmed) ? null : trimmed; } } catch (StaleElementReferenceException) { return null; } catch (Exception ex) { Console.Error.WriteLine($"[Navigation] Failed to extract going text: {ex.Message}"); } return null; }
-
+const el=arguments[0];
+const textOrEmpty=node=>{if(!node)return '';const raw=node.textContent||node.innerText||'';return raw.trim();};
+const cleanGoing=text=>{if(!text)return '';let cleaned=text.replace(/\s+/g,' ').trim();if(!cleaned)return '';const match=cleaned.match(/going\s*[:\-]?\s*([^|]+)/i);if(match&&match[1]){return match[1].trim();}if(/^going\b/i.test(cleaned)){return cleaned.replace(/^going\s*[:\-]?\s*/i,'').trim();}return (/\b(Good|Soft|Firm|Heavy|Standard|Yielding)\b/i.test(cleaned)?cleaned:'');};
+const extractFrom=node=>{if(!node)return '';const stack=[node];while(stack.length){const current=stack.pop();const raw=textOrEmpty(current);const cleaned=cleanGoing(raw);if(cleaned)return cleaned;const children=current.children||[];for(let i=0;i<children.length;i++){stack.push(children[i]);}}return '';};
+const selectors=[""div.racetrack-conditions"",""div.racetrack-conditions__container"",""div.racetrack-conditions__content"","".racetrack-conditions"","".racetrack-conditions__container"","".racetrack-conditions__content"","".track-conditions"","".race-information__conditions"",""[data-testid='racetrack-conditions']"",""[data-testid='track-going']"",""[data-testid='going']"",""[data-test-id='going']""];
+let current=el;
+while(current){
+  for(const selector of selectors){if(!selector)continue;const candidate=current.querySelector?current.querySelector(selector):null;const value=extractFrom(candidate);if(value)return value;}
+  const fallback=extractFrom(current);
+  if(fallback)return fallback;
+  current=current.parentElement;
+}
+return '';"; var result = js.ExecuteScript(script, element); if (result is string text) { var trimmed = text.Trim(); return string.IsNullOrEmpty(trimmed) ? null : trimmed; } } catch (StaleElementReferenceException) { return null; } catch (Exception ex) { Console.Error.WriteLine($"[Navigation] Failed to extract going text: {ex.Message}"); } return null; }
         public void StartAutomatedBettingLoop(
             RacingRepository repo,
             HyperparameterTrainer trainer,
