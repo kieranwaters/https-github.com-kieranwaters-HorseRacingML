@@ -700,7 +700,10 @@ namespace HorseRacingML.Scraping
         {
             ReturnToPrimaryWindow();
             UpdateActiveScheduleRegion(CaptureActiveScheduleRegion());
-            CaptureRaceGoingFromSchedule();
+            if (!HasCapturedRaceGoing())
+            {
+                CaptureRaceGoingFromSchedule();
+            }
 
             decimal bankroll;
             HyperparameterSummary? hyperparameters;
@@ -1676,6 +1679,14 @@ return text.trim();";
                 }
 
                 return sanitized;
+            }
+        }
+
+        private bool HasCapturedRaceGoing()
+        {
+            lock (_raceGoingLock)
+            {
+                return _raceGoingByMarketId.Count > 0 || _raceGoingByVenue.Count > 0;
             }
         }
 
