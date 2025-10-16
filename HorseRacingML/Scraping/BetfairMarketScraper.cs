@@ -24,7 +24,7 @@ namespace HorseRacingML.Scraping
         private readonly decimal? _maxStakePercentOfBankroll;
         private readonly decimal? _maxStakeFixedAmount;
         private readonly bool _computeAiProbabilities;
-        private IReadOnlyList<string>? _neuralFeatureKeys;
+        private static IReadOnlyList<string>? _neuralFeatureKeys;
         private readonly Dictionary<RacePreparationKey, FeatureLookup> _featureLookupCache = new();
         private readonly Dictionary<RacePreparationKey, string?> _featureLookupErrorCache = new();
         private readonly object _featureLookupCacheLock = new();
