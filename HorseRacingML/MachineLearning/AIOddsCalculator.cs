@@ -40,9 +40,13 @@ namespace HorseRacingML.ML
             public float Bias { get; set; }
             public float[] Weights { get; set; } = Array.Empty<float>();
         }
-        private bool TryCalculateWithTrainedModel(RunnerFlow flow, out double probability)
+        private bool TryCalculateWithTrainedModel(
+             RunnerFlow flow,
+             out double probability,
+             out bool scoredWithOpportunisticFeatures)
         {
             probability = 0d;
+            scoredWithOpportunisticFeatures = false;
             LogDebug(flow, "Attempting to calculate probability with trained model");
             if (!_hasTrainedModel)
             {
@@ -53,8 +57,27 @@ namespace HorseRacingML.ML
 
             if (!flow.HasPreparedFeatures)
             {
-                LogFallback(flow, "no prepared feature vector matched the runner");
-                return false;
+                var hasFeatureValues = flow.FeatureValues != null && flow.FeatureValues.Count > 0;
+                var hasLiveSignals = hasFeatureValues
+                    || flow.BackPrice1.HasValue
+                    || flow.BackPrice2.HasValue
+                    || flow.BackPrice3.HasValue
+                    || flow.LayPrice1.HasValue
+                    || flow.LayPrice2.HasValue
+                    || flow.LayPrice3.HasValue
+                    || flow.Draw.HasValue
+                    || flow.ClothNumber.HasValue;
+
+                if (!hasLiveSignals)
+                {
+                    LogFallback(flow, "no prepared feature vector matched the runner");
+                    return false;
+                }
+
+                scoredWithOpportunisticFeatures = true;
+                AppendFallbackDetail(flow, "Prepared features missing; scoring with opportunistic feature vector");
+                LogDebug(flow,
+                    "Prepared features missing; using opportunistic feature vector built from scraper values");
             }
 
             if (_metadata == null || _mean == null || _std == null ||
@@ -296,12 +319,15 @@ namespace HorseRacingML.ML
                 flow.LegacyProbability = legacyProbability;
             }
 
-            if (TryCalculateWithTrainedModel(flow, out var probability))
+            if(TryCalculateWithTrainedModel(flow, out var probability, out var opportunistic))
             {
                 if (flow != null)
                 {
                     flow.AiProbabilityMarketDerived = false;
-                    flow.AiProbabilityFallbackReason = null;
+                    if (!opportunistic)
+                    {
+                        flow.AiProbabilityFallbackReason = null;
+                    }
                 }
                 return probability;
             }

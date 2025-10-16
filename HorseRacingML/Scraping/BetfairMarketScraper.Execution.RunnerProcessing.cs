@@ -1210,13 +1210,21 @@ namespace HorseRacingML.Scraping
                     continue;
                 }
 
+                var normalizedKey = trimmedKey;
+                var isTrackedFeature = HistoricalFeatureBackfillKeySet.Contains(normalizedKey);
+
+                if (!isTrackedFeature)
+                {
+                    continue;
+                }
+
                 if (HasMeaningfulValue(kvp.Value))
                 {
-                    populated.Add(trimmedKey);
+                    populated.Add(normalizedKey);
                 }
-                else
+                else if (ShouldRequireFeature(featureVector, normalizedKey))
                 {
-                    missing.Add(trimmedKey);
+                    missing.Add(normalizedKey);
                 }
             }
 
@@ -1227,18 +1235,20 @@ namespace HorseRacingML.Scraping
                     continue;
                 }
 
-                if (populated.Contains(key))
+                var normalizedKey = key.Trim();
+
+                if (populated.Contains(normalizedKey))
                 {
                     continue;
                 }
-                if (!ShouldRequireFeature(featureVector, key))
+                if (!ShouldRequireFeature(featureVector, normalizedKey))
                 {
                     continue;
                 }
 
-                if (!featureVector.TryGetValue(key, out var value) || !HasMeaningfulValue(value))
+                if (!featureVector.TryGetValue(normalizedKey, out var value) || !HasMeaningfulValue(value))
                 {
-                    missing.Add(key);
+                    missing.Add(normalizedKey);
                 }
             }
 
