@@ -892,15 +892,6 @@ namespace HorseRacingML.Scraping
                         {
                             marketIdFromLink = null;
                         }
-                        try
-                        {
-                            var going = ExtractGoingForElement(el);
-                            RecordRaceGoing(href, going);
-                        }
-                        catch (Exception ex)
-                        {
-                            Console.Error.WriteLine($"[Navigation] Failed to record going for race link: {ex.Message}");
-                        }
                         if (!string.IsNullOrWhiteSpace(marketIdFromLink) && existingMarketIds.Contains(marketIdFromLink))
                         {
                             continue;
@@ -977,15 +968,6 @@ namespace HorseRacingML.Scraping
                         catch (Exception)
                         {
                             marketIdFromLink = null;
-                        }
-                        try
-                        {
-                            var going = ExtractGoingForElement(anchor);
-                            RecordRaceGoing(href, going);
-                        }
-                        catch (Exception ex)
-                        {
-                            Console.Error.WriteLine($"[Navigation] Failed to capture going from fallback link: {ex.Message}");
                         }
                         if (!string.IsNullOrWhiteSpace(marketIdFromLink) && existingMarketIds.Contains(marketIdFromLink))
                         {
@@ -1557,297 +1539,114 @@ return text.trim();";
                 }
             }
         }
-        private void CaptureRaceGoingFromSchedule() { lock (_raceGoingLock) { _raceGoingByMarketId.Clear(); _raceGoingByVenue.Clear(); } try { var js = (IJavaScriptExecutor)_driver; const string script = @"
-const textOrEmpty=node=>{if(!node)return '';const raw=node.textContent||node.innerText||'';return raw.trim();};
-const cleanseVenue=text=>{
-  if(!text)return '';
-  let normalized=text.replace(/\s+/g,' ').trim();
-  if(!normalized)return '';
-  normalized=normalized.replace(/\bgoing\b.*$/i,'').replace(/\|.*$/,'');
-  normalized=normalized.replace(/[\-–|,:]\s*$/,'').trim();
-  return normalized.trim();
-};
-const evaluateXPath=(xpath,context)=>{
-  if(!xpath)return '';
-  const doc=context&&context.ownerDocument?context.ownerDocument:document;
-  try{
-    const result=doc.evaluate(xpath,context||doc,null,XPathResult.FIRST_ORDERED_NODE_TYPE,null);
-    const node=result&&result.singleNodeValue;
-    return textOrEmpty(node);
-  }catch(e){
-    return '';
-  }
-};
-const findVenue=container=>{
-  if(!container)return '';
-    const venueSelectors=[
-      ""[data-testid='meeting-header-course-name']"",
-      ""[data-testid='meetingTitle']"",
-      ""[data-testid='meeting-title']"",
-      ""[data-testid='meeting-name']"",
-      ""[data-testid='meetingLabel']"",
-      ""[data-testid='meeting-label']"",
-    '.meeting-header__course-name',
-    '.meeting-description__title',
-    '.meeting-name',
-    '.meeting-title',
-    '.meeting-label',
-    'h2',
-    'h3'
-  ];
-  for(const selector of venueSelectors){
-    if(!selector)continue;
-    const candidate=container.querySelector?container.querySelector(selector):null;
-    const text=textOrEmpty(candidate);
-    const venue=cleanseVenue(text);
-    if(venue)return venue;
-  }
-  const attrCandidates=['data-venue','data-course-name','data-event-name','data-name'];
-  for(const attr of attrCandidates){
-    if(container.hasAttribute&&container.hasAttribute(attr)){
-      const venue=cleanseVenue(container.getAttribute(attr));
-      if(venue)return venue;
-    }
-  }
-  const label=cleanseVenue(textOrEmpty(container));
-  if(label)return label;
-  let prev=container.previousElementSibling;
-  while(prev){
-    const text=cleanseVenue(textOrEmpty(prev));
-    if(text)return text;
-    prev=prev.previousElementSibling;
-  }
-  return '';
-};
-const goingSelectors=[
-  ""div.racetrack-conditions"",
-  "".racetrack-conditions"",
-  ""[data-testid='racetrack-conditions']"",
-  ""[data-testid='going']"",
-  ""[data-test-id='going']"",
-  ""[data-testid='track-going']""
-];
-const fallbackVenueXPaths=[
-  '/html/body/ui-view/div/div/div[2]/div/ui-view/ui-view/div/div/div/div/div[1]/div[2]/div/bf-todays-racing-mod/div/div/bf-todays-racing/section/div[2]/div/div[2]/div/li[1]/div/div[1]/div[1]',
-  '/html/body/ui-view/div/div/div[2]/div/ui-view/ui-view/div/div/div/div/div[1]/div[2]/div/bf-todays-racing-mod/div/div/bf-todays-racing/section/div[2]/div/div[2]/div/li[2]/div/div[1]/div[1]',
-  '/html/body/ui-view/div/div/div[2]/div/ui-view/ui-view/div/div/div/div/div[1]/div[2]/div/bf-todays-racing-mod/div/div/bf-todays-racing/section/div[2]/div/div[2]/div/li[3]/div/div[1]/div[1]'
-];
-const fallbackGoingXPaths=[
-  '/html/body/ui-view/div/div/div[2]/div/ui-view/ui-view/div/div/div/div/div[1]/div[2]/div/bf-todays-racing-mod/div/div/bf-todays-racing/section/div[2]/div/div[2]/div/li[1]/div/div[1]/div[2]',
-  '/html/body/ui-view/div/div/div[2]/div/ui-view/ui-view/div/div/div/div/div[1]/div[2]/div/bf-todays-racing-mod/div/div/bf-todays-racing/section/div[2]/div/div[2]/div/li[2]/div/div[1]/div[2]',
-  '/html/body/ui-view/div/div/div[2]/div/ui-view/ui-view/div/div/div/div/div[1]/div[2]/div/bf-todays-racing-mod/div/div/bf-todays-racing/section/div[2]/div/div[2]/div/li[3]/div/div[1]/div[2]'
-];
-const normalizeGoing=text=>{
-  if(!text)return '';
-  let cleaned=text.trim();
-  if(!cleaned)return '';
-  cleaned=cleaned.replace(/^going\s*[:\-]?\s*/i,'');
-  const pipeIndex=cleaned.indexOf('|');
-  if(pipeIndex>=0){
-    cleaned=cleaned.substring(0,pipeIndex);
-  }
-  return cleaned.trim();
-};
-const sequentialPairs=[];
-const fallbackPairs=[];
-const addSequentialPair=(venue,going)=>{
-  if(!going)return;
-  const cleanVenue=cleanseVenue(venue);
-  const normalized=cleanVenue?cleanVenue.toLowerCase():'';
-  sequentialPairs.push({venue:cleanVenue,normalized,going,used:false});
-  fallbackPairs.push({venue:cleanVenue,normalized,going,used:false,sequential:true});
-};
-const addFallbackPair=(venue,going)=>{
-  if(!going)return;
-  const cleanVenue=cleanseVenue(venue);
-  const normalized=cleanVenue?cleanVenue.toLowerCase():'';
-  fallbackPairs.push({venue:cleanVenue,normalized,going,used:false});
-};
-const meetingLabelSelectors=[
-  ""[data-testid='meeting-label']"",
-  ""[data-testid='meetingLabel']"",
-  ""[data-testid='meeting-title']"",
-  ""[data-testid='meetingTitle']"",
-  ""[data-testid='meeting-name']"",
-  ""[data-testid='meetingName']"",
-  '.meeting-label',
-  '.meeting-title',
-  '.meeting-name',
-  '.meeting-header__course-name',
-  '.meeting-description__title',
-  'h2.meeting-label',
-  'h3.meeting-label'
-].join(',');
-const goingBlockSelectors=[
-  ""div.racetrack-conditions"",
-  ""div.racetrack-conditions__container"",
-  ""div.racetrack-conditions__content"",
-  "".racetrack-conditions"",
-  "".racetrack-conditions__container"",
-  "".racetrack-conditions__content"",
-  "".track-conditions"",
-  "".race-information__conditions"",
-  ""[data-testid='racetrack-conditions']"",
-  ""[data-testid='track-going']"",
-  ""[data-testid='going']"",
-  ""[data-test-id='going']""
-].join(',');
-if(meetingLabelSelectors&&goingBlockSelectors){
-  const meetingNodes=document.querySelectorAll(meetingLabelSelectors);
-  const goingNodes=document.querySelectorAll(goingBlockSelectors);
-  const count=Math.min(meetingNodes.length,goingNodes.length);
-  for(let i=0;i<count;i++){
-    const venueCandidate=cleanseVenue(textOrEmpty(meetingNodes[i]));
-    const goingCandidate=normalizeGoing(textOrEmpty(goingNodes[i]));
-    if(goingCandidate){
-      addSequentialPair(venueCandidate||'',goingCandidate);
-    }
-  }
-}
-for(let i=0;i<Math.max(fallbackVenueXPaths.length,fallbackGoingXPaths.length);i++){
-  const venueRaw=fallbackVenueXPaths[i]?cleanseVenue(evaluateXPath(fallbackVenueXPaths[i])):'';
-  const goingRaw=fallbackGoingXPaths[i]?evaluateXPath(fallbackGoingXPaths[i]):'';
-  const goingClean=normalizeGoing(goingRaw);
-  if(goingClean){
-    addFallbackPair(venueRaw,goingClean);
-  }
-}
-const sequentialVenueMap=new Map();
-for(const pair of sequentialPairs){
-  if(pair.normalized&&!sequentialVenueMap.has(pair.normalized)){
-    sequentialVenueMap.set(pair.normalized,pair.going);
-  }
-}
 
-const findGoing=container=>{
-  if(!container)return '';
-  let current=container;
-  while(current){
-    for(const selector of goingSelectors){
-      if(!selector)continue;
-      const candidate=current.querySelector?current.querySelector(selector):null;
-      const value=normalizeGoing(textOrEmpty(candidate));
-      if(value)return value;
-    }
-    const label=normalizeGoing(textOrEmpty(current));
-    if(label)return label;
-    current=current.parentElement;
-  }
-  return '';
-};
-const results=[];
-const processed=new Set();
-const meetingDescriptions=Array.from(document.querySelectorAll(""div.meeting-description""));
-for(const description of meetingDescriptions){
-  const host=description.closest('li')||description.closest(""[data-testid='meeting-card']"")||description.closest(""[data-testid='meeting']"")||description.parentElement;
-  if(!host||processed.has(host))continue;
-  processed.add(host);
-  let going=findGoing(description);
-  if(!going){
-    going=findGoing(host);
-  }
-  let venue=findVenue(description);
-  if(!venue){
-    venue=findVenue(host);
-  }
-  if(!going&&venue){
-    const normalizedVenueKey=cleanseVenue(venue).toLowerCase();
-    if(normalizedVenueKey&&sequentialVenueMap.has(normalizedVenueKey)){
-      going=sequentialVenueMap.get(normalizedVenueKey);
-      const seqMatch=fallbackPairs.find(p=>!p.used&&p.normalized===normalizedVenueKey&&p.going===going);
-      if(seqMatch){
-        seqMatch.used=true;
-      }
-    }
-  }
-  if(!going&&fallbackPairs.length){
-    let match=null;
-    if(venue){
-      const normalizedVenue=cleanseVenue(venue).toLowerCase();
-      if(normalizedVenue){
-        match=fallbackPairs.find(p=>!p.used&&p.normalized===normalizedVenue&&p.going);
-      }
-    }
-    if(!match){
-      match=fallbackPairs.find(p=>!p.used&&p.going);
-    }
-    if(match){
-      going=match.going;
-      if((!venue||!cleanseVenue(venue))&&match.venue){
-        venue=match.venue;
-      }
-      match.used=true;
-    }
-  }
-  if(venue){
-    const sanitizedVenue=cleanseVenue(venue);
-    if(sanitizedVenue){
-      venue=sanitizedVenue;
-    }
-  }
-  const seenLinks=new Set();
-  const anchors=host.querySelectorAll(""a[href*='/horse-racing/']"");
-  for(const anchor of anchors){
-    if(!anchor||!anchor.href)continue;
-    const href=anchor.href.trim();
-    if(!href||seenLinks.has(href))continue;
-    seenLinks.add(href);
-    results.push({href,going,venue});
-  }
-  const linkish=host.querySelectorAll('[data-href],[data-url]');
-  for(const node of linkish){
-    if(!node)continue;
-    const href=node.getAttribute('data-href')||node.getAttribute('data-url');
-    if(!href)continue;
-    let absolute=href.trim();
-    if(!absolute)continue;
-    try{absolute=new URL(absolute, window.location.href).href;}catch(e){}
-    if(!absolute||seenLinks.has(absolute))continue;
-    seenLinks.add(absolute);
-    results.push({href:absolute,going,venue});
-  }
-}
-return results;"; var raw = js.ExecuteScript(script); if (raw is IEnumerable<object> entries) { foreach (var entry in entries) { string? href = null; string? going = null; string? venue = null; switch (entry) { case IReadOnlyDictionary<string, object?> dict: if (dict.TryGetValue("href", out var hrefValue)) { href = hrefValue?.ToString(); } if (dict.TryGetValue("going", out var goingValue)) { going = goingValue?.ToString(); } if (dict.TryGetValue("venue", out var venueValue)) { venue = venueValue?.ToString(); } break; case IDictionary legacyDict: if (legacyDict.Contains("href")) { href = legacyDict["href"]?.ToString(); } if (legacyDict.Contains("going")) { going = legacyDict["going"]?.ToString(); } if (legacyDict.Contains("venue")) { venue = legacyDict["venue"]?.ToString(); } break; } RecordRaceGoing(href, going, venue); } } } catch (Exception ex) { Console.Error.WriteLine($"[Navigation] Failed to capture going information from schedule: {ex.Message}"); } }
-        private void RecordRaceGoing(string? href, string? going) { if (string.IsNullOrWhiteSpace(href)) { return; } var marketId = BetfairMarketScraper.ExtractMarketId(href); if (string.IsNullOrWhiteSpace(marketId)) { return; } var trimmedGoing = string.IsNullOrWhiteSpace(going) ? null : going!.Trim(); lock (_raceGoingLock) { if (!string.IsNullOrEmpty(trimmedGoing)) { _raceGoingByMarketId[marketId] = trimmedGoing; } else if (!_raceGoingByMarketId.ContainsKey(marketId)) { _raceGoingByMarketId[marketId] = null; } } }
-        
-        private string? ExtractGoingForElement(IWebElement element) { if (element == null) { return null; } try { var js = (IJavaScriptExecutor)_driver; const string script = @"
-const el=arguments[0];
-const textOrEmpty=node=>{if(!node)return '';const raw=node.textContent||node.innerText||'';return raw.trim();};
-const attrOrEmpty=(node,attr)=>{if(!node||!attr)return '';const value=node.getAttribute?node.getAttribute(attr):'';return (value||'').trim();};
-const cleanGoing=text=>{if(!text)return '';let cleaned=text.replace(/\s+/g,' ').trim();if(!cleaned)return '';cleaned=cleaned.replace(/\bgoing\s*[:\-]?\s*/i,'');cleaned=cleaned.replace(/^[:\-\|\s]+/,'');cleaned=cleaned.replace(/[,;]?\s*in places.*$/i,'');cleaned=cleaned.replace(/\s*\|.*$/,'').trim();if(!cleaned)return '';const match=cleaned.match(/\b(Good|Soft|Firm|Heavy|Standard|Yielding|Slow|Fast)\b[^,;|]*/i);if(match&&match[0]){return match[0].trim();}return (/\bgoing\b/i.test(text)?cleaned:'');};
-const extractFrom=node=>{if(!node)return '';const stack=[node];const visited=new Set();while(stack.length){const current=stack.pop();if(!current||visited.has(current))continue;visited.add(current);const raw=textOrEmpty(current);const cleaned=cleanGoing(raw);if(cleaned)return cleaned;const aria=cleanGoing(attrOrEmpty(current,'aria-label'));if(aria)return aria;const title=cleanGoing(attrOrEmpty(current,'title'));if(title)return title;const dataTitle=cleanGoing(attrOrEmpty(current,'data-title'));if(dataTitle)return dataTitle;const dataContent=cleanGoing(attrOrEmpty(current,'data-content'));if(dataContent)return dataContent;const children=current.children||[];for(let i=0;i<children.length;i++){stack.push(children[i]);}}
-  return '';
-};
-const selectors=[
-  """"div.racetrack-conditions"""",
-  """"div.racetrack-conditions__container"""",
-  """"div.racetrack-conditions__content"""",
-  """".racetrack-conditions"""",
-  """".racetrack-conditions__container"""",
-  """".racetrack-conditions__content"""",
-  """".track-conditions"""",
-  """".race-information__conditions"""",
-  """"[data-testid='racetrack-conditions']"""",
-  """"[data-testid='track-going']"""",
-  """"[data-testid='going']"""",
-  """"[data-test-id='going']"""",
-  """"[data-automation-id*='going']"""",
-  """"[data-automation-id*='conditions']"""",
-  """"[class*='going']"""",
-  """"[class*='Going']"""",
-  """"[class*='conditions']""""
-];
-const rootCandidates=[];
-const pushUnique=node=>{if(!node)return;for(const existing of rootCandidates){if(existing===node)return;}rootCandidates.push(node);};
-pushUnique(el);
-pushUnique(el.closest?el.closest('[data-testid*=""market""],[data-testid*=""event""],[data-testid*=""card""],[data-testid*=""meeting""]'):null);
-pushUnique(el.closest?el.closest('[class*=""market""],[class*=""event""],[class*=""meeting""],[class*=""card""]'):null);
-let parent=el.parentElement;
-let hops=0;
-while(parent&&hops<6){pushUnique(parent);parent=parent.parentElement;hops++;}
-pushUnique(document.querySelector('[data-testid=""track-going""],[data-testid=""going""],[data-test-id=""going""]'));
-for(const root of rootCandidates){if(!root)continue;for(const selector of selectors){if(!selector||!root.querySelector)continue;const candidate=root.querySelector(selector);const value=extractFrom(candidate);if(value)return value;}const fallback=extractFrom(root);if(fallback)return fallback;}
-return '';"; var result = js.ExecuteScript(script, element); if (result is string text) { var trimmed = text.Trim(); return string.IsNullOrEmpty(trimmed) ? null : trimmed; } } catch (StaleElementReferenceException) { return null; } catch (Exception ex) { Console.Error.WriteLine($"[Navigation] Failed to extract going text: {ex.Message}"); } return null; }
+        private void CaptureRaceGoingFromSchedule()
+        {
+            lock (_raceGoingLock)
+            {
+                _raceGoingByMarketId.Clear();
+                _raceGoingByVenue.Clear();
+            }
+
+            try
+            {
+                const string listXPath = "/html/body/ui-view/div/div/div[2]/div/ui-view/ui-view/div/div/div/div/div[1]/div[2]/div/bf-todays-racing-mod/div/div/bf-todays-racing/section/div[2]/div/div[2]/div/li";
+                var raceItems = _driver.FindElements(By.XPath(listXPath));
+
+                foreach (var raceItem in raceItems)
+                {
+                    string? location = null;
+                    string? going = null;
+
+                    try
+                    {
+                        location = raceItem.FindElement(By.XPath("./div/div[1]/div[1]")).Text?.Trim();
+                    }
+                    catch (NoSuchElementException)
+                    {
+                        location = null;
+                    }
+
+                    try
+                    {
+                        var goingText = raceItem.FindElement(By.XPath("./div/div[1]/div[2]")).Text;
+                        going = CleanGoingText(goingText);
+                    }
+                    catch (NoSuchElementException)
+                    {
+                        going = null;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(location) && string.IsNullOrWhiteSpace(going))
+                    {
+                        continue;
+                    }
+
+                    var anchors = raceItem.FindElements(By.XPath(".//a[contains(@href, '/horse-racing/')]")).ToList();
+                    if (anchors.Count == 0)
+                    {
+                        Console.WriteLine($"	[DayReport] Found race '{location ?? "<unknown>"}' but no associated Betfair links.");
+                        continue;
+                    }
+
+                    foreach (var anchor in anchors)
+                    {
+                        var href = anchor.GetAttribute("href");
+                        if (string.IsNullOrWhiteSpace(href))
+                        {
+                            continue;
+                        }
+
+                        RecordRaceGoing(href, going, location);
+                    }
+
+                    var goingDisplay = string.IsNullOrWhiteSpace(going) ? "<unknown>" : going;
+                    var locationDisplay = string.IsNullOrWhiteSpace(location) ? "<unknown location>" : location;
+                    Console.WriteLine($"	[DayReport] Captured going '{goingDisplay}' for '{locationDisplay}'.");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[Navigation] Failed to capture going information from schedule: {ex.Message}");
+            }
+
+            static string? CleanGoingText(string? raw)
+            {
+                if (string.IsNullOrWhiteSpace(raw))
+                {
+                    return null;
+                }
+
+                var cleaned = raw.Trim();
+                if (cleaned.Length == 0)
+                {
+                    return null;
+                }
+
+                if (cleaned.StartsWith("Going", StringComparison.OrdinalIgnoreCase))
+                {
+                    var separatorIndex = cleaned.IndexOf(':');
+                    if (separatorIndex >= 0 && separatorIndex + 1 < cleaned.Length)
+                    {
+                        cleaned = cleaned.Substring(separatorIndex + 1);
+                    }
+                    else
+                    {
+                        cleaned = cleaned.Substring(5);
+                    }
+                }
+
+                cleaned = cleaned.Replace("in places", string.Empty, StringComparison.OrdinalIgnoreCase);
+                cleaned = cleaned.Replace("Going", string.Empty, StringComparison.OrdinalIgnoreCase);
+                cleaned = cleaned.Replace("-", " ");
+                cleaned = cleaned.Replace("|", " ");
+                cleaned = cleaned.Trim();
+
+                return cleaned.Length == 0 ? null : cleaned;
+            }
+        }
+
+
         public void StartAutomatedBettingLoop(
             RacingRepository repo,
             HyperparameterTrainer trainer,
