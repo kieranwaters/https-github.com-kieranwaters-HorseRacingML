@@ -1813,16 +1813,40 @@ return results;"; var raw = js.ExecuteScript(script); if (raw is IEnumerable<obj
         private string? ExtractGoingForElement(IWebElement element) { if (element == null) { return null; } try { var js = (IJavaScriptExecutor)_driver; const string script = @"
 const el=arguments[0];
 const textOrEmpty=node=>{if(!node)return '';const raw=node.textContent||node.innerText||'';return raw.trim();};
-const cleanGoing=text=>{if(!text)return '';let cleaned=text.replace(/\s+/g,' ').trim();if(!cleaned)return '';const match=cleaned.match(/going\s*[:\-]?\s*([^|]+)/i);if(match&&match[1]){return match[1].trim();}if(/^going\b/i.test(cleaned)){return cleaned.replace(/^going\s*[:\-]?\s*/i,'').trim();}return (/\b(Good|Soft|Firm|Heavy|Standard|Yielding)\b/i.test(cleaned)?cleaned:'');};
-const extractFrom=node=>{if(!node)return '';const stack=[node];while(stack.length){const current=stack.pop();const raw=textOrEmpty(current);const cleaned=cleanGoing(raw);if(cleaned)return cleaned;const children=current.children||[];for(let i=0;i<children.length;i++){stack.push(children[i]);}}return '';};
-const selectors=[""div.racetrack-conditions"",""div.racetrack-conditions__container"",""div.racetrack-conditions__content"","".racetrack-conditions"","".racetrack-conditions__container"","".racetrack-conditions__content"","".track-conditions"","".race-information__conditions"",""[data-testid='racetrack-conditions']"",""[data-testid='track-going']"",""[data-testid='going']"",""[data-test-id='going']""];
-let current=el;
-while(current){
-  for(const selector of selectors){if(!selector)continue;const candidate=current.querySelector?current.querySelector(selector):null;const value=extractFrom(candidate);if(value)return value;}
-  const fallback=extractFrom(current);
-  if(fallback)return fallback;
-  current=current.parentElement;
-}
+const attrOrEmpty=(node,attr)=>{if(!node||!attr)return '';const value=node.getAttribute?node.getAttribute(attr):'';return (value||'').trim();};
+const cleanGoing=text=>{if(!text)return '';let cleaned=text.replace(/\s+/g,' ').trim();if(!cleaned)return '';cleaned=cleaned.replace(/\bgoing\s*[:\-]?\s*/i,'');cleaned=cleaned.replace(/^[:\-\|\s]+/,'');cleaned=cleaned.replace(/[,;]?\s*in places.*$/i,'');cleaned=cleaned.replace(/\s*\|.*$/,'').trim();if(!cleaned)return '';const match=cleaned.match(/\b(Good|Soft|Firm|Heavy|Standard|Yielding|Slow|Fast)\b[^,;|]*/i);if(match&&match[0]){return match[0].trim();}return (/\bgoing\b/i.test(text)?cleaned:'');};
+const extractFrom=node=>{if(!node)return '';const stack=[node];const visited=new Set();while(stack.length){const current=stack.pop();if(!current||visited.has(current))continue;visited.add(current);const raw=textOrEmpty(current);const cleaned=cleanGoing(raw);if(cleaned)return cleaned;const aria=cleanGoing(attrOrEmpty(current,'aria-label'));if(aria)return aria;const title=cleanGoing(attrOrEmpty(current,'title'));if(title)return title;const dataTitle=cleanGoing(attrOrEmpty(current,'data-title'));if(dataTitle)return dataTitle;const dataContent=cleanGoing(attrOrEmpty(current,'data-content'));if(dataContent)return dataContent;const children=current.children||[];for(let i=0;i<children.length;i++){stack.push(children[i]);}}
+  return '';
+};
+const selectors=[
+  """"div.racetrack-conditions"""",
+  """"div.racetrack-conditions__container"""",
+  """"div.racetrack-conditions__content"""",
+  """".racetrack-conditions"""",
+  """".racetrack-conditions__container"""",
+  """".racetrack-conditions__content"""",
+  """".track-conditions"""",
+  """".race-information__conditions"""",
+  """"[data-testid='racetrack-conditions']"""",
+  """"[data-testid='track-going']"""",
+  """"[data-testid='going']"""",
+  """"[data-test-id='going']"""",
+  """"[data-automation-id*='going']"""",
+  """"[data-automation-id*='conditions']"""",
+  """"[class*='going']"""",
+  """"[class*='Going']"""",
+  """"[class*='conditions']""""
+];
+const rootCandidates=[];
+const pushUnique=node=>{if(!node)return;for(const existing of rootCandidates){if(existing===node)return;}rootCandidates.push(node);};
+pushUnique(el);
+pushUnique(el.closest?el.closest('[data-testid*=""market""],[data-testid*=""event""],[data-testid*=""card""],[data-testid*=""meeting""]'):null);
+pushUnique(el.closest?el.closest('[class*=""market""],[class*=""event""],[class*=""meeting""],[class*=""card""]'):null);
+let parent=el.parentElement;
+let hops=0;
+while(parent&&hops<6){pushUnique(parent);parent=parent.parentElement;hops++;}
+pushUnique(document.querySelector('[data-testid=""track-going""],[data-testid=""going""],[data-test-id=""going""]'));
+for(const root of rootCandidates){if(!root)continue;for(const selector of selectors){if(!selector||!root.querySelector)continue;const candidate=root.querySelector(selector);const value=extractFrom(candidate);if(value)return value;}const fallback=extractFrom(root);if(fallback)return fallback;}
 return '';"; var result = js.ExecuteScript(script, element); if (result is string text) { var trimmed = text.Trim(); return string.IsNullOrEmpty(trimmed) ? null : trimmed; } } catch (StaleElementReferenceException) { return null; } catch (Exception ex) { Console.Error.WriteLine($"[Navigation] Failed to extract going text: {ex.Message}"); } return null; }
         public void StartAutomatedBettingLoop(
             RacingRepository repo,
