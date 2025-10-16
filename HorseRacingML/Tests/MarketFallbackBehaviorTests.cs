@@ -228,6 +228,30 @@ namespace HorseRacingML.Tests
             Assert.False(string.IsNullOrWhiteSpace(flow.AiProbabilityFallbackReason));
             Assert.Contains("Model probability below clamp threshold", flow.AiProbabilityFallbackReason);
         }
+        [Fact]
+        public void FeaturePopulationSummary_UsesNeuralFeatureKeysAndExcludesFallbackValues()
+        {
+            var repo = new StubRepository();
+            var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
+            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), bankroll: 25m, settings);
+
+            scraper.TestSetNeuralFeatureKeys(new[] { "Age", "Class", "BackBookPercentage" });
+
+            var featureVector = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Age"] = 5,
+                ["BackBookPercentage"] = 102.5m,
+                ["Class"] = 0
+            };
+
+            var summary = scraper.TestBuildFeaturePopulationSummary(featureVector);
+
+            Assert.Equal(2, summary.PopulatedCount);
+            Assert.Contains("Age", summary.PopulatedKeys, StringComparer.OrdinalIgnoreCase);
+            Assert.Contains("BackBookPercentage", summary.PopulatedKeys, StringComparer.OrdinalIgnoreCase);
+            Assert.Equal(1, summary.MissingCount);
+            Assert.Contains("Class", summary.MissingKeys, StringComparer.OrdinalIgnoreCase);
+        }
 
         private static void InvokeApplyMarketFallback(IReadOnlyList<RunnerFlow> flows)
         {

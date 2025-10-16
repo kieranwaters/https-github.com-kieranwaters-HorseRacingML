@@ -7,6 +7,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Text.RegularExpressions;
+using System.Linq;
 
 namespace HorseRacingML.Scraping
 {
@@ -128,7 +129,24 @@ namespace HorseRacingML.Scraping
         }
 
         public HyperparameterSummary? LoadedHyperparameters => _loadedHyperparameters;
+        private static void UpdateNeuralFeatureKeys(IReadOnlyList<string>? keys)
+        {
+            if (keys == null || keys.Count == 0)
+            {
+                _neuralFeatureKeys = Array.Empty<string>();
+                return;
+            }
 
+            var normalized = keys
+                .Where(key => !string.IsNullOrWhiteSpace(key))
+                .Select(key => key.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+            _neuralFeatureKeys = normalized.Length > 0 ? normalized : Array.Empty<string>();
+        }
+
+        private static IReadOnlyList<string> GetCachedNeuralFeatureKeys() => _neuralFeatureKeys;
         public IReadOnlyCollection<string> MissingScrapeFieldDescriptions => _missingScrapedFieldDescriptions;
 
         public IReadOnlyList<RaceDayReport> ScrapeOpenRaceTabsForReport(IWebDriver driver, IEnumerable<string>? handlesToProcess = null)
@@ -140,6 +158,7 @@ namespace HorseRacingML.Scraping
             result.Races.AddRange(deduplicatedRaces);
             return result.Races.AsReadOnly();
         }
+
         public IReadOnlyList<BetRecommendation> ScrapeOpenRaceTabs(
                     IWebDriver driver,
                     IEnumerable<string>? handlesToProcess = null)
