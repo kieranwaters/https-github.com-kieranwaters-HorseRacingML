@@ -502,6 +502,19 @@ namespace HorseRacingML.ML
             public bool[] Active { get; }
         }
         public string ModelStatus => _modelStatus;
+        public IReadOnlyList<string> GetRawFeatureKeys()
+        {
+            if (_metadata?.Keys == null || _metadata.Keys.Count == 0)
+            {
+                return Array.Empty<string>();
+            }
+
+            return _metadata.Keys
+                .Where(key => !string.IsNullOrWhiteSpace(key))
+                .Select(key => key.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
 
         public bool HasTrainedModel => _hasTrainedModel;
         public HyperparameterSummary? Hyperparameters => _hyperparameters;

@@ -1186,6 +1186,16 @@ namespace HorseRacingML.Scraping
 
             return null;
         }
+        private static IReadOnlyList<string> ResolveTrackedFeatureKeys()
+        {
+            var neuralKeys = GetCachedNeuralFeatureKeys();
+            if (neuralKeys != null && neuralKeys.Count > 0)
+            {
+                return neuralKeys;
+            }
+
+            return HistoricalFeatureBackfillKeys;
+        }
         private static FeaturePopulationSummary BuildFeaturePopulationSummary(Dictionary<string, object?> featureVector)
         {
             var missingList = GetMissingHistoricalFeatureKeys(featureVector);
@@ -1210,7 +1220,9 @@ namespace HorseRacingML.Scraping
             var missingLookup = new HashSet<string>(normalizedMissing, StringComparer.OrdinalIgnoreCase);
             var populated = new List<string>();
 
-            foreach (var key in HistoricalFeatureBackfillKeys)
+            var trackedKeys = ResolveTrackedFeatureKeys();
+
+            foreach (var key in trackedKeys)
             {
                 if (string.IsNullOrWhiteSpace(key))
                 {
@@ -1331,7 +1343,7 @@ namespace HorseRacingML.Scraping
                 return false;
             }
 
-            if (HistoricalFeatureBackfillKeySet.Contains(key) && IsNeutralFallbackValue(key, existing))
+            if (IsNeutralFallbackValue(key, existing))
             {
                 return false;
             }
@@ -1473,12 +1485,7 @@ namespace HorseRacingML.Scraping
                 PerformanceWindowSizes.Select(window => prefix + window)))
             .ToArray());
 
-        private static readonly Lazy<HashSet<string>> HistoricalFeatureBackfillKeySetLazy = new(() =>
-            new HashSet<string>(HistoricalFeatureBackfillKeys, StringComparer.OrdinalIgnoreCase));
-
         private static string[] HistoricalFeatureBackfillKeys => HistoricalFeatureBackfillKeysLazy.Value;
-
-        private static HashSet<string> HistoricalFeatureBackfillKeySet => HistoricalFeatureBackfillKeySetLazy.Value;
         private static readonly HashSet<string> HistoricalFeaturesAlwaysRequired = new(//here
             new[]
             {
@@ -1515,14 +1522,15 @@ namespace HorseRacingML.Scraping
         private static IReadOnlyList<string> GetMissingHistoricalFeatureKeys(Dictionary<string, object?> featureVector)
         {
             var missing = new List<string>();
+            var trackedKeys = ResolveTrackedFeatureKeys();
 
             if (featureVector == null || featureVector.Count == 0)
             {
-                missing.AddRange(HistoricalFeatureBackfillKeys);
+                missing.AddRange(trackedKeys);
                 return missing;
             }
 
-            foreach (var key in HistoricalFeatureBackfillKeys)
+            foreach (var key in trackedKeys)
             {
                 if (!ShouldRequireFeature(featureVector, key))
                 {

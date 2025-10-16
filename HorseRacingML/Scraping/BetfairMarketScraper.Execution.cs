@@ -86,12 +86,14 @@ namespace HorseRacingML.Scraping
                 }
 
                 aiCalculator = new AIOddsCalculator(weightPath); // init AI calc
+                UpdateNeuralFeatureKeys(aiCalculator.GetRawFeatureKeys());
                 Console.WriteLine($"\tAI model status: {aiCalculator.ModelStatus}"); // log model status
                 _loadedHyperparameters = aiCalculator.Hyperparameters;
             }
             else
             {
                 Console.WriteLine("\tAI probability recalculation disabled for this scrape; skipping model load.");
+                UpdateNeuralFeatureKeys(null);
             }
             lock (_featureLookupCacheLock)
             {

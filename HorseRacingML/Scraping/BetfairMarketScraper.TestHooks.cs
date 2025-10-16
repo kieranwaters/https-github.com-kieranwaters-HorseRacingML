@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using HorseRacingML.Models;
+using System.Linq;
 
 namespace HorseRacingML.Scraping
 {
@@ -186,6 +187,15 @@ namespace HorseRacingML.Scraping
                 layBookPercentage,
                 flows,
                 missingScrapeFields);
+        }
+        internal FeaturePopulationSummary TestBuildFeaturePopulationSummary(Dictionary<string, object?> featureVector)
+        {
+            return BuildFeaturePopulationSummary(featureVector);
+        }
+
+        internal void TestSetNeuralFeatureKeys(IEnumerable<string>? keys)
+        {
+            UpdateNeuralFeatureKeys(keys?.ToList());
         }
     }
 }
