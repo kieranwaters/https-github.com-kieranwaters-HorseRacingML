@@ -1597,10 +1597,15 @@ return text.trim();";
                         continue;
                     }
 
+                    if (!string.IsNullOrWhiteSpace(location) || !string.IsNullOrWhiteSpace(going))
+                    {
+                        RecordRaceGoing(href: null, going, location);
+                    }
+
                     var anchors = raceItem.FindElements(By.XPath(".//a[contains(@href, '/horse-racing/')]")).ToList();
                     if (anchors.Count == 0)
                     {
-                        Console.WriteLine($"	[DayReport] Found race '{location ?? "<unknown>"}' but no associated Betfair links.");
+                        Console.WriteLine($"\t[DayReport] Found race '{location ?? "<unknown>"}' but no associated Betfair links; cached venue going for fallback use.");
                         continue;
                     }
 

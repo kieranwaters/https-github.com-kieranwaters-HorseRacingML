@@ -210,13 +210,30 @@ namespace HorseRacingML.Scraping
                 var trimmedGoing = string.IsNullOrWhiteSpace(goingText) ? null : goingText.Trim();
                 var trimmedVenueName = string.IsNullOrWhiteSpace(venueName) ? null : venueName.Trim();
                 var trimmedVenueCountry = string.IsNullOrWhiteSpace(venueCountry) ? null : venueCountry.Trim();
+                string? scheduleGoing = null;
+                if (!string.IsNullOrWhiteSpace(trimmedVenueName))
+                {
+                    scheduleGoing = GetGoingForVenue(trimmedVenueName);
+                }
+
+                if (string.IsNullOrWhiteSpace(scheduleGoing) &&
+                    !string.IsNullOrWhiteSpace(venueName) &&
+                    !string.Equals(venueName, trimmedVenueName, StringComparison.Ordinal))
+                {
+                    scheduleGoing = GetGoingForVenue(venueName);
+                }
+
+                if (!string.IsNullOrWhiteSpace(scheduleGoing))
+                {
+                    scheduleGoing = scheduleGoing.Trim();
+                }
 
                 var metadataSource = new RaceDayReport
                 {
                     RaceTitle = trimmedTitle,
                     RaceDetails = trimmedRaceDetails,
                     RaceType = trimmedRaceType,
-                    Going = trimmedGoing
+                    Going = string.IsNullOrWhiteSpace(trimmedGoing) ? scheduleGoing : trimmedGoing
                 };
 
                 ParsedRaceMetadata? parsedMetadata = null;
@@ -237,11 +254,15 @@ namespace HorseRacingML.Scraping
 
                 var resolvedGoing = !string.IsNullOrWhiteSpace(trimmedGoing)
                     ? trimmedGoing
-                    : metadataGoing;
+                    : (!string.IsNullOrWhiteSpace(scheduleGoing)
+                        ? scheduleGoing
+                        : metadataGoing);
 
                 var goingSource = !string.IsNullOrWhiteSpace(trimmedGoing)
                     ? "race page"
-                    : (!string.IsNullOrWhiteSpace(metadataGoing) ? "parsed metadata" : "unavailable");
+                    : (!string.IsNullOrWhiteSpace(scheduleGoing)
+                        ? "schedule venue lookup"
+                        : (!string.IsNullOrWhiteSpace(metadataGoing) ? "parsed metadata" : "unavailable"));
 
                 var goingDisplay = string.IsNullOrWhiteSpace(resolvedGoing) ? "<null>" : resolvedGoing;
                 if (string.IsNullOrWhiteSpace(trimmedGoing))
