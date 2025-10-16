@@ -1557,28 +1557,40 @@ return text.trim();";
                 {
                     string? location = null;
                     string? going = null;
+                    string? locationRaw = null;
+                    string? goingRaw = null;
 
                     try
                     {
-                        location = raceItem.FindElement(By.XPath("./div/div[1]/div[1]")).Text?.Trim();
+                        var locationElement = raceItem.FindElement(By.XPath("./div/div[1]/div[1]"));
+                        locationRaw = locationElement.Text;
+                        Console.WriteLine($"\t[DayReport][GoingXPath] Raw location text: '{FormatGoingLogValue(locationRaw)}'.");
+                        location = locationRaw?.Trim();
                     }
                     catch (NoSuchElementException)
                     {
+                        Console.WriteLine("\t[DayReport][GoingXPath] Location XPath './div/div[1]/div[1]' not found.");
                         location = null;
                     }
 
                     try
                     {
-                        var goingText = raceItem.FindElement(By.XPath("./div/div[1]/div[2]")).Text;
-                        going = CleanGoingText(goingText);
+                        var goingElement = raceItem.FindElement(By.XPath("./div/div[1]/div[2]"));
+                        goingRaw = goingElement.Text;
+                        Console.WriteLine($"\t[DayReport][GoingXPath] Raw going text: '{FormatGoingLogValue(goingRaw)}'.");
+                        going = CleanGoingText(goingRaw);
+                        var cleanedGoingDisplay = string.IsNullOrWhiteSpace(going) ? "<null>" : going;
+                        Console.WriteLine($"\t[DayReport][GoingXPath] Cleaned going text: '{cleanedGoingDisplay}'.");
                     }
                     catch (NoSuchElementException)
                     {
+                        Console.WriteLine("\t[DayReport][GoingXPath] Going XPath './div/div[1]/div[2]' not found.");
                         going = null;
                     }
 
                     if (string.IsNullOrWhiteSpace(location) && string.IsNullOrWhiteSpace(going))
                     {
+                        Console.WriteLine("\t[DayReport][GoingXPath] Race item missing both location and going; skipping.");
                         continue;
                     }
 
@@ -1643,6 +1655,27 @@ return text.trim();";
                 cleaned = cleaned.Trim();
 
                 return cleaned.Length == 0 ? null : cleaned;
+            }
+            static string FormatGoingLogValue(string? raw)
+            {
+                if (raw == null)
+                {
+                    return "<null>";
+                }
+
+                var sanitized = raw.Replace("\r", "\\r").Replace("\n", "\\n");
+
+                if (sanitized.Length == 0)
+                {
+                    return "<empty>";
+                }
+
+                if (string.IsNullOrWhiteSpace(raw))
+                {
+                    return "<whitespace>";
+                }
+
+                return sanitized;
             }
         }
 
