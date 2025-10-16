@@ -1056,6 +1056,12 @@ namespace HorseRacingML.Scraping
                         continue;
                     }
                 }
+                if (missingHistoricalKeys.Count == 0 &&
+                    AreAlwaysRequiredHistoricalFeaturesSatisfied(featureVector))
+                {
+                    Console.WriteLine(
+                        $"\t\t[FeaturePopulation] HistoricalFeaturesAlwaysRequired satisfied for {identifier}.");
+                }
 
                 EnsureDistanceChangeFromLast(
                     featureVector,
@@ -1596,6 +1602,28 @@ namespace HorseRacingML.Scraping
             if (value is double d)
             {
                 return !double.IsNaN(d);
+            }
+
+            return true;
+        }
+        private static bool AreAlwaysRequiredHistoricalFeaturesSatisfied(Dictionary<string, object?> featureVector)
+        {
+            if (featureVector == null || featureVector.Count == 0)
+            {
+                return false;
+            }
+
+            foreach (var key in HistoricalFeaturesAlwaysRequired)
+            {
+                if (!ShouldRequireFeature(featureVector, key))
+                {
+                    continue;
+                }
+
+                if (!TryGetMeaningfulValue(featureVector, key, out _))
+                {
+                    return false;
+                }
             }
 
             return true;

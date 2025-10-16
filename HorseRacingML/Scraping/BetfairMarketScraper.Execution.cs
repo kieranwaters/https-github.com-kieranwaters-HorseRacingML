@@ -265,21 +265,6 @@ namespace HorseRacingML.Scraping
                         : (!string.IsNullOrWhiteSpace(metadataGoing) ? "parsed metadata" : "unavailable"));
 
                 var goingDisplay = string.IsNullOrWhiteSpace(resolvedGoing) ? "<null>" : resolvedGoing;
-                if (string.IsNullOrWhiteSpace(trimmedGoing))
-                {
-                    if (string.IsNullOrWhiteSpace(resolvedGoing))
-                    {
-                        Console.WriteLine($"\t[DayReport] Going unavailable for market {marketId}; race page and metadata were empty.");
-                    }
-                    else
-                    {
-                        Console.WriteLine($"\t[DayReport] Going missing on race page for market {marketId}; using {goingSource}: '{goingDisplay}'.");
-                    }
-                }
-                else
-                {
-                    Console.WriteLine($"\t[DayReport] Scraped going '{goingDisplay}' for market {marketId}.");
-                }
                 try
                 {
                     var screen = new RaceScreen
