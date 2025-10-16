@@ -8,9 +8,37 @@ namespace HorseRacingML.Models
     {
         public static FeaturePopulationSummary Empty { get; } = new FeaturePopulationSummary();
 
-        public int PopulatedCount { get; init; }
+        private int? _populatedCount;
 
-        public int MissingCount { get; init; }
+        public int PopulatedCount
+        {
+            get
+            {
+                if (PopulatedKeys?.Count > 0)
+                {
+                    return PopulatedKeys.Count;
+                }
+
+                return _populatedCount ?? 0;
+            }
+            init => _populatedCount = value;
+        }
+
+        private int? _missingCount;
+
+        public int MissingCount
+        {
+            get
+            {
+                if (MissingKeys?.Count > 0)
+                {
+                    return MissingKeys.Count;
+                }
+
+                return _missingCount ?? 0;
+            }
+            init => _missingCount = value;
+        }
 
         public IReadOnlyList<string> PopulatedKeys { get; init; } = Array.Empty<string>();
 

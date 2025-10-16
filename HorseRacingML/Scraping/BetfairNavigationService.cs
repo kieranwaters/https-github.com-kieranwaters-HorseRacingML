@@ -1571,7 +1571,6 @@ return text.trim();";
                     }
                     catch (NoSuchElementException)
                     {
-                        Console.WriteLine("\t[DayReport][GoingXPath] Location XPath './div/div[1]/div[1]' not found.");
                         location = null;
                     }
 
@@ -1605,7 +1604,7 @@ return text.trim();";
                     var anchors = raceItem.FindElements(By.XPath(".//a[contains(@href, '/horse-racing/')]")).ToList();
                     if (anchors.Count == 0)
                     {
-                        Console.WriteLine($"\t[DayReport] Found race '{location ?? "<unknown>"}' but no associated Betfair links; cached venue going for fallback use.");
+                       
                         continue;
                     }
 

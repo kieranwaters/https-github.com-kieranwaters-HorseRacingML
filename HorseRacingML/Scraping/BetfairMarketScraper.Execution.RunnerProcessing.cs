@@ -1188,45 +1188,27 @@ namespace HorseRacingML.Scraping
         }
         private static FeaturePopulationSummary BuildFeaturePopulationSummary(Dictionary<string, object?> featureVector)
         {
+            var missingList = GetMissingHistoricalFeatureKeys(featureVector);
+
+            var normalizedMissing = missingList
+                .Where(k => !string.IsNullOrWhiteSpace(k))
+                .Select(k => k.Trim())
+                .OrderBy(k => k, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
             if (featureVector == null)
             {
-                return FeaturePopulationSummary.Empty;
+                return new FeaturePopulationSummary
+                {
+                    PopulatedCount = 0,
+                    MissingCount = normalizedMissing.Count,
+                    PopulatedKeys = Array.Empty<string>(),
+                    MissingKeys = normalizedMissing
+                };
             }
 
-            var populated = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
-            var missing = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
-
-            foreach (var kvp in featureVector)
-            {
-                var key = kvp.Key;
-                if (string.IsNullOrWhiteSpace(key))
-                {
-                    continue;
-                }
-
-                var trimmedKey = key.Trim();
-                if (trimmedKey.Length == 0)
-                {
-                    continue;
-                }
-
-                var normalizedKey = trimmedKey;
-                var isTrackedFeature = HistoricalFeatureBackfillKeySet.Contains(normalizedKey);
-
-                if (!isTrackedFeature)
-                {
-                    continue;
-                }
-
-                if (HasMeaningfulValue(kvp.Value))
-                {
-                    populated.Add(normalizedKey);
-                }
-                else if (ShouldRequireFeature(featureVector, normalizedKey))
-                {
-                    missing.Add(normalizedKey);
-                }
-            }
+            var missingLookup = new HashSet<string>(normalizedMissing, StringComparer.OrdinalIgnoreCase);
+            var populated = new List<string>();
 
             foreach (var key in HistoricalFeatureBackfillKeys)
             {
@@ -1237,30 +1219,35 @@ namespace HorseRacingML.Scraping
 
                 var normalizedKey = key.Trim();
 
-                if (populated.Contains(normalizedKey))
-                {
-                    continue;
-                }
                 if (!ShouldRequireFeature(featureVector, normalizedKey))
                 {
                     continue;
                 }
 
-                if (!featureVector.TryGetValue(normalizedKey, out var value) || !HasMeaningfulValue(value))
+                if (missingLookup.Contains(normalizedKey))
                 {
-                    missing.Add(normalizedKey);
+                    continue;
+                }
+
+                if (TryGetMeaningfulValue(featureVector, normalizedKey, out _))
+                {
+                    populated.Add(normalizedKey);
                 }
             }
+
+            populated = populated
+                .OrderBy(k => k, StringComparer.OrdinalIgnoreCase)
+                .ToList();
 
             return new FeaturePopulationSummary
             {
                 PopulatedCount = populated.Count,
-                MissingCount = missing.Count,
+                MissingCount = normalizedMissing.Count,
                 PopulatedKeys = populated.Count > 0
-                    ? populated.ToList()
+                    ? populated
                     : Array.Empty<string>(),
-                MissingKeys = missing.Count > 0
-                    ? missing.ToList()
+                MissingKeys = normalizedMissing.Count > 0
+                    ? normalizedMissing
                     : Array.Empty<string>()
             };
         }
