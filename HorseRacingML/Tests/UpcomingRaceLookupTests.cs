@@ -403,8 +403,6 @@ namespace HorseRacingML.Tests
                 ["GoingCourseWinRate"] = 0.41f,
                 ["GoingCourseAvgNorm"] = 0.36f,
                 ["LastGoingCourseNormPos"] = 0.29f,
-                ["AgeRestrictionWinRate"] = 0.38f,
-                ["LastAgeRestrictionNormPos"] = 0.26f,
                 ["DistanceBucketWinRate"] = 0.45f,
                 ["LastDistanceBucketNormPos"] = 0.24f,
                 ["GoingDistanceWinRate"] = 0.34f,
@@ -477,8 +475,6 @@ namespace HorseRacingML.Tests
             Assert.Equal(0.17f, Convert.ToSingle(runner.FeatureValues["LastJockeyClassNormPos"]));
             Assert.Equal(0.41f, Convert.ToSingle(runner.FeatureValues["GoingCourseWinRate"]));
             Assert.Equal(0.36f, Convert.ToSingle(runner.FeatureValues["GoingCourseAvgNorm"]));
-            Assert.Equal(0.29f, Convert.ToSingle(runner.FeatureValues["LastGoingCourseNormPos"]));
-            Assert.Equal(0.38f, Convert.ToSingle(runner.FeatureValues["AgeRestrictionWinRate"]));
             Assert.Equal(0.26f, Convert.ToSingle(runner.FeatureValues["LastAgeRestrictionNormPos"]));
             Assert.Equal(0.45f, Convert.ToSingle(runner.FeatureValues["DistanceBucketWinRate"]));
             Assert.Equal(0.24f, Convert.ToSingle(runner.FeatureValues["LastDistanceBucketNormPos"]));
@@ -539,8 +535,6 @@ namespace HorseRacingML.Tests
                 ["GoingCourseWinRate"] = 0.32f,
                 ["GoingCourseAvgNorm"] = 0.28f,
                 ["LastGoingCourseNormPos"] = 0.22f,
-                ["AgeRestrictionWinRate"] = 0.26f,
-                ["LastAgeRestrictionNormPos"] = 0.19f,
                 ["DistanceBucketWinRate"] = 0.35f,
                 ["LastDistanceBucketNormPos"] = 0.2f,
                 ["GoingDistanceWinRate"] = 0.31f,
@@ -901,7 +895,6 @@ new RunnerFlow { HorseName = "Alpha Runner" },
                 ["HorseName"] = "Metadata Marvel",
                 ["Class"] = (byte)4,
                 ["RaceType"] = "Handicap",
-                ["AgeRestriction"] = "3yo+",
                 ["Surface"] = "Turf",
                 ["Going"] = "Good to Firm",
                 ["DistanceYards"] = 1540,

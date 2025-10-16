@@ -71,7 +71,6 @@ namespace HorseRacingML.ML
             private readonly Dictionary<int, Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>> _goingStats = new();
             private readonly Dictionary<int, Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>> _goingCourseStats = new();
             private readonly Dictionary<int, Dictionary<int, (int starts, int wins, float sumNorm, float lastNorm)>> _courseStats = new();
-            private readonly Dictionary<int, Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>> _ageStats = new();
             private readonly Dictionary<int, Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>> _distanceBucketStats = new();
             private readonly Dictionary<(int horseId, int classVal), (int starts, int wins, float sumNorm, float lastNorm)> _horseClassStats = new();
             private readonly Dictionary<(int trainerId, int classVal), (int starts, int wins, float sumNorm, float lastNorm)> _trainerClassStats = new();
@@ -246,15 +245,6 @@ namespace HorseRacingML.ML
                             int classVal = classValue ?? 0;
                             row["ClassMissing"] = classMissing;
 
-                            string? ageRestrictionValue = NormalizeStringValue(
-                                row.TryGetValue("AgeRestriction", out var ageRestrictionObj) ? ageRestrictionObj : null);
-                            bool ageRestrictionMissing = string.IsNullOrEmpty(ageRestrictionValue);
-                            if (!ageRestrictionMissing)
-                            {
-                                row["AgeRestriction"] = ageRestrictionValue;
-                            }
-                            row["AgeRestrictionMissing"] = ageRestrictionMissing;
-
                             string? goingValue = NormalizeStringValue(
                                 row.TryGetValue("Going", out var goingObj) ? goingObj : null);
                             bool goingMissing = string.IsNullOrEmpty(goingValue);
@@ -296,7 +286,7 @@ namespace HorseRacingML.ML
                             bool layBookMissing = row["LayBookPercentage"] == null;
                             row["BackBookPercentageMissing"] = backBookMissing;
                             row["LayBookPercentageMissing"] = layBookMissing;
-                            row["RaceMetadataMissing"] = classMissing || ageRestrictionMissing || goingMissing ||
+                            row["RaceMetadataMissing"] = classMissing || goingMissing ||
                                 surfaceMissing || distanceMissing || distanceTextMissing;
 
                             bool drawMissing = row["Draw"] == null;
@@ -617,17 +607,6 @@ namespace HorseRacingML.ML
                             row["GoingCourseWinRate"] = _trainer.SmoothedWinRate(gcStats.wins, gcStats.starts);
                             row["GoingCourseAvgNorm"] = gcStats.starts > 0 ? gcStats.sumNorm / gcStats.starts : 0f;
                             row["LastGoingCourseNormPos"] = gcStats.lastNorm;
-                            // Age restriction context
-                            string ageRes = row["AgeRestriction"] as string ?? "Unknown";
-                            if (!_ageStats.TryGetValue(horseId, out var aDict))
-                            {
-                                aDict = new();
-                                _ageStats[horseId] = aDict;
-                            }
-                            if (!aDict.TryGetValue(ageRes, out var aStats))
-                                aStats = (0, 0, 0f, 0f);
-                            row["AgeRestrictionWinRate"] = _trainer.SmoothedWinRate(aStats.wins, aStats.starts);
-                            row["LastAgeRestrictionNormPos"] = aStats.lastNorm;
                             int? winningMs = row.TryGetValue("WinningTimeMs", out var winningObj) && PreparedDataset.TryConvertToInt32(winningObj, out var winningValue)
                                 ? winningValue
                             : (int?)null;
@@ -1076,14 +1055,6 @@ namespace HorseRacingML.ML
                                 if (finish.HasValue && finish.Value == 1) cStats.wins++;
                                 cStats.lastNorm = normFinish;
                                 cDict[courseId] = cStats;
-                                if (!ageRestrictionMissing)
-                                {
-                                    aStats.starts++;
-                                    aStats.sumNorm += normFinish;
-                                    if (finish.HasValue && finish.Value == 1) aStats.wins++;
-                                    aStats.lastNorm = normFinish;
-                                    aDict[ageRes] = aStats;
-                                }
 
                                 if (!distanceMissing)
                                 {
@@ -1562,7 +1533,6 @@ namespace HorseRacingML.ML
                                    r.Title,
                                    r.RaceType,
                                    r.Class,
-                                   r.AgeRestriction,
                                    r.Surface,
                                    r.Going,
                                    r.DistanceYards,
@@ -1788,7 +1758,6 @@ namespace HorseRacingML.ML
                                    r.Title,
                                    r.RaceType,
                                    r.Class,
-                                   r.AgeRestriction,
                                    r.Surface,
                                    r.Going,
                                    r.DistanceYards,

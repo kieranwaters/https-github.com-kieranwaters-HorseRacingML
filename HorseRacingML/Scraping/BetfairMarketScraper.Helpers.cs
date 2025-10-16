@@ -16,7 +16,6 @@ namespace HorseRacingML.Scraping
     {
         private static readonly Regex DistanceComponentRegex = new("(?<value>[0-9]+(?:\\.[0-9]+)?)\\s*(?<unit>[mfy])", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex ClassRegex = new("class\\s*(?<value>[0-9])", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-        private static readonly Regex AgeRestrictionRegex = new("(?<value>[0-9]{1,2}\\s*(?:yo\\+?|yo|yrs?\\+?|years?\\+?))", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex MarketTitleExchangeSuffixRegex = new(@"\s*(?:[»|,-]\s*)?BetfairT?\s*Exchange.*$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex MarketTitleSiteSuffixRegex = new(@"\s*(?:[-–—]|\|)\s*Betfair.*$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex LeadingRaceTypeRegex = new(
@@ -59,7 +58,6 @@ namespace HorseRacingML.Scraping
                 ["RunnerCount"] = 0,
                 ["Class"] = 0,
                 ["RaceType"] = "Unknown",
-                ["AgeRestriction"] = "Unknown",
                 ["Surface"] = "Unknown",
                 ["Going"] = "Unknown",
                 ["DistanceYards"] = 0,
@@ -123,8 +121,6 @@ namespace HorseRacingML.Scraping
                 ["LastJockeyGoingDistanceNormPos"] = 0f,
                 ["GoingCourseWinRate"] = 0f,
                 ["GoingCourseAvgNorm"] = 0f,
-                ["LastGoingCourseNormPos"] = 0f,
-                ["AgeRestrictionWinRate"] = 0f,
                 ["LastAgeRestrictionNormPos"] = 0f,
                 ["DistanceBucketWinRate"] = 0f,
                 ["LastDistanceBucketNormPos"] = 0f,
@@ -610,40 +606,6 @@ namespace HorseRacingML.Scraping
             {
                 MarkMissing("race class");
             }
-
-            if (!string.IsNullOrWhiteSpace(parsed.AgeRestriction))
-            {
-                SetIfMissing("AgeRestriction", parsed.AgeRestriction);
-            }
-            else
-            {
-                MarkMissing("age restriction");
-            }
-            if (HasMissingValue(featureVector, "AgeRestriction"))
-            {
-                var ageSamples = flows == null
-                    ? Array.Empty<byte>()
-                    : flows
-                        .Where(f => f?.Age.HasValue == true)
-                        .Select(f => f!.Age!.Value)
-                        .ToArray();
-
-                if (ageSamples.Length > 0)
-                {
-                    Array.Sort(ageSamples);
-                    var minAge = ageSamples[0];
-                    var maxAge = ageSamples[^1];
-                    string restriction = minAge == maxAge
-                        ? $"{minAge}yo"
-                        : $"{minAge}yo+";
-                    featureVector["AgeRestriction"] = restriction;
-                }
-                else
-                {
-                    featureVector["AgeRestriction"] = "Unknown";
-                }
-            }
-
             var resolvedRaceType = string.IsNullOrWhiteSpace(raceType)
                 ? parsed.RaceType
                 : raceType.Trim();
@@ -874,17 +836,6 @@ namespace HorseRacingML.Scraping
 
             string? going = tokens.FirstOrDefault(IsGoingToken);
 
-            string? ageRestriction = null;
-            foreach (var token in tokens)
-            {
-                var match = AgeRestrictionRegex.Match(token);
-                if (match.Success)
-                {
-                    ageRestriction = match.Groups["value"].Value.Replace(" ", string.Empty);
-                    break;
-                }
-            }
-
             var raceType = TryDetectRaceType(tokens, race.RaceTitle);
             var surface = DetermineSurface(going, tokens);
 
@@ -892,7 +843,6 @@ namespace HorseRacingML.Scraping
                 string.IsNullOrWhiteSpace(distanceToken) ? null : distanceToken.Trim(),
                 distanceYards,
                 classValue,
-                string.IsNullOrWhiteSpace(ageRestriction) ? null : ageRestriction,
                 string.IsNullOrWhiteSpace(going) ? null : going.Trim(),
                 surface,
                 raceType);
@@ -1885,7 +1835,6 @@ const hasBackAllContext = target => {
             string? DistanceText,
             int DistanceYards,
             byte? Class,
-            string? AgeRestriction,
             string? Going,
             string? Surface,
             string? RaceType);

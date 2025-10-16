@@ -1414,7 +1414,6 @@ namespace HorseRacingML.Scraping
              {
                 "Class",
                 "RaceType",
-                "AgeRestriction",
                 "Surface",
                 "Going",
                 "DistanceYards",
@@ -1454,8 +1453,6 @@ namespace HorseRacingML.Scraping
                 "GoingCourseWinRate",
                 "GoingCourseAvgNorm",
                 "LastGoingCourseNormPos",
-                "AgeRestrictionWinRate",
-                "LastAgeRestrictionNormPos",
                 "DistanceBucketWinRate",
                 "LastDistanceBucketNormPos",
                 "GoingDistanceWinRate",
@@ -1479,12 +1476,11 @@ namespace HorseRacingML.Scraping
         private static string[] HistoricalFeatureBackfillKeys => HistoricalFeatureBackfillKeysLazy.Value;
 
         private static HashSet<string> HistoricalFeatureBackfillKeySet => HistoricalFeatureBackfillKeySetLazy.Value;
-        private static readonly HashSet<string> HistoricalFeaturesAlwaysRequired = new(
+        private static readonly HashSet<string> HistoricalFeaturesAlwaysRequired = new(//here
             new[]
             {
                 "Class",
                 "RaceType",
-                "AgeRestriction",
                 "Surface",
                 "Going",
                 "DistanceYards",
@@ -1692,12 +1688,6 @@ namespace HorseRacingML.Scraping
 
             if (HasMissingFlag(featureVector, "ClassMissing") &&
                 key.Contains("Class", StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-
-            if (HasMissingFlag(featureVector, "AgeRestrictionMissing") &&
-                key.Contains("AgeRestriction", StringComparison.OrdinalIgnoreCase))
             {
                 return true;
             }

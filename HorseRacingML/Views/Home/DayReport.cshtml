@@ -905,18 +905,6 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
 
             const refreshEndpoint = '@Url.Action("RefreshRaceOdds")';
             const refreshMarketEndpoint = '@Url.Action("RefreshRaceMarketOddsMarketOnly")';
-
-            const cssEscape = (value) => {
-                const text = typeof value === 'string' ? value : String(value ?? '');
-                if (typeof window !== 'undefined' && window.CSS && typeof window.CSS.escape === 'function') {
-                    return window.CSS.escape(text);
-                }
-
-             return text.replace(/[\0-\x1F\x7F-\x9F!"#$%&'()*+,./:;<=>?@@\[\]\\^`{|}~]/g, (char) => {
-                    const hex = char.charCodeAt(0).toString(16).padStart(2, '0');
-                    return `\\${hex} `;
-                });
-            };
             const formatProbabilityPercent = (value) => {
                 if (typeof value !== 'number' || !isFinite(value) || value < 0) {
                     return '-';
@@ -1511,11 +1499,6 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
 
                 runners.forEach(runner => {
                     const row = document.createElement('tr');
-                    if (typeof runner?.selectionId === 'string' && runner.selectionId.trim().length > 0) {
-                        row.dataset.selectionId = runner.selectionId.trim();
-                    } else {
-                        delete row.dataset.selectionId;
-                    }
 
                     if (typeof runner?.horseName === 'string') {
                         row.dataset.horseName = runner.horseName.trim();
@@ -1554,13 +1537,6 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                     horseName.className = 'fw-semibold';
                     horseName.textContent = runner?.horseName ?? '';
                     horseCell.appendChild(horseName);
-
-                    if (runner?.selectionId) {
-                        const selection = document.createElement('div');
-                        selection.className = 'text-muted small';
-                        selection.textContent = `Selection ID: ${runner.selectionId}`;
-                        horseCell.appendChild(selection);
-                    }
 
                     if (runner?.featureValues && typeof runner.featureValues === 'object' && Object.keys(runner.featureValues).length > 0) {
                         const details = document.createElement('details');
@@ -1772,15 +1748,9 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                         return;
                     }
 
-                    const selectionId = typeof runner.selectionId === 'string' ? runner.selectionId.trim() : '';
                     let targetRow = null;
 
-                    if (selectionId.length > 0) {
-                        const escaped = cssEscape(selectionId);
-                        targetRow = card.querySelector(`tbody tr[data-selection-id="${escaped}"]`);
-                    }
-
-                    if (!targetRow && typeof runner.horseName === 'string' && runner.horseName.trim().length > 0) {
+        if (typeof runner.horseName === 'string' && runner.horseName.trim().length > 0) {
                         const horseName = runner.horseName.trim().toLowerCase();
                         targetRow = Array.from(rows).find(r => {
                             const horseElement = r.querySelector('td:nth-of-type(3) .fw-semibold');
@@ -1794,10 +1764,6 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
 
                     if (!targetRow) {
                         return;
-                    }
-
-                    if (selectionId.length > 0) {
-                        targetRow.dataset.selectionId = selectionId;
                     }
 
                     if (typeof runner.horseName === 'string') {

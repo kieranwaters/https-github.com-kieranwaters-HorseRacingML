@@ -1282,7 +1282,6 @@ BEGIN
         RaceDetails        NVARCHAR(MAX) NULL,
         RaceType           NVARCHAR(128) NULL,
         Class              TINYINT       NULL,
-        AgeRestriction     NVARCHAR(64)  NULL,
         Surface            NVARCHAR(64)  NULL,
         Going              NVARCHAR(30)  NULL,
         DistanceYards      SMALLINT      NULL,
@@ -1387,11 +1386,6 @@ END
 IF COL_LENGTH(N'dbo.RunnerFlow', 'Class') IS NOT NULL
 BEGIN
     ALTER TABLE dbo.RunnerFlow DROP COLUMN Class;
-END
-
-IF COL_LENGTH(N'dbo.RunnerFlow', 'AgeRestriction') IS NULL
-BEGIN
-    ALTER TABLE dbo.RunnerFlow ADD AgeRestriction NVARCHAR(64) NULL;
 END
 
 IF COL_LENGTH(N'dbo.RunnerFlow', 'Surface') IS NULL
