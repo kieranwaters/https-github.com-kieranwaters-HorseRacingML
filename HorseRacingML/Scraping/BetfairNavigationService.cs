@@ -1564,7 +1564,6 @@ return text.trim();";
                     {
                         var locationElement = raceItem.FindElement(By.XPath("./div/div[1]/div[1]"));
                         locationRaw = locationElement.Text;
-                        Console.WriteLine($"\t[DayReport][GoingXPath] Raw location text: '{FormatGoingLogValue(locationRaw)}'.");
                         location = locationRaw?.Trim();
                     }
                     catch (NoSuchElementException)
@@ -1577,16 +1576,17 @@ return text.trim();";
                     {
                         var goingElement = raceItem.FindElement(By.XPath("./div/div[1]/div[2]"));
                         goingRaw = goingElement.Text;
-                        Console.WriteLine($"\t[DayReport][GoingXPath] Raw going text: '{FormatGoingLogValue(goingRaw)}'.");
                         going = CleanGoingText(goingRaw);
-                        var cleanedGoingDisplay = string.IsNullOrWhiteSpace(going) ? "<null>" : going;
-                        Console.WriteLine($"\t[DayReport][GoingXPath] Cleaned going text: '{cleanedGoingDisplay}'.");
                     }
                     catch (NoSuchElementException)
                     {
                         Console.WriteLine("\t[DayReport][GoingXPath] Going XPath './div/div[1]/div[2]' not found.");
                         going = null;
                     }
+
+                    var cleanedGoingDisplay = string.IsNullOrWhiteSpace(going) ? "<null>" : going;
+                    Console.WriteLine(
+                        $"\t[DayReport][GoingXPath] Location '{FormatGoingLogValue(locationRaw)}' => Going raw '{FormatGoingLogValue(goingRaw)}', cleaned '{cleanedGoingDisplay}'.");
 
                     if (string.IsNullOrWhiteSpace(location) && string.IsNullOrWhiteSpace(going))
                     {
