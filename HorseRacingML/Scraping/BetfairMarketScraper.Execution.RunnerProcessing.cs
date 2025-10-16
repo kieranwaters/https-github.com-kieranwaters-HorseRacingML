@@ -1481,8 +1481,8 @@ namespace HorseRacingML.Scraping
                 "SpeedDiff",
                 "SpeedRatio"
             }
-            .Concat(PerformanceWindowPrefixes.SelectMany(prefix =>
-                PerformanceWindowSizes.Select(window => prefix + window)))
+         .Concat(PerformanceWindowPrefixes.SelectMany((string prefix) =>
+                PerformanceWindowSizes.Select(window => string.Concat(prefix, window.ToString(CultureInfo.InvariantCulture)))))
             .ToArray());
 
         private static string[] HistoricalFeatureBackfillKeys => HistoricalFeatureBackfillKeysLazy.Value;
