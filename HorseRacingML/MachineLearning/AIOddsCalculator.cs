@@ -88,6 +88,20 @@ namespace HorseRacingML.ML
             }
 
             Dictionary<string, object?> rawFeatures = BuildRawFeatureMap(flow);
+            if (scoredWithOpportunisticFeatures)
+            {
+                rawFeatures["HistoricalDataMissing"] = true;
+
+                if (flow != null)
+                {
+                    flow.FeatureValues = new Dictionary<string, object?>(rawFeatures, StringComparer.OrdinalIgnoreCase);
+                    flow.FeaturePopulationSummary = BuildFeaturePopulationSummaryFromMetadata(rawFeatures);
+                }
+            }
+            else if (flow != null && flow.FeatureValues == null)
+            {
+                flow.FeatureValues = new Dictionary<string, object?>(rawFeatures, StringComparer.OrdinalIgnoreCase);
+            }
             LogDebug(flow, $"Built raw feature map with {rawFeatures.Count} entries");
             if (_metadata != null)
             {
@@ -582,7 +596,108 @@ namespace HorseRacingML.ML
 
             return raw;
         }
+        private FeaturePopulationSummary BuildFeaturePopulationSummaryFromMetadata(Dictionary<string, object?> rawFeatures)
+        {
+            if (rawFeatures == null || rawFeatures.Count == 0)
+            {
+                return FeaturePopulationSummary.Empty;
+            }
 
+            if (_metadata?.Keys == null || _metadata.Keys.Count == 0)
+            {
+                var populatedKeys = rawFeatures
+                    .Where(kvp => HasMeaningfulValue(kvp.Value))
+                    .Select(kvp => kvp.Key)
+                    .Where(key => !string.IsNullOrWhiteSpace(key))
+                    .Select(key => key.Trim())
+                    .OrderBy(key => key, StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+
+                return new FeaturePopulationSummary
+                {
+                    PopulatedCount = populatedKeys.Length,
+                    MissingCount = 0,
+                    PopulatedKeys = populatedKeys,
+                    MissingKeys = Array.Empty<string>()
+                };
+            }
+
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var populated = new List<string>();
+            var missing = new List<string>();
+
+            foreach (var key in _metadata.Keys)
+            {
+                if (string.IsNullOrWhiteSpace(key))
+                {
+                    continue;
+                }
+
+                var normalized = key.Trim();
+                if (!seen.Add(normalized))
+                {
+                    continue;
+                }
+
+                if (TryGetMeaningfulValue(rawFeatures, normalized, out _))
+                {
+                    populated.Add(normalized);
+                }
+                else
+                {
+                    missing.Add(normalized);
+                }
+            }
+
+            populated.Sort(StringComparer.OrdinalIgnoreCase);
+            missing.Sort(StringComparer.OrdinalIgnoreCase);
+
+            return new FeaturePopulationSummary
+            {
+                PopulatedCount = populated.Count,
+                MissingCount = missing.Count,
+                PopulatedKeys = populated.Count > 0 ? populated.ToArray() : Array.Empty<string>(),
+                MissingKeys = missing.Count > 0 ? missing.ToArray() : Array.Empty<string>()
+            };
+        }
+
+        private static bool TryGetMeaningfulValue(Dictionary<string, object?> source, string key, out object? value)
+        {
+            value = null;
+
+            if (source == null || string.IsNullOrWhiteSpace(key))
+            {
+                return false;
+            }
+
+            if (!source.TryGetValue(key, out var existing) || !HasMeaningfulValue(existing))
+            {
+                return false;
+            }
+
+            value = existing;
+            return true;
+        }
+
+        private static bool HasMeaningfulValue(object? value)
+        {
+            if (value == null)
+            {
+                return false;
+            }
+
+            switch (value)
+            {
+                case string s:
+                    return !string.IsNullOrWhiteSpace(s);
+                case float f:
+                    return !float.IsNaN(f);
+                case double d:
+                    return !double.IsNaN(d);
+                default:
+                    return true;
+            }
+        }
         private bool TryLoadTrainedModel(string json)
         {
             TrainedModel? model;
