@@ -331,13 +331,17 @@ namespace HorseRacingML.ML
             if (flow != null)
             {
                 flow.LegacyProbability = legacyProbability;
+                flow.AiTrainedModelApplied = false;
+                flow.AiUsedLegacyModel = false;
             }
 
-            if(TryCalculateWithTrainedModel(flow, out var probability, out var opportunistic))
+            if (TryCalculateWithTrainedModel(flow, out var probability, out var opportunistic))
             {
                 if (flow != null)
                 {
                     flow.AiProbabilityMarketDerived = false;
+                    flow.AiTrainedModelApplied = true;
+                    flow.AiUsedLegacyModel = false;
                     if (!opportunistic)
                     {
                         flow.AiProbabilityFallbackReason = null;
@@ -355,6 +359,8 @@ namespace HorseRacingML.ML
                 if (flow != null)
                 {
                     flow.AiProbabilityMarketDerived = true;
+                    flow.AiUsedLegacyModel = true;
+                    flow.AiTrainedModelApplied = false;
                     AppendFallbackDetail(flow, "Using legacy logistic regression probability");
                 }
                 return legacyProbability.Value;
@@ -368,6 +374,8 @@ namespace HorseRacingML.ML
             if (flow != null)
             {
                 flow.AiProbabilityMarketDerived = true;
+                flow.AiUsedLegacyModel = true;
+                flow.AiTrainedModelApplied = false;
                 AppendFallbackDetail(flow, "Using legacy logistic regression probability");
             }
             return fallback;

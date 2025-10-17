@@ -2,6 +2,7 @@
 @model HorseRacingML.Models.DayReportViewModel
 @using System.Collections.Generic
 @using System.Globalization
+@using System
 @using System.Linq
 @using HorseRacingML.ML
 @using HorseRacingML.Models
@@ -591,8 +592,8 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                         : displayedStakeValue.Value.ToString("0.00", CultureInfo.CurrentCulture))
                                     : "-";
                                 var stakeData = displayedStakeValue.HasValue && displayedStakeValue.Value > 0
-                                    ? displayedStakeValue.Value.ToString("0.00", CultureInfo.InvariantCulture)
-                                    : string.Empty;
+                                ? displayedStakeValue.Value.ToString("0.00", CultureInfo.InvariantCulture)
+                                : string.Empty;
                                 <tr class="@rowClass"
                                     data-horse-name="@horseNameAttr"
                                     data-ai-probability="@aiProbabilityAttr"
@@ -603,18 +604,38 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                         <div class="fw-semibold">@runner.HorseName</div>
                                         @{
                                             var featurePopulation = runner.FeaturePopulation;
-                                            var hasFeatureValues = runner.FeatureValues != null && runner.FeatureValues.Count > 0;
                                             var hasPopulationData = featurePopulation != null && featurePopulation.HasData;
+                                            HashSet<string>? appliedFeatureKeys = null;
+                                            if (runner.AiTrainedModelApplied && featurePopulation?.PopulatedKeys?.Count > 0)
+                                            {
+                                                appliedFeatureKeys = new HashSet<string>(featurePopulation.PopulatedKeys, StringComparer.OrdinalIgnoreCase);
+                                            }
+
+                                            var featureItems = (runner.FeatureValues?.AsEnumerable() ?? Enumerable.Empty<KeyValuePair<string, object?>>())
+                                            .Where(feature => appliedFeatureKeys == null || appliedFeatureKeys.Contains(feature.Key))
+                                            .OrderBy(feature => feature.Key, StringComparer.OrdinalIgnoreCase)
+                                            .ToList();
+
+                                            var hasFeatureValues = featureItems.Count > 0;
                                         }
 
                                         @if (hasFeatureValues || hasPopulationData)
                                         {
-                                            var summaryLabel = "Feature inputs";
+                                            var summaryLabel = runner.AiTrainedModelApplied ? "Neural features" : "Feature inputs";
                                             if (featurePopulation != null && featurePopulation.HasData)
                                             {
-                                                summaryLabel = featurePopulation.MissingCount > 0
-                                                ? $"Feature inputs ({featurePopulation.PopulatedCount} populated, {featurePopulation.MissingCount} missing)"
-                                                : $"Feature inputs ({featurePopulation.PopulatedCount} populated)";
+                                                if (runner.AiTrainedModelApplied)
+                                                {
+                                                    summaryLabel = featurePopulation.MissingCount > 0
+                                                    ? $"Neural features ({featurePopulation.PopulatedCount} applied, {featurePopulation.MissingCount} missing)"
+                                                    : $"Neural features ({featurePopulation.PopulatedCount} applied)";
+                                                }
+                                                else
+                                                {
+                                                    summaryLabel = featurePopulation.MissingCount > 0
+                                                    ? $"Feature inputs ({featurePopulation.PopulatedCount} populated, {featurePopulation.MissingCount} missing)"
+                                                    : $"Feature inputs ({featurePopulation.PopulatedCount} populated)";
+                                                }
                                             }
 
                                             <details class="small mt-1">
@@ -622,7 +643,7 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                                 <dl class="row mb-0">
                                                     @if (hasFeatureValues)
                                                     {
-                                                        @foreach (var feature in runner.FeatureValues.OrderBy(f => f.Key))
+                                                        @foreach (var feature in featureItems)
                                                         {
                                                             var valueText = feature.Value switch
                                                             {
@@ -648,7 +669,7 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                         }
                                     </td>
                                     <td>@runner.JockeyName</td>
-                                     <td class="text-end">@historyCount</td>
+                                    <td class="text-end">@historyCount</td>
                                     <td class="text-end">@marketOdds</td>
                                     <td class="text-end">@layOdds</td>
                                     <td class="text-end">
@@ -660,18 +681,37 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                         {
                                             @aiProb
                                         }
-                                        @if (runner.AiProbabilityMarketDerived)
+                                        @if (runner.AiTrainedModelApplied)
+                                        {
+                                            <div class="text-success small">Trained neural model applied</div>
+                                            if (!string.IsNullOrWhiteSpace(runner.AiProbabilityFallbackReason))
+                                            {
+                                                <div class="text-muted small">@runner.AiProbabilityFallbackReason</div>
+                                            }
+                                        }
+                                        else if (runner.AiUsedLegacyModel)
                                         {
                                             var fallbackText = string.IsNullOrWhiteSpace(runner.AiProbabilityFallbackReason)
-                                                ? "Market-derived fallback"
-                                                : $"Market-derived fallback: {runner.AiProbabilityFallbackReason}";
+                                            ? "Legacy logistic regression fallback"
+                                            : $"Legacy logistic regression fallback: {runner.AiProbabilityFallbackReason}";
                                             <div class="text-warning small">@fallbackText</div>
+                                        }
+                                        else if (runner.AiProbabilityMarketDerived)
+                                        {
+                                            var fallbackText = string.IsNullOrWhiteSpace(runner.AiProbabilityFallbackReason)
+                                            ? "Market-derived fallback"
+                                            : $"Market-derived fallback: {runner.AiProbabilityFallbackReason}";
+                                            <div class="text-warning small">@fallbackText</div>
+                                        }
+                                        else if (!string.IsNullOrWhiteSpace(runner.AiProbabilityFallbackReason))
+                                        {
+                                            <div class="text-muted small">@runner.AiProbabilityFallbackReason</div>
                                         }
                                     </td>
                                     <td class="text-end">@aiOdds</td>
                                     <td class="text-end">@marketProb</td>
                                     <td class="text-end">@diff</td>
-                                   <td class="text-end">@displayedKelly</td>
+                                    <td class="text-end">@displayedKelly</td>
                                     <td class="text-end">
                                         <span class="stake-value"
                                               data-default-stake="@stakeData"

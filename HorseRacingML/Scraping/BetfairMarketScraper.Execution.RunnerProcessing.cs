@@ -653,7 +653,8 @@ namespace HorseRacingML.Scraping
             runner.AiProbabilityMarketDerived = flow.AiProbabilityMarketDerived;
             runner.AiProbabilityClampedToMarket = flow.AiProbabilityClampedToMarket;
             runner.AiProbabilityFallbackReason = flow.AiProbabilityFallbackReason;
-
+            runner.AiTrainedModelApplied = flow.AiTrainedModelApplied;
+            runner.AiUsedLegacyModel = flow.AiUsedLegacyModel;
             runner.MarketDecimalOdds = null;
             runner.MarketProbability = null;
             if (flow.BackPrice1.HasValue && flow.BackPrice1.Value > 0m)

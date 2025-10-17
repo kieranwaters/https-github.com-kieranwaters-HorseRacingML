@@ -145,7 +145,8 @@ namespace HorseRacingML.Models
 
 
         public FeaturePopulationSummary FeaturePopulationSummary { get; set; } = FeaturePopulationSummary.Empty;
-
+        public bool AiUsedLegacyModel { get; internal set; }
+        public bool AiTrainedModelApplied { get; internal set; }
     }
 
     public class UpcomingRace
@@ -168,6 +169,8 @@ namespace HorseRacingML.Models
         public decimal? LayBookPercentage { get; set; }
         public DateTime? CreatedUtc { get; set; }
         public DateTime? LastUpdatedUtc { get; set; }
+        public bool AiTrainedModelApplied { get; set; }
+        public bool AiUsedLegacyModel { get; set; }
     }
 
     public class RaceSummary
