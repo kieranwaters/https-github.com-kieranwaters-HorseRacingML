@@ -229,6 +229,27 @@ namespace HorseRacingML.Tests
             Assert.Contains("Model probability below clamp threshold", flow.AiProbabilityFallbackReason);
         }
         [Fact]
+        public void FeaturePopulationSummary_IncludesNeuralFeaturesWhenHistoryMissing()
+        {
+            var repo = new StubRepository();
+            var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
+            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), bankroll: 25m, settings);
+
+            scraper.TestSetNeuralFeatureKeys(new[] { "AvgRatingLast5", "Class" });
+
+            var featureVector = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["HistoricalDataMissing"] = true
+            };
+
+            var summary = scraper.TestBuildFeaturePopulationSummary(featureVector);
+
+            Assert.Equal(0, summary.PopulatedCount);
+            Assert.Equal(2, summary.MissingCount);
+            Assert.Contains("AvgRatingLast5", summary.MissingKeys, StringComparer.OrdinalIgnoreCase);
+            Assert.Contains("Class", summary.MissingKeys, StringComparer.OrdinalIgnoreCase);
+        }
+        [Fact]
         public void FeaturePopulationSummary_UsesNeuralFeatureKeysAndExcludesFallbackValues()
         {
             var repo = new StubRepository();

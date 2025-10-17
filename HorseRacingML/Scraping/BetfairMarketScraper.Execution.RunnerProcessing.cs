@@ -1654,11 +1654,6 @@ namespace HorseRacingML.Scraping
             {
                 return false;
             }
-            if (IsHistoricalDataMissing(featureVector) &&
-                !HistoricalFeaturesAlwaysRequired.Contains(key))
-            {
-                return false;
-            }
 
             if (IsRaceMetadataUnavailable(featureVector, key))
             {
@@ -1681,31 +1676,6 @@ namespace HorseRacingML.Scraping
             return key.StartsWith("AvgSpeed", StringComparison.OrdinalIgnoreCase) ||
                 key.StartsWith("AvgSpeedDiff", StringComparison.OrdinalIgnoreCase);
         }
-        private static bool IsHistoricalDataMissing(Dictionary<string, object?>? featureVector)
-        {
-            if (featureVector == null)
-            {
-                return true;
-            }
-
-            if (featureVector.TryGetValue("HistoricalDataMissing", out var missingObj) &&
-                missingObj is bool missing && missing)
-            {
-                return true;
-            }
-
-            if (featureVector.TryGetValue("CareerStarts", out var careerObj))
-            {
-                var starts = TryConvertToInt32(careerObj);
-                if (!starts.HasValue || starts.Value <= 0)
-                {
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
         private static bool HasMissingFlag(Dictionary<string, object?> featureVector, string flagKey)
         {
             return featureVector.TryGetValue(flagKey, out var flagValue) &&
