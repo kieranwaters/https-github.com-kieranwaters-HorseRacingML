@@ -503,7 +503,7 @@ namespace HorseRacingML.ML
         }
         public string ModelStatus => _modelStatus;
         public IReadOnlyList<string> FeatureKeys =>
-           _metadata?.Keys?.AsReadOnly() ?? Array.Empty<string>();
+           _metadata?.Keys?.ToArray() ?? Array.Empty<string>();
 
         public IReadOnlyList<string> GetRawFeatureKeys()
         {
