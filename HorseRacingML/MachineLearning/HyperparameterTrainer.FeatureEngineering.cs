@@ -477,25 +477,27 @@ namespace HorseRacingML.ML
                             int speedCount = Math.Min(PastRaceCount, history.Count);
                             if (speedCount > 0)
                             {
-                                var recentSpeedEntries = history
-                                    .GetRange(history.Count - speedCount, speedCount)
-                                    .Where(h => h.HasSpeed)
-                                    .ToList();
+                                var recentSpeedEntries = TakeRecentEntries(history, speedCount, h => h.HasSpeed);
 
                                 if (recentSpeedEntries.Count > 0)
                                 {
-                                    var recentSpeedEntries = TakeRecentEntries(history, speedCount, h => h.HasSpeed);
+                                    var recentSpeeds = recentSpeedEntries
+                                        .Select(entry => entry.Speed)
+                                        .ToList();
+
                                     float speedMean = recentSpeeds.Average();
                                     float variance = 0f;
-                                    foreach (var s in recentSpeeds)
+                                    foreach (var speed in recentSpeeds)
                                     {
-                                        float diff = s - speedMean;
+                                        float diff = speed - speedMean;
                                         variance += diff * diff;
                                     }
+
                                     row["SpeedStdDev"] = (float)Math.Sqrt(variance / recentSpeeds.Count);
-                                    if (recentSpeedEntries.Count > 1)
+
+                                    if (recentSpeeds.Count > 1)
                                     {
-                                        float xMean = (recentSpeedEntries.Count - 1) / 2f;
+                                        float xMean = (recentSpeeds.Count - 1) / 2f;
                                         float num = 0f, den = 0f;
                                         for (int j = 0; j < recentSpeeds.Count; j++)
                                         {
