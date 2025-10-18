@@ -54,7 +54,10 @@ namespace HorseRacingML.ML
                 LogDebug(flow, "Trained model is unavailable; will fall back to legacy odds");
                 return false;
             }
-
+            if (flow != null)
+            {
+                flow.EncodedFeatureValues = null;
+            }
             if (!flow.HasPreparedFeatures)
             {
                 var hasFeatureValues = flow.FeatureValues != null && flow.FeatureValues.Count > 0;
@@ -116,6 +119,10 @@ namespace HorseRacingML.ML
                     ? "feature encoding returned null"
                     : $"feature encoding length mismatch (expected {_featureCount}, observed {encoded.Values.Length})");
                 return false;
+            }
+            if (flow != null)
+            {
+                flow.EncodedFeatureValues = BuildEncodedFeatureDetails(encoded);
             }
             LogDebug(flow, $"Encoded feature vector length {_featureCount}");
             bool hasSignal = false;
@@ -785,6 +792,90 @@ namespace HorseRacingML.ML
             }
 
             return new EncodedVector(vector, active);
+        }
+        private List<EncodedFeatureValue> BuildEncodedFeatureDetails(EncodedVector encoded)
+        {
+            var result = new List<EncodedFeatureValue>(_featureCount);
+
+            if (_metadata == null)
+            {
+                return result;
+            }
+
+            int offset = 0;
+            foreach (var key in _metadata.Keys)
+            {
+                if (!_metadata.FeatureDimensions.TryGetValue(key, out var dim) || dim <= 0)
+                {
+                    continue;
+                }
+
+                int baseDim = 1;
+                Dictionary<int, string>? inverseMap = null;
+                if (_metadata.StringMaps.TryGetValue(key, out var map) && map.Count > 0)
+                {
+                    baseDim = map.Count;
+                    inverseMap = new Dictionary<int, string>();
+                    foreach (var pair in map)
+                    {
+                        var index = pair.Value;
+                        if (index < 0 || index >= dim)
+                        {
+                            continue;
+                        }
+
+                        if (!inverseMap.ContainsKey(index))
+                        {
+                            inverseMap[index] = pair.Key;
+                        }
+                    }
+                }
+
+                bool hasMissingIndicator = dim > baseDim;
+                for (int i = 0; i < dim; i++)
+                {
+                    var slotIndex = offset + i;
+                    var label = BuildEncodedFeatureLabel(key, i, baseDim, dim, inverseMap, hasMissingIndicator);
+                    result.Add(new EncodedFeatureValue
+                    {
+                        Index = slotIndex,
+                        FeatureKey = key,
+                        Label = label,
+                        Value = slotIndex < encoded.Values.Length ? encoded.Values[slotIndex] : 0d,
+                        Active = slotIndex < encoded.Active.Length && encoded.Active[slotIndex]
+                    });
+                }
+
+                offset += dim;
+            }
+
+            return result;
+        }
+
+        private static string BuildEncodedFeatureLabel(
+            string key,
+            int slot,
+            int baseDim,
+            int dim,
+            Dictionary<int, string>? inverseMap,
+            bool hasMissingIndicator)
+        {
+            if (inverseMap != null && inverseMap.TryGetValue(slot, out var category) && !string.IsNullOrWhiteSpace(category))
+            {
+                return $"{key}={category}";
+            }
+
+            if (hasMissingIndicator && slot >= baseDim)
+            {
+                return $"{key}=__missing__";
+            }
+
+            if (dim > 1)
+            {
+                return $"{key}[{slot}]";
+            }
+
+            return key;
         }
 
         private double[] EncodeFeature(string key, object? value, int dim, out bool isPresent)

@@ -395,6 +395,34 @@ namespace HorseRacingML.Scraping
 
             return result;
         }
+        private static List<EncodedFeatureValue> CloneEncodedFeatureValues(IEnumerable<EncodedFeatureValue>? source)
+        {
+            var result = new List<EncodedFeatureValue>();
+
+            if (source == null)
+            {
+                return result;
+            }
+
+            foreach (var value in source)
+            {
+                if (value == null)
+                {
+                    continue;
+                }
+
+                result.Add(new EncodedFeatureValue
+                {
+                    Index = value.Index,
+                    FeatureKey = value.FeatureKey ?? string.Empty,
+                    Label = value.Label ?? string.Empty,
+                    Value = value.Value,
+                    Active = value.Active
+                });
+            }
+
+            return result;
+        }
         private RaceDayReport BuildRaceReport(
             string marketId,
             string? raceTitle,
