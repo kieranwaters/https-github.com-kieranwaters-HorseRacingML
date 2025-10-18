@@ -1150,6 +1150,18 @@ namespace HorseRacingML.Scraping
                         $"\t\t[FeaturePopulation] Career starts remain unresolved for {identifier}; downstream scoring may fallback.");
                 }
             }
+            EnsureRaceAverageWinRateLast5(flows);
+            EnsureRaceAverageSpeedLast5(flows);
+
+            foreach (var flow in flows)
+            {
+                if (flow?.FeatureValues == null)
+                {
+                    continue;
+                }
+
+                flow.FeaturePopulationSummary = BuildFeaturePopulationSummary(flow.FeatureValues);
+            }
         }
         private static float? TryConvertToSingle(object? value)
         {
@@ -1296,6 +1308,70 @@ namespace HorseRacingML.Scraping
                     ? normalizedMissing
                     : Array.Empty<string>()
             };
+        }
+        private static void EnsureRaceAverageSpeedLast5(IReadOnlyList<RunnerFlow> flows)
+        {
+            if (flows == null || flows.Count == 0)
+            {
+                return;
+            }
+
+            double sum = 0d;
+            int participantCount = 0;
+
+            foreach (var flow in flows)
+            {
+                if (flow == null)
+                {
+                    continue;
+                }
+
+                participantCount++;
+
+                float runnerSpeed = 0f;
+                if (flow.FeatureValues != null &&
+                    TryGetMeaningfulValue(flow.FeatureValues, "AvgSpeedLast5", out var speedValue))
+                {
+                    var converted = TryConvertToSingle(speedValue);
+                    if (converted.HasValue && !float.IsNaN(converted.Value) && !float.IsInfinity(converted.Value))
+                    {
+                        runnerSpeed = converted.Value;
+                    }
+                }
+
+                sum += runnerSpeed;
+            }
+
+            if (participantCount == 0)
+            {
+                return;
+            }
+
+            var average = (float)(sum / participantCount);
+            if (float.IsNaN(average) || float.IsInfinity(average))
+            {
+                return;
+            }
+
+            foreach (var flow in flows)
+            {
+                if (flow?.FeatureValues == null)
+                {
+                    continue;
+                }
+
+                if (!TryGetMeaningfulValue(flow.FeatureValues, "RaceAvgSpeedLast5", out var existingValue))
+                {
+                    flow.FeatureValues["RaceAvgSpeedLast5"] = average;
+                    continue;
+                }
+
+                var existing = TryConvertToSingle(existingValue);
+                if (!existing.HasValue || float.IsNaN(existing.Value) || float.IsInfinity(existing.Value))
+                {
+                    flow.FeatureValues["RaceAvgSpeedLast5"] = average;
+                }
+            }
         }
         private static void EnsureRaceAverageWinRateLast5(IReadOnlyList<RunnerFlow> flows)
         {
@@ -1973,7 +2049,31 @@ namespace HorseRacingML.Scraping
             {
                 raceId = TryConvertToInt32(raceIdObj);
             }
+            if (!raceId.HasValue || raceId.Value <= 0)
+            {
+                int? runnerResultId = null;
+                if (featureVector.TryGetValue("RunnerResultId", out var runnerObj))
+                {
+                    runnerResultId = TryConvertToInt32(runnerObj);
+                }
 
+                if (runnerResultId.HasValue && runnerResultId.Value > 0)
+                {
+                    try
+                    {
+                        raceId = _repo.GetRaceIdByRunnerResult(runnerResultId.Value);
+                        if (raceId.HasValue && raceId.Value > 0)
+                        {
+                            featureVector["RaceId"] = raceId.Value;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        var identifier = DescribeRunner(flow);
+                        Console.Error.WriteLine($"\t\tFailed to resolve race id for {identifier}: {ex.Message}");
+                    }
+                }
+            }
             if (!raceId.HasValue || raceId.Value <= 0)
             {
                 return;

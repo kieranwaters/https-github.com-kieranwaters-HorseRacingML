@@ -1621,6 +1621,28 @@ ORDER BY RaceDate DESC, RunnerResultId DESC;";
                 }
             }
         }
+        public int? GetRaceIdByRunnerResult(int runnerResultId)
+        {
+            if (runnerResultId <= 0)
+            {
+                return null;
+            }
+
+            const string sql = "SELECT RaceId FROM RunnerResult WHERE RunnerResultId = @RunnerResultId";
+
+            var (connection, scope, ownsConnection) = GetScopedConnection();
+            try
+            {
+                return connection.QueryFirstOrDefault<int?>(sql, new { RunnerResultId = runnerResultId });
+            }
+            finally
+            {
+                if (ownsConnection)
+                {
+                    connection.Dispose();
+                }
+            }
+        }
 
         public decimal? GetDistanceBeatenLengths(int runnerResultId)
         {

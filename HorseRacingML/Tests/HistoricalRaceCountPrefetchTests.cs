@@ -186,7 +186,7 @@ namespace HorseRacingML.Tests
                 return 0;
             }
             public int? GetWinningTimeMilliseconds(int raceId) => null;
-
+            public int? GetRaceIdByRunnerResult(int runnerResultId) => null;
             public decimal? GetDistanceBeatenLengths(int runnerResultId) => null;
         }
 
