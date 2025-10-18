@@ -130,6 +130,30 @@ namespace HorseRacingML.ML
 
                 return text.Trim();
             }
+            internal static List<HistoryEntry> TakeRecentEntries(
+                List<HistoryEntry> history,
+                int desiredCount,
+                Func<HistoryEntry, bool> predicate)
+            {
+                var selected = new List<HistoryEntry>(desiredCount > 0 ? desiredCount : 0);
+
+                if (history == null || history.Count == 0 || desiredCount <= 0 || predicate == null)
+                {
+                    return selected;
+                }
+
+                for (int i = history.Count - 1; i >= 0 && selected.Count < desiredCount; i--)
+                {
+                    var candidate = history[i];
+                    if (predicate(candidate))
+                    {
+                        selected.Add(candidate);
+                    }
+                }
+
+                selected.Reverse();
+                return selected;
+            }
             public void ProcessRace(List<Dictionary<string, object?>> rows, bool includeRace, bool updateState)
             {
                 if (rows is null)
@@ -460,9 +484,7 @@ namespace HorseRacingML.ML
 
                                 if (recentSpeedEntries.Count > 0)
                                 {
-                                    var recentSpeeds = recentSpeedEntries
-                                        .Select(h => h.Speed)
-                                        .ToList();
+                                    var recentSpeedEntries = TakeRecentEntries(history, speedCount, h => h.HasSpeed);
                                     float speedMean = recentSpeeds.Average();
                                     float variance = 0f;
                                     foreach (var s in recentSpeeds)
@@ -687,7 +709,7 @@ namespace HorseRacingML.ML
                                     row[$"DistanceBucketAvgNormLast{window}"] = bucketRecent.Count > 0
                                         ? bucketRecent.Sum(h => h.NormFinish) / bucketRecent.Count
                                         : 0f;
-                                    var speedRecent = recent.Where(h => h.HasSpeed).ToList();
+                                    var speedRecent = TakeRecentEntries(history, window, h => h.HasSpeed);
                                     if (speedRecent.Count > 0)
                                     {
                                         row[$"AvgSpeedLast{window}"] = speedRecent.Average(h => h.Speed);
@@ -2190,6 +2212,53 @@ namespace HorseRacingML.ML
            int raceId,
            IReadOnlyCollection<string> runnerColumns) =>
            BuildUpcomingRaceRows(conn, upcoming, flows, raceId, runnerColumns);
+        internal static (float AvgSpeed, float AvgSpeedDiff) TestComputeAverageSpeedForWindow(
+           IReadOnlyList<(bool HasSpeed, float Speed, float SpeedDiff)> history,
+           int window)
+        {
+            if (history == null)
+            {
+                throw new ArgumentNullException(nameof(history));
+            }
+
+            if (window <= 0 || history.Count == 0)
+            {
+                return (0f, 0f);
+            }
+
+            var entries = new List<HistoryEntry>(history.Count);
+            var date = BaseDate;
+            foreach (var sample in history)
+            {
+                date = date.AddDays(1);
+                entries.Add(new HistoryEntry(
+                    date,
+                    NormFinish: 0f,
+                    Finish: null,
+                    Going: null,
+                    Surface: null,
+                    CourseId: 0,
+                    Bucket: null,
+                    RaceClass: null,
+                    Speed: sample.Speed,
+                    SpeedDiff: sample.SpeedDiff,
+                    Age: 0,
+                    Won: false,
+                    Rating: 0f,
+                    Weight: 0f,
+                    HasSpeed: sample.HasSpeed));
+            }
+
+            var selected = FeatureEngineeringState.TakeRecentEntries(entries, window, h => h.HasSpeed);
+            if (selected.Count == 0)
+            {
+                return (0f, 0f);
+            }
+
+            return (
+                selected.Average(h => h.Speed),
+                selected.Average(h => h.SpeedDiff));
+        }
 
         protected virtual RunnerLookupData LoadRunnerLookupData(
              SqlConnection conn,

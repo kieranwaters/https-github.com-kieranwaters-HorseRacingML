@@ -1,15 +1,16 @@
-﻿using System;
-using System.Collections.Generic;
-using HorseRacingML.Data;
+﻿using HorseRacingML.Data;
+using HorseRacingML.ML;
 using HorseRacingML.Models;
 using HorseRacingML.Scraping;
-using Xunit;
+using HorseRacingML.Services;
+using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
+using System;
+using System.Collections.Generic;
 using System.Linq;
+using Xunit;
 using PreparedDataset = HorseRacingML.ML.HyperparameterTrainer.TrainingDataset.PreparedDataset;
 using PreparedRace = HorseRacingML.ML.HyperparameterTrainer.TrainingDataset.PreparedDataset.PreparedRace;
-using Microsoft.Data.SqlClient;
-using HorseRacingML.Services;
 
 namespace HorseRacingML.Tests
 {
@@ -873,7 +874,24 @@ new RunnerFlow { HorseName = "Alpha Runner" },
             Assert.Equal(0.5f, Convert.ToSingle(alpha.FeatureValues["RaceAvgWinRateLast5"]));
             Assert.Equal(0.5f, Convert.ToSingle(beta.FeatureValues["RaceAvgWinRateLast5"]));
         }
+        [Fact]
+        public void AverageSpeedWindow_UsesOlderHistoryWhenRecentMissing()
+        {
+            var history = new List<(bool HasSpeed, float Speed, float SpeedDiff)>
+            {
+                (true, 1f, 0.1f),
+                (true, 2f, 0.2f),
+                (true, 3f, 0.3f),
+                (true, 4f, 0.4f),
+                (false, 0f, 0f),
+                (true, 6f, 0.6f)
+            };
 
+            var (avgSpeed, avgDiff) = HyperparameterTrainer.TestComputeAverageSpeedForWindow(history, window: 5);
+
+            Assert.Equal(3.2f, avgSpeed, 3);
+            Assert.Equal(0.32f, avgDiff, 3);
+        }
         [Fact]
         public void PopulateFeatureVectors_BackfillsRaceMetadataFromTrainer()
         {
