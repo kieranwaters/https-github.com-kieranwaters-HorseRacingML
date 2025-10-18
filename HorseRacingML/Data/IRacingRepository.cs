@@ -18,5 +18,7 @@ namespace HorseRacingML.Data
         HistoricalRaceCountPrefetchResult GetHistoricalRaceCountsByHorseNames(IEnumerable<string> horseNames);
         HorseDistanceStats? GetHorseDistanceStatsByHorseName(string? horseName);
         int? GetLastRaceDistance(string? horseName, int? horseId, DateTime? beforeDate);
+        int? GetWinningTimeMilliseconds(int raceId);
+        decimal? GetDistanceBeatenLengths(int runnerResultId);
     }
 }

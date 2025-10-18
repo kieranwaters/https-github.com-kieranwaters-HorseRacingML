@@ -1599,6 +1599,52 @@ ORDER BY RaceDate DESC, RunnerResultId DESC;";
 
             return new HorseDistanceStats(row.DistanceYards, row.AverageDistance);
         }
+        public int? GetWinningTimeMilliseconds(int raceId)
+        {
+            if (raceId <= 0)
+            {
+                return null;
+            }
+
+            const string sql = "SELECT WinningTimeMs FROM Race WHERE RaceId = @RaceId";
+
+            var (connection, scope, ownsConnection) = GetScopedConnection();
+            try
+            {
+                return connection.QueryFirstOrDefault<int?>(sql, new { RaceId = raceId });
+            }
+            finally
+            {
+                if (ownsConnection)
+                {
+                    connection.Dispose();
+                }
+            }
+        }
+
+        public decimal? GetDistanceBeatenLengths(int runnerResultId)
+        {
+            if (runnerResultId <= 0)
+            {
+                return null;
+            }
+
+            const string sql = "SELECT DistanceBeatenLengths FROM RunnerResult WHERE RunnerResultId = @RunnerResultId";
+
+            var (connection, scope, ownsConnection) = GetScopedConnection();
+            try
+            {
+                return connection.QueryFirstOrDefault<decimal?>(sql, new { RunnerResultId = runnerResultId });
+            }
+            finally
+            {
+                if (ownsConnection)
+                {
+                    connection.Dispose();
+                }
+            }
+        }
+
         public int? GetLastRaceDistance(string? horseName, int? horseId, DateTime? beforeDate)
         {
             if (!horseId.HasValue && string.IsNullOrWhiteSpace(horseName))

@@ -52,6 +52,7 @@ namespace HorseRacingML.Scraping
             "[data-testid='runner-trainer']",
             "[data-test-id='runner-trainer']"
         };
+        private const float MsPerLength = 200f;
         private bool TryRefreshRunnerEntriesForBetting(
             IWebDriver driver,
             string marketId,
@@ -1093,7 +1094,9 @@ namespace HorseRacingML.Scraping
                     Console.WriteLine(
                         $"\t\t[FeaturePopulation] HistoricalFeaturesAlwaysRequired satisfied for {identifier}.");
                 }
-
+                EnsureDistanceBeatenFromNumeric(featureVector, flow);
+                EnsureWinningTimeFromRace(featureVector, flow);
+                EnsureSpeedMetrics(featureVector);
                 EnsureDistanceChangeFromLast(
                     featureVector,
                     flow,
@@ -1897,7 +1900,156 @@ namespace HorseRacingML.Scraping
                 featureVector["DistanceChangeFromLast"] = 0f;
             }
         }
+        private void EnsureDistanceBeatenFromNumeric(Dictionary<string, object?> featureVector, RunnerFlow flow)
+        {
+            if (featureVector == null)
+            {
+                return;
+            }
 
+            if (featureVector.TryGetValue("DistanceBeatenKnown", out var knownObj) &&
+                knownObj is bool knownBool && knownBool)
+            {
+                return;
+            }
+
+            if (featureVector.TryGetValue("DistanceBeatenLengths", out var lenObj))
+            {
+                var converted = TryConvertToSingle(lenObj);
+                if (converted.HasValue)
+                {
+                    featureVector["DistanceBeatenLengths"] = converted.Value;
+                    featureVector["DistanceBeatenKnown"] = true;
+                    return;
+                }
+            }
+
+            int? runnerResultId = null;
+            if (featureVector.TryGetValue("RunnerResultId", out var runnerObj))
+            {
+                runnerResultId = TryConvertToInt32(runnerObj);
+            }
+
+            if (!runnerResultId.HasValue || runnerResultId.Value <= 0)
+            {
+                return;
+            }
+
+            try
+            {
+                var lengths = _repo.GetDistanceBeatenLengths(runnerResultId.Value);
+                if (lengths.HasValue)
+                {
+                    featureVector["DistanceBeatenLengths"] = (float)lengths.Value;
+                    featureVector["DistanceBeatenKnown"] = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                var identifier = DescribeRunner(flow);
+                Console.Error.WriteLine($"\t\tFailed to resolve distance beaten for {identifier}: {ex.Message}");
+            }
+        }
+
+        private void EnsureWinningTimeFromRace(Dictionary<string, object?> featureVector, RunnerFlow flow)
+        {
+            if (featureVector == null)
+            {
+                return;
+            }
+
+            if (featureVector.TryGetValue("WinningTimeMs", out var winningObj))
+            {
+                var existing = TryConvertToSingle(winningObj);
+                if (existing.HasValue && existing.Value > 0f)
+                {
+                    featureVector["WinningTimeMs"] = existing.Value;
+                    return;
+                }
+            }
+
+            int? raceId = null;
+            if (featureVector.TryGetValue("RaceId", out var raceIdObj))
+            {
+                raceId = TryConvertToInt32(raceIdObj);
+            }
+
+            if (!raceId.HasValue || raceId.Value <= 0)
+            {
+                return;
+            }
+
+            try
+            {
+                var resolved = _repo.GetWinningTimeMilliseconds(raceId.Value);
+                if (resolved.HasValue && resolved.Value > 0)
+                {
+                    featureVector["WinningTimeMs"] = (float)resolved.Value;
+                }
+            }
+            catch (Exception ex)
+            {
+                var identifier = DescribeRunner(flow);
+                Console.Error.WriteLine($"\t\tFailed to resolve winning time for {identifier}: {ex.Message}");
+            }
+        }
+
+        private void EnsureSpeedMetrics(Dictionary<string, object?> featureVector)
+        {
+            if (featureVector == null)
+            {
+                return;
+            }
+
+            if (!featureVector.TryGetValue("DistanceYards", out var distanceObj))
+            {
+                return;
+            }
+
+            var distanceYards = TryConvertToSingle(distanceObj);
+            if (!distanceYards.HasValue || distanceYards.Value <= 0f)
+            {
+                return;
+            }
+
+            if (!featureVector.TryGetValue("WinningTimeMs", out var winningObj))
+            {
+                return;
+            }
+
+            var winningMs = TryConvertToSingle(winningObj);
+            if (!winningMs.HasValue || winningMs.Value <= 0f)
+            {
+                return;
+            }
+
+            var raceSpeed = distanceYards.Value / winningMs.Value;
+            featureVector["RaceSpeed"] = raceSpeed;
+
+            bool distanceKnown = featureVector.TryGetValue("DistanceBeatenKnown", out var knownObj) &&
+                                 knownObj is bool knownBool && knownBool;
+
+            float runnerSpeed = 0f;
+            bool hasRunnerSpeed = false;
+            if (distanceKnown && featureVector.TryGetValue("DistanceBeatenLengths", out var lenObj))
+            {
+                var beaten = TryConvertToSingle(lenObj);
+                if (beaten.HasValue)
+                {
+                    var runnerTime = winningMs.Value + beaten.Value * MsPerLength;
+                    if (runnerTime > 0f)
+                    {
+                        runnerSpeed = distanceYards.Value / runnerTime;
+                        hasRunnerSpeed = runnerSpeed > 0f;
+                    }
+                }
+            }
+
+            featureVector["RunnerSpeed"] = hasRunnerSpeed ? runnerSpeed : 0f;
+            featureVector["SpeedDiff"] = hasRunnerSpeed ? runnerSpeed - raceSpeed : 0f;
+            featureVector["SpeedRatio"] = hasRunnerSpeed && raceSpeed != 0f ? runnerSpeed / raceSpeed : 0f;
+            featureVector["SpeedMissing"] = !hasRunnerSpeed;
+        }
         private static string NormalizeHorseNameKeyForCache(string? name)
         {
             if (string.IsNullOrWhiteSpace(name))

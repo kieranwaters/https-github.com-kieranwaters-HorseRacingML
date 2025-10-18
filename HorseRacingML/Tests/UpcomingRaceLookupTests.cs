@@ -1209,7 +1209,9 @@ new RunnerFlow { HorseName = "Alpha Runner" },
 
                 return race.UpcomingRaceId;
             }
+            public int? GetWinningTimeMilliseconds(int raceId) => null;
 
+            public decimal? GetDistanceBeatenLengths(int runnerResultId) => null;
             private static UpcomingRace Clone(UpcomingRace race)
             {
                 return new UpcomingRace
@@ -1449,6 +1451,9 @@ new RunnerFlow { HorseName = "Alpha Runner" },
             {
                 return 0;
             }
+            public int? GetWinningTimeMilliseconds(int raceId) => null;
+
+            public decimal? GetDistanceBeatenLengths(int runnerResultId) => null;
         }
 
         private sealed class FallbackTrainer : HorseRacingML.ML.HyperparameterTrainer

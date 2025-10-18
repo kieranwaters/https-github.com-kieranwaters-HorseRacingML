@@ -185,6 +185,9 @@ namespace HorseRacingML.Tests
             {
                 return 0;
             }
+            public int? GetWinningTimeMilliseconds(int raceId) => null;
+
+            public decimal? GetDistanceBeatenLengths(int runnerResultId) => null;
         }
 
         private sealed class StubTrainer : HorseRacingML.ML.HyperparameterTrainer
