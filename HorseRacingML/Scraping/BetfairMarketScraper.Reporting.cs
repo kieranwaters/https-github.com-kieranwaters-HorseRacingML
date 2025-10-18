@@ -1176,68 +1176,6 @@ namespace HorseRacingML.Scraping
 
                 return false;
             }
-
-            private FeatureLookup(
-                Dictionary<string, Dictionary<string, object?>> byIdentifier,
-                int rowCount)
-            {
-                _byIdentifier = byIdentifier;
-                _rowCount = rowCount;
-            }
-
-           
-
-            private static void AddRowIdentifiers(
-                Dictionary<string, Dictionary<string, object?>> lookup,
-                IDictionary<string, object?>? row)
-            {
-                if (row == null)
-                {
-                    return;
-                }
-
-                var copy = row is Dictionary<string, object?> dict
-                    ? new Dictionary<string, object?>(dict, StringComparer.OrdinalIgnoreCase)
-                    : new Dictionary<string, object?>(row, StringComparer.OrdinalIgnoreCase);
-
-                string? horseName = null;
-                if (copy.TryGetValue("HorseName", out var horseObj) && horseObj is string horseText)
-                {
-                    horseName = horseText;
-                }
-
-                string? jockeyName = null;
-                if (copy.TryGetValue("JockeyName", out var jockeyObj) && jockeyObj is string jockeyText)
-                {
-                    jockeyName = jockeyText;
-                }
-
-                string? trainerName = null;
-                if (copy.TryGetValue("TrainerName", out var trainerObj) && trainerObj is string trainerText)
-                {
-                    trainerName = trainerText;
-                }
-
-                var clothKey = NormalizeNumeric(copy.TryGetValue("SaddleclothNumber", out var clothObj)
-                    ? clothObj
-                    : null);
-                var drawKey = NormalizeNumeric(copy.TryGetValue("Draw", out var drawObj)
-                    ? drawObj
-                    : null);
-
-                var normalizedHorse = NormalizeName(horseName);
-                var normalizedJockey = NormalizeName(jockeyName);
-                var normalizedTrainer = NormalizeName(trainerName);
-
-                foreach (var key in BuildIdentifierKeys(normalizedHorse, normalizedJockey, normalizedTrainer, clothKey, drawKey))
-                {
-                    if (!lookup.ContainsKey(key))
-                    {
-                        lookup[key] = copy;
-                    }
-                }
-            }
-
             private static IEnumerable<string> BuildIdentifierKeys(
                 string? normalizedHorse,
                 string? normalizedJockey,
