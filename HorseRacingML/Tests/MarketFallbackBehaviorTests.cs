@@ -1,6 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Reflection;
+using System.Text.Json;
 using HorseRacingML.Data;
 using HorseRacingML.Models;
 using HorseRacingML.ML;
@@ -111,6 +114,95 @@ namespace HorseRacingML.Tests
 
             const string expected = "All AI win probabilities defaulted to market-implied odds for this race. Reason: Degenerate model outputs; using market-implied probability.";
             Assert.Equal(expected, report.RaceFallbackSummary);
+        }
+        [Fact]
+        public void BuildRaceReport_ClonesEncodedFeatureValues()
+        {
+            var repo = new StubRepository();
+            var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
+            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), bankroll: 25m, settings);
+
+            var encoded = new List<EncodedFeatureValue>
+            {
+                new EncodedFeatureValue
+                {
+                    Index = 0,
+                    FeatureKey = "Pace",
+                    Label = "Pace=Forward",
+                    Value = 0.75d,
+                    Active = true
+                },
+                new EncodedFeatureValue
+                {
+                    Index = 1,
+                    FeatureKey = "Pace",
+                    Label = "Pace=HeldUp",
+                    Value = 0.1d,
+                    Active = false
+                }
+            };
+
+            var flow = new RunnerFlow
+            {
+                HorseName = "Runner Gamma",
+                EncodedFeatureValues = encoded,
+                FeatureValues = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["BackPrice1"] = 3.6m
+                },
+                FeaturePopulationSummary = new FeaturePopulationSummary
+                {
+                    PopulatedKeys = new[] { "BackPrice1" },
+                    MissingKeys = new[] { "HistoricalWins" }
+                },
+                AiTrainedModelApplied = true
+            };
+
+            var report = scraper.TestBuildRaceReport(
+                marketId: "1.222",
+                raceTitle: "Encoded Clone Test",
+                venueName: "Test Venue",
+                venueCountry: "GB",
+                raceDate: new DateTime(2024, 8, 10),
+                offTime: new TimeSpan(14, 30, 0),
+                raceDetails: "Handicap",
+                going: "Good",
+                backBookPercentage: 102.5m,
+                layBookPercentage: 104.2m,
+                raceUrl: "https://example.com/1.222",
+                flows: new[] { flow });
+
+            var runner = Assert.Single(report.Runners);
+            Assert.NotSame(encoded, runner.EncodedFeatureValues);
+            Assert.Equal(encoded.Count, runner.EncodedFeatureValues.Count);
+            Assert.True(runner.EncodedFeatureValues.SequenceEqual(encoded, new EncodedFeatureValueComparer()));
+        }
+
+        private sealed class EncodedFeatureValueComparer : IEqualityComparer<EncodedFeatureValue>
+        {
+            public bool Equals(EncodedFeatureValue? x, EncodedFeatureValue? y)
+            {
+                if (x == y)
+                {
+                    return true;
+                }
+
+                if (x is null || y is null)
+                {
+                    return false;
+                }
+
+                return x.Index == y.Index &&
+                       string.Equals(x.FeatureKey, y.FeatureKey, StringComparison.Ordinal) &&
+                       string.Equals(x.Label, y.Label, StringComparison.Ordinal) &&
+                       Math.Abs(x.Value - y.Value) < 1e-12 &&
+                       x.Active == y.Active;
+            }
+
+            public int GetHashCode(EncodedFeatureValue obj)
+            {
+                return HashCode.Combine(obj.Index, obj.FeatureKey, obj.Label, obj.Value, obj.Active);
+            }
         }
         [Fact]
         public void ApplyScrapedFeatureFallbacks_OverridesTrainerAndWeightWithLiveValues()
@@ -273,7 +365,76 @@ namespace HorseRacingML.Tests
             Assert.Equal(1, summary.MissingCount);
             Assert.Contains("Class", summary.MissingKeys, StringComparer.OrdinalIgnoreCase);
         }
+        [Fact]
+        public void FeaturePopulationSummary_TracksEncodedDimensions()
+        {
+            var model = new TrainedModel
+            {
+                HiddenLayers = new List<LayerWeights>(),
+                OutputLayer = new LayerWeights
+                {
+                    Weights = new[]
+                    {
+                        new float[] { 0f, 0f, 0f, 0f }
+                    },
+                    Bias = new float[] { 0f }
+                },
+                Metadata = new FeatureMetadata
+                {
+                    Keys = new List<string> { "FormRating", "RaceCode" },
+                    FeatureDimensions = new Dictionary<string, int>
+                    {
+                        ["FormRating"] = 1,
+                        ["RaceCode"] = 3
+                    },
+                    StringMaps = new Dictionary<string, Dictionary<string, int>>
+                    {
+                        ["RaceCode"] = new Dictionary<string, int>
+                        {
+                            ["A"] = 0,
+                            ["B"] = 1
+                        }
+                    }
+                },
+                Normalization = new NormalizationParameters
+                {
+                    Mean = new[] { 0f, 0f, 0f, 0f },
+                    StdDev = new[] { 1f, 1f, 1f, 1f }
+                }
+            };
 
+            var tempPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".json");
+            try
+            {
+                File.WriteAllText(tempPath, JsonSerializer.Serialize(model));
+                var calculator = new AIOddsCalculator(tempPath);
+
+                var flow = new RunnerFlow
+                {
+                    HorseName = "Encoded Runner",
+                    HasPreparedFeatures = false,
+                    FeatureValues = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        ["FormRating"] = 82
+                    }
+                };
+
+                calculator.CalculateOdds(flow);
+
+                Assert.Equal(4, flow.FeaturePopulationSummary.TotalEncodedDimensions);
+                Assert.Equal(1, flow.FeaturePopulationSummary.ActiveEncodedDimensions);
+                Assert.Equal(4, flow.EncodedFeatureValues.Count);
+                Assert.Equal(1, flow.EncodedFeatureValues.Count(value => value.Active));
+                Assert.Contains("RaceCode", flow.FeaturePopulationSummary.MissingKeys, StringComparer.OrdinalIgnoreCase);
+            }
+            finally
+            {
+                if (File.Exists(tempPath))
+                {
+                    File.Delete(tempPath);
+                }
+            }
+        }
         private static void InvokeApplyMarketFallback(IReadOnlyList<RunnerFlow> flows)
         {
             if (flows == null)

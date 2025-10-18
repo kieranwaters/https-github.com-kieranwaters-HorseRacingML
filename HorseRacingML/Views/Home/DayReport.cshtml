@@ -617,9 +617,37 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                             .ToList();
 
                                             var hasFeatureValues = featureItems.Count > 0;
+                                            var encodedValues = (runner.EncodedFeatureValues?.AsEnumerable() ?? Enumerable.Empty<EncodedFeatureValue>())
+                                            .OrderBy(value => value.Index)
+                                            .ToList();
+                                            var hasEncodedValues = encodedValues.Count > 0;
+                                            var encodedActiveFromValues = hasEncodedValues
+                                            ? encodedValues.Count(value => value.Active)
+                                            : 0;
+                                            var populationEncodedActive = runner.FeaturePopulation?.ActiveEncodedDimensions ?? 0;
+                                            var populationEncodedTotal = runner.FeaturePopulation?.TotalEncodedDimensions ?? 0;
+                                            var displayEncodedActive = populationEncodedActive > 0
+                                            ? populationEncodedActive
+                                            : encodedActiveFromValues;
+                                            var displayEncodedTotal = populationEncodedTotal > 0
+                                            ? populationEncodedTotal
+                                            : hasEncodedValues
+                                            ? encodedValues.Count
+                                            : 0;
+                                            if (hasEncodedValues && encodedValues.Count > displayEncodedTotal)
+                                            {
+                                                displayEncodedTotal = encodedValues.Count;
+                                            }
+                                            if (displayEncodedActive > displayEncodedTotal)
+                                            {
+                                                displayEncodedActive = displayEncodedTotal;
+                                            }
+                                            var displayEncodedInactive = displayEncodedTotal > displayEncodedActive
+                                            ? displayEncodedTotal - displayEncodedActive
+                                            : 0;
                                         }
 
-                                        @if (hasFeatureValues || hasPopulationData)
+                                        @if (hasFeatureValues || hasPopulationData || hasEncodedValues)
                                         {
                                             var summaryLabel = runner.AiTrainedModelApplied ? "Neural features" : "Feature inputs";
                                             if (featurePopulation != null && featurePopulation.HasData)
@@ -637,7 +665,16 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                                     : $"Feature inputs ({featurePopulation.PopulatedCount} populated)";
                                                 }
                                             }
+                                            if (displayEncodedTotal > 0)
+                                            {
+                                                var encodedSummary = displayEncodedActive == displayEncodedTotal
+                                                ? $"{displayEncodedTotal} encoded dimensions active"
+                                                : $"{displayEncodedActive} of {displayEncodedTotal} encoded dimensions active";
 
+                                                summaryLabel = string.IsNullOrEmpty(summaryLabel)
+                                                ? encodedSummary
+                                                : $"{summaryLabel}; {encodedSummary}";
+                                            }
                                             <details class="small mt-1">
                                                 <summary class="text-muted">@summaryLabel</summary>
                                                 <dl class="row mb-0">
@@ -665,6 +702,80 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                                         </dd>
                                                     }
                                                 </dl>
+                                                @if (displayEncodedTotal > 0)
+                                                {
+                                                    <div class="mt-2">
+                                                        <div class="text-muted small">
+                                                            Encoded dimensions (@displayEncodedActive active, @displayEncodedInactive suppressed / @displayEncodedTotal total)
+                                                        </div>
+                                                        @if (hasEncodedValues)
+                                                        {
+                                                            <div class="table-responsive">
+                                                                <table class="table table-sm table-borderless align-middle mb-0">
+                                                                    <thead class="text-muted text-uppercase small">
+                                                                        <tr>
+                                                                            <th scope="col">Idx</th>
+                                                                            <th scope="col">Label</th>
+                                                                            <th scope="col" class="text-end">Value</th>
+                                                                            <th scope="col" class="text-center">State</th>
+                                                                        </tr>
+                                                                    </thead>
+                                                                    <tbody>
+                                                                        @foreach (var encoded in encodedValues)
+                                                                        {
+                                                                            var encodedRowClass = encoded.Active ? string.Empty : "text-muted";
+                                                                            var encodedValueText = encoded.Value.ToString("0.######", CultureInfo.CurrentCulture);
+                                                                            <tr class="@encodedRowClass">
+                                                                                <td>@encoded.Index</td>
+                                                                                <td title="@encoded.FeatureKey">@encoded.Label</td>
+                                                                                <td class="text-end">@encodedValueText</td>
+                                                                                <td class="text-center">@(encoded.Active ? "Active" : "Suppressed")</td>
+                                                                            </tr>
+                                                                        }
+                                                                    </tbody>
+                                                                </table>
+                                                            </div>
+                                                        }
+                                                        else
+                                                        {
+                                                            <div class="text-muted small">
+                                                                Encoded feature values were not captured for this runner, but the trained model tracks @displayEncodedTotal dimensions.
+                                                            </div>
+                                                        }
+                                                    </div>
+                                                }
+                                                if (hasEncodedValues)
+                                                {
+                                                <div class="mt-2">
+                                                    <div class="text-muted small">
+                                                        Encoded dimensions (@activeEncodedCount active / @encodedValues.Count total)
+                                                    </div>
+                                                    <div class="table-responsive">
+                                                        <table class="table table-sm table-borderless align-middle mb-0">
+                                                            <thead class="text-muted text-uppercase small">
+                                                                <tr>
+                                                                    <th scope="col">Idx</th>
+                                                                    <th scope="col">Label</th>
+                                                                    <th scope="col" class="text-end">Value</th>
+                                                                    <th scope="col" class="text-center">State</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                                @foreach (var encoded in encodedValues)
+                                                                {
+                                                                    var encodedRowClass = encoded.Active ? string.Empty : "text-muted";
+                                                                    var encodedValueText = encoded.Value.ToString("0.######", CultureInfo.CurrentCulture);
+                                                                    <tr class="@encodedRowClass">
+                                                                        <td>@encoded.Index</td>
+                                                                        <td title="@encoded.FeatureKey">@encoded.Label</td>
+                                                                        <td class="text-end">@encodedValueText</td>
+                                                                        <td class="text-center">@(encoded.Active ? "Active" : "Suppressed")</td>
+                                                                    </tr>
+                                                                }
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                </div>
                                             </details>
                                         }
                                     </td>

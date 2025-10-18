@@ -44,6 +44,26 @@ namespace HorseRacingML.Models
 
         public IReadOnlyList<string> MissingKeys { get; init; } = Array.Empty<string>();
 
+        private int? _activeEncodedDimensions;
+
+        public int ActiveEncodedDimensions
+        {
+            get => _activeEncodedDimensions ?? 0;
+            init => _activeEncodedDimensions = value;
+        }
+
+        private int? _totalEncodedDimensions;
+
+        public int TotalEncodedDimensions
+        {
+            get => _totalEncodedDimensions ?? 0;
+            init => _totalEncodedDimensions = value;
+        }
+
+        public int InactiveEncodedDimensions =>
+            TotalEncodedDimensions > ActiveEncodedDimensions
+                ? TotalEncodedDimensions - ActiveEncodedDimensions
+                : 0;
         public int TotalTrackedKeys => PopulatedCount + MissingCount;
 
         public bool HasData => PopulatedCount > 0 || MissingCount > 0;
@@ -67,7 +87,9 @@ namespace HorseRacingML.Models
                 PopulatedCount = populated.Length,
                 MissingCount = missing.Length,
                 PopulatedKeys = populated,
-                MissingKeys = missing
+                MissingKeys = missing,
+                ActiveEncodedDimensions = ActiveEncodedDimensions,
+                TotalEncodedDimensions = TotalEncodedDimensions
             };
         }
     }

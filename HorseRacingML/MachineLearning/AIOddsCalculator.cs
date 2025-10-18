@@ -640,6 +640,8 @@ namespace HorseRacingML.ML
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var populated = new List<string>();
             var missing = new List<string>();
+            int totalEncodedDimensions = 0;
+            int activeEncodedDimensions = 0;
 
             foreach (var key in _metadata.Keys)
             {
@@ -653,10 +655,18 @@ namespace HorseRacingML.ML
                 {
                     continue;
                 }
-
+                var dimension = ResolveEncodedDimensionCount(key, normalized);
+                if (dimension > 0)
+                {
+                    totalEncodedDimensions += dimension;
+                }
                 if (TryGetMeaningfulValue(rawFeatures, normalized, out _))
                 {
                     populated.Add(normalized);
+                    if (dimension > 0)
+                    {
+                        activeEncodedDimensions += dimension;
+                    }
                 }
                 else
                 {
@@ -672,10 +682,32 @@ namespace HorseRacingML.ML
                 PopulatedCount = populated.Count,
                 MissingCount = missing.Count,
                 PopulatedKeys = populated.Count > 0 ? populated.ToArray() : Array.Empty<string>(),
-                MissingKeys = missing.Count > 0 ? missing.ToArray() : Array.Empty<string>()
+                MissingKeys = missing.Count > 0 ? missing.ToArray() : Array.Empty<string>(),
+                TotalEncodedDimensions = totalEncodedDimensions,
+                ActiveEncodedDimensions = activeEncodedDimensions
             };
         }
+        private int ResolveEncodedDimensionCount(string rawKey, string normalizedKey)
+        {
+            if (_metadata?.FeatureDimensions == null || _metadata.FeatureDimensions.Count == 0)
+            {
+                return 0;
+            }
 
+            if (_metadata.FeatureDimensions.TryGetValue(rawKey, out var rawDim) && rawDim > 0)
+            {
+                return rawDim;
+            }
+
+            if (!string.Equals(rawKey, normalizedKey, StringComparison.Ordinal) &&
+                _metadata.FeatureDimensions.TryGetValue(normalizedKey, out var normalizedDim) &&
+                normalizedDim > 0)
+            {
+                return normalizedDim;
+            }
+
+            return 0;
+        }
         private static bool TryGetMeaningfulValue(Dictionary<string, object?> source, string key, out object? value)
         {
             value = null;

@@ -600,14 +600,16 @@ namespace HorseRacingML.Scraping
         private RunnerDayReport CreateRunnerReport(
             RunnerFlow flow,
             HistoricalRaceCountPrefetchResult? prefetchedCounts)
-        { 
+        {
             var runner = new RunnerDayReport
             {
                 ClothNumber = flow.ClothNumber,
                 Draw = flow.Draw,
                 HorseName = flow.HorseName,
                 JockeyName = flow.JockeyName,
+                EncodedFeatureValues = CloneEncodedFeatureValues(flow.EncodedFeatureValues),
                 FeatureValues = CreateFeatureDictionary(flow.FeatureValues),
+                HasPreparedFeatures = flow.HasPreparedFeatures,
                 FeaturePopulation = (flow.FeaturePopulationSummary ?? FeaturePopulationSummary.Empty).WithSortedKeys()
             };
 
