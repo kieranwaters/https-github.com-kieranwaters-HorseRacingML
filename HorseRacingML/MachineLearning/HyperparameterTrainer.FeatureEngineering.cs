@@ -474,43 +474,45 @@ namespace HorseRacingML.ML
                             {
                                 row["NormPosSlope"] = 0f;
                             }
+                            int speedCount = Math.Min(PastRaceCount, history.Count);
+                            List<HistoryEntry> recentSpeedEntries = speedCount > 0
+                                ? TakeRecentEntries(history, speedCount, h => h.HasSpeed)
+                                : new List<HistoryEntry>();
+
+                            List<float> recentSpeeds = recentSpeedEntries
+                                .Select(entry => entry.Speed)
+                                .ToList();
+
                             float speedSlope = 0f;
                             float speedStdDev = 0f;
-                            if (speedCount > 0)
+
+                            if (recentSpeeds.Count > 0)
                             {
-                                var speedEntries = TakeRecentEntries(history, speedCount, h => h.HasSpeed);
-
-                                if (speedEntries.Count > 0)
+                                float speedMean = recentSpeeds.Average();
+                                float variance = 0f;
+                                foreach (var speed in recentSpeeds)
                                 {
-                                    var speedValues = speedEntries
-                                        .Select(entry => entry.Speed)
-                                        .ToList();
+                                    float diff = speed - speedMean;
+                                    variance += diff * diff;
+                                }
 
-                                    float speedMean = speedValues.Average();
-                                    float variance = 0f;
-                                    foreach (var speed in speedValues)
+                                speedStdDev = (float)Math.Sqrt(variance / recentSpeeds.Count);
+
+                                if (recentSpeeds.Count > 1)
+                                {
+                                    float xMean = (recentSpeeds.Count - 1) / 2f;
+                                    float num = 0f, den = 0f;
+                                    for (int j = 0; j < recentSpeeds.Count; j++)
                                     {
-                                        float diff = speed - speedMean;
-                                        variance += diff * diff;
+                                        float x = j;
+                                        float y = recentSpeeds[j];
+                                        num += (x - xMean) * (y - speedMean);
+                                        den += (x - xMean) * (x - xMean);
                                     }
-
-                                    speedStdDev = (float)Math.Sqrt(variance / speedValues.Count);
-
-                                    if (speedValues.Count > 1)
-                                    {
-                                        float xMean = (speedValues.Count - 1) / 2f;
-                                        float num = 0f, den = 0f;
-                                        for (int j = 0; j < speedValues.Count; j++)
-                                        {
-                                            float x = j;
-                                            float y = speedValues[j];
-                                            num += (x - xMean) * (y - speedMean);
-                                            den += (x - xMean) * (x - xMean);
-                                        }
-                                        speedSlope = den != 0f ? num / den : 0f;
-                                    }
+                                    speedSlope = den != 0f ? num / den : 0f;
                                 }
                             }
+
                             row["SpeedSlope"] = speedSlope;
                             row["SpeedStdDev"] = speedStdDev;
                             int ratingCount = Math.Min(PastRaceCount, history.Count);
