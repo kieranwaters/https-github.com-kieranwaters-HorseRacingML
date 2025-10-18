@@ -808,11 +808,11 @@ namespace HorseRacingML.Scraping
 
         private sealed class FeatureLookup
         {
-            private readonly Dictionary<string, Dictionary<string, object?>> _byIdentifier;
+            private readonly Dictionary<string, List<Dictionary<string, object?>>> _byIdentifier;
             private readonly int _rowCount;
 
             private FeatureLookup(
-                Dictionary<string, Dictionary<string, object?>> byIdentifier,
+                Dictionary<string, List<Dictionary<string, object?>>> byIdentifier,
                 int rowCount)
             {
                 _byIdentifier = byIdentifier;
@@ -820,7 +820,7 @@ namespace HorseRacingML.Scraping
             }
 
             public static FeatureLookup Empty { get; } = new FeatureLookup(
-                new Dictionary<string, Dictionary<string, object?>>(StringComparer.OrdinalIgnoreCase),
+                new Dictionary<string, List<Dictionary<string, object?>>>(StringComparer.OrdinalIgnoreCase),
                 rowCount: 0);
 
             public static FeatureLookup FromPreparedRace(PreparedRace race)
@@ -828,7 +828,7 @@ namespace HorseRacingML.Scraping
                 if (race == null)
                     throw new ArgumentNullException(nameof(race));
 
-                var lookup = new Dictionary<string, Dictionary<string, object?>>(StringComparer.OrdinalIgnoreCase);
+                var lookup = new Dictionary<string, List<Dictionary<string, object?>>>(StringComparer.OrdinalIgnoreCase);
                 foreach (var row in race.Rows)
                 {
                     AddRowIdentifiers(lookup, row);
@@ -847,7 +847,7 @@ namespace HorseRacingML.Scraping
                     return Empty;
                 }
 
-                var lookup = new Dictionary<string, Dictionary<string, object?>>(StringComparer.OrdinalIgnoreCase);
+                var lookup = new Dictionary<string, List<Dictionary<string, object?>>>(StringComparer.OrdinalIgnoreCase);
                 foreach (var row in rows)
                 {
                     AddRowIdentifiers(lookup, row);
@@ -898,14 +898,294 @@ namespace HorseRacingML.Scraping
             {
                 foreach (var key in BuildIdentifierKeys(normalizedHorse, normalizedJockey, normalizedTrainer, clothKey, drawKey))
                 {
-                    if (_byIdentifier.TryGetValue(key, out var features))
+                    if (_byIdentifier.TryGetValue(key, out var candidates) && candidates != null && candidates.Count > 0)
                     {
-                        return features;
+                        var selected = SelectBestCandidate(candidates, key);
+                        if (selected != null)
+                        {
+                            return selected;
+                        }
                     }
                 }
 
                 return null;
             }
+
+            private static void AddRowIdentifiers(
+                Dictionary<string, List<Dictionary<string, object?>>> lookup,
+                IDictionary<string, object?>? row)
+            {
+                if (row == null)
+                {
+                    return;
+                }
+
+                var copy = row is Dictionary<string, object?> dict
+                    ? new Dictionary<string, object?>(dict, StringComparer.OrdinalIgnoreCase)
+                    : new Dictionary<string, object?>(row, StringComparer.OrdinalIgnoreCase);
+
+                string? horseName = null;
+                if (copy.TryGetValue("HorseName", out var horseObj) && horseObj is string horseText)
+                {
+                    horseName = horseText;
+                }
+
+                string? jockeyName = null;
+                if (copy.TryGetValue("JockeyName", out var jockeyObj) && jockeyObj is string jockeyText)
+                {
+                    jockeyName = jockeyText;
+                }
+
+                string? trainerName = null;
+                if (copy.TryGetValue("TrainerName", out var trainerObj) && trainerObj is string trainerText)
+                {
+                    trainerName = trainerText;
+                }
+
+                var clothKey = NormalizeNumeric(copy.TryGetValue("SaddleclothNumber", out var clothObj)
+                    ? clothObj
+                    : null);
+                var drawKey = NormalizeNumeric(copy.TryGetValue("Draw", out var drawObj)
+                    ? drawObj
+                    : null);
+
+                var normalizedHorse = NormalizeName(horseName);
+                var normalizedJockey = NormalizeName(jockeyName);
+                var normalizedTrainer = NormalizeName(trainerName);
+
+                foreach (var key in BuildIdentifierKeys(normalizedHorse, normalizedJockey, normalizedTrainer, clothKey, drawKey))
+                {
+                    if (!lookup.TryGetValue(key, out var list))
+                    {
+                        list = new List<Dictionary<string, object?>>();
+                        lookup[key] = list;
+                    }
+
+                    if (!list.Contains(copy))
+                    {
+                        list.Add(copy);
+                    }
+                }
+            }
+
+            private static Dictionary<string, object?>? SelectBestCandidate(
+                IReadOnlyList<Dictionary<string, object?>> candidates,
+                string identifierKey)
+            {
+                if (candidates == null || candidates.Count == 0)
+                {
+                    return null;
+                }
+
+                if (candidates.Count == 1)
+                {
+                    return candidates[0];
+                }
+
+                Dictionary<string, object?>? best = null;
+                int bestScore = int.MinValue;
+                int bestIndex = -1;
+
+                for (var i = 0; i < candidates.Count; i++)
+                {
+                    var candidate = candidates[i];
+                    if (candidate == null)
+                    {
+                        continue;
+                    }
+
+                    var score = CalculateCandidateScore(candidate);
+                    if (score > bestScore)
+                    {
+                        bestScore = score;
+                        best = candidate;
+                        bestIndex = i;
+                    }
+                }
+
+                if (best != null && bestIndex > 0)
+                {
+                    Console.WriteLine($"    [FallbackLookup] Selected alternate feature row for '{identifierKey}' (candidate {bestIndex + 1}/{candidates.Count}, score={bestScore}).");
+                }
+
+                return best ?? candidates[0];
+            }
+
+            private static int CalculateCandidateScore(Dictionary<string, object?> candidate)
+            {
+                var score = 0;
+
+                if (TryConvertToInt32(candidate, "RunnerResultId", out var runnerResultId) && runnerResultId > 0)
+                {
+                    score += 16;
+                }
+
+                if (TryConvertToBool(candidate, "DistanceBeatenKnown", out var beatenKnown) && beatenKnown)
+                {
+                    score += 8;
+                }
+                else if (TryConvertToFloat(candidate, "DistanceBeatenLengths", out var beatenLengths) && beatenLengths > 0f)
+                {
+                    score += 6;
+                }
+
+                if (TryConvertToFloat(candidate, "WinningTimeMs", out var winningTime) && winningTime > 0f)
+                {
+                    score += 4;
+                }
+
+                if (TryConvertToFloat(candidate, "RaceAvgSpeedLast5", out var raceAvgSpeed) && raceAvgSpeed > 0f)
+                {
+                    score += 2;
+                }
+
+                if (TryConvertToFloat(candidate, "RaceAvgWinRateLast5", out var raceAvgWinRate) && raceAvgWinRate > 0f)
+                {
+                    score += 1;
+                }
+
+                if (TryConvertToFloat(candidate, "AvgSpeedLast5", out var runnerSpeed) && runnerSpeed > 0f)
+                {
+                    score += 1;
+                }
+
+                if (TryConvertToFloat(candidate, "WinRateLast5", out var runnerWinRate) && runnerWinRate > 0f)
+                {
+                    score += 1;
+                }
+
+                return score;
+            }
+
+            private static bool TryConvertToFloat(Dictionary<string, object?> source, string key, out float value)
+            {
+                value = 0f;
+                if (!source.TryGetValue(key, out var raw) || raw == null)
+                {
+                    return false;
+                }
+
+                try
+                {
+                    switch (raw)
+                    {
+                        case float f when !float.IsNaN(f) && !float.IsInfinity(f):
+                            value = f;
+                            return true;
+                        case double d when !double.IsNaN(d) && !double.IsInfinity(d):
+                            value = (float)d;
+                            return !float.IsNaN(value) && !float.IsInfinity(value);
+                        case decimal m:
+                            value = (float)m;
+                            return !float.IsNaN(value) && !float.IsInfinity(value);
+                        case int i:
+                            value = i;
+                            return true;
+                        case long l:
+                            value = l;
+                            return true;
+                        case short s:
+                            value = s;
+                            return true;
+                        case byte b:
+                            value = b;
+                            return true;
+                        case string s when float.TryParse(s, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var parsedInvariant):
+                            value = parsedInvariant;
+                            return true;
+                        case string s when float.TryParse(s, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.CurrentCulture, out var parsedCurrent):
+                            value = parsedCurrent;
+                            return true;
+                    }
+                }
+                catch
+                {
+                }
+
+                return false;
+            }
+
+            private static bool TryConvertToInt32(Dictionary<string, object?> source, string key, out int value)
+            {
+                value = 0;
+                if (!source.TryGetValue(key, out var raw) || raw == null)
+                {
+                    return false;
+                }
+
+                try
+                {
+                    switch (raw)
+                    {
+                        case int i:
+                            value = i;
+                            return true;
+                        case long l when l <= int.MaxValue && l >= int.MinValue:
+                            value = (int)l;
+                            return true;
+                        case short s:
+                            value = s;
+                            return true;
+                        case byte b:
+                            value = b;
+                            return true;
+                        case sbyte sb:
+                            value = sb;
+                            return true;
+                        case ushort us when us <= int.MaxValue:
+                            value = (int)us;
+                            return true;
+                        case uint ui when ui <= int.MaxValue:
+                            value = (int)ui;
+                            return true;
+                        case string s when int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedInvariant):
+                            value = parsedInvariant;
+                            return true;
+                        case string s when int.TryParse(s, NumberStyles.Integer, CultureInfo.CurrentCulture, out var parsedCurrent):
+                            value = parsedCurrent;
+                            return true;
+                    }
+                }
+                catch
+                {
+                }
+
+                return false;
+            }
+
+            private static bool TryConvertToBool(Dictionary<string, object?> source, string key, out bool value)
+            {
+                value = false;
+                if (!source.TryGetValue(key, out var raw) || raw == null)
+                {
+                    return false;
+                }
+
+                switch (raw)
+                {
+                    case bool b:
+                        value = b;
+                        return true;
+                    case string s when bool.TryParse(s, out var parsed):
+                        value = parsed;
+                        return true;
+                    case int i when i == 0 || i == 1:
+                        value = i == 1;
+                        return true;
+                }
+
+                return false;
+            }
+
+            private FeatureLookup(
+                Dictionary<string, Dictionary<string, object?>> byIdentifier,
+                int rowCount)
+            {
+                _byIdentifier = byIdentifier;
+                _rowCount = rowCount;
+            }
+
+           
 
             private static void AddRowIdentifiers(
                 Dictionary<string, Dictionary<string, object?>> lookup,
