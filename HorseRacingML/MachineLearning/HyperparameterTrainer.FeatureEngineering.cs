@@ -474,56 +474,45 @@ namespace HorseRacingML.ML
                             {
                                 row["NormPosSlope"] = 0f;
                             }
-                            int speedCount = Math.Min(PastRaceCount, history.Count);
+                            float speedSlope = 0f;
+                            float speedStdDev = 0f;
                             if (speedCount > 0)
                             {
-                                var recentSpeedEntries = TakeRecentEntries(history, speedCount, h => h.HasSpeed);
+                                var speedEntries = TakeRecentEntries(history, speedCount, h => h.HasSpeed);
 
-                                if (recentSpeedEntries.Count > 0)
+                                if (speedEntries.Count > 0)
                                 {
-                                    var recentSpeeds = recentSpeedEntries
+                                    var speedValues = speedEntries
                                         .Select(entry => entry.Speed)
                                         .ToList();
 
-                                    float speedMean = recentSpeeds.Average();
+                                    float speedMean = speedValues.Average();
                                     float variance = 0f;
-                                    foreach (var speed in recentSpeeds)
+                                    foreach (var speed in speedValues)
                                     {
                                         float diff = speed - speedMean;
                                         variance += diff * diff;
                                     }
 
-                                    row["SpeedStdDev"] = (float)Math.Sqrt(variance / recentSpeeds.Count);
+                                    speedStdDev = (float)Math.Sqrt(variance / speedValues.Count);
 
-                                    if (recentSpeeds.Count > 1)
+                                    if (speedValues.Count > 1)
                                     {
-                                        float xMean = (recentSpeeds.Count - 1) / 2f;
+                                        float xMean = (speedValues.Count - 1) / 2f;
                                         float num = 0f, den = 0f;
-                                        for (int j = 0; j < recentSpeeds.Count; j++)
+                                        for (int j = 0; j < speedValues.Count; j++)
                                         {
                                             float x = j;
-                                            float y = recentSpeeds[j];
+                                            float y = speedValues[j];
                                             num += (x - xMean) * (y - speedMean);
                                             den += (x - xMean) * (x - xMean);
                                         }
-                                        row["SpeedSlope"] = den != 0f ? num / den : 0f;
-                                    }
-                                    else
-                                    {
-                                        row["SpeedSlope"] = 0f;
+                                        speedSlope = den != 0f ? num / den : 0f;
                                     }
                                 }
-                                else
-                                {
-                                    row["SpeedSlope"] = 0f;
-                                    row["SpeedStdDev"] = 0f;
-                                }
                             }
-                            else
-                            {
-                                row["SpeedSlope"] = 0f;
-                                row["SpeedStdDev"] = 0f;
-                            }
+                            row["SpeedSlope"] = speedSlope;
+                            row["SpeedStdDev"] = speedStdDev;
                             int ratingCount = Math.Min(PastRaceCount, history.Count);
                             if (ratingCount > 0)
                             {
