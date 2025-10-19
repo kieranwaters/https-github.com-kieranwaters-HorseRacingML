@@ -892,7 +892,7 @@ namespace HorseRacingML.Scraping
                     return null;
                 }
 
-                return FindByIdentifiers(normalizedHorse, null, null, null, null);
+                return FindByIdentifiers(normalizedHorse, null, null, null, null, null, null);
             }
 
             private Dictionary<string, object?>? FindByIdentifiers(
