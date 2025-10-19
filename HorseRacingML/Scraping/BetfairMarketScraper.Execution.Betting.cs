@@ -95,8 +95,34 @@ namespace HorseRacingML.Scraping
                     continue;
                 }
 
-                var resolvedHistoryCount = ResolveHistoricalRaceCountFromPrefetch(flow, prefetchedCounts)
-                    ?? ResolveHistoricalRaceCount(flow);
+                string? prefetchCandidate;
+                var resolvedHistoryCount = ResolveHistoricalRaceCountFromPrefetch(flow, prefetchedCounts, out prefetchCandidate);
+                string? resolutionSource = null;
+
+                if (resolvedHistoryCount.HasValue)
+                {
+                    resolutionSource = !string.IsNullOrWhiteSpace(prefetchCandidate)
+                        ? string.Format(
+                            CultureInfo.InvariantCulture,
+                            "prefetch candidate '{0}'",
+                            prefetchCandidate)
+                        : "prefetch match";
+                }
+                else
+                {
+                    var repositoryResult = ResolveHistoricalRaceCount(flow, out var repositoryHorseName);
+                    resolvedHistoryCount = repositoryResult;
+
+                    if (resolvedHistoryCount.HasValue)
+                    {
+                        resolutionSource = string.IsNullOrWhiteSpace(repositoryHorseName)
+                            ? "repository lookup"
+                            : string.Format(
+                                CultureInfo.InvariantCulture,
+                                "repository lookup for '{0}'",
+                                repositoryHorseName);
+                    }
+                }
 
                 if (resolvedHistoryCount.HasValue)
                 {
@@ -108,6 +134,17 @@ namespace HorseRacingML.Scraping
                     }
 
                     flow.FeatureValues["CareerStarts"] = resolvedHistoryCount.Value;
+                    if (!string.IsNullOrWhiteSpace(resolutionSource))
+                    {
+                        var identifier = DescribeRunner(flow);
+                        Console.WriteLine(
+                            string.Format(
+                                CultureInfo.InvariantCulture,
+                                "\t[FeaturePopulation] {0} resolved historical race count {1} for {2} during betting alignment.",
+                                resolutionSource,
+                                resolvedHistoryCount.Value,
+                                identifier));
+                    }
                 }
             }
 

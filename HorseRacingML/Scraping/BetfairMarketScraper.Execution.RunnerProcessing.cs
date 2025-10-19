@@ -671,8 +671,35 @@ namespace HorseRacingML.Scraping
                         CultureInfo.InvariantCulture,
                         "\t[FeaturePopulation] Historical race count missing or non-positive for {0}; attempting repository lookup.",
                         identifier));
-                var resolvedHistoryCount = ResolveHistoricalRaceCountFromPrefetch(flow, prefetchedCounts)
-                    ?? ResolveHistoricalRaceCount(flow);
+
+                string? prefetchCandidate;
+                var resolvedHistoryCount = ResolveHistoricalRaceCountFromPrefetch(flow, prefetchedCounts, out prefetchCandidate);
+                string? resolutionSource = null;
+
+                if (resolvedHistoryCount.HasValue && resolvedHistoryCount.Value > 0)
+                {
+                    resolutionSource = !string.IsNullOrWhiteSpace(prefetchCandidate)
+                        ? string.Format(
+                            CultureInfo.InvariantCulture,
+                            "prefetch candidate '{0}'",
+                            prefetchCandidate)
+                        : "prefetch match";
+                }
+                else
+                {
+                    var repositoryResult = ResolveHistoricalRaceCount(flow, out var repositoryHorseName);
+                    resolvedHistoryCount = repositoryResult;
+
+                    if (resolvedHistoryCount.HasValue && resolvedHistoryCount.Value > 0)
+                    {
+                        resolutionSource = string.IsNullOrWhiteSpace(repositoryHorseName)
+                            ? "repository lookup"
+                            : string.Format(
+                                CultureInfo.InvariantCulture,
+                                "repository lookup for '{0}'",
+                                repositoryHorseName);
+                    }
+                }
 
                 if (resolvedHistoryCount.HasValue && resolvedHistoryCount.Value > 0)
                 {
@@ -680,9 +707,10 @@ namespace HorseRacingML.Scraping
                     Console.WriteLine(
                         string.Format(
                             CultureInfo.InvariantCulture,
-                            "\t[FeaturePopulation] Repository lookup resolved historical race count {0} for {1}.",
+                            "\t[FeaturePopulation] {2} resolved historical race count {0} for {1}.",
                             historyCount.Value,
-                            identifier));
+                            identifier,
+                            resolutionSource ?? "Lookup"));
                 }
                 else
                 {
@@ -828,10 +856,14 @@ namespace HorseRacingML.Scraping
                 }
             }
         }
+
         private static int? ResolveHistoricalRaceCountFromPrefetch(
-            RunnerFlow flow,
-            HistoricalRaceCountPrefetchResult? prefetchedCounts)
+           RunnerFlow flow,
+           HistoricalRaceCountPrefetchResult? prefetchedCounts,
+           out string? matchedCandidate)
         {
+            matchedCandidate = null;
+
             if (prefetchedCounts == null || prefetchedCounts.IsEmpty)
             {
                 return null;
@@ -846,14 +878,17 @@ namespace HorseRacingML.Scraping
             {
                 if (prefetchedCounts.TryGetCountByCandidate(candidate, out var count))
                 {
+                    matchedCandidate = candidate;
                     return count;
                 }
             }
 
             return null;
         }
-        private int? ResolveHistoricalRaceCount(RunnerFlow flow)
+        private int? ResolveHistoricalRaceCount(RunnerFlow flow, out string? resolvedHorseName)
         {
+            resolvedHorseName = null;
+
             if (flow == null)
             {
                 return null;
@@ -863,6 +898,7 @@ namespace HorseRacingML.Scraping
             {
                 try
                 {
+                    resolvedHorseName = flow.HorseName;
                     return _repo.GetHistoricalRaceCountByHorseName(flow.HorseName);
                 }
                 catch (Exception ex)
@@ -1151,6 +1187,16 @@ namespace HorseRacingML.Scraping
                         var missingSummary = string.Join(", ", missingHistoricalKeys);
                         Console.WriteLine(
                              $"\t\tProceeding with {missingHistoricalKeys.Count} missing historical feature(s) for {identifier}: {missingSummary}.");
+                        var missingDetails = DescribeMissingHistoricalFeatureDetails(featureVector);
+                        foreach (var detail in missingDetails)
+                        {
+                            Console.WriteLine(
+                                string.Format(
+                                    CultureInfo.InvariantCulture,
+                                    "\t\t\t[FeaturePopulation] Missing {0} for {1}.",
+                                    detail,
+                                    identifier));
+                        }
                         Console.WriteLine(
                             "\t\t[FeaturePopulation] Historical backfill remained incomplete; continuing with available data.");
                         flow.FeatureValues = featureVector;
@@ -1205,22 +1251,77 @@ namespace HorseRacingML.Scraping
 
                 if (!resolvedCareerStarts.HasValue)
                 {
-                    resolvedCareerStarts = ResolveHistoricalRaceCountFromPrefetch(flow, prefetchedCounts)
-                        ?? ResolveHistoricalRaceCount(flow);
-                }
+                    string? prefetchCandidate;
+                    var resolvedFromPrefetch = ResolveHistoricalRaceCountFromPrefetch(flow, prefetchedCounts, out prefetchCandidate);
+                    string? resolutionSource = null;
 
-                if (resolvedCareerStarts.HasValue)
-                {
-                    featureVector["CareerStarts"] = resolvedCareerStarts.Value;
-                    flow.HistoricalRaceCount = resolvedCareerStarts.Value;
-                    Console.WriteLine(
-                        $"\t\t[FeaturePopulation] Resolved career starts for {identifier}: {resolvedCareerStarts.Value}.");
+                    if (resolvedFromPrefetch.HasValue)
+                    {
+                        resolvedCareerStarts = resolvedFromPrefetch;
+                        resolutionSource = !string.IsNullOrWhiteSpace(prefetchCandidate)
+                            ? string.Format(
+                                CultureInfo.InvariantCulture,
+                                "prefetch candidate '{0}'",
+                                prefetchCandidate)
+                            : "prefetch match";
+                    }
+                    else
+                    {
+                        var repositoryResult = ResolveHistoricalRaceCount(flow, out var repositoryHorseName);
+                        if (repositoryResult.HasValue)
+                        {
+                            resolvedCareerStarts = repositoryResult;
+                            resolutionSource = string.IsNullOrWhiteSpace(repositoryHorseName)
+                                ? "repository lookup"
+                                : string.Format(
+                                    CultureInfo.InvariantCulture,
+                                    "repository lookup for '{0}'",
+                                    repositoryHorseName);
+                        }
+                    }
+
+
+                    if (resolvedCareerStarts.HasValue)
+                    {
+                        featureVector["CareerStarts"] = resolvedCareerStarts.Value;
+                        flow.HistoricalRaceCount = resolvedCareerStarts.Value;
+                        var sourceSuffix = string.IsNullOrWhiteSpace(resolutionSource)
+                            ? string.Empty
+                            : string.Format(
+                                CultureInfo.InvariantCulture,
+                                " (source: {0})",
+                                resolutionSource);
+                        Console.WriteLine(
+                            $"\t\t[FeaturePopulation] Resolved career starts for {identifier}: {resolvedCareerStarts.Value}{sourceSuffix}.");
+                    }
                 }
                 else
                 {
-                    flow.HistoricalRaceCount = null;
+                    var existingSource = flow.HistoricalRaceCount.HasValue
+                        ? "existing flow value"
+                        : "feature vector";
+                    if (!flow.HistoricalRaceCount.HasValue)
+                    {
+                        flow.HistoricalRaceCount = resolvedCareerStarts;
+                    }
+
+                    if (featureVector != null)
+                    {
+                        featureVector["CareerStarts"] = resolvedCareerStarts.Value;
+                    }
                     Console.WriteLine(
-                        $"\t\t[FeaturePopulation] Career starts remain unresolved for {identifier}; downstream scoring may fallback.");
+                        string.Format(
+                            CultureInfo.InvariantCulture,
+                            "\t\t[FeaturePopulation] Resolved career starts for {0}: {1} (source: {2}).",
+                            identifier,
+                            resolvedCareerStarts.Value,
+                            existingSource));
+                    if (!resolvedCareerStarts.HasValue)
+                    {
+                        flow.HistoricalRaceCount = null;
+                        Console.WriteLine(
+                            $"\t\t[FeaturePopulation] Career starts remain unresolved for {identifier}; downstream scoring may fallback.");
+                    }
                 }
             }
             EnsureRaceAverageWinRateLast5(flows);
@@ -1235,6 +1336,155 @@ namespace HorseRacingML.Scraping
 
                 flow.FeaturePopulationSummary = BuildFeaturePopulationSummary(flow.FeatureValues);
             }
+        }
+        private static IReadOnlyList<string> DescribeMissingHistoricalFeatureDetails(Dictionary<string, object?> featureVector)
+        {
+            var trackedKeys = ResolveTrackedFeatureKeys();
+            var details = new List<string>();
+
+            if (trackedKeys == null || trackedKeys.Count == 0)
+            {
+                return details;
+            }
+
+            if (featureVector == null || featureVector.Count == 0)
+            {
+                foreach (var key in trackedKeys)
+                {
+                    if (string.IsNullOrWhiteSpace(key))
+                    {
+                        continue;
+                    }
+
+                    details.Add(string.Format(
+                        CultureInfo.InvariantCulture,
+                        "{0} (feature vector unavailable)",
+                        key.Trim()));
+                }
+
+                return details;
+            }
+
+            foreach (var rawKey in trackedKeys)
+            {
+                if (string.IsNullOrWhiteSpace(rawKey))
+                {
+                    continue;
+                }
+
+                var key = rawKey.Trim();
+
+                if (!ShouldRequireFeature(featureVector, key))
+                {
+                    continue;
+                }
+
+                if (TryGetMeaningfulValue(featureVector, key, out _))
+                {
+                    continue;
+                }
+
+                var reason = DescribeMissingHistoricalFeatureReason(featureVector, key);
+                details.Add(string.Format(
+                    CultureInfo.InvariantCulture,
+                    "{0} ({1})",
+                    key,
+                    reason));
+            }
+
+            return details;
+        }
+
+        private static string DescribeMissingHistoricalFeatureReason(Dictionary<string, object?> featureVector, string key)
+        {
+            if (featureVector == null || featureVector.Count == 0)
+            {
+                return "feature vector unavailable";
+            }
+
+            if (!featureVector.TryGetValue(key, out var rawValue))
+            {
+                return "value not present";
+            }
+
+            if (rawValue == null)
+            {
+                return "value null";
+            }
+
+            if (rawValue is string s)
+            {
+                return string.IsNullOrWhiteSpace(s)
+                    ? "value empty"
+                    : (IsNeutralFallbackValue(key, rawValue)
+                        ? string.Format(
+                            CultureInfo.InvariantCulture,
+                            "neutral fallback '{0}'",
+                            FormatFeatureValue(rawValue))
+                        : "value ignored");
+            }
+
+            if (rawValue is double d)
+            {
+                if (double.IsNaN(d))
+                {
+                    return "value NaN";
+                }
+
+                if (double.IsInfinity(d))
+                {
+                    return "value non-finite";
+                }
+            }
+
+            if (rawValue is float f)
+            {
+                if (float.IsNaN(f))
+                {
+                    return "value NaN";
+                }
+
+                if (float.IsInfinity(f))
+                {
+                    return "value non-finite";
+                }
+            }
+
+            if (IsNeutralFallbackValue(key, rawValue))
+            {
+                return string.Format(
+                    CultureInfo.InvariantCulture,
+                    "neutral fallback '{0}'",
+                    FormatFeatureValue(rawValue));
+            }
+
+            if (!HasMeaningfulValue(rawValue))
+            {
+                return string.Format(
+                    CultureInfo.InvariantCulture,
+                    "value '{0}' not meaningful",
+                    FormatFeatureValue(rawValue));
+            }
+
+            return string.Format(
+                CultureInfo.InvariantCulture,
+                "value '{0}' filtered",
+                FormatFeatureValue(rawValue));
+        }
+
+        private static string FormatFeatureValue(object? value)
+        {
+            if (value == null)
+            {
+                return "null";
+            }
+
+            if (value is IFormattable formattable)
+            {
+                return formattable.ToString(null, CultureInfo.InvariantCulture) ?? "null";
+            }
+
+            return value.ToString() ?? "null";
         }
         private static float? TryConvertToSingle(object? value)
         {
