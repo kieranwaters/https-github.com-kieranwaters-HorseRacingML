@@ -868,12 +868,8 @@ namespace HorseRacingML.Scraping
                 var normalizedHorse = NormalizeName(flow.HorseName);
                 var normalizedJockey = NormalizeName(flow.JockeyName);
                 var normalizedTrainer = NormalizeName(flow.TrainerName);
-                var clothKey = flow.ClothNumber.HasValue
-                    ? flow.ClothNumber.Value.ToString(CultureInfo.InvariantCulture)
-                    : null;
-                var drawKey = flow.Draw.HasValue
-                    ? flow.Draw.Value.ToString(CultureInfo.InvariantCulture)
-                    : null;
+                var clothKey = NormalizeNumeric(flow.ClothNumber, treatZeroOrNegativeAsMissing: true);
+                var drawKey = NormalizeNumeric(flow.Draw, treatZeroOrNegativeAsMissing: true);
 
                 var horseIdKey = ExtractNumericFeature(flow, "HorseId");
                 var runnerResultKey = ExtractNumericFeature(flow, "RunnerResultId");
@@ -962,17 +958,21 @@ namespace HorseRacingML.Scraping
                 }
 
                 var clothKey = NormalizeNumeric(copy.TryGetValue("SaddleclothNumber", out var clothObj)
-                    ? clothObj
-                    : null);
+                        ? clothObj
+                        : null,
+                    treatZeroOrNegativeAsMissing: true);
                 var drawKey = NormalizeNumeric(copy.TryGetValue("Draw", out var drawObj)
-                    ? drawObj
-                    : null);
+                        ? drawObj
+                        : null,
+                    treatZeroOrNegativeAsMissing: true);
                 var horseIdKey = NormalizeNumeric(copy.TryGetValue("HorseId", out var horseIdObj)
-                    ? horseIdObj
-                    : null);
+                        ? horseIdObj
+                        : null,
+                    treatZeroOrNegativeAsMissing: true);
                 var runnerResultKey = NormalizeNumeric(copy.TryGetValue("RunnerResultId", out var runnerObj)
-                    ? runnerObj
-                    : null);
+                        ? runnerObj
+                        : null,
+                    treatZeroOrNegativeAsMissing: true);
                 var normalizedHorse = NormalizeName(horseName);
                 var normalizedJockey = NormalizeName(jockeyName);
                 var normalizedTrainer = NormalizeName(trainerName);
@@ -1215,99 +1215,100 @@ namespace HorseRacingML.Scraping
                 string? drawKey,
                 string? horseIdKey,
                 string? runnerResultKey)
-            { 
+            {
+                var components = new List<(string Prefix, string? Value)>
+                {
+                    ("horse", normalizedHorse),
+                    ("horseId", horseIdKey),
+                    ("runnerResult", runnerResultKey),
+                    ("cloth", clothKey),
+                    ("draw", drawKey),
+                    ("jockey", normalizedJockey),
+                    ("trainer", normalizedTrainer)
+                };
+
+                var available = components
+                    .Where(c => !string.IsNullOrEmpty(c.Value))
+                    .Select(c => (c.Prefix, Value: c.Value!))
+                    .ToArray();
+
+                if (available.Length == 0)
+                {
+                    return Array.Empty<string>();
+                }
+
+                var weights = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["horse"] = 64,
+                    ["horseId"] = 64,
+                    ["runnerResult"] = 48,
+                    ["jockey"] = 16,
+                    ["trainer"] = 12,
+                    ["cloth"] = 8,
+                    ["draw"] = 8
+                };
+
+                var combinations = new List<(string Key, int Weight, int PartCount)>();
+                var total = 1 << available.Length;
+
+                for (var mask = 1; mask < total; mask++)
+                {
+                    var parts = new List<string>();
+                    var weight = 0;
+
+                    for (var bit = 0; bit < available.Length; bit++)
+                    {
+                        if ((mask & (1 << bit)) == 0)
+                        {
+                            continue;
+                        }
+
+                        var entry = available[bit];
+                        parts.Add($"{entry.Prefix}:{entry.Value}");
+
+                        if (weights.TryGetValue(entry.Prefix, out var partWeight))
+                        {
+                            weight += partWeight;
+                        }
+                    }
+
+                    if (parts.Count == 0)
+                    {
+                        continue;
+                    }
+
+                    combinations.Add((string.Join("|", parts), weight, parts.Count));
+                }
+
+                combinations.Sort((left, right) =>
+                {
+                    var weightComparison = right.Weight.CompareTo(left.Weight);
+                    if (weightComparison != 0)
+                    {
+                        return weightComparison;
+                    }
+
+                    var partComparison = right.PartCount.CompareTo(left.PartCount);
+                    if (partComparison != 0)
+                    {
+                        return partComparison;
+                    }
+
+                    return string.Compare(left.Key, right.Key, StringComparison.OrdinalIgnoreCase);
+                });
+
                 var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                var keys = new List<string>();
+                var orderedKeys = new List<string>();
 
-                void TryAdd(string? candidate)
+                foreach (var combination in combinations)
                 {
-                    if (string.IsNullOrEmpty(candidate))
+                    if (seen.Add(combination.Key))
                     {
-                        return;
-                    }
-
-                    if (seen.Add(candidate))
-                    {
-                        keys.Add(candidate);
+                        orderedKeys.Add(combination.Key);
                     }
                 }
 
-                if (!string.IsNullOrEmpty(normalizedHorse))
-                {
-                    TryAdd($"horse:{normalizedHorse}");
-
-                    if (!string.IsNullOrEmpty(clothKey))
-                    {
-                        TryAdd($"horse+cloth:{normalizedHorse}|{clothKey}");
-                    }
-
-                    if (!string.IsNullOrEmpty(drawKey))
-                    {
-                        TryAdd($"horse+draw:{normalizedHorse}|{drawKey}");
-                    }
-
-                    if (!string.IsNullOrEmpty(normalizedJockey))
-                    {
-                        TryAdd($"horse+jockey:{normalizedHorse}|{normalizedJockey}");
-                    }
-
-                    if (!string.IsNullOrEmpty(normalizedTrainer))
-                    {
-                        TryAdd($"horse+trainer:{normalizedHorse}|{normalizedTrainer}");
-                    }
-                }
-                if (!string.IsNullOrEmpty(horseIdKey))
-                {
-                    TryAdd($"horseId:{horseIdKey}");
-
-                    if (!string.IsNullOrEmpty(clothKey))
-                    {
-                        TryAdd($"horseId+cloth:{horseIdKey}|{clothKey}");
-                    }
-
-                    if (!string.IsNullOrEmpty(drawKey))
-                    {
-                        TryAdd($"horseId+draw:{horseIdKey}|{drawKey}");
-                    }
-
-                    if (!string.IsNullOrEmpty(normalizedHorse))
-                    {
-                        TryAdd($"horse+horseId:{normalizedHorse}|{horseIdKey}");
-                    }
-                }
-
-                if (!string.IsNullOrEmpty(runnerResultKey))
-                {
-                    TryAdd($"runnerResult:{runnerResultKey}");
-
-                    if (!string.IsNullOrEmpty(horseIdKey))
-                    {
-                        TryAdd($"horseId+runnerResult:{horseIdKey}|{runnerResultKey}");
-                    }
-                }
-
-
-                if (!string.IsNullOrEmpty(clothKey))
-                {
-                    TryAdd($"cloth:{clothKey}");
-                }
-
-                if (!string.IsNullOrEmpty(drawKey))
-                {
-                    TryAdd($"draw:{drawKey}");
-                }
-
-                if (!string.IsNullOrEmpty(normalizedJockey))
-                {
-                    TryAdd($"jockey:{normalizedJockey}");
-                }
-
-                if (!string.IsNullOrEmpty(normalizedTrainer))
-                {
-                    TryAdd($"trainer:{normalizedTrainer}");
-                }
-
-                return keys;
+                return orderedKeys;
             }
             private static string? ExtractNumericFeature(RunnerFlow flow, string key)
             {
@@ -1321,9 +1322,9 @@ namespace HorseRacingML.Scraping
                     return null;
                 }
 
-                return NormalizeNumeric(value);
+                return NormalizeNumeric(value, treatZeroOrNegativeAsMissing: true);
             }
-            private static string? NormalizeNumeric(object? value)
+            private static string? NormalizeNumeric(object? value, bool treatZeroOrNegativeAsMissing = false)
             {
                 if (value == null)
                 {
@@ -1332,28 +1333,44 @@ namespace HorseRacingML.Scraping
 
                 try
                 {
+                    int result;
                     switch (value)
                     {
                         case byte b:
-                            return b.ToString(CultureInfo.InvariantCulture);
+                            result = b;
+                            break;
                         case short s:
-                            return s.ToString(CultureInfo.InvariantCulture);
+                            result = s;
+                            break;
                         case int i:
-                            return i.ToString(CultureInfo.InvariantCulture);
+                            result = i;
+                            break;
                         case long l:
-                            return l.ToString(CultureInfo.InvariantCulture);
+                            result = checked((int)l);
+                            break;
                         case float f:
-                            return ((int)Math.Round(f)).ToString(CultureInfo.InvariantCulture);
+                            result = (int)Math.Round(f);
+                            break;
                         case double d:
-                            return ((int)Math.Round(d)).ToString(CultureInfo.InvariantCulture);
+                            result = (int)Math.Round(d);
+                            break;
                         case decimal m:
-                            return ((int)Math.Round(m)).ToString(CultureInfo.InvariantCulture);
+                            result = (int)Math.Round(m);
+                            break;
                         case string s when int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed):
-                            return parsed.ToString(CultureInfo.InvariantCulture);
+                            result = parsed;
+                            break;
+                        default:
+                            result = Convert.ToInt32(value, CultureInfo.InvariantCulture);
+                            break;
                     }
 
-                    var converted = Convert.ToInt32(value, CultureInfo.InvariantCulture);
-                    return converted.ToString(CultureInfo.InvariantCulture);
+                    if (treatZeroOrNegativeAsMissing && result <= 0)
+                    {
+                        return null;
+                    }
+
+                    return result.ToString(CultureInfo.InvariantCulture);
                 }
                 catch
                 {
