@@ -1627,6 +1627,7 @@ namespace HorseRacingML.ML
                     bool update = ShouldUpdate(previousRaceId);
                     if (include || update)
                     {
+                        ResolveHorseIdentifiers(conn, currentRows);
                         featureState.ProcessRace(currentRows, include, update);
                         if (include)
                         {
@@ -1648,6 +1649,7 @@ namespace HorseRacingML.ML
                 bool update = ShouldUpdate(finalRaceId);
                 if (include || update)
                 {
+                    ResolveHorseIdentifiers(conn, currentRows);
                     featureState.ProcessRace(currentRows, include, update);
                     if (include)
                     {
@@ -1718,7 +1720,7 @@ namespace HorseRacingML.ML
             var maxTargetDate = sorted[^1].Upcoming.RaceDate.Date;
 
             var historicalRecords = conn.Query(sql, new { TargetDate = maxTargetDate }, commandTimeout: 6000, buffered: false);
-            var historicalRaces = MaterializeHistoricalRaces(historicalRecords);
+            var historicalRaces = MaterializeHistoricalRaces(conn, historicalRecords);
 
             int historyIndex = 0;
             foreach (var entry in sorted)
@@ -1826,7 +1828,9 @@ rr.DistanceBeatenLengths,
             return (sql, runnerColumns, featureState);
         }
 
-        private List<(DateTime RaceDate, List<Dictionary<string, object?>> Rows)> MaterializeHistoricalRaces(IEnumerable<object> records)
+        private List<(DateTime RaceDate, List<Dictionary<string, object?>> Rows)> MaterializeHistoricalRaces(
+            SqlConnection conn,
+            IEnumerable<object> records)
         {
             var races = new List<(DateTime RaceDate, List<Dictionary<string, object?>> Rows)>();
             var currentRows = new List<Dictionary<string, object?>>(capacity: 32);
@@ -1861,6 +1865,7 @@ rr.DistanceBeatenLengths,
                 {
                     if (currentRows.Count > 0 && currentRaceDate.HasValue)
                     {
+                        ResolveHorseIdentifiers(conn, currentRows);
                         races.Add((currentRaceDate.Value, currentRows));
                     }
 
@@ -2486,6 +2491,175 @@ rr.DistanceBeatenLengths,
             }
 
             return new RunnerLookupData(horseIdLookup, jockeyIdLookup, runnerSnapshots);
+        }
+        private static void ResolveHorseIdentifiers(
+            SqlConnection conn,
+            List<Dictionary<string, object?>> rows)
+        {
+            if (conn == null)
+            {
+                throw new ArgumentNullException(nameof(conn));
+            }
+
+            if (rows == null || rows.Count == 0)
+            {
+                return;
+            }
+
+            var unresolvedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var row in rows)
+            {
+                if (row == null)
+                {
+                    continue;
+                }
+
+                if (row.TryGetValue("HorseId", out var horseIdValue) &&
+                    PreparedDataset.TryConvertToInt32(horseIdValue, out var existingId) &&
+                    existingId > 0)
+                {
+                    continue;
+                }
+
+                if (!row.TryGetValue("HorseName", out var horseNameObj) || horseNameObj == null)
+                {
+                    continue;
+                }
+
+                var horseName = horseNameObj as string ?? horseNameObj.ToString();
+                if (string.IsNullOrWhiteSpace(horseName))
+                {
+                    continue;
+                }
+
+                unresolvedNames.Add(horseName);
+            }
+
+            if (unresolvedNames.Count == 0)
+            {
+                return;
+            }
+
+            var resolved = ResolveHorseIdsByName(conn, unresolvedNames);
+            if (resolved.Count == 0)
+            {
+                return;
+            }
+
+            foreach (var row in rows)
+            {
+                if (row == null)
+                {
+                    continue;
+                }
+
+                if (row.TryGetValue("HorseId", out var horseIdValue) &&
+                    PreparedDataset.TryConvertToInt32(horseIdValue, out var existingId) &&
+                    existingId > 0)
+                {
+                    continue;
+                }
+
+                if (!row.TryGetValue("HorseName", out var horseNameObj) || horseNameObj == null)
+                {
+                    continue;
+                }
+
+                var horseName = horseNameObj as string ?? horseNameObj.ToString();
+                if (string.IsNullOrWhiteSpace(horseName))
+                {
+                    continue;
+                }
+
+                if (resolved.TryGetValue(horseName, out var horseId) && horseId > 0)
+                {
+                    row["HorseId"] = horseId;
+                }
+            }
+        }
+
+        private static Dictionary<string, int> ResolveHorseIdsByName(
+            SqlConnection conn,
+            IReadOnlyCollection<string> horseNames)
+        {
+            if (horseNames == null)
+            {
+                throw new ArgumentNullException(nameof(horseNames));
+            }
+
+            var horseIdLookup = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            if (horseNames.Count == 0)
+            {
+                return horseIdLookup;
+            }
+
+            var horseCandidateMap = BuildNameCandidateMap(horseNames);
+            if (horseCandidateMap.Count > 0)
+            {
+                const string horseSql = "SELECT Name, MIN(HorseId) AS HorseId FROM Horse WHERE Name IN @Names GROUP BY Name";
+                var candidateList = horseCandidateMap.Keys.ToArray();
+                foreach (var (name, horseId) in conn.Query<(string Name, int HorseId)>(horseSql, new { Names = candidateList }))
+                {
+                    if (!horseCandidateMap.TryGetValue(name, out var originals) || originals == null)
+                    {
+                        continue;
+                    }
+
+                    foreach (var original in originals)
+                    {
+                        if (!horseIdLookup.ContainsKey(original))
+                        {
+                            horseIdLookup[original] = horseId;
+                        }
+                    }
+                }
+            }
+
+            var unmatched = new HashSet<string>(horseNames, StringComparer.OrdinalIgnoreCase);
+            foreach (var matched in horseIdLookup.Keys)
+            {
+                unmatched.Remove(matched);
+            }
+
+            if (unmatched.Count > 0)
+            {
+                var normalizedMap = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+                foreach (var original in unmatched)
+                {
+                    if (string.IsNullOrWhiteSpace(original))
+                    {
+                        continue;
+                    }
+
+                    IEnumerable<string> candidates = horseCandidateMap.Count > 0
+                        ? horseCandidateMap.Where(kvp => kvp.Value.Contains(original)).Select(kvp => kvp.Key)
+                        : RacingRepository.BuildHistoricalNameCandidates(original);
+
+                    foreach (var candidate in candidates)
+                    {
+                        var normalized = RacingRepository.NormalizeHistoricalNameKey(candidate);
+                        if (string.IsNullOrEmpty(normalized))
+                        {
+                            continue;
+                        }
+
+                        if (!normalizedMap.TryGetValue(normalized, out var originals))
+                        {
+                            originals = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                            normalizedMap[normalized] = originals;
+                        }
+
+                        originals.Add(original);
+                    }
+                }
+
+                if (normalizedMap.Count > 0)
+                {
+                    PopulateNormalizedLookup(conn, "Horse", "HorseId", normalizedMap, horseIdLookup);
+                }
+            }
+
+            return horseIdLookup;
         }
         private static void PopulateNormalizedLookup(
             SqlConnection conn,
