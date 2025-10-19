@@ -30,6 +30,29 @@ namespace HorseRacingML.ML
         private static readonly Regex HorseNameBracketTextRegex =
             new Regex("\\s*\\([^\\)]*\\)|\\s*\\[[^\\]]*\\]", RegexOptions.Compiled);
         private static readonly Regex HorseNameWhitespaceRegex = new Regex("\\s+", RegexOptions.Compiled);
+        private static string SelectColumn(
+            HashSet<string> available,
+            string tableAlias,
+            string columnName,
+            string sqlType,
+            string? alias = null)
+        {
+            if (available is null)
+            {
+                throw new ArgumentNullException(nameof(available));
+            }
+
+            alias ??= columnName;
+            if (available.Contains(columnName))
+            {
+                var qualified = string.Concat(tableAlias, ".", columnName);
+                return string.Equals(alias, columnName, StringComparison.Ordinal)
+                    ? qualified
+                    : string.Concat(qualified, " AS ", alias);
+            }
+
+            return string.Concat("CAST(NULL AS ", sqlType, ") AS ", alias);
+        }
 
         private class RollingStat
         {
@@ -1529,12 +1552,37 @@ namespace HorseRacingML.ML
             conn.Open();
 
             var raceColumns = PreparedDataset.LoadColumnNames(conn, "Race");
+            var runnerColumns = PreparedDataset.LoadColumnNames(conn, "RunnerResult");
             string scheduledOffColumn = raceColumns.Contains("ScheduledOff")
-            ? "r.ScheduledOff AS ScheduledOff"
-            : "CAST(NULL AS time(0)) AS ScheduledOff";
+                ? "r.ScheduledOff AS ScheduledOff"
+                : "CAST(NULL AS time(0)) AS ScheduledOff";
             string actualOffColumn = raceColumns.Contains("ActualOff")
                 ? "r.ActualOff AS ActualOff"
                 : "CAST(NULL AS time(0)) AS ActualOff";
+            string titleColumn = SelectColumn(raceColumns, "r", "Title", "nvarchar(512)");
+            string raceTypeColumn = SelectColumn(raceColumns, "r", "RaceType", "nvarchar(128)");
+            string classColumn = SelectColumn(raceColumns, "r", "Class", "int");
+            string surfaceColumn = SelectColumn(raceColumns, "r", "Surface", "nvarchar(64)");
+            string goingColumn = SelectColumn(raceColumns, "r", "Going", "nvarchar(30)");
+            string distanceYardsColumn = SelectColumn(raceColumns, "r", "DistanceYards", "int");
+            string distanceTextColumn = SelectColumn(raceColumns, "r", "DistanceText", "nvarchar(64)");
+            string runnerCountColumn = SelectColumn(raceColumns, "r", "RunnerCount", "int");
+            string statusColumn = SelectColumn(raceColumns, "r", "Status", "nvarchar(32)");
+            string winningTimeColumn = SelectColumn(raceColumns, "r", "WinningTimeMs", "int");
+            string saddleclothColumn = SelectColumn(runnerColumns, "rr", "SaddleclothNumber", "int");
+            string drawColumn = SelectColumn(runnerColumns, "rr", "Draw", "int");
+            string ageColumn = SelectColumn(runnerColumns, "rr", "Age", "int");
+            string weightLbsColumn = SelectColumn(runnerColumns, "rr", "WeightLbs", "int");
+            string weightTextColumn = SelectColumn(runnerColumns, "rr", "WeightText", "nvarchar(50)");
+            string outcomeCodeColumn = SelectColumn(runnerColumns, "rr", "OutcomeCode", "nvarchar(50)");
+            string distanceBeatenTextColumn = SelectColumn(runnerColumns, "rr", "DistanceBeatenText", "nvarchar(50)");
+            string distanceBeatenLengthsColumn = SelectColumn(runnerColumns, "rr", "DistanceBeatenLengths", "decimal(9,4)");
+            string spFractionColumn = SelectColumn(runnerColumns, "rr", "SP_Fraction", "nvarchar(50)");
+            string spDecimalColumn = SelectColumn(runnerColumns, "rr", "SP_Decimal", "decimal(18,6)");
+            string favTagColumn = SelectColumn(runnerColumns, "rr", "FavTag", "nvarchar(16)");
+            string openingFractionColumn = SelectColumn(runnerColumns, "rr", "OpeningFraction", "nvarchar(50)");
+            string touchedHighColumn = SelectColumn(runnerColumns, "rr", "TouchedHighFraction", "nvarchar(50)");
+            string touchedLowColumn = SelectColumn(runnerColumns, "rr", "TouchedLowFraction", "nvarchar(50)");
 
             var sql = $@"SELECT c.Name AS CourseName,
                                    h.Name AS HorseName,
@@ -1545,34 +1593,34 @@ namespace HorseRacingML.ML
                                    r.RaceDate,
                                    {scheduledOffColumn},
                                    {actualOffColumn},
-                                   r.Title,
-                                   r.RaceType,
-                                   r.Class,
-                                   r.Surface,
-                                   r.Going,
-                                   r.DistanceYards,
-                                   r.DistanceText,
-                                   r.RunnerCount,
-                                   r.Status,
-                                   r.WinningTimeMs,
+                                   {titleColumn},
+                                   {raceTypeColumn},
+                                   {classColumn},
+                                   {surfaceColumn},
+                                   {goingColumn},
+                                   {distanceYardsColumn},
+                                   {distanceTextColumn},
+                                   {runnerCountColumn},
+                                   {statusColumn},
+                                   {winningTimeColumn},
                                    rr.HorseId,
                                    rr.TrainerId,
                                    rr.JockeyId,
-                                   rr.SaddleclothNumber,
-                                   rr.Draw,
-                                   rr.Age,
-                                   rr.WeightLbs,
-                                   rr.WeightText,
+                                   {saddleclothColumn},
+                                   {drawColumn},
+                                   {ageColumn},
+                                   {weightLbsColumn},
+                                   {weightTextColumn},
                                    rr.FinishPos,
-                                   rr.OutcomeCode,
-                                   rr.DistanceBeatenText,
-                                    rr.DistanceBeatenLengths,
-                                   rr.SP_Fraction,
-                                   rr.SP_Decimal,
-                                   rr.FavTag,
-                                   rr.OpeningFraction,
-                                   rr.TouchedHighFraction,
-                                   rr.TouchedLowFraction
+                                   {outcomeCodeColumn},
+                                   {distanceBeatenTextColumn},
+                                   {distanceBeatenLengthsColumn},
+                                   {spFractionColumn},
+                                   {spDecimalColumn},
+                                   {favTagColumn},
+                                   {openingFractionColumn},
+                                   {touchedHighColumn},
+                                   {touchedLowColumn}
                             FROM Race r
                             JOIN Course c ON r.CourseId = c.CourseId
                             JOIN RunnerResult rr ON r.RaceId = rr.RaceId
@@ -1752,18 +1800,31 @@ namespace HorseRacingML.ML
             string purseColumn = raceColumns.Contains("Purse")
                 ? "r.Purse AS Purse"
                 : "CAST(NULL AS decimal(18, 2)) AS Purse";
-            string officialRatingColumn = runnerColumns.Contains("OfficialRating")
-                ? "rr.OfficialRating AS OfficialRating"
-                : "CAST(NULL AS smallint) AS OfficialRating";
-            string weightTextColumn = runnerColumns.Contains("WeightText")
-                ? "rr.WeightText AS WeightText"
-                : "CAST(NULL AS nvarchar(50)) AS WeightText";
-            string weightLbsColumn = runnerColumns.Contains("WeightLbs")
-                ? "rr.WeightLbs AS WeightLbs"
-                : "CAST(NULL AS smallint) AS WeightLbs";
-            string ageColumn = runnerColumns.Contains("Age")
-                ? "rr.Age AS Age"
-                : "CAST(NULL AS smallint) AS Age";
+            string titleColumn = SelectColumn(raceColumns, "r", "Title", "nvarchar(512)");
+            string raceTypeColumn = SelectColumn(raceColumns, "r", "RaceType", "nvarchar(128)");
+            string classColumn = SelectColumn(raceColumns, "r", "Class", "int");
+            string surfaceColumn = SelectColumn(raceColumns, "r", "Surface", "nvarchar(64)");
+            string goingColumn = SelectColumn(raceColumns, "r", "Going", "nvarchar(30)");
+            string distanceYardsColumn = SelectColumn(raceColumns, "r", "DistanceYards", "int");
+            string distanceTextColumn = SelectColumn(raceColumns, "r", "DistanceText", "nvarchar(64)");
+            string runnerCountColumn = SelectColumn(raceColumns, "r", "RunnerCount", "int");
+            string statusColumn = SelectColumn(raceColumns, "r", "Status", "nvarchar(32)");
+            string winningTimeColumn = SelectColumn(raceColumns, "r", "WinningTimeMs", "int");
+            string saddleclothColumn = SelectColumn(runnerColumns, "rr", "SaddleclothNumber", "int");
+            string drawColumn = SelectColumn(runnerColumns, "rr", "Draw", "int");
+            string ageColumn = SelectColumn(runnerColumns, "rr", "Age", "int");
+            string weightLbsColumn = SelectColumn(runnerColumns, "rr", "WeightLbs", "int");
+            string weightTextColumn = SelectColumn(runnerColumns, "rr", "WeightText", "nvarchar(50)");
+            string officialRatingColumn = SelectColumn(runnerColumns, "rr", "OfficialRating", "int", "OfficialRating");
+            string outcomeCodeColumn = SelectColumn(runnerColumns, "rr", "OutcomeCode", "nvarchar(50)");
+            string distanceBeatenTextColumn = SelectColumn(runnerColumns, "rr", "DistanceBeatenText", "nvarchar(50)");
+            string distanceBeatenLengthsColumn = SelectColumn(runnerColumns, "rr", "DistanceBeatenLengths", "decimal(9,4)");
+            string spFractionColumn = SelectColumn(runnerColumns, "rr", "SP_Fraction", "nvarchar(50)");
+            string spDecimalColumn = SelectColumn(runnerColumns, "rr", "SP_Decimal", "decimal(18,6)");
+            string favTagColumn = SelectColumn(runnerColumns, "rr", "FavTag", "nvarchar(16)");
+            string openingFractionColumn = SelectColumn(runnerColumns, "rr", "OpeningFraction", "nvarchar(50)");
+            string touchedHighColumn = SelectColumn(runnerColumns, "rr", "TouchedHighFraction", "nvarchar(50)");
+            string touchedLowColumn = SelectColumn(runnerColumns, "rr", "TouchedLowFraction", "nvarchar(50)");
             var sql = $@"SELECT c.Name AS CourseName,
                                    h.Name AS HorseName,
                                    j.Name AS JockeyName,
@@ -1773,36 +1834,36 @@ namespace HorseRacingML.ML
                                    r.RaceDate,
                                    {scheduledOffColumn},
                                    {actualOffColumn},
-                                   r.Title,
-                                   r.RaceType,
-                                   r.Class,
-                                   r.Surface,
-                                   r.Going,
-                                   r.DistanceYards,
-                                   r.DistanceText,
-                                   r.RunnerCount,
-                                   r.Status,
-                                   r.WinningTimeMs,
-                                    {purseColumn},
+                                   {titleColumn},
+                                   {raceTypeColumn},
+                                   {classColumn},
+                                   {surfaceColumn},
+                                   {goingColumn},
+                                   {distanceYardsColumn},
+                                   {distanceTextColumn},
+                                   {runnerCountColumn},
+                                   {statusColumn},
+                                   {winningTimeColumn},
+                                   {purseColumn},
                                    rr.HorseId,
                                    rr.TrainerId,
                                    rr.JockeyId,
-                                   rr.SaddleclothNumber,
-                                   rr.Draw,
+                                   {saddleclothColumn},
+                                   {drawColumn},
                                    {ageColumn},
                                    {weightLbsColumn},
                                    {weightTextColumn},
                                    {officialRatingColumn},
                                    rr.FinishPos,
-                                   rr.OutcomeCode,
-                                   rr.DistanceBeatenText,
-rr.DistanceBeatenLengths,
-                                   rr.SP_Fraction,
-                                   rr.SP_Decimal,
-                                   rr.FavTag,
-                                   rr.OpeningFraction,
-                                   rr.TouchedHighFraction,
-                                   rr.TouchedLowFraction
+                                   {outcomeCodeColumn},
+                                   {distanceBeatenTextColumn},
+                                   {distanceBeatenLengthsColumn},
+                                   {spFractionColumn},
+                                   {spDecimalColumn},
+                                   {favTagColumn},
+                                   {openingFractionColumn},
+                                   {touchedHighColumn},
+                                   {touchedLowColumn}
                             FROM Race r
                             JOIN Course c ON r.CourseId = c.CourseId
                             JOIN RunnerResult rr ON r.RaceId = rr.RaceId
