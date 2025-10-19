@@ -635,6 +635,10 @@ namespace HorseRacingML.Scraping
             }
 
             int? historyCount = null;
+            var identifier = DescribeRunner(flow);
+            static string FormatHistoryCount(int? value) =>
+                value.HasValue ? value.Value.ToString(CultureInfo.InvariantCulture) : "<null>";
+
             if (flow.HistoricalRaceCount.HasValue)
             {
                 historyCount = flow.HistoricalRaceCount.Value;
@@ -651,15 +655,42 @@ namespace HorseRacingML.Scraping
                 }
             }
 
+            Console.WriteLine(
+                string.Format(
+                    CultureInfo.InvariantCulture,
+                    "\t[FeaturePopulation] Evaluating historical race count for {0}: flow={1}; feature={2}.",
+                    identifier,
+                    FormatHistoryCount(flow.HistoricalRaceCount),
+                    FormatHistoryCount(featureHistoryCount)));
+
             var requiresLookup = !historyCount.HasValue || historyCount.Value <= 0;
             if (requiresLookup)
             {
+                Console.WriteLine(
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "\t[FeaturePopulation] Historical race count missing or non-positive for {0}; attempting repository lookup.",
+                        identifier));
                 var resolvedHistoryCount = ResolveHistoricalRaceCountFromPrefetch(flow, prefetchedCounts)
                     ?? ResolveHistoricalRaceCount(flow);
 
                 if (resolvedHistoryCount.HasValue && resolvedHistoryCount.Value > 0)
                 {
                     historyCount = resolvedHistoryCount.Value;
+                    Console.WriteLine(
+                        string.Format(
+                            CultureInfo.InvariantCulture,
+                            "\t[FeaturePopulation] Repository lookup resolved historical race count {0} for {1}.",
+                            historyCount.Value,
+                            identifier));
+                }
+                else
+                {
+                    Console.WriteLine(
+                        string.Format(
+                            CultureInfo.InvariantCulture,
+                            "\t[FeaturePopulation] Repository lookup did not resolve a historical race count for {0}.",
+                            identifier));
                 }
             }
 
@@ -673,6 +704,32 @@ namespace HorseRacingML.Scraping
                 runner.HistoricalRaceCount = historyCount;
                 flow.HistoricalRaceCount = historyCount;
                 EnsureCareerStartsFeature(historyCount.Value);
+                if (historyCount.Value <= 0)
+                {
+                    Console.WriteLine(
+                        string.Format(
+                            CultureInfo.InvariantCulture,
+                            "\t[FeaturePopulation] Warning: non-positive historical race count {0} captured for {1}.",
+                            historyCount.Value,
+                            identifier));
+                }
+                else
+                {
+                    Console.WriteLine(
+                        string.Format(
+                            CultureInfo.InvariantCulture,
+                            "\t[FeaturePopulation] Using historical race count {0} for {1}; CareerStarts feature updated.",
+                            historyCount.Value,
+                            identifier));
+                }
+            }
+            else
+            {
+                Console.WriteLine(
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "\t[FeaturePopulation] Historical race count unavailable for {0}; CareerStarts feature not populated.",
+                        identifier));
             }
             return runner;
         }
