@@ -2497,18 +2497,40 @@ namespace HorseRacingML.Scraping
                 runnerResultId = TryConvertToInt32(runnerObj);
             }
 
-            if (!runnerResultId.HasValue || runnerResultId.Value <= 0)
-            {
-                return;
-            }
-
             try
             {
-                var lengths = _repo.GetDistanceBeatenLengths(runnerResultId.Value);
-                if (lengths.HasValue)
+                if (runnerResultId.HasValue && runnerResultId.Value > 0)
                 {
-                    featureVector["DistanceBeatenLengths"] = (float)lengths.Value;
-                    featureVector["DistanceBeatenKnown"] = true;
+                    var lengths = _repo.GetDistanceBeatenLengths(runnerResultId.Value);
+                    if (lengths.HasValue)
+                    {
+                        featureVector["DistanceBeatenLengths"] = (float)lengths.Value;
+                        featureVector["DistanceBeatenKnown"] = true;
+                        return;
+                    }
+                }
+
+                int? horseId = null;
+                if (featureVector.TryGetValue("HorseId", out var horseObj))
+                {
+                    horseId = TryConvertToInt32(horseObj);
+                }
+
+                if (!horseId.HasValue && flow?.FeatureValues != null &&
+                    flow.FeatureValues.TryGetValue("HorseId", out var flowHorseId))
+                {
+                    horseId = TryConvertToInt32(flowHorseId);
+                }
+
+                if (horseId.HasValue && horseId.Value > 0)
+                {
+                    var cutoffDate = flow?.RaceDate;
+                    var lengths = _repo.GetLastDistanceBeatenLengths(horseId.Value, cutoffDate);
+                    if (lengths.HasValue)
+                    {
+                        featureVector["DistanceBeatenLengths"] = (float)lengths.Value;
+                        featureVector["DistanceBeatenKnown"] = true;
+                    }
                 }
             }
             catch (Exception ex)
@@ -2517,7 +2539,6 @@ namespace HorseRacingML.Scraping
                 Console.Error.WriteLine($"\t\tFailed to resolve distance beaten for {identifier}: {ex.Message}");
             }
         }
-
         private void EnsureWinningTimeFromRace(Dictionary<string, object?> featureVector, RunnerFlow flow)
         {
             if (featureVector == null)

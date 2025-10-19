@@ -1666,7 +1666,39 @@ ORDER BY RaceDate DESC, RunnerResultId DESC;";
                 }
             }
         }
+        public decimal? GetLastDistanceBeatenLengths(int horseId, DateTime? beforeDate)
+        {
+            if (horseId <= 0)
+            {
+                return null;
+            }
 
+            const string sql = @"SELECT TOP (1)
+    rr.DistanceBeatenLengths
+FROM RunnerResult rr
+INNER JOIN Race r ON r.RaceId = rr.RaceId
+WHERE rr.HorseId = @HorseId
+  AND rr.DistanceBeatenLengths IS NOT NULL
+  AND (@BeforeDate IS NULL OR r.RaceDate < @BeforeDate)
+ORDER BY r.RaceDate DESC, rr.RunnerResultId DESC;";
+
+            var (connection, scope, ownsConnection) = GetScopedConnection();
+            try
+            {
+                return connection.QueryFirstOrDefault<decimal?>(sql, new
+                {
+                    HorseId = horseId,
+                    BeforeDate = beforeDate?.Date
+                });
+            }
+            finally
+            {
+                if (ownsConnection)
+                {
+                    connection.Dispose();
+                }
+            }
+        }
         public int? GetLastRaceDistance(string? horseName, int? horseId, DateTime? beforeDate)
         {
             if (!horseId.HasValue && string.IsNullOrWhiteSpace(horseName))
