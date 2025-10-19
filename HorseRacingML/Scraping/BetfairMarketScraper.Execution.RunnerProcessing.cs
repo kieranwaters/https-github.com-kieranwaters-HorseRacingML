@@ -2072,7 +2072,10 @@ namespace HorseRacingML.Scraping
             {
                 return false;
             }
-
+            if (IsMetadataDependentKey(featureVector, key))
+            {
+                return false;
+            }
             if (IsRaceSpeedFeature(key) && IsWinningTimeUnavailable(featureVector))
             {
                 return true;
@@ -2095,7 +2098,50 @@ namespace HorseRacingML.Scraping
 
             return true;
         }
+        private static bool IsMetadataDependentKey(Dictionary<string, object?> featureVector, string key)
+        {
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                return false;
+            }
 
+            if (IsClassDependentKey(key) && !HasMeaningfulClass(featureVector))
+            {
+                return true;
+            }
+
+            if (IsGoingDependentKey(key) && !HasMeaningfulGoing(featureVector))
+            {
+                return true;
+            }
+
+            if (IsDistanceBucketDependentKey(key) && !HasMeaningfulDistanceBucket(featureVector))
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool HasMeaningfulClass(Dictionary<string, object?> featureVector) =>
+            TryGetMeaningfulValue(featureVector, "Class", out _);
+
+        private static bool HasMeaningfulGoing(Dictionary<string, object?> featureVector) =>
+            TryGetMeaningfulValue(featureVector, "Going", out _);
+
+        private static bool HasMeaningfulDistanceBucket(Dictionary<string, object?> featureVector) =>
+            TryGetMeaningfulValue(featureVector, "DistanceBucket", out _);
+
+        private static bool IsClassDependentKey(string key) =>
+            key.IndexOf("Class", StringComparison.OrdinalIgnoreCase) >= 0;
+
+        private static bool IsGoingDependentKey(string key) =>
+            key.IndexOf("Going", StringComparison.OrdinalIgnoreCase) >= 0 ||
+            key.StartsWith("LayoffNormalized_", StringComparison.OrdinalIgnoreCase);
+
+        private static bool IsDistanceBucketDependentKey(string key) =>
+            string.Equals(key, "DistanceBucket", StringComparison.OrdinalIgnoreCase) ||
+            key.IndexOf("DistanceBucket", StringComparison.OrdinalIgnoreCase) >= 0;
         private static bool IsRaceSpeedFeature(string key) =>
             RaceSpeedFeatureKeys.Contains(key);
 

@@ -283,6 +283,46 @@ namespace HorseRacingML.Tests
             const string expected = "1 of 2 AI win probabilities defaulted to market-implied odds for this race. The remaining 1 runner retained their model-derived probabilities. Reason: Model probability below clamp threshold; using market-implied probability.";
             Assert.Equal(expected, report.RaceFallbackSummary);
         }
+        [Fact]
+        public void ApplyScrapedFeatureFallbacks_SetsMetadataMissingFlagsWhenUnavailable()
+        {
+            var repo = new StubRepository();
+            var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
+            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), bankroll: 25m, settings);
+
+            var featureVector = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+            var flow = new RunnerFlow
+            {
+                HorseName = "Runner Delta"
+            };
+
+            scraper.TestApplyScrapedFeatureFallbacks(
+                featureVector,
+                flow,
+                flows: new[] { flow });
+
+            Assert.True(featureVector.TryGetValue("ClassMissing", out var classMissing));
+            Assert.True(Convert.ToBoolean(classMissing));
+            Assert.True(featureVector.TryGetValue("GoingMissing", out var goingMissing));
+            Assert.True(Convert.ToBoolean(goingMissing));
+            Assert.True(featureVector.TryGetValue("SurfaceMissing", out var surfaceMissing));
+            Assert.True(Convert.ToBoolean(surfaceMissing));
+            Assert.True(featureVector.TryGetValue("DistanceMissing", out var distanceMissing));
+            Assert.True(Convert.ToBoolean(distanceMissing));
+            Assert.True(featureVector.TryGetValue("DistanceTextMissing", out var distanceTextMissing));
+            Assert.True(Convert.ToBoolean(distanceTextMissing));
+            Assert.True(featureVector.TryGetValue("BackBookPercentageMissing", out var backBookMissing));
+            Assert.True(Convert.ToBoolean(backBookMissing));
+            Assert.True(featureVector.TryGetValue("LayBookPercentageMissing", out var layBookMissing));
+            Assert.True(Convert.ToBoolean(layBookMissing));
+            Assert.True(featureVector.TryGetValue("RaceMetadataMissing", out var metadataMissing));
+            Assert.True(Convert.ToBoolean(metadataMissing));
+
+            Assert.False(featureVector.ContainsKey("Going"));
+            Assert.False(featureVector.ContainsKey("Surface"));
+            Assert.False(featureVector.ContainsKey("DistanceYards"));
+            Assert.False(featureVector.ContainsKey("DistanceText"));
+        }
 
         [Fact]
         public void ClampLowAiProbability_UsesMarketOddsAndRecordsFallbackReason()
@@ -434,6 +474,31 @@ namespace HorseRacingML.Tests
                     File.Delete(tempPath);
                 }
             }
+        }
+        [Fact]
+        public void FeaturePopulationSummary_DoesNotRequireMissingRaceMetadata()
+        {
+            var repo = new StubRepository();
+            var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
+            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), bankroll: 25m, settings);
+
+            scraper.TestSetNeuralFeatureKeys(new[]
+            {
+                "Class",
+                "TrainerClassWinRate",
+                "Going",
+                "TrainerGoingWinRate",
+                "DistanceBucket",
+                "DistanceBucketWinRate"
+            });
+
+            var featureVector = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+
+            var summary = scraper.TestBuildFeaturePopulationSummary(featureVector);
+
+            Assert.Equal(0, summary.PopulatedCount);
+            Assert.Equal(0, summary.MissingCount);
+            Assert.Empty(summary.MissingKeys);
         }
         private static void InvokeApplyMarketFallback(IReadOnlyList<RunnerFlow> flows)
         {

@@ -479,8 +479,11 @@ namespace HorseRacingML.Scraping
             {
                 SetIfMissing("BackBookPercentage", Convert.ToDouble(backBookPercentage.Value));
             }
-            else
+            bool hasBackBook = TryGetMeaningfulValue(featureVector, "BackBookPercentage", out _);
+            featureVector["BackBookPercentageMissing"] = !hasBackBook;
+            if (!hasBackBook)
             {
+                featureVector.Remove("BackBookPercentage");
                 MarkMissing("back book percentage");
             }
 
@@ -607,8 +610,11 @@ namespace HorseRacingML.Scraping
             {
                 SetIfMissing("Class", parsed.Class);
             }
-            else
+            bool hasClass = TryGetMeaningfulValue(featureVector, "Class", out _);
+            featureVector["ClassMissing"] = !hasClass;
+            if (!hasClass)
             {
+                featureVector.Remove("Class");
                 MarkMissing("race class");
             }
             var resolvedRaceType = string.IsNullOrWhiteSpace(raceType)
@@ -618,8 +624,9 @@ namespace HorseRacingML.Scraping
             {
                 SetIfMissing("RaceType", resolvedRaceType);
             }
-            else
+            else if (!TryGetMeaningfulValue(featureVector, "RaceType", out _))
             {
+                featureVector.Remove("RaceType");
                 MarkMissing("race type");
             }
 
@@ -642,14 +649,20 @@ namespace HorseRacingML.Scraping
                         featureVector["Going"] = normalizedGoing;
                     }
                 }
-                else
+                bool hasGoing = TryGetMeaningfulValue(featureVector, "Going", out _);
+                featureVector["GoingMissing"] = !hasGoing;
+                if (!hasGoing)
                 {
+                    featureVector.Remove("Going");
                     featureVector["Going"] = normalizedGoing;
                 }
             }
-            else
+            bool hasSurface = TryGetMeaningfulValue(featureVector, "Surface", out _);
+            featureVector["SurfaceMissing"] = !hasSurface;
+            if (!hasSurface)
             {
-                MarkMissing("going description");
+                featureVector.Remove("Surface");
+                MarkMissing("surface type");
             }
 
             if (!string.IsNullOrWhiteSpace(parsed.Surface))
@@ -661,35 +674,52 @@ namespace HorseRacingML.Scraping
                 MarkMissing("surface type");
             }
 
-            int distanceYardsValue = parsed.DistanceYards > 0
-                  ? parsed.DistanceYards
-                  : (featureVector.TryGetValue("DistanceYards", out var distanceObj) && TryGetInt(distanceObj, out var resolvedDistance)
-                      ? resolvedDistance
-                      : 0);
-
-            if (distanceYardsValue > 0)
-            {
-                SetIfMissing("DistanceYards", distanceYardsValue);
-            }
-            else
-            {
-                MarkMissing("race distance");
-            }
-
             if (!string.IsNullOrWhiteSpace(parsed.DistanceText))
             {
                 SetIfMissing("DistanceText", parsed.DistanceText);
             }
-            else
+            bool hasDistanceText = TryGetMeaningfulValue(featureVector, "DistanceText", out _);
+            featureVector["DistanceTextMissing"] = !hasDistanceText;
+            if (!hasDistanceText)
             {
+                featureVector.Remove("DistanceText");
                 MarkMissing("distance description");
             }
+
+            int distanceYardsValue = 0;
+            bool hasDistance = false;
+            if (TryGetMeaningfulValue(featureVector, "DistanceYards", out var distanceObj) &&
+                TryGetInt(distanceObj, out var resolvedDistance) && resolvedDistance > 0)
+            {
+                distanceYardsValue = resolvedDistance;
+                hasDistance = true;
+            }
+            else if (parsed.DistanceYards > 0)
+            {
+                distanceYardsValue = parsed.DistanceYards;
+                featureVector["DistanceYards"] = distanceYardsValue;
+                hasDistance = true;
+            }
+
+            featureVector["DistanceMissing"] = !hasDistance;
+            if (!hasDistance)
+            {
+                featureVector.Remove("DistanceYards");
+                MarkMissing("race distance");
+            }
+
             string? distanceBucket = null;
-            if (distanceYardsValue > 0)
+            if (hasDistance)
             {
                 distanceBucket = DistanceBucketFromYards(distanceYardsValue);
                 SetIfMissing("DistanceBucket", distanceBucket);
             }
+            else
+            {
+                featureVector.Remove("DistanceBucket");
+            }
+
+            featureVector["RaceMetadataMissing"] = !hasClass || !hasGoing || !hasSurface || !hasDistance || !hasDistanceText;
             bool needsDistanceChange = HasMissingValue("DistanceChangeFromLast");
             bool needsDistanceRatio = HasMissingValue("DistanceRatioFromAverage");
             HorseDistanceStats? distanceStats = null;
