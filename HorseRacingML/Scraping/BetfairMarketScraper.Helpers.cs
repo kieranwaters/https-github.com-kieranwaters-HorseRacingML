@@ -633,6 +633,7 @@ namespace HorseRacingML.Scraping
             var resolvedGoing = string.IsNullOrWhiteSpace(going)
                 ? parsed.Going
                 : going.Trim();
+            bool hasGoing = TryGetMeaningfulValue(featureVector, "Going", out _);
             if (!string.IsNullOrWhiteSpace(resolvedGoing))
             {
                 var normalizedGoing = resolvedGoing.Trim();
@@ -649,13 +650,17 @@ namespace HorseRacingML.Scraping
                         featureVector["Going"] = normalizedGoing;
                     }
                 }
-                bool hasGoing = TryGetMeaningfulValue(featureVector, "Going", out _);
-                featureVector["GoingMissing"] = !hasGoing;
-                if (!hasGoing)
+                else
                 {
                     featureVector.Remove("Going");
                     featureVector["Going"] = normalizedGoing;
                 }
+                hasGoing = true;
+            }
+            featureVector["GoingMissing"] = !hasGoing;
+            if (!hasGoing)
+            {
+                featureVector.Remove("Going");
             }
             bool hasSurface = TryGetMeaningfulValue(featureVector, "Surface", out _);
             featureVector["SurfaceMissing"] = !hasSurface;
