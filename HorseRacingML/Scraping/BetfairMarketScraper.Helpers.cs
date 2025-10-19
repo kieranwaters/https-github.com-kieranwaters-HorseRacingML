@@ -404,19 +404,19 @@ namespace HorseRacingML.Scraping
                 return;
             }
 
-            static bool HasMissingValue(Dictionary<string, object?> target, string key)
+            bool HasMissingValue(string key)
             {
-                if (!target.TryGetValue(key, out var existing) || existing == null)
+                if (!featureVector.TryGetValue(key, out var existing) || existing == null)
                 {
                     return true;
                 }
 
-                if (existing is string s)
+                if (existing is string existingText && string.IsNullOrWhiteSpace(existingText))
                 {
-                    return string.IsNullOrWhiteSpace(s);
+                    return true;
                 }
 
-                return false;
+                return IsNeutralFallbackValue(key, existing);
             }
 
             void SetIfMissing(string key, object? value)
@@ -426,7 +426,12 @@ namespace HorseRacingML.Scraping
                     return;
                 }
 
-                if (HasMissingValue(featureVector, key))
+                if (value is string stringValue && string.IsNullOrWhiteSpace(stringValue))
+                {
+                    return;
+                }
+
+                if (HasMissingValue(key))
                 {
                     featureVector[key] = value;
                 }
@@ -685,8 +690,8 @@ namespace HorseRacingML.Scraping
                 distanceBucket = DistanceBucketFromYards(distanceYardsValue);
                 SetIfMissing("DistanceBucket", distanceBucket);
             }
-            bool needsDistanceChange = HasMissingValue(featureVector, "DistanceChangeFromLast");
-            bool needsDistanceRatio = HasMissingValue(featureVector, "DistanceRatioFromAverage");
+            bool needsDistanceChange = HasMissingValue("DistanceChangeFromLast");
+            bool needsDistanceRatio = HasMissingValue("DistanceRatioFromAverage");
             HorseDistanceStats? distanceStats = null;
             if ((needsDistanceChange || needsDistanceRatio) && !string.IsNullOrWhiteSpace(flow?.HorseName))
             {

@@ -81,6 +81,54 @@ namespace HorseRacingML.Tests
             Assert.Contains("sopharsogood", candidates, StringComparer.OrdinalIgnoreCase);
         }
         [Fact]
+        public void LoadFeatureLookup_MatchesRunnerUsingHorseIdOnly()
+        {
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:HorseRacingDb"] = "Server=(local);Database=HorseRacingMLTest;Trusted_Connection=True;"
+                })
+                .Build();
+
+            var trainer = new FakeTrainer(configuration, upcomingRace: null);
+            var repo = new MinimalRacingRepository();
+            var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
+            var scraper = new BetfairMarketScraper(repo, trainer, bankroll: 10m, settings);
+
+            var flow = new RunnerFlow
+            {
+                HorseName = null,
+                FeatureValues = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["HorseId"] = 42
+                }
+            };
+
+            var preparedRow = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["HorseId"] = 42,
+                ["AvgSpeedLast5"] = 12.5f
+            };
+
+            var features = scraper.TestLoadFeatures(
+                raceDate: new DateTime(2024, 11, 1),
+                raceTitle: "HorseId Stakes",
+                venueName: "Numeric Park",
+                venueCountry: "GB",
+                scheduledOff: new TimeSpan(14, 30, 0),
+                raceDetails: null,
+                going: null,
+                backBookPercentage: null,
+                layBookPercentage: null,
+                marketId: "1.500",
+                flows: new List<RunnerFlow> { flow },
+                preparedRows: new List<IDictionary<string, object?>> { preparedRow },
+                persistedUpcoming: null);
+
+            Assert.NotNull(features);
+            Assert.Equal(12.5f, Convert.ToSingle(features!["AvgSpeedLast5"]));
+        }
+        [Fact]
         public void BuildUpcomingRaceRows_UsesBatchedLookupsWhenAvailable()
         {
             var configuration = new ConfigurationBuilder()

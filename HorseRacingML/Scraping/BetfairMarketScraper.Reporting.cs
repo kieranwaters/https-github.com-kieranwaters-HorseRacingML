@@ -875,7 +875,17 @@ namespace HorseRacingML.Scraping
                     ? flow.Draw.Value.ToString(CultureInfo.InvariantCulture)
                     : null;
 
-                return FindByIdentifiers(normalizedHorse, normalizedJockey, normalizedTrainer, clothKey, drawKey);
+                var horseIdKey = ExtractNumericFeature(flow, "HorseId");
+                var runnerResultKey = ExtractNumericFeature(flow, "RunnerResultId");
+
+                return FindByIdentifiers(
+                    normalizedHorse,
+                    normalizedJockey,
+                    normalizedTrainer,
+                    clothKey,
+                    drawKey,
+                    horseIdKey,
+                    runnerResultKey);
             }
 
             public Dictionary<string, object?>? FindByHorse(string? horseName)
@@ -894,9 +904,18 @@ namespace HorseRacingML.Scraping
                 string? normalizedJockey,
                 string? normalizedTrainer,
                 string? clothKey,
-                string? drawKey)
+                string? drawKey,
+                string? horseIdKey,
+                string? runnerResultKey)
             {
-                foreach (var key in BuildIdentifierKeys(normalizedHorse, normalizedJockey, normalizedTrainer, clothKey, drawKey))
+                foreach (var key in BuildIdentifierKeys(
+                             normalizedHorse,
+                             normalizedJockey,
+                             normalizedTrainer,
+                             clothKey,
+                             drawKey,
+                             horseIdKey,
+                             runnerResultKey))
                 {
                     if (_byIdentifier.TryGetValue(key, out var candidates) && candidates != null && candidates.Count > 0)
                     {
@@ -948,12 +967,24 @@ namespace HorseRacingML.Scraping
                 var drawKey = NormalizeNumeric(copy.TryGetValue("Draw", out var drawObj)
                     ? drawObj
                     : null);
-
+                var horseIdKey = NormalizeNumeric(copy.TryGetValue("HorseId", out var horseIdObj)
+                    ? horseIdObj
+                    : null);
+                var runnerResultKey = NormalizeNumeric(copy.TryGetValue("RunnerResultId", out var runnerObj)
+                    ? runnerObj
+                    : null);
                 var normalizedHorse = NormalizeName(horseName);
                 var normalizedJockey = NormalizeName(jockeyName);
                 var normalizedTrainer = NormalizeName(trainerName);
 
-                foreach (var key in BuildIdentifierKeys(normalizedHorse, normalizedJockey, normalizedTrainer, clothKey, drawKey))
+                foreach (var key in BuildIdentifierKeys(
+                             normalizedHorse,
+                             normalizedJockey,
+                             normalizedTrainer,
+                             clothKey,
+                             drawKey,
+                             horseIdKey,
+                             runnerResultKey))
                 {
                     if (!lookup.TryGetValue(key, out var list))
                     {
@@ -1181,8 +1212,10 @@ namespace HorseRacingML.Scraping
                 string? normalizedJockey,
                 string? normalizedTrainer,
                 string? clothKey,
-                string? drawKey)
-            {
+                string? drawKey,
+                string? horseIdKey,
+                string? runnerResultKey)
+            { 
                 var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 var keys = new List<string>();
 
@@ -1223,6 +1256,36 @@ namespace HorseRacingML.Scraping
                         TryAdd($"horse+trainer:{normalizedHorse}|{normalizedTrainer}");
                     }
                 }
+                if (!string.IsNullOrEmpty(horseIdKey))
+                {
+                    TryAdd($"horseId:{horseIdKey}");
+
+                    if (!string.IsNullOrEmpty(clothKey))
+                    {
+                        TryAdd($"horseId+cloth:{horseIdKey}|{clothKey}");
+                    }
+
+                    if (!string.IsNullOrEmpty(drawKey))
+                    {
+                        TryAdd($"horseId+draw:{horseIdKey}|{drawKey}");
+                    }
+
+                    if (!string.IsNullOrEmpty(normalizedHorse))
+                    {
+                        TryAdd($"horse+horseId:{normalizedHorse}|{horseIdKey}");
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(runnerResultKey))
+                {
+                    TryAdd($"runnerResult:{runnerResultKey}");
+
+                    if (!string.IsNullOrEmpty(horseIdKey))
+                    {
+                        TryAdd($"horseId+runnerResult:{horseIdKey}|{runnerResultKey}");
+                    }
+                }
+
 
                 if (!string.IsNullOrEmpty(clothKey))
                 {
@@ -1246,7 +1309,20 @@ namespace HorseRacingML.Scraping
 
                 return keys;
             }
+            private static string? ExtractNumericFeature(RunnerFlow flow, string key)
+            {
+                if (flow?.FeatureValues == null || string.IsNullOrWhiteSpace(key))
+                {
+                    return null;
+                }
 
+                if (!flow.FeatureValues.TryGetValue(key, out var value) || value == null)
+                {
+                    return null;
+                }
+
+                return NormalizeNumeric(value);
+            }
             private static string? NormalizeNumeric(object? value)
             {
                 if (value == null)

@@ -599,9 +599,11 @@ namespace HorseRacingML.Scraping
 
 
         private RunnerDayReport CreateRunnerReport(
-            RunnerFlow flow,
-            HistoricalRaceCountPrefetchResult? prefetchedCounts)
+           RunnerFlow flow,
+           HistoricalRaceCountPrefetchResult? prefetchedCounts)
         {
+            var displayFeatureValues = CreateFeatureDictionary(flow.FeatureValues);
+
             var runner = new RunnerDayReport
             {
                 ClothNumber = flow.ClothNumber,
@@ -609,7 +611,7 @@ namespace HorseRacingML.Scraping
                 HorseName = flow.HorseName,
                 JockeyName = flow.JockeyName,
                 EncodedFeatureValues = CloneEncodedFeatureValues(flow.EncodedFeatureValues),
-                FeatureValues = CreateFeatureDictionary(flow.FeatureValues),
+                FeatureValues = displayFeatureValues,
                 HasPreparedFeatures = flow.HasPreparedFeatures,
                 FeaturePopulation = (flow.FeaturePopulationSummary ?? FeaturePopulationSummary.Empty).WithSortedKeys()
             };
@@ -1029,6 +1031,20 @@ namespace HorseRacingML.Scraping
                     Console.WriteLine(
                         $"\t\tNo prepared feature row matched for {identifier}; feature vector requires database backfill.");
                 }
+                ApplyScrapedFeatureFallbacks(
+                    featureVector,
+                    flow,
+                    raceDate,
+                    scheduledOff,
+                    raceTitle,
+                    raceDetails,
+                    raceType,
+                    going,
+                    venueName,
+                    venueCountry,
+                    backBookPercentage,
+                    layBookPercentage,
+                    flows);
                 var missingHistoricalKeys = GetMissingHistoricalFeatureKeys(featureVector);
                 if (missingHistoricalKeys.Count > 0)
                 {
