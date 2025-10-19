@@ -844,6 +844,18 @@ namespace HorseRacingML.Scraping
                     }
                 }
             }
+            if (!TryGetMeaningfulValue(featureVector, "AgeRestriction", out _))
+            {
+                featureVector.Remove("AgeRestriction");
+                featureVector["AgeRestrictionMissing"] = true;
+            }
+            else
+            {
+                featureVector["AgeRestrictionMissing"] = false;
+            }
+
+            var hasRatingAggregates = HasAnyMeaningfulRating(featureVector);
+            featureVector["RatingAggregatesMissing"] = !hasRatingAggregates;
         }
         
         private static ParsedRaceMetadata ParseRaceMetadata(RaceDayReport race)

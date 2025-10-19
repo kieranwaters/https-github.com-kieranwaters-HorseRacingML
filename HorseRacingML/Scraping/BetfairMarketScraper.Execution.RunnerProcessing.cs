@@ -2095,6 +2095,20 @@ namespace HorseRacingML.Scraping
             {
                 return false;
             }
+            if (IsDrawRelatedKey(key) && IsDrawDataUnavailable(featureVector))
+            {
+                return false;
+            }
+
+            if (IsAgeRestrictionKey(key) && IsAgeRestrictionDataUnavailable(featureVector))
+            {
+                return false;
+            }
+
+            if (IsRatingAggregateKey(key) && AreRatingAggregatesUnavailable(featureVector))
+            {
+                return false;
+            }
 
             return true;
         }
@@ -2218,6 +2232,114 @@ namespace HorseRacingML.Scraping
             return false;
         }
 
+        private static bool IsDrawRelatedKey(string key)
+        {
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                return false;
+            }
+
+            if (string.Equals(key, "Draw", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return key.IndexOf("Draw", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool IsDrawDataUnavailable(Dictionary<string, object?> featureVector)
+        {
+            return HasMissingFlag(featureVector, "DrawMissing");
+        }
+
+        private static bool IsAgeRestrictionKey(string key) =>
+            key.IndexOf("AgeRestriction", StringComparison.OrdinalIgnoreCase) >= 0;
+
+        private static bool IsAgeRestrictionDataUnavailable(Dictionary<string, object?> featureVector)
+        {
+            if (featureVector == null)
+            {
+                return true;
+            }
+
+            if (HasMissingFlag(featureVector, "AgeRestrictionMissing"))
+            {
+                return true;
+            }
+
+            return !TryGetMeaningfulValue(featureVector, "AgeRestriction", out _);
+        }
+
+        private static bool IsRatingAggregateKey(string key)
+        {
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                return false;
+            }
+
+            if (key.StartsWith("AvgRating", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if (key.StartsWith("RatingDiff", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return string.Equals(key, "Rating", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool AreRatingAggregatesUnavailable(Dictionary<string, object?> featureVector)
+        {
+            if (featureVector == null)
+            {
+                return true;
+            }
+
+            if (HasMissingFlag(featureVector, "RatingAggregatesMissing"))
+            {
+                return true;
+            }
+
+            foreach (var kvp in featureVector)
+            {
+                if (!IsRatingAggregateKey(kvp.Key))
+                {
+                    continue;
+                }
+
+                if (TryGetMeaningfulValue(featureVector, kvp.Key, out _))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static bool HasAnyMeaningfulRating(Dictionary<string, object?> featureVector)
+        {
+            if (featureVector == null || featureVector.Count == 0)
+            {
+                return false;
+            }
+
+            foreach (var kvp in featureVector)
+            {
+                if (!IsRatingAggregateKey(kvp.Key))
+                {
+                    continue;
+                }
+
+                if (TryGetMeaningfulValue(featureVector, kvp.Key, out _))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
 
         private static bool IsDistanceBeatenSensitiveKey(string key) =>
             DistanceBeatenSensitiveFeatureKeys.Contains(key);
