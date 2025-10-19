@@ -1012,10 +1012,7 @@ namespace HorseRacingML.Scraping
                 {
                     return candidates[0];
                 }
-
-                Dictionary<string, object?>? best = null;
-                int bestScore = int.MinValue;
-                int bestIndex = -1;
+                var candidateInfos = new List<(Dictionary<string, object?> Candidate, int Index, int MissingCount, int Score)>();
 
                 for (var i = 0; i < candidates.Count; i++)
                 {
@@ -1025,22 +1022,117 @@ namespace HorseRacingML.Scraping
                         continue;
                     }
 
+                    var missingKeys = GetMissingHistoricalFeatureKeys(candidate);
+                    var missingCount = missingKeys?.Count ?? 0;
                     var score = CalculateCandidateScore(candidate);
-                    if (score > bestScore)
+
+                    candidateInfos.Add((candidate, i, missingCount, score));
+                }
+
+                if (candidateInfos.Count == 0)
+                {
+                    return candidates[0];
+                }
+
+                var ordered = candidateInfos
+                    .OrderBy(info => info.MissingCount)
+                    .ThenByDescending(info => info.Score)
+                    .ThenBy(info => info.Index)
+                    .ToList();
+
+                var aggregate = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+                var contributingIndexes = new HashSet<int>();
+
+                var trackedKeys = ResolveTrackedFeatureKeys();
+                foreach (var key in trackedKeys)
+                {
+                    if (string.IsNullOrWhiteSpace(key))
                     {
-                        bestScore = score;
-                        best = candidate;
-                        bestIndex = i;
+                        continue;
+                    }
+
+                    var normalizedKey = key.Trim();
+                    if (normalizedKey.Length == 0)
+                    {
+                        continue;
+                    }
+
+                    if (TryGetMeaningfulValue(aggregate, normalizedKey, out _))
+                    {
+                        continue;
+                    }
+
+                    foreach (var info in ordered)
+                    {
+                        if (!TryGetMeaningfulValue(info.Candidate, normalizedKey, out var value))
+                        {
+                            continue;
+                        }
+
+                        aggregate[normalizedKey] = value;
+                        contributingIndexes.Add(info.Index);
+                        break;
                     }
                 }
 
-                if (best != null && bestIndex > 0)
+                foreach (var info in ordered)
                 {
-                    Console.WriteLine($"    [FallbackLookup] Selected alternate feature row for '{identifierKey}' (candidate {bestIndex + 1}/{candidates.Count}, score={bestScore}).");
+                    foreach (var kvp in info.Candidate)
+                    {
+                        var key = kvp.Key;
+                        if (string.IsNullOrWhiteSpace(key))
+                        {
+                            continue;
+                        }
+
+                        var normalizedKey = key.Trim();
+                        if (TryGetMeaningfulValue(aggregate, normalizedKey, out _))
+                        {
+                            continue;
+                        }
+
+                        if (!TryGetMeaningfulValue(info.Candidate, normalizedKey, out var value))
+                        {
+                            continue;
+                        }
+
+                        aggregate[normalizedKey] = value;
+                        contributingIndexes.Add(info.Index);
+                    }
                 }
 
-                return best ?? candidates[0];
+                if (aggregate.Count == 0)
+                {
+                    return ordered[0].Candidate;
+                }
+
+                var primary = ordered[0];
+                if (primary.Index > 0 || contributingIndexes.Count > 1)
+                {
+                    var completenessText = primary.MissingCount == 0
+                        ? "complete"
+                        : $"missingRequired={primary.MissingCount}";
+                    string detailText;
+
+                    if (contributingIndexes.Count > 1)
+                    {
+                        var mergedText = string.Join(",", contributingIndexes
+                            .OrderBy(idx => idx)
+                            .Select(idx => (idx + 1).ToString(CultureInfo.InvariantCulture)));
+                        detailText = $"mergedCandidates={mergedText}";
+                    }
+                    else
+                    {
+                        detailText = $"candidate {primary.Index + 1}/{candidates.Count}";
+                    }
+
+                    Console.WriteLine(
+                        $"    [FallbackLookup] Merged feature row(s) for '{identifierKey}' ({detailText}, score={primary.Score}, {completenessText}).");
+                }
+
+                return aggregate;
             }
+
 
             private static int CalculateCandidateScore(Dictionary<string, object?> candidate)
             {
