@@ -81,155 +81,6 @@ namespace HorseRacingML.Tests
             Assert.Contains("sopharsogood", candidates, StringComparer.OrdinalIgnoreCase);
         }
         [Fact]
-        public void LoadFeatureLookup_MatchesRunnerUsingHorseIdOnly()
-        {
-            var configuration = new ConfigurationBuilder()
-                .AddInMemoryCollection(new Dictionary<string, string?>
-                {
-                    ["ConnectionStrings:HorseRacingDb"] = "Server=(local);Database=HorseRacingMLTest;Trusted_Connection=True;"
-                })
-                .Build();
-
-            var trainer = new FakeTrainer(configuration, upcomingRace: null);
-            var repo = new MinimalRacingRepository();
-            var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, trainer, bankroll: 10m, settings);
-
-            var flow = new RunnerFlow
-            {
-                HorseName = null,
-                FeatureValues = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
-                {
-                    ["HorseId"] = 42
-                }
-            };
-
-            var preparedRow = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["HorseId"] = 42,
-                ["AvgSpeedLast5"] = 12.5f
-            };
-
-            var features = scraper.TestLoadFeatures(
-                raceDate: new DateTime(2024, 11, 1),
-                raceTitle: "HorseId Stakes",
-                venueName: "Numeric Park",
-                venueCountry: "GB",
-                scheduledOff: new TimeSpan(14, 30, 0),
-                raceDetails: null,
-                going: null,
-                backBookPercentage: null,
-                layBookPercentage: null,
-                marketId: "1.500",
-                flows: new List<RunnerFlow> { flow },
-                preparedRows: new List<IDictionary<string, object?>> { preparedRow },
-                persistedUpcoming: null);
-
-            Assert.NotNull(features);
-            Assert.Equal(12.5f, Convert.ToSingle(features!["AvgSpeedLast5"]));
-        }
-        [Fact]
-        public void LoadFeatureLookup_MatchesRunnerWhenDrawAndClothMissing()
-        {
-            var configuration = new ConfigurationBuilder()
-                .AddInMemoryCollection(new Dictionary<string, string?>
-                {
-                    ["ConnectionStrings:HorseRacingDb"] = "Server=(local);Database=HorseRacingMLTest;Trusted_Connection=True;"
-                })
-                .Build();
-
-            var trainer = new FakeTrainer(configuration, upcomingRace: null);
-            var repo = new MinimalRacingRepository();
-            var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, trainer, bankroll: 10m, settings);
-
-            var flow = new RunnerFlow
-            {
-                HorseName = "Resilient Runner",
-                ClothNumber = null,
-                Draw = null
-            };
-
-            var preparedRow = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["HorseName"] = "Resilient Runner",
-                ["SaddleclothNumber"] = 7,
-                ["Draw"] = 3,
-                ["AvgSpeedLast5"] = 9.25f
-            };
-
-            var features = scraper.TestLoadFeatures(
-                raceDate: new DateTime(2024, 11, 2),
-                raceTitle: "Missing Draw Stakes",
-                venueName: "Fallback Park",
-                venueCountry: "GB",
-                scheduledOff: new TimeSpan(15, 45, 0),
-                raceDetails: null,
-                going: null,
-                backBookPercentage: null,
-                layBookPercentage: null,
-                marketId: "1.600",
-                flows: new List<RunnerFlow> { flow },
-                preparedRows: new List<IDictionary<string, object?>> { preparedRow },
-                persistedUpcoming: null);
-
-            Assert.NotNull(features);
-            Assert.Equal(9.25f, Convert.ToSingle(features!["AvgSpeedLast5"]));
-        }
-
-        [Fact]
-        public void LoadFeatureLookup_MatchesRunnerUsingHorseIdWithoutDrawOrCloth()
-        {
-            var configuration = new ConfigurationBuilder()
-                .AddInMemoryCollection(new Dictionary<string, string?>
-                {
-                    ["ConnectionStrings:HorseRacingDb"] = "Server=(local);Database=HorseRacingMLTest;Trusted_Connection=True;"
-                })
-                .Build();
-
-            var trainer = new FakeTrainer(configuration, upcomingRace: null);
-            var repo = new MinimalRacingRepository();
-            var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, trainer, bankroll: 10m, settings);
-
-            var flow = new RunnerFlow
-            {
-                HorseName = null,
-                ClothNumber = null,
-                Draw = null,
-                FeatureValues = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
-                {
-                    ["HorseId"] = 1234
-                }
-            };
-
-            var preparedRow = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["HorseId"] = 1234,
-                ["SaddleclothNumber"] = 4,
-                ["Draw"] = 2,
-                ["AvgSpeedLast5"] = 11.75f
-            };
-
-            var features = scraper.TestLoadFeatures(
-                raceDate: new DateTime(2024, 11, 3),
-                raceTitle: "Numeric Anchor Handicap",
-                venueName: "Lookup Downs",
-                venueCountry: "GB",
-                scheduledOff: new TimeSpan(16, 5, 0),
-                raceDetails: null,
-                going: null,
-                backBookPercentage: null,
-                layBookPercentage: null,
-                marketId: "1.601",
-                flows: new List<RunnerFlow> { flow },
-                preparedRows: new List<IDictionary<string, object?>> { preparedRow },
-                persistedUpcoming: null);
-
-            Assert.NotNull(features);
-            Assert.Equal(11.75f, Convert.ToSingle(features!["AvgSpeedLast5"]));
-        }
-        [Fact]
         public void BuildUpcomingRaceRows_UsesBatchedLookupsWhenAvailable()
         {
             var configuration = new ConfigurationBuilder()
@@ -372,7 +223,6 @@ namespace HorseRacingML.Tests
                 upcoming.LayBookPercentage,
                 upcoming.MarketId,
                 flows,
-                preparedRows: null,
                 persistedUpcoming: upcoming);
 
             Assert.True(repo.FindUpcomingRaceCalled);
@@ -1223,7 +1073,6 @@ new RunnerFlow { HorseName = "Alpha Runner" },
                     layBookPercentage: null,
                     marketId: upcoming.MarketId,
                     flows: flows,
-                    preparedRows: null,
                     persistedUpcoming: upcoming);
 
                 var features2 = scraper.TestLoadFeatures(
@@ -1238,7 +1087,6 @@ new RunnerFlow { HorseName = "Alpha Runner" },
                     layBookPercentage: null,
                     marketId: upcoming.MarketId,
                     flows: flows,
-                    preparedRows: null,
                     persistedUpcoming: upcoming);
 
                 Assert.NotNull(features1);

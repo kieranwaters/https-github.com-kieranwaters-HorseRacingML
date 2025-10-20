@@ -158,15 +158,8 @@ namespace HorseRacingML.Scraping
             decimal? layBookPercentage,
             string? marketId,
             IReadOnlyList<RunnerFlow> flows,
-            IReadOnlyList<IDictionary<string, object?>>? preparedRows,
             UpcomingRace? persistedUpcoming)
         {
-            if (preparedRows != null && preparedRows.Count > 0)
-            {
-                Console.WriteLine($"  Using {preparedRows.Count} pre-provided feature row(s) for lookup.");
-                return FeatureLookup.FromRows(preparedRows);
-            }
-
             if (!raceDate.HasValue)
             {
                 return FeatureLookup.Empty;
@@ -836,26 +829,6 @@ namespace HorseRacingML.Scraping
 
                 return new FeatureLookup(lookup, race.Rows.Count);
             }
-
-            public static FeatureLookup FromRows(IReadOnlyList<IDictionary<string, object?>> rows)
-            {
-                if (rows == null)
-                    throw new ArgumentNullException(nameof(rows));
-
-                if (rows.Count == 0)
-                {
-                    return Empty;
-                }
-
-                var lookup = new Dictionary<string, List<Dictionary<string, object?>>>(StringComparer.OrdinalIgnoreCase);
-                foreach (var row in rows)
-                {
-                    AddRowIdentifiers(lookup, row);
-                }
-
-                return new FeatureLookup(lookup, rows.Count);
-            }
-
             public int Count => _rowCount;
 
             public Dictionary<string, object?>? FindByRunner(RunnerFlow? flow)

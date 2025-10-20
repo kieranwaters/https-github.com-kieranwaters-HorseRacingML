@@ -719,7 +719,6 @@ namespace HorseRacingML.Scraping
                         marketId,
                         flows,
                         rows.Count,
-                        preparedRows: null,
                         persistedUpcoming: persistedUpcoming); // build features
 
                     var flowsSnapshot = flows.ToList(); // snapshot for safe iteration

@@ -85,7 +85,6 @@ namespace HorseRacingML.Scraping
             decimal? layBookPercentage,
             string? marketId,
             IReadOnlyList<RunnerFlow> flows,
-            IReadOnlyList<IDictionary<string, object?>>? preparedRows,
             UpcomingRace? persistedUpcoming)
         {
             return TestLoadFeatures(
@@ -100,7 +99,6 @@ namespace HorseRacingML.Scraping
                 layBookPercentage,
                 marketId,
                 flows,
-                preparedRows,
                 persistedUpcoming,
                 raceType: null);
         }
@@ -117,7 +115,6 @@ namespace HorseRacingML.Scraping
             decimal? layBookPercentage,
             string? marketId,
             IReadOnlyList<RunnerFlow> flows,
-            IReadOnlyList<IDictionary<string, object?>>? preparedRows,
             UpcomingRace? persistedUpcoming,
             string? raceType)
         {
@@ -139,7 +136,6 @@ namespace HorseRacingML.Scraping
                 layBookPercentage,
                 marketId,
                 flows,
-                preparedRows,
                 persistedUpcoming);
 
             if (flows.Count == 0)

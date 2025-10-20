@@ -3520,11 +3520,6 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
         }
         internal static string? ExtractMarketId(string url)
         {
-            // Betfair have changed their URL structure over time.  In some cases the
-            // market id appears in a traditional "market/1.234" or "marketId="
-            // format, but newer "plus" pages render it as "...-betting-123456".
-            // Support both patterns so scraping works regardless of the style of URL
-            // that is loaded.
             var m = Regex.Match(url,
                 @"(?:/market/|marketId=)(?<id1>[0-9.]+)|(?:betting-)(?<id2>\d+)");
 

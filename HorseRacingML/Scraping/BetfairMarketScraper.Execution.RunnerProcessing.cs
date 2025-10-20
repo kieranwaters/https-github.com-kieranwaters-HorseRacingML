@@ -957,32 +957,32 @@ namespace HorseRacingML.Scraping
 
             return null;
         }
-        private void PopulateFeatureVectors(
- DateTime? raceDate,
-             string? raceTitle,
-             string? venueName,
-             string? venueCountry,
-             TimeSpan? scheduledOff,
-             string? raceDetails,
-             string? raceType,
-             string? going,
-             decimal? backBookPercentage,
-             decimal? layBookPercentage,
-             string? marketId,
-             IReadOnlyList<RunnerFlow> flows,
-             int runnerCount,
-             IReadOnlyList<IDictionary<string, object?>>? preparedRows = null,
-             UpcomingRace? persistedUpcoming = null)
+ 
+            private void PopulateFeatureVectors(
+            DateTime? raceDate,
+            string? raceTitle,
+            string? venueName,
+            string? venueCountry,
+            TimeSpan? scheduledOff,
+            string? raceDetails,
+            string? raceType,
+            string? going,
+            decimal? backBookPercentage,
+            decimal? layBookPercentage,
+            string? marketId,
+            IReadOnlyList<RunnerFlow> flows,
+            int runnerCount,
+            UpcomingRace? persistedUpcoming = null)
         {
             var populationContext = string.Format(
                 CultureInfo.InvariantCulture,
-                "\t[FeaturePopulation] PopulateFeatureVectors invoked. MarketId={0}, RaceDate={1}, Title='{2}', Venue='{3}', RunnerCount={4}, ProvidedPreparedRows={5}.",
+                "\t[FeaturePopulation] PopulateFeatureVectors invoked. MarketId={0}, RaceDate={1}, Title='{2}', Venue='{3}', RunnerCount={4}.",
                 marketId ?? "<null>",
                 raceDate?.ToString(CultureInfo.InvariantCulture) ?? "<null>",
                 raceTitle ?? "<null>",
                 venueName ?? "<null>",
-                flows?.Count ?? 0,
-                preparedRows?.Count ?? 0);
+                flows?.Count ?? 0);
+
             Console.WriteLine(populationContext);
 
             if (flows == null || flows.Count == 0)
@@ -1050,7 +1050,7 @@ namespace HorseRacingML.Scraping
                 layBookPercentage,
                 marketId,
                 flows,
-                preparedRows,
+                //preparedRows,
                 persistedUpcoming);
             var primaryLookupSummary = string.Format(
                 CultureInfo.InvariantCulture,
@@ -1062,16 +1062,15 @@ namespace HorseRacingML.Scraping
             foreach (var flow in flows)
             {
                 var matchedFeatures = featureLookup.FindByRunner(flow);
-                var matchedPreparedRow = matchedFeatures != null;
-                var matchedDatabaseRow = matchedPreparedRow;
+                var matchedLookupRow = matchedFeatures != null;
                 var identifier = DescribeRunner(flow);
 
-                if (!matchedPreparedRow)
+                if (!matchedLookupRow)
                 {
-                    Console.WriteLine($"\t\t[FeaturePopulation] No primary prepared row matched for {identifier}; fallback evaluation pending.");
+                    Console.WriteLine($"\t\t[FeaturePopulation] No primary lookup row matched for {identifier}; fallback evaluation pending.");
                 }
 
-                if (!matchedPreparedRow)
+                if (!matchedLookupRow)
                 {
                     if (!fallbackAttempted)
                     {
@@ -1102,8 +1101,8 @@ namespace HorseRacingML.Scraping
                     if (fallbackLookup != FeatureLookup.Empty)
                     {
                         matchedFeatures = fallbackLookup.FindByRunner(flow);
-                        matchedPreparedRow = matchedFeatures != null;
-                        if (matchedPreparedRow)
+                        matchedLookupRow = matchedFeatures != null;
+                        if (matchedLookupRow)
                         {
                             Console.WriteLine(
                                 $"\t\tUsing trainer fallback feature vector for {identifier}; synthetic preparation succeeded.");
@@ -1112,7 +1111,7 @@ namespace HorseRacingML.Scraping
                 }
                 Dictionary<string, object?> featureVector;
                 bool usedTrainerFallback = false;
-                if (matchedPreparedRow)
+                if (matchedLookupRow)
                 {
                     featureVector = CreateFeatureDictionary(matchedFeatures);
                 }
@@ -1120,7 +1119,7 @@ namespace HorseRacingML.Scraping
                 {
                     featureVector = CreateFeatureDictionary(null);
                     Console.WriteLine(
-                        $"\t\tNo prepared feature row matched for {identifier}; feature vector requires database backfill.");
+                        $"\t\tNo lookup feature row matched for {identifier}; feature vector requires database backfill.");
                 }
                 ApplyScrapedFeatureFallbacks(
                     featureVector,
@@ -1200,7 +1199,7 @@ namespace HorseRacingML.Scraping
                         flow.FeatureValues = featureVector;
                         flow.HasPreparedFeatures = false;
                         flow.FeaturePopulationSummary = BuildFeaturePopulationSummary(featureVector);
-                        flow.MatchedDatabaseRecord = matchedPreparedRow || usedTrainerFallback;
+                        flow.MatchedDatabaseRecord = matchedLookupRow || usedTrainerFallback;
                         flow.AiProbabilityFallbackReason = BuildMissingHistoricalFeatureReason();
                         continue;
                     }
@@ -1223,9 +1222,9 @@ namespace HorseRacingML.Scraping
                 flow.FeatureValues = featureVector;
                 flow.HasPreparedFeatures = featureVector.Count > 0;
                 flow.FeaturePopulationSummary = BuildFeaturePopulationSummary(featureVector);
-                flow.MatchedDatabaseRecord = matchedPreparedRow || usedTrainerFallback;
+                flow.MatchedDatabaseRecord = matchedLookupRow || usedTrainerFallback;
 
-                if (!matchedPreparedRow && !usedTrainerFallback)
+                if (!matchedLookupRow && !usedTrainerFallback)
                 {
                     Console.WriteLine(
                         $"\t\tSkipping AI scoring for {identifier} due to missing database-backed features.");
