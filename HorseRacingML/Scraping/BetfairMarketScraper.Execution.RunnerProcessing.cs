@@ -1990,9 +1990,12 @@ namespace HorseRacingML.Scraping
                 return;
             }
 
+            bool ratingAggregateInserted = false;
+
             foreach (var key in HistoricalFeatureBackfillKeys)
             {
-                if (!ShouldRequireFeature(target, key))
+                var requireFeature = ShouldRequireFeature(target, key);
+                if (!requireFeature && !IsRatingAggregateKey(key))
                 {
                     continue;
                 }
@@ -2000,6 +2003,10 @@ namespace HorseRacingML.Scraping
                     TryGetMeaningfulValue(source, key, out var replacement))
                 {
                     target[key] = replacement;
+                    if (IsRatingAggregateKey(key))
+                    {
+                        ratingAggregateInserted = true;
+                    }
                 }
             }
 
@@ -2019,11 +2026,18 @@ namespace HorseRacingML.Scraping
                 if (!TryGetMeaningfulValue(target, key, out _) && HasMeaningfulValue(kvp.Value))
                 {
                     target[key] = kvp.Value;
+                    if (IsRatingAggregateKey(key))
+                    {
+                        ratingAggregateInserted = true;
+                    }
                 }
             }
-        }
 
-        
+            if (ratingAggregateInserted)
+            {
+                target["RatingAggregatesMissing"] = !HasAnyMeaningfulRating(target);
+            }
+        }
         private static bool HasMeaningfulValue(object? value)
         {
             if (value == null)

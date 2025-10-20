@@ -31,6 +31,10 @@ namespace HorseRacingML.Scraping
         private static readonly Regex TrainerPrefixRegex = new(@"^(?:trainer|trainers?|t:)\s*[:\-]?\s*", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly string[] DistanceBuckets = { "Sprint", "Middle", "Long" };
         private static readonly int[] PerformanceWindowSizes = { 1, 3, 5, 10, 15, 20, 25, 30, 50, 100 };
+        private static readonly Regex AgeRestrictionRangeRegex = new(@"\b(?<min>\d{1,2})\s*(?:[-–]\s*|\s+to\s+)(?<max>\d{1,2})\s*(?:y[\./-]?\s*o|yrs?|years?)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex AgeRestrictionWordRegex = new(@"\b(?<age>\d{1,2})\s*(?:y[\./-]?\s*o|yrs?|years?)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex AgeRestrictionLabelRegex = new(@"\b(?:aged|age)\s*(?<age>\d{1,2})\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex AgeRestrictionQualifierRegex = new(@"^(?<qualifier>\+|plus|and\s*up(?:wards)?|&\s*up|upwards|up|over|only)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex MarketTitleDateCandidateRegex = new(
             @"(?:(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*\s+)?\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]{3,9}(?:\s+\d{2,4})?",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -601,11 +605,28 @@ namespace HorseRacingML.Scraping
                 RaceType = raceType,
                 Going = going,
                 VenueName = venueName,
-                VenueCountry = venueCountry
+                VenueCountry = venueCountry,
+                Runners = flows == null
+                    ? new List<RunnerDayReport>()
+                    : flows
+                        .Where(f => f != null && f.Age.HasValue && f.Age.Value > 0)
+                        .Select(f =>
+                            new RunnerDayReport
+                            {
+                                FeatureValues = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+                                {
+                                    ["Age"] = f!.Age!.Value
+                                }
+                            })
+                        .ToList()
             };
 
-            var parsed = ParseRaceMetadata(metadataSource);
+            var parsed = ParseRaceMetadata(metadataSource, flows);
 
+            if (!string.IsNullOrWhiteSpace(parsed.AgeRestriction))
+            {
+                SetIfMissing("AgeRestriction", parsed.AgeRestriction);
+            }
             if (parsed.Class.HasValue)
             {
                 SetIfMissing("Class", parsed.Class);
@@ -857,8 +878,10 @@ namespace HorseRacingML.Scraping
             var hasRatingAggregates = HasAnyMeaningfulRating(featureVector);
             featureVector["RatingAggregatesMissing"] = !hasRatingAggregates;
         }
-        
-        private static ParsedRaceMetadata ParseRaceMetadata(RaceDayReport race)
+
+        private static ParsedRaceMetadata ParseRaceMetadata(
+            RaceDayReport race,
+            IEnumerable<RunnerFlow>? flows = null)
         {
             var tokens = EnumerateDetailTokens(race.RaceDetails)
                 .Concat(EnumerateDetailTokens(race.RaceTitle))
@@ -891,13 +914,16 @@ namespace HorseRacingML.Scraping
             var raceType = TryDetectRaceType(tokens, race.RaceTitle);
             var surface = DetermineSurface(going, tokens);
 
+            var ageRestriction = ResolveAgeRestriction(race, tokens, flows);
+
             return new ParsedRaceMetadata(
                 string.IsNullOrWhiteSpace(distanceToken) ? null : distanceToken.Trim(),
                 distanceYards,
                 classValue,
                 string.IsNullOrWhiteSpace(going) ? null : going.Trim(),
                 surface,
-                raceType);
+                raceType,
+                ageRestriction);
         }
         private static (string? RaceTypeText, string? CleanedDetails) SplitRaceTypeFromDetails(string? raceDetails)
         {
@@ -1889,10 +1915,197 @@ const hasBackAllContext = target => {
             byte? Class,
             string? Going,
             string? Surface,
-            string? RaceType);
+            string? RaceType,
+            string? AgeRestriction);
 
         private static readonly Regex BracketedNameContentRegex =
             new Regex(@"\s*[\(\[][^\)\]]*[\)\]]\s*", RegexOptions.Compiled);
+        private static string? ResolveAgeRestriction(
+            RaceDayReport race,
+            IReadOnlyCollection<string> tokens,
+            IEnumerable<RunnerFlow>? flows)
+        {
+            if (race == null)
+            {
+                return null;
+            }
+
+            var sources = new List<string?>
+            {
+                race.RaceDetails,
+                race.RaceTitle,
+                race.RaceType,
+                race.Going
+            };
+
+            if (tokens != null)
+            {
+                foreach (var token in tokens)
+                {
+                    if (!string.IsNullOrWhiteSpace(token))
+                    {
+                        sources.Add(token);
+                    }
+                }
+            }
+
+            foreach (var source in sources)
+            {
+                var restriction = ExtractAgeRestrictionFromText(source);
+                if (!string.IsNullOrWhiteSpace(restriction))
+                {
+                    return restriction;
+                }
+            }
+
+            var youngestAge = GetYoungestRunnerAge(race, flows);
+            if (youngestAge.HasValue)
+            {
+                return string.Concat(youngestAge.Value.ToString(CultureInfo.InvariantCulture), "yo+");
+            }
+
+            return null;
+        }
+
+        private static int? GetYoungestRunnerAge(RaceDayReport race, IEnumerable<RunnerFlow>? flows)
+        {
+            int? youngest = null;
+
+            if (flows != null)
+            {
+                foreach (var flow in flows)
+                {
+                    if (flow?.Age.HasValue == true && flow.Age.Value > 0)
+                    {
+                        youngest = youngest.HasValue
+                            ? Math.Min(youngest.Value, flow.Age.Value)
+                            : flow.Age.Value;
+                    }
+                }
+            }
+
+            if (race?.Runners != null)
+            {
+                foreach (var runner in race.Runners)
+                {
+                    if (runner?.FeatureValues == null)
+                    {
+                        continue;
+                    }
+
+                    if (!runner.FeatureValues.TryGetValue("Age", out var ageObj))
+                    {
+                        continue;
+                    }
+
+                    if (TryGetInt(ageObj, out var parsedAge) && parsedAge > 0)
+                    {
+                        youngest = youngest.HasValue
+                            ? Math.Min(youngest.Value, parsedAge)
+                            : parsedAge;
+                    }
+                }
+            }
+
+            return youngest;
+        }
+
+        private static string? ExtractAgeRestrictionFromText(string? source)
+        {
+            if (string.IsNullOrWhiteSpace(source))
+            {
+                return null;
+            }
+
+            var normalized = NormalizeAgeRestrictionSource(source);
+            if (normalized.Length == 0)
+            {
+                return null;
+            }
+
+            var rangeMatch = AgeRestrictionRangeRegex.Match(normalized);
+            if (rangeMatch.Success)
+            {
+                var min = rangeMatch.Groups["min"].Value;
+                var max = rangeMatch.Groups["max"].Value;
+                if (!string.IsNullOrEmpty(min) && !string.IsNullOrEmpty(max))
+                {
+                    return string.Concat(min, "-", max, "yo");
+                }
+            }
+
+            var wordMatch = AgeRestrictionWordRegex.Match(normalized);
+            if (wordMatch.Success)
+            {
+                var age = wordMatch.Groups["age"].Value;
+                var suffix = normalized[(wordMatch.Index + wordMatch.Length)..];
+                var qualifier = ExtractAgeQualifier(suffix);
+                return BuildAgeRestriction(age, qualifier);
+            }
+
+            var labelMatch = AgeRestrictionLabelRegex.Match(normalized);
+            if (labelMatch.Success)
+            {
+                var age = labelMatch.Groups["age"].Value;
+                var suffix = normalized[(labelMatch.Index + labelMatch.Length)..];
+                var qualifier = ExtractAgeQualifier(suffix);
+                return BuildAgeRestriction(age, qualifier);
+            }
+
+            return null;
+        }
+        private static string NormalizeAgeRestrictionSource(string source)
+        {
+            var normalized = Regex.Replace(source.Replace('\u00A0', ' '), @"\s+", " ").Trim(); // use @ to make \s work
+            if (normalized.Length == 0) return string.Empty;
+            normalized = Regex.Replace(normalized, @"(?i)y\s*[\-\./]\s*o", "yo"); // use @ here too
+            return normalized;
+        }
+        private static AgeRestrictionQualifier ExtractAgeQualifier(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return AgeRestrictionQualifier.None;
+            }
+
+            var trimmed = text.TrimStart(' ', '-', '–', '—', ',', ';', '/', '\\');
+            if (trimmed.Length == 0)
+            {
+                return AgeRestrictionQualifier.None;
+            }
+
+            var match = AgeRestrictionQualifierRegex.Match(trimmed);
+            if (!match.Success)
+            {
+                return AgeRestrictionQualifier.None;
+            }
+
+            var qualifier = match.Groups["qualifier"].Value;
+            return qualifier.Equals("only", StringComparison.OrdinalIgnoreCase)
+                ? AgeRestrictionQualifier.Only
+                : AgeRestrictionQualifier.Plus;
+        }
+
+        private static string? BuildAgeRestriction(string age, AgeRestrictionQualifier qualifier)
+        {
+            if (string.IsNullOrWhiteSpace(age))
+            {
+                return null;
+            }
+
+            return qualifier switch
+            {
+                AgeRestrictionQualifier.Plus => string.Concat(age, "yo+"),
+                _ => string.Concat(age, "yo")
+            };
+        }
+
+        private enum AgeRestrictionQualifier
+        {
+            None,
+            Plus,
+            Only
+        }
 
         private static string NormalizeName(string? value)
         {
