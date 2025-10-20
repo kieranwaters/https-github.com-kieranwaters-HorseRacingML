@@ -473,8 +473,7 @@ namespace HorseRacingML.Scraping
                         continue;
                     }
 
-                    if (flow.FeatureValues != null &&
-                        flow.FeatureValues.TryGetValue("CareerStarts", out var existingValue) &&
+                    if (TryGetMeaningfulValue(flow.FeatureValues, "CareerStarts", out var existingValue) &&
                         TryConvertToInt32(existingValue).HasValue)
                     {
                         continue;
@@ -645,8 +644,7 @@ namespace HorseRacingML.Scraping
             }
 
             int? featureHistoryCount = null;
-            if (flow.FeatureValues != null &&
-                flow.FeatureValues.TryGetValue("CareerStarts", out var historyValue))
+            if (TryGetMeaningfulValue(flow.FeatureValues, "CareerStarts", out var historyValue))
             {
                 featureHistoryCount = TryConvertToInt32(historyValue);
                 if (!historyCount.HasValue)
@@ -1239,7 +1237,7 @@ namespace HorseRacingML.Scraping
                 }
 
                 int? resolvedCareerStarts = null;
-                if (featureVector.TryGetValue("CareerStarts", out var careerStartsValue))
+                if (TryGetMeaningfulValue(featureVector, "CareerStarts", out var careerStartsValue))
                 {
                     resolvedCareerStarts = TryConvertToInt32(careerStartsValue);
                 }
@@ -1416,7 +1414,7 @@ namespace HorseRacingML.Scraping
             {
                 return string.IsNullOrWhiteSpace(s)
                     ? "value empty"
-                    : (IsNeutralFallbackValue(key, rawValue)
+                    : (IsNeutralFallbackValue(featureVector, key, rawValue)
                         ? string.Format(
                             CultureInfo.InvariantCulture,
                             "neutral fallback '{0}'",
@@ -1450,7 +1448,7 @@ namespace HorseRacingML.Scraping
                 }
             }
 
-            if (IsNeutralFallbackValue(key, rawValue))
+            if (IsNeutralFallbackValue(featureVector, key, rawValue))
             {
                 return string.Format(
                     CultureInfo.InvariantCulture,
@@ -1776,7 +1774,7 @@ namespace HorseRacingML.Scraping
                 return false;
             }
 
-            if (IsNeutralFallbackValue(key, existing))
+            if (IsNeutralFallbackValue(featureVector, key, rawValue))
             {
                 return false;
             }
@@ -1785,7 +1783,7 @@ namespace HorseRacingML.Scraping
             return true;
         }
 
-        private static bool IsNeutralFallbackValue(string key, object? value)
+        private static bool IsNeutralFallbackValue(Dictionary<string, object?>? source, string key, object? value)
         {
             if (value == null)
             {
@@ -1799,7 +1797,13 @@ namespace HorseRacingML.Scraping
             {
                 return false;
             }
-
+            if (source != null &&
+                string.Equals(key, "DistanceBeatenLengths", StringComparison.OrdinalIgnoreCase) &&
+                source.TryGetValue("DistanceBeatenKnown", out var knownObj) &&
+                knownObj is bool known && known)
+            {
+                return false;
+            }
             if (value is string valueText && fallback is string fallbackText)
             {
                 return string.Equals(
@@ -2480,7 +2484,7 @@ namespace HorseRacingML.Scraping
                 return;
             }
 
-            if (featureVector.TryGetValue("DistanceBeatenLengths", out var lenObj))
+            if (TryGetMeaningfulValue(featureVector, "DistanceBeatenLengths", out var lenObj))
             {
                 var converted = TryConvertToSingle(lenObj);
                 if (converted.HasValue)

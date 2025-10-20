@@ -416,7 +416,7 @@ namespace HorseRacingML.Scraping
                     return true;
                 }
 
-                return IsNeutralFallbackValue(key, existing);
+                return IsNeutralFallbackValue(featureVector, key, existing);
             }
 
             void SetIfMissing(string key, object? value)
