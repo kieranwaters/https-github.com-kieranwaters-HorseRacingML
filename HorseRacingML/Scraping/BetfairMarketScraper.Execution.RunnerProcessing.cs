@@ -1238,7 +1238,11 @@ namespace HorseRacingML.Scraping
                 int? resolvedCareerStarts = null;
                 if (TryGetMeaningfulValue(featureVector, "CareerStarts", out var careerStartsValue))
                 {
-                    resolvedCareerStarts = TryConvertToInt32(careerStartsValue);
+                    var parsedCareerStarts = TryConvertToInt32(careerStartsValue);
+                    if (parsedCareerStarts.HasValue && parsedCareerStarts.Value > 0)
+                    {
+                        resolvedCareerStarts = parsedCareerStarts;
+                    }
                 }
 
                 if (!resolvedCareerStarts.HasValue && flow.HistoricalRaceCount.HasValue)
@@ -1796,6 +1800,10 @@ namespace HorseRacingML.Scraping
             {
                 return false;
             }
+            if (!NeutralFallbackMissingKeys.Contains(key))
+            {
+                return false;
+            }
             if (source != null &&
                 string.Equals(key, "DistanceBeatenLengths", StringComparison.OrdinalIgnoreCase) &&
                 source.TryGetValue("DistanceBeatenKnown", out var knownObj) &&
@@ -1827,6 +1835,21 @@ namespace HorseRacingML.Scraping
 
             return Equals(value, fallback);
         }
+        private static readonly HashSet<string> NeutralFallbackMissingKeys = new(
+           new[]
+           {
+                "BackBookPercentage",
+                "LayBookPercentage",
+                "RunnerCount",
+                "Class",
+                "RaceType",
+                "Surface",
+                "Going",
+                "DistanceYards",
+                "DistanceText",
+                "DistanceBucket"
+           },
+           StringComparer.OrdinalIgnoreCase);
         private static readonly HashSet<string> NeutralFallbackAllowedKeys = new(
             new[]
             {
@@ -2095,12 +2118,12 @@ namespace HorseRacingML.Scraping
             }
             if (IsRaceSpeedFeature(key) && IsWinningTimeUnavailable(featureVector))
             {
-                return true;
+                return false;
             }
 
             if (IsRunnerSpeedFeature(key) && IsRunnerSpeedDataUnavailable(featureVector))
             {
-                return true;
+                return false;
             }
 
             if (IsDistanceBeatenSensitiveKey(key) && IsDistanceBeatenDataUnavailable(featureVector))
