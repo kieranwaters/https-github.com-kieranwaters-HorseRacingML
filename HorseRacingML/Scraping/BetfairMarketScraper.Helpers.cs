@@ -563,6 +563,22 @@ namespace HorseRacingML.Scraping
 
                 SetIfMissing("WeightMissing", false);
                 featureVector["WeightMissing"] = false;
+                if (flows != null && flows.Count > 0)
+                {
+                    var comparableWeights = flows
+                        .Where(f => f?.WeightLbs.HasValue == true)
+                        .Select(f => f!.WeightLbs!.Value)
+                        .ToArray();
+
+                    if (comparableWeights.Length > 0)
+                    {
+                        var maxWeight = comparableWeights.Max();
+                        var minWeight = comparableWeights.Min();
+
+                        SetIfMissing("IsTopWeight", flow.WeightLbs.Value >= maxWeight);
+                        SetIfMissing("IsBottomWeight", flow.WeightLbs.Value <= minWeight);
+                    }
+                }
             }
             else
             {
@@ -585,6 +601,26 @@ namespace HorseRacingML.Scraping
                 }
 
                 MarkMissing("runner weight");
+            }
+            if (flow?.WeightLbs.HasValue != true && flows != null && flows.Count > 0)
+            {
+                if (featureVector.TryGetValue("WeightLbs", out var runnerWeightObj) &&
+                    TryGetInt(runnerWeightObj, out var runnerWeight) && runnerWeight > 0)
+                {
+                    var inferredWeights = flows
+                        .Where(f => f?.WeightLbs.HasValue == true)
+                        .Select(f => f!.WeightLbs!.Value)
+                        .ToArray();
+
+                    if (inferredWeights.Length > 0)
+                    {
+                        var maxWeight = inferredWeights.Max();
+                        var minWeight = inferredWeights.Min();
+
+                        SetIfMissing("IsTopWeight", runnerWeight >= maxWeight);
+                        SetIfMissing("IsBottomWeight", runnerWeight <= minWeight);
+                    }
+                }
             }
 
             if (!string.IsNullOrWhiteSpace(flow?.TrainerName))

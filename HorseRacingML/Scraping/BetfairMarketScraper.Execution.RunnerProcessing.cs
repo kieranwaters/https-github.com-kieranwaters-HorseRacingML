@@ -958,10 +958,10 @@ namespace HorseRacingML.Scraping
             return null;
         }
         private void ResolveCareerStartsFeature(
-                   Dictionary<string, object?>? featureVector,
-                   RunnerFlow? flow,
-                   HistoricalRaceCountPrefetchResult? prefetchedCounts,
-                   string identifier)
+           Dictionary<string, object?>? featureVector,
+           RunnerFlow? flow,
+           HistoricalRaceCountPrefetchResult? prefetchedCounts,
+           string identifier)
         {
             if (flow == null)
             {
@@ -1074,6 +1074,99 @@ namespace HorseRacingML.Scraping
             Console.WriteLine(
                 $"\t\t[FeaturePopulation] Resolved career starts for {identifier}: {resolvedCareerStarts.Value}{sourceSuffix}.");
         }
+
+        private void RestorePersistedHistoricalFeatures(
+            Dictionary<string, object?> featureVector,
+            Dictionary<string, object?>? persistedFeatures,
+            string identifier)
+        {
+            if (featureVector == null || persistedFeatures == null || persistedFeatures.Count == 0)
+            {
+                return;
+            }
+
+            var trackedKeys = ResolveTrackedFeatureKeys();
+            if (trackedKeys == null || trackedKeys.Count == 0)
+            {
+                return;
+            }
+
+            var restoredKeys = new List<string>();
+            var restoredLookup = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var key in trackedKeys)
+            {
+                if (string.IsNullOrWhiteSpace(key))
+                {
+                    continue;
+                }
+
+                if (string.Equals(key, "CareerStarts", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (TryGetMeaningfulValue(featureVector, key, out _))
+                {
+                    continue;
+                }
+
+                if (!TryGetMeaningfulValue(persistedFeatures, key, out var persistedValue))
+                {
+                    continue;
+                }
+
+                featureVector[key] = persistedValue;
+
+                if (restoredLookup.Add(key))
+                {
+                    restoredKeys.Add(key);
+                }
+            }
+
+            if (restoredKeys.Count > 0)
+            {
+                Console.WriteLine(
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "\t\t[FeaturePopulation] Restored {0} persisted feature(s) for {1}: {2}.",
+                        restoredKeys.Count,
+                        identifier,
+                        string.Join(", ", restoredKeys)));
+            }
+        }
+
+        private static void EnsureHasLastWinFlag(Dictionary<string, object?> featureVector)
+        {
+            if (featureVector == null)
+            {
+                return;
+            }
+
+            if (TryGetMeaningfulValue(featureVector, "HasLastWin", out _))
+            {
+                return;
+            }
+
+            if (featureVector.TryGetValue("DaysSinceLastWin", out var daysObj))
+            {
+                var daysSince = TryConvertToInt32(daysObj);
+                if (daysSince.HasValue)
+                {
+                    featureVector["HasLastWin"] = daysSince.Value == 0;
+                    return;
+                }
+            }
+
+            if (featureVector.TryGetValue("RacesSinceLastWin", out var racesObj))
+            {
+                var racesSince = TryConvertToInt32(racesObj);
+                if (racesSince.HasValue)
+                {
+                    featureVector["HasLastWin"] = racesSince.Value == 0;
+                }
+            }
+        }
         private void PopulateFeatureVectors(
             DateTime? raceDate,
             string? raceTitle,
@@ -1177,6 +1270,9 @@ namespace HorseRacingML.Scraping
             var fallbackAttempted = false;
             foreach (var flow in flows)
             {
+                var persistedFeatureSnapshot = flow?.FeatureValues != null && flow.FeatureValues.Count > 0
+                    ? CreateFeatureDictionary(flow.FeatureValues)
+                    : null;
                 var matchedFeatures = featureLookup.FindByRunner(flow);
                 var matchedLookupRow = matchedFeatures != null;
                 var identifier = DescribeRunner(flow);
@@ -1251,6 +1347,7 @@ namespace HorseRacingML.Scraping
                     backBookPercentage,
                     layBookPercentage,
                     flows);
+                RestorePersistedHistoricalFeatures(featureVector, persistedFeatureSnapshot, identifier);
                 var missingHistoricalKeys = GetMissingHistoricalFeatureKeys(featureVector);
                 if (missingHistoricalKeys.Count > 0)
                 {
@@ -1316,7 +1413,9 @@ namespace HorseRacingML.Scraping
                     EnsureDistanceBeatenFromNumeric(featureVector, flow);
                 }
 
+                RestorePersistedHistoricalFeatures(featureVector, persistedFeatureSnapshot, identifier);
                 ResolveCareerStartsFeature(featureVector, flow, prefetchedCounts, identifier);
+                EnsureHasLastWinFlag(featureVector);
                 missingHistoricalKeys = GetMissingHistoricalFeatureKeys(featureVector);
 
                 if (missingHistoricalKeys.Count > 0)
