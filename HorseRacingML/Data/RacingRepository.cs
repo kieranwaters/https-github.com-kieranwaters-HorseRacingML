@@ -1599,6 +1599,60 @@ ORDER BY RaceDate DESC, RunnerResultId DESC;";
 
             return new HorseDistanceStats(row.DistanceYards, row.AverageDistance);
         }
+        public IReadOnlyList<RunnerResult> GetLastSavedResults(string? raceTitle, DateTime? raceDate)
+        {
+            if (!raceDate.HasValue)
+            {
+                return Array.Empty<RunnerResult>();
+            }
+
+            var trimmedTitle = string.IsNullOrWhiteSpace(raceTitle)
+                ? null
+                : raceTitle.Trim();
+
+            const string sql = @"
+SELECT rr.RunnerResultId,
+       rr.RaceId,
+       rr.HorseId,
+       rr.TrainerId,
+       rr.JockeyId,
+       rr.SaddleclothNumber,
+       rr.Draw,
+       rr.Age,
+       rr.WeightLbs,
+       rr.WeightText,
+       rr.FinishPos,
+       rr.OutcomeCode,
+       rr.DistanceBeatenText,
+       rr.DistanceBeatenLengths,
+       rr.SP_Fraction,
+       rr.SP_Decimal,
+       rr.FavTag,
+       rr.OpeningFraction,
+       rr.TouchedHighFraction,
+       rr.TouchedLowFraction,
+       rr.Comment,
+       rr.Going,
+       rr.Surface,
+       r.CourseId,
+       r.DistanceYards
+FROM Race r
+INNER JOIN RunnerResult rr ON rr.RaceId = r.RaceId
+WHERE r.RaceDate = @RaceDate
+  AND (@Title IS NULL OR LTRIM(RTRIM(r.Title)) = @Title)
+ORDER BY rr.RunnerResultId DESC;";
+
+            using var conn = OpenConnection();
+            var rows = conn.Query<RunnerResult>(sql, new
+            {
+                RaceDate = raceDate.Value.Date,
+                Title = trimmedTitle
+            })?.ToList();
+
+            return rows != null && rows.Count > 0
+                ? rows
+                : Array.Empty<RunnerResult>();
+        }
         public int? GetWinningTimeMilliseconds(int raceId)
         {
             if (raceId <= 0)

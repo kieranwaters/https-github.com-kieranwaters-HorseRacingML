@@ -1133,6 +1133,10 @@ new RunnerFlow { HorseName = "Alpha Runner" },
                     string.Equals(r.Title ?? string.Empty, raceTitle ?? string.Empty, StringComparison.OrdinalIgnoreCase) &&
                     string.Equals(r.VenueName ?? string.Empty, venueName ?? string.Empty, StringComparison.OrdinalIgnoreCase));
             }
+            public IReadOnlyList<RunnerResult> GetLastSavedResults(string? raceTitle, DateTime? raceDate)
+            {
+                return Array.Empty<RunnerResult>();
+            }
             [Fact]
             public void PopulateFeatureVectors_SkipsScoringWhenTrainerDataMissing()
             {
@@ -1528,7 +1532,10 @@ new RunnerFlow { HorseName = "Alpha Runner" },
 
                 _lookupData = new RunnerLookupData(horseIds, jockeyIds, snapshots);
             }
-
+            public IReadOnlyList<RunnerResult> GetLastSavedResults(string? raceTitle, DateTime? raceDate)
+            {
+                return Array.Empty<RunnerResult>();
+            }
             protected override RunnerLookupData LoadRunnerLookupData(
                 SqlConnection conn,
                 UpcomingRace upcoming,

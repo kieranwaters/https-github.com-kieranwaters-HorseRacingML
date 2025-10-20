@@ -566,6 +566,10 @@ namespace HorseRacingML.Tests
             {
                 return null;
             }
+            public IReadOnlyList<RunnerResult> GetLastSavedResults(string? raceTitle, DateTime? raceDate)
+            {
+                return Array.Empty<RunnerResult>();
+            }
             public int? GetWinningTimeMilliseconds(int raceId) => null;
             public int? GetRaceIdByRunnerResult(int runnerResultId) => null;
             public decimal? GetDistanceBeatenLengths(int runnerResultId) => null;

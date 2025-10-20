@@ -158,6 +158,10 @@ namespace HorseRacingML.Tests
             {
                 return null;
             }
+            public IReadOnlyList<RunnerResult> GetLastSavedResults(string? raceTitle, DateTime? raceDate)
+            {
+                return Array.Empty<RunnerResult>();
+            }
             public int? GetLastRaceDistance(string? horseName, int? horseId, DateTime? beforeDate)
             {
                 return null;
