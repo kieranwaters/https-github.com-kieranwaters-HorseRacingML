@@ -1023,14 +1023,6 @@ GROUP BY rr.HorseId;";
             lower = Regex.Replace(lower, "\\s+", " ").Trim();
             return lower;
         }
-        public DateTime GetEarliestRaceDate()
-        {
-            using var conn = OpenConnection();
-            const string sql = "SELECT MIN(RaceDate) FROM Race WHERE RaceDate IS NOT NULL AND RaceDate <= CAST(GETDATE() AS date)";
-            var earliest = conn.QuerySingleOrDefault<DateTime?>(sql);
-            // When no races exist yet, start from tomorrow so we scrape backwards from today
-            return earliest ?? DateTime.Today.AddDays(1);
-        }
         public DateTime GetLatestRaceDate()
         {
             using var conn = OpenConnection();
@@ -1444,21 +1436,6 @@ END";
                 if (!string.IsNullOrWhiteSpace(value))
                     prop.SetValue(obj, RemoveBracketedText(value));
             }
-        }
-        
-        public void InsertRunnerResults(IEnumerable<RunnerResult> results)
-        {
-            var list = results.ToList();
-            foreach (var r in list)
-            {
-                StripBracketedText(r);
-            }
-            const string sql = @"
-IF NOT EXISTS (SELECT 1 FROM RunnerResult WHERE RaceId=@RaceId AND HorseId=@HorseId)
-    INSERT INTO RunnerResult(RaceId, HorseId, TrainerId, JockeyId, SaddleclothNumber, Draw, Age, WeightLbs, WeightText, FinishPos, OutcomeCode, DistanceBeatenText, DistanceBeatenLengths, SP_Fraction, SP_Decimal, FavTag, OpeningFraction, TouchedHighFraction, TouchedLowFraction, Comment)
-    VALUES(@RaceId, @HorseId, @TrainerId, @JockeyId, @SaddleclothNumber, @Draw, @Age, @WeightLbs, @WeightText, @FinishPos, @OutcomeCode, @DistanceBeatenText, @DistanceBeatenLengths, @SP_Fraction, @SP_Decimal, @FavTag, @OpeningFraction, @TouchedHighFraction, @TouchedLowFraction, @Comment);";
-            using var conn = OpenConnection();
-            conn.Execute(sql, list);
         }
         public RacingRepository(string connectionString)
         {
@@ -2052,22 +2029,6 @@ BEGIN
 END";
             using var conn = OpenConnection();
             return conn.QuerySingle<int>(sql, horse);
-        }
-
-        public int InsertRunnerResult(RunnerResult result)
-        {
-            StripBracketedText(result);
-            const string sql = @"
-IF EXISTS (SELECT 1 FROM RunnerResult WHERE RaceId=@RaceId AND HorseId=@HorseId)
-    SELECT TOP 1 RunnerResultId FROM RunnerResult WHERE RaceId=@RaceId AND HorseId=@HorseId ORDER BY RunnerResultId;
-ELSE
-BEGIN
-    INSERT INTO RunnerResult(RaceId, HorseId, TrainerId, JockeyId, SaddleclothNumber, Draw, Age, WeightLbs, WeightText, FinishPos, OutcomeCode, DistanceBeatenText, DistanceBeatenLengths, SP_Fraction, SP_Decimal, FavTag, OpeningFraction, TouchedHighFraction, TouchedLowFraction, Comment)
-    VALUES(@RaceId, @HorseId, @TrainerId, @JockeyId, @SaddleclothNumber, @Draw, @Age, @WeightLbs, @WeightText, @FinishPos, @OutcomeCode, @DistanceBeatenText, @DistanceBeatenLengths, @SP_Fraction, @SP_Decimal, @FavTag, @OpeningFraction, @TouchedHighFraction, @TouchedLowFraction, @Comment);
-    SELECT CAST(SCOPE_IDENTITY() as int);
-END";
-            using var conn = OpenConnection();
-            return conn.QuerySingle<int>(sql, result);
         }
     }
 }

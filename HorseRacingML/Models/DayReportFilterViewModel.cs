@@ -22,24 +22,6 @@ namespace HorseRacingML.Models
         public string? EndTime { get; set; }
         public string? ErrorMessage { get; set; }
         public string Region { get; set; } = DefaultRegion;
-
-        public string? BuildSummary()
-        {
-            if (string.IsNullOrWhiteSpace(StartTime) && string.IsNullOrWhiteSpace(EndTime))
-            {
-                return null;
-            }
-
-            if (!string.IsNullOrWhiteSpace(StartTime) && !string.IsNullOrWhiteSpace(EndTime))
-            {
-                return $"Races between {StartTime} and {EndTime}";
-            }
-
-            return !string.IsNullOrWhiteSpace(StartTime)
-                ? $"Races from {StartTime} onwards"
-                : $"Races until {EndTime}";
-        }
-
         public static string NormalizeRegion(string? region)
         {
             if (string.IsNullOrWhiteSpace(region))

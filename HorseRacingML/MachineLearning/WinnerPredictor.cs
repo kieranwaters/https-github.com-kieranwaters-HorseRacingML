@@ -208,30 +208,6 @@ namespace HorseRacingML.ML
                 _ => 0f
             };
         }
-        /// <summary>
-        /// Ensures a model is available and refreshes it when the saved model is
-        /// older than <paramref name="maxAge"/>.
-        /// </summary>
-        /// <param name="runners">Historical runner results used for training if needed.</param>
-        /// <param name="maxAge">Maximum age of the persisted model before retraining.</param>
-        private static void RefreshModel(IEnumerable<RunnerResult> runners, TimeSpan? maxAge = null)
-        {
-            var age = maxAge ?? TimeSpan.FromDays(7);
-            var info = new FileInfo(ModelPath);
-
-            bool needTrain = _engine == null || !info.Exists || DateTime.UtcNow - info.LastWriteTimeUtc > age;
-
-            if (needTrain)
-            {
-                TrainModel(runners, ModelPath);
-            }
-            else if (_engine == null)
-            {
-                using var stream = File.OpenRead(ModelPath);
-                var model = Ml.Model.Load(stream, out _);
-                _engine = Ml.Model.CreatePredictionEngine<RunnerFeatures, RunnerPrediction>(model);
-            }
-        }
         private class RunnerFeatures
         {
             public float Odds { get; set; }

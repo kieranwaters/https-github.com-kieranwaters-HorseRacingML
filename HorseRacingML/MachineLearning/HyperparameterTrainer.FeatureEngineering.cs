@@ -1354,20 +1354,6 @@ namespace HorseRacingML.ML
 
                 return string.IsNullOrEmpty(collapsed) ? trimmed : collapsed;
             }
-            private int ResolveHorseId(SqlConnection conn, string horseName)
-            {
-                const string sql = "SELECT TOP (1) HorseId FROM Horse WHERE Name = @Name ORDER BY HorseId";
-                var normalizedName = NormalizeHorseNameForLookup(horseName);
-                var existing = conn.QuerySingleOrDefault<int?>(sql, new { Name = normalizedName });
-                if (existing.HasValue)
-                {
-                    return existing.Value;
-                }
-
-                var syntheticSeed = string.IsNullOrWhiteSpace(normalizedName) ? horseName : normalizedName;
-                return GenerateSyntheticId("horse:" + syntheticSeed);
-            }
-
             private RaceStats ComputeRaceStats(List<Dictionary<string, object?>> rows)
             {
                 int cnt = rows.Count;
