@@ -1178,6 +1178,8 @@ namespace HorseRacingML.Scraping
                             }
                         }
                     }
+                    EnsureDistanceBeatenFromNumeric(featureVector, flow);
+                    missingHistoricalKeys = GetMissingHistoricalFeatureKeys(featureVector);
 
                     if (missingHistoricalKeys.Count > 0)
                     {
@@ -1194,6 +1196,7 @@ namespace HorseRacingML.Scraping
                                     detail,
                                     identifier));
                         }
+                        EnsureDistanceBeatenFromNumeric(featureVector, flow);
                         Console.WriteLine(
                             "\t\t[FeaturePopulation] Historical backfill remained incomplete; continuing with available data.");
                         flow.FeatureValues = featureVector;

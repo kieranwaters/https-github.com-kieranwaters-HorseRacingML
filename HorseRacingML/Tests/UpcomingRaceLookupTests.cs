@@ -758,6 +758,60 @@ namespace HorseRacingML.Tests
             Assert.Contains("Class", runner.FeaturePopulation.MissingKeys, StringComparer.OrdinalIgnoreCase);
         }
         [Fact]
+        public void PopulateFeatureVectors_PopulatesDistanceBeatenForOpportunisticRunners()
+        {
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:HorseRacingDb"] = "Data Source=(localdb)\\MSSQLLocalDB;Initial Catalog=HorseRacingML;Integrated Security=True;Persist Security Info=False;Pooling=False;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Application Name=\"SQL Server Management Studio\";Command Timeout=30"
+                })
+                .Build();
+
+            var preparedRow = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["HorseName"] = "Opportunistic Runner",
+                ["RunnerResultId"] = 314,
+                ["DistanceBeatenKnown"] = false,
+                ["DistanceBeatenLengths"] = 0f
+            };
+            var preparedRace = new PreparedRace(918, new List<Dictionary<string, object?>> { preparedRow });
+
+            var trainer = new FakeTrainer(configuration, preparedRace);
+            var repo = new MinimalRacingRepository
+            {
+                DistanceBeatenResult = 2.75m
+            };
+            var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
+            var scraper = new BetfairMarketScraper(repo, trainer, bankroll: 11m, settings);
+            var flows = new List<RunnerFlow>
+            {
+                new RunnerFlow
+                {
+                    HorseName = "Opportunistic Runner",
+                    ClothNumber = 6
+                }
+            };
+
+            var report = scraper.TestBuildRaceReport(
+                marketId: "1.915",
+                raceTitle: "Opportunistic Stakes",
+                venueName: "Example Park",
+                venueCountry: "GB",
+                raceDate: new DateTime(2024, 12, 15),
+                offTime: new TimeSpan(18, 30, 0),
+                raceDetails: "Handicap",
+                going: "Standard",
+                backBookPercentage: 102m,
+                layBookPercentage: 105m,
+                raceUrl: null,
+                flows: flows);
+
+            var runner = Assert.Single(report.Runners);
+            Assert.False(runner.HasPreparedFeatures);
+            Assert.True(Convert.ToBoolean(runner.FeatureValues["DistanceBeatenKnown"]));
+            Assert.Equal(2.75f, Convert.ToSingle(runner.FeatureValues["DistanceBeatenLengths"]));
+        }
+        [Fact]
         public void PopulateFeatureVectors_FallbackPreservesTrainerStatistics()
         {
             var configuration = new ConfigurationBuilder()
@@ -1408,6 +1462,7 @@ new RunnerFlow { HorseName = "Alpha Runner" },
         {
             public int? LastDistanceResult { get; set; }
             public bool LastDistanceLookupCalled { get; private set; }
+            public decimal? DistanceBeatenResult { get; set; }
             public void ClearDayReportTables()
             {
             }
@@ -1459,13 +1514,13 @@ new RunnerFlow { HorseName = "Alpha Runner" },
             }
             public int? GetWinningTimeMilliseconds(int raceId) => null;
 
-            public decimal? GetDistanceBeatenLengths(int runnerResultId) => null;
+            public decimal? GetDistanceBeatenLengths(int runnerResultId) => DistanceBeatenResult;
             public int? GetRaceIdByRunnerResult(int runnerResultId) => null;
             public IReadOnlyList<RunnerResult> GetLastSavedResults(string? raceTitle, DateTime? raceDate)
             {
                 return Array.Empty<RunnerResult>();
             }
-            public decimal? GetLastDistanceBeatenLengths(string? horseName, int? horseId, DateTime? beforeDate) => null;
+            public decimal? GetLastDistanceBeatenLengths(string? horseName, int? horseId, DateTime? beforeDate) => DistanceBeatenResult;
 
         }
 
