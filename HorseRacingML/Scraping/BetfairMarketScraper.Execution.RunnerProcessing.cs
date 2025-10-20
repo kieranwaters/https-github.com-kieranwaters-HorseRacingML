@@ -2521,11 +2521,23 @@ namespace HorseRacingML.Scraping
                 {
                     horseId = TryConvertToInt32(flowHorseId);
                 }
+                string? horseName = flow?.HorseName;
+                if (string.IsNullOrWhiteSpace(horseName) &&
+                    featureVector.TryGetValue("HorseName", out var horseNameObj) &&
+                    horseNameObj is string horseNameStr)
+                {
+                    horseName = horseNameStr;
+                }
 
-                if (horseId.HasValue && horseId.Value > 0)
+                if (horseId.HasValue && horseId.Value <= 0)
+                {
+                    horseId = null;
+                }
+
+                if (horseId.HasValue || !string.IsNullOrWhiteSpace(horseName))
                 {
                     var cutoffDate = flow?.RaceDate;
-                    var lengths = _repo.GetLastDistanceBeatenLengths(horseId.Value, cutoffDate);
+                    var lengths = _repo.GetLastDistanceBeatenLengths(horseName, horseId, cutoffDate);
                     if (lengths.HasValue)
                     {
                         featureVector["DistanceBeatenLengths"] = (float)lengths.Value;

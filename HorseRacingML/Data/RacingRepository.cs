@@ -1666,14 +1666,16 @@ ORDER BY RaceDate DESC, RunnerResultId DESC;";
                 }
             }
         }
-        public decimal? GetLastDistanceBeatenLengths(int horseId, DateTime? beforeDate)
+        public decimal? GetLastDistanceBeatenLengths(string? horseName, int? horseId, DateTime? beforeDate)
         {
-            if (horseId <= 0)
+            if (!horseId.HasValue && string.IsNullOrWhiteSpace(horseName))
             {
                 return null;
             }
 
-            const string sql = @"SELECT TOP (1)
+            var cutoffDate = beforeDate?.Date;
+
+            const string sqlById = @"SELECT TOP (1)
     rr.DistanceBeatenLengths
 FROM RunnerResult rr
 INNER JOIN Race r ON r.RaceId = rr.RaceId
@@ -1682,22 +1684,43 @@ WHERE rr.HorseId = @HorseId
   AND (@BeforeDate IS NULL OR r.RaceDate < @BeforeDate)
 ORDER BY r.RaceDate DESC, rr.RunnerResultId DESC;";
 
-            var (connection, scope, ownsConnection) = GetScopedConnection();
-            try
+            const string sqlByName = @"SELECT TOP (1)
+    rr.DistanceBeatenLengths
+FROM RunnerResult rr
+INNER JOIN Race r ON r.RaceId = rr.RaceId
+INNER JOIN Horse h ON h.HorseId = rr.HorseId
+WHERE h.Name IN @Names
+  AND rr.DistanceBeatenLengths IS NOT NULL
+  AND (@BeforeDate IS NULL OR r.RaceDate < @BeforeDate)
+ORDER BY r.RaceDate DESC, rr.RunnerResultId DESC;";
+
+            using var conn = OpenConnection();
+
+            if (horseId.HasValue && horseId.Value > 0)
             {
-                return connection.QueryFirstOrDefault<decimal?>(sql, new
+                var byId = conn.QueryFirstOrDefault<decimal?>(sqlById, new
                 {
-                    HorseId = horseId,
-                    BeforeDate = beforeDate?.Date
+                    HorseId = horseId.Value,
+                    BeforeDate = cutoffDate
                 });
-            }
-            finally
-            {
-                if (ownsConnection)
+
+                if (byId.HasValue)
                 {
-                    connection.Dispose();
+                    return byId;
                 }
             }
+
+            var candidates = BuildHistoricalNameCandidates(horseName);
+            if (candidates.Count == 0)
+            {
+                return null;
+            }
+
+            return conn.QueryFirstOrDefault<decimal?>(sqlByName, new
+            {
+                Names = candidates.ToArray(),
+                BeforeDate = cutoffDate
+            });
         }
         public int? GetLastRaceDistance(string? horseName, int? horseId, DateTime? beforeDate)
         {
