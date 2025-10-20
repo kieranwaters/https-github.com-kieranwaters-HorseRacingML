@@ -573,7 +573,7 @@ namespace HorseRacingML.Tests
             public int? GetWinningTimeMilliseconds(int raceId) => null;
             public int? GetRaceIdByRunnerResult(int runnerResultId) => null;
             public decimal? GetDistanceBeatenLengths(int runnerResultId) => null;
-            public decimal? GetLastDistanceBeatenLengths(int horseId, DateTime? beforeDate) => null;
+            public decimal? GetLastDistanceBeatenLengths(string? horseName, int? horseId, DateTime? beforeDate) => null;
             public int? GetLastRaceDistance(string? horseName, int? horseId, DateTime? beforeDate)
             {
                 return null;

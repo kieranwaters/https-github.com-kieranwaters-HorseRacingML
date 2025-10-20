@@ -1133,10 +1133,6 @@ new RunnerFlow { HorseName = "Alpha Runner" },
                     string.Equals(r.Title ?? string.Empty, raceTitle ?? string.Empty, StringComparison.OrdinalIgnoreCase) &&
                     string.Equals(r.VenueName ?? string.Empty, venueName ?? string.Empty, StringComparison.OrdinalIgnoreCase));
             }
-            public IReadOnlyList<RunnerResult> GetLastSavedResults(string? raceTitle, DateTime? raceDate)
-            {
-                return Array.Empty<RunnerResult>();
-            }
             [Fact]
             public void PopulateFeatureVectors_SkipsScoringWhenTrainerDataMissing()
             {
@@ -1365,7 +1361,12 @@ new RunnerFlow { HorseName = "Alpha Runner" },
             public int? GetWinningTimeMilliseconds(int raceId) => null;
             public int? GetRaceIdByRunnerResult(int runnerResultId) => null;
             public decimal? GetDistanceBeatenLengths(int runnerResultId) => null;
-            public decimal? GetLastDistanceBeatenLengths(int horseId, DateTime? beforeDate) => null;
+            public IReadOnlyList<RunnerResult> GetLastSavedResults(string? raceTitle, DateTime? raceDate)
+            {
+                return Array.Empty<RunnerResult>();
+            }
+
+            public decimal? GetLastDistanceBeatenLengths(string? horseName, int? horseId, DateTime? beforeDate) => null;
             private static UpcomingRace Clone(UpcomingRace race)
             {
                 return new UpcomingRace
@@ -1612,7 +1613,11 @@ new RunnerFlow { HorseName = "Alpha Runner" },
 
             public decimal? GetDistanceBeatenLengths(int runnerResultId) => null;
             public int? GetRaceIdByRunnerResult(int runnerResultId) => null;
-            public decimal? GetLastDistanceBeatenLengths(int horseId, DateTime? beforeDate) => null;
+            public IReadOnlyList<RunnerResult> GetLastSavedResults(string? raceTitle, DateTime? raceDate)
+            {
+                return Array.Empty<RunnerResult>();
+            }
+            public decimal? GetLastDistanceBeatenLengths(string? horseName, int? horseId, DateTime? beforeDate) => null;
 
         }
 
