@@ -1774,7 +1774,7 @@ namespace HorseRacingML.Scraping
                 return false;
             }
 
-            if (IsNeutralFallbackValue(featureVector, key, rawValue))
+            if (IsNeutralFallbackValue(source, key, existing))
             {
                 return false;
             }
