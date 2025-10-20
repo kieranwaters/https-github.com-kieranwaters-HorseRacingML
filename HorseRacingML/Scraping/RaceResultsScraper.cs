@@ -246,22 +246,6 @@ namespace HorseRacingML.Scraping
             listener.Stop();
             return port;
         }
-        public void ScrapeFromEarliest()
-        {
-            var minDate = new DateTime(2000, 1, 1);
-            while (true)
-            {
-                var earliest = _repo.GetEarliestRaceDate();
-                if (earliest <= minDate) break;
-                var end = earliest.AddDays(-1);
-                var start = end.AddDays(-(MaxParallelDrivers - 1));
-                if (start < minDate) start = minDate;
-                _status.Update($"Scraping {start:yyyy-MM-dd} to {end:yyyy-MM-dd}");
-                Scrape(start, end);
-                if (start == minDate) break;
-            }
-            _status.Update("Scraping finished.");
-        }
         private void ScrapeMeetingTabs(IWebDriver driver, WebDriverWait wait, DateTime raceDate, string dayHandle, List<RunnerResult> sessionResults)
         {
             try { wait.Until(d => d.FindElements(By.CssSelector("[data-test-id='generic-tab']")).Count > 0 || d.FindElements(By.CssSelector("[data-test-id*='no-meetings']")).Count > 0); } catch { Console.WriteLine("Meeting tab elements not found."); return; } // ensure tabs or no-meetings
@@ -340,23 +324,6 @@ namespace HorseRacingML.Scraping
         {
             if (string.IsNullOrWhiteSpace(frac)) return null; frac = frac.Trim().ToLowerInvariant(); frac = frac.Replace("jf", "").Replace("cf", "").Replace("f", "").Trim(); var m = System.Text.RegularExpressions.Regex.Match(frac, @"(\d+)\s*/\s*(\d+)"); if (!m.Success) return null; var a = decimal.Parse(m.Groups[1].Value); var b = decimal.Parse(m.Groups[2].Value); return Math.Round(1 + (a / b), 3); // decimal incl stake
         }
-        public void ScrapeFromLatest()
-        {
-            ResetEstimateSession();
-            var today = DateTime.Today;
-            while (true)
-            {
-                var latest = _repo.GetLatestRaceDate();
-                if (latest > today) latest = today;
-                var start = latest.AddDays(1);
-                if (start > today) break;
-                var end = start.AddDays(MaxParallelDrivers - 1);
-                if (end > today) end = today;
-                _status.Update($"Scraping {start:yyyy-MM-dd} to {end:yyyy-MM-dd}");
-                Scrape(start, end);
-            }
-            _status.Update("Scraping finished.");
-        }//
         public void Scrape(DateTime startDate, DateTime endDate)
         {
             EnsureEstimateSession();

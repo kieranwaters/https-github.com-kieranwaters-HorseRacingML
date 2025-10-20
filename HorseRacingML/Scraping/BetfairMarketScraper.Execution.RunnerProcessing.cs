@@ -2700,8 +2700,5 @@ namespace HorseRacingML.Scraping
 
             return name.Trim().ToLowerInvariant();
         }
-        private static bool NeedsHistoricalFeatureBackfill(Dictionary<string, object?> featureVector) =>
-            GetMissingHistoricalFeatureKeys(featureVector).Count > 0;
-
     }
 }

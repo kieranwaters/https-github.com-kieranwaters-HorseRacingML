@@ -832,53 +832,6 @@ namespace HorseRacingML.Scraping
                 MarkMissing("race date");
             }
         }
-
-        private static void ApplyNeutralFeatureFallbacks(Dictionary<string, object?> featureVector)
-        {
-            if (featureVector == null)
-            {
-                return;
-            }
-
-            foreach (var kvp in NeutralFeatureFallbacks)
-            {
-                if (!featureVector.TryGetValue(kvp.Key, out var existing) || existing == null)
-                {
-                    featureVector[kvp.Key] = kvp.Value;
-                    continue;
-                }
-
-                if (existing is string s && string.IsNullOrWhiteSpace(s))
-                {
-                    featureVector[kvp.Key] = kvp.Value;
-                }
-            }
-
-            foreach (var window in PerformanceWindowSizes)
-            {
-                foreach (var prefix in PerformanceWindowPrefixes)
-                {
-                    var key = prefix + window;
-                    if (!featureVector.TryGetValue(key, out var existing) || existing == null)
-                    {
-                        featureVector[key] = 0f;
-                    }
-                }
-            }
-            if (!TryGetMeaningfulValue(featureVector, "AgeRestriction", out _))
-            {
-                featureVector.Remove("AgeRestriction");
-                featureVector["AgeRestrictionMissing"] = true;
-            }
-            else
-            {
-                featureVector["AgeRestrictionMissing"] = false;
-            }
-
-            var hasRatingAggregates = HasAnyMeaningfulRating(featureVector);
-            featureVector["RatingAggregatesMissing"] = !hasRatingAggregates;
-        }
-
         private static ParsedRaceMetadata ParseRaceMetadata(
             RaceDayReport race,
             IEnumerable<RunnerFlow>? flows = null)

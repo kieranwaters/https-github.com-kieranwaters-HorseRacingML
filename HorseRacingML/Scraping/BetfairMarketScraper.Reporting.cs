@@ -522,29 +522,6 @@ namespace HorseRacingML.Scraping
                 return FeatureLookup.Empty;
             }
         }
-
-
-        private static bool IsFutureRace(DateTime raceDate, TimeSpan? offTime)
-        {
-            var now = DateTime.Now;
-            if (raceDate.Date > now.Date)
-            {
-                return true;
-            }
-
-            if (raceDate.Date < now.Date)
-            {
-                return false;
-            }
-
-            if (offTime.HasValue)
-            {
-                return offTime.Value > now.TimeOfDay;
-            }
-
-            return true;
-        }
-
         private UpcomingRace? TryResolveUpcomingRace(RaceDayReport race)
         {
             UpcomingRace? upcoming = null;
