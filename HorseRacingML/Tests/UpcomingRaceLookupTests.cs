@@ -868,6 +868,64 @@ namespace HorseRacingML.Tests
             Assert.Equal(0.33f, Convert.ToSingle(runner.FeatureValues["TrainerDistanceBucketWinRate"]));
         }
         [Fact]
+        public void PopulateFeatureVectors_RefreshesZeroDistanceBeatenValuesFromRepository()
+        {
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:HorseRacingDb"] = "Data Source=(localdb)\\MSSQLLocalDB;Initial Catalog=HorseRacingML;Integrated Security=True;Persist Security Info=False;Pooling=False;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Application Name=\"SQL Server Management Studio\";Command Timeout=30"
+                })
+                .Build();
+
+            var preparedRow = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["HorseName"] = "Distance Refresh",
+                ["DistanceBeatenKnown"] = true,
+                ["DistanceBeatenLengths"] = 0f
+            };
+            var preparedRace = new PreparedRace(919, new List<Dictionary<string, object?>> { preparedRow });
+
+            var trainer = new FakeTrainer(configuration, preparedRace);
+            var repo = new MinimalRacingRepository
+            {
+                DistanceBeatenResult = 3.25m
+            };
+            var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
+            var scraper = new BetfairMarketScraper(repo, trainer, bankroll: 9m, settings);
+            var flows = new List<RunnerFlow>
+            {
+                new RunnerFlow
+                {
+                    HorseName = "Distance Refresh",
+                    ClothNumber = 4,
+                    FeatureValues = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        ["HorseName"] = "Distance Refresh",
+                        ["DistanceBeatenKnown"] = true,
+                        ["DistanceBeatenLengths"] = 0f
+                    }
+                }
+            };
+
+            var report = scraper.TestBuildRaceReport(
+                marketId: "1.916",
+                raceTitle: "Refresh Stakes",
+                venueName: "Refresh Park",
+                venueCountry: "GB",
+                raceDate: new DateTime(2024, 12, 20),
+                offTime: new TimeSpan(17, 15, 0),
+                raceDetails: "Handicap",
+                going: "Standard",
+                backBookPercentage: 102m,
+                layBookPercentage: 104m,
+                raceUrl: null,
+                flows: flows);
+
+            var runner = Assert.Single(report.Runners);
+            Assert.True(Convert.ToBoolean(runner.FeatureValues["DistanceBeatenKnown"]));
+            Assert.Equal(3.25f, Convert.ToSingle(runner.FeatureValues["DistanceBeatenLengths"]));
+        }
+        [Fact]
         public void PopulateFeatureVectors_ComputesRaceAverageWinRateLast5()
         {
             var configuration = new ConfigurationBuilder()

@@ -869,11 +869,6 @@ namespace HorseRacingML.Scraping
 
                     var validAiBefore = flows.Where(f => f.AiOdds.HasValue && double.IsFinite(f.AiOdds.Value) && f.AiOdds.Value >= 0).Select(f => f.AiOdds!.Value).ToList(); // gather valid ai
                     var missingAiCount = flows.Count - validAiBefore.Count; // count missing
-
-                    if (validAiBefore.Count == 0)
-                    {
-                        Console.WriteLine($"\tAll {flows.Count} runner(s) in market {marketId} are missing AI probabilities before normalization."); // summary
-                    }
                     else
                     {
                         var sumProb = validAiBefore.Sum(); // sum
@@ -928,16 +923,12 @@ namespace HorseRacingML.Scraping
                     .ThenByDescending(r => r.KellyFraction)
                     .ToList(); // rank recs
 
-                Console.WriteLine($"\t{raceRecommendations.Count} runner(s) passed value filters for market {marketId}."); // log count
-
                 if (!executeBets)
                 {
                     if (raceRecommendations.Count > 0) { Console.WriteLine("\tReport mode: positive expected value runner(s) identified; skipping bet execution."); } else { Console.WriteLine($"\tNo positive value opportunity identified for market {marketId}"); } // report only
                 }
                 else
                 {
-                    if (raceRecommendations.Count > 1) { Console.WriteLine("\t\tMultiple runners qualified in the same market; sequential Kelly stakes will size each independently in tab order."); } // info
-
                     if (raceRecommendations.Count > 0)
                     {
                         if (!TryRefreshRunnerEntriesForBetting(driver, marketId, raceUrl, flows, out var refreshedEntries))
@@ -962,10 +953,6 @@ namespace HorseRacingML.Scraping
                             Console.WriteLine("\tNo qualifying Back-All clicks were executed for this market"); // none clicked
                         }
                     }
-                    else
-                    {
-                        Console.WriteLine($"\tNo positive value opportunity identified for market {marketId}"); // no value
-                    }
                 }
 
                 try
@@ -975,11 +962,11 @@ namespace HorseRacingML.Scraping
                         _repo.InsertRunnerFlows(flows);
                     }
 
-                    foreach (var inner in flows)
-                    {
-                        var innerIdentifier = DescribeRunner(inner);
-                        Console.WriteLine($"\tInserted runner {innerIdentifier} for market {marketId}"); // log ok
-                    }
+                    //foreach (var inner in flows)
+                    //{
+                    //    var innerIdentifier = DescribeRunner(inner);
+                    //    Console.WriteLine($"\tInserted runner {innerIdentifier} for market {marketId}"); // log ok
+                    //}
                 }
                 catch (Exception ex)
                 {

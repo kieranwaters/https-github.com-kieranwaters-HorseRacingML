@@ -2132,7 +2132,8 @@ namespace HorseRacingML.Scraping
                 "Going",
                 "DistanceYards",
                 "DistanceText",
-                "DistanceBucket"
+                 "DistanceBucket",
+                "DistanceBeatenLengths"
            },
            StringComparer.OrdinalIgnoreCase);
         private static readonly HashSet<string> NeutralFallbackAllowedKeys = new(
@@ -2802,7 +2803,14 @@ namespace HorseRacingML.Scraping
             if (featureVector.TryGetValue("DistanceBeatenKnown", out var knownObj) &&
                 knownObj is bool knownBool && knownBool)
             {
-                return;
+                if (featureVector.TryGetValue("DistanceBeatenLengths", out var existingObj))
+                {
+                    var existing = TryConvertToSingle(existingObj);
+                    if (existing.HasValue && existing.Value > 0f)
+                    {
+                        return;
+                    }
+                }
             }
 
             if (TryGetMeaningfulValue(featureVector, "DistanceBeatenLengths", out var lenObj))
