@@ -1569,6 +1569,9 @@ namespace HorseRacingML.Scraping
                                 identifier));
                     }
                     EnsureDistanceBeatenFromNumeric(featureVector, flow);
+                    EnsureWinningTimeFromRace(featureVector, flow);
+                    EnsureSpeedMetrics(featureVector);
+                    EnsureHasLastWinFlag(featureVector);
                     Console.WriteLine(
                         "\t\t[FeaturePopulation] Historical backfill remained incomplete; continuing with available data.");
                     flow.FeatureValues = featureVector;
