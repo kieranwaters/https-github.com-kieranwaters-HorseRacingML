@@ -441,7 +441,6 @@ namespace HorseRacingML.Scraping
             }
         };
         const ascendAncestors = start => {
-        const ascendAncestors = start => {
             let current = start;
             for (let depth = 0; depth < 10 && current; depth++) {
                 const parent = current.parentElement;
