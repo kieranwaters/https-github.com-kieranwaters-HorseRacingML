@@ -969,7 +969,8 @@ namespace HorseRacingML.Scraping
             }
 
             int? resolvedCareerStarts = null;
-
+            float? resolvedLifetimeWinRate = null;
+            string? lifetimeSource = null;
             if (featureVector != null &&
                 TryGetMeaningfulValue(featureVector, "CareerStarts", out var careerStartsValue))
             {
@@ -979,7 +980,28 @@ namespace HorseRacingML.Scraping
                     resolvedCareerStarts = parsedCareerStarts.Value;
                 }
             }
+            if (featureVector != null &&
+                TryGetMeaningfulValue(featureVector, "LifetimeWinRate", out var lifetimeValue))
+            {
+                var parsedLifetime = TryConvertToSingle(lifetimeValue);
+                if (parsedLifetime.HasValue)
+                {
+                    resolvedLifetimeWinRate = parsedLifetime.Value;
+                    lifetimeSource = "feature vector";
+                }
+            }
 
+            if (!resolvedLifetimeWinRate.HasValue &&
+                flow?.FeatureValues != null &&
+                TryGetMeaningfulValue(flow.FeatureValues, "LifetimeWinRate", out var flowLifetimeValue))
+            {
+                var parsedLifetime = TryConvertToSingle(flowLifetimeValue);
+                if (parsedLifetime.HasValue)
+                {
+                    resolvedLifetimeWinRate = parsedLifetime.Value;
+                    lifetimeSource = "existing flow value";
+                }
+            }
             if (resolvedCareerStarts.HasValue)
             {
                 var existingSource = flow.HistoricalRaceCount.HasValue
@@ -1003,6 +1025,20 @@ namespace HorseRacingML.Scraping
                         identifier,
                         resolvedCareerStarts.Value,
                         existingSource));
+                if (!resolvedLifetimeWinRate.HasValue)
+                {
+                    resolvedLifetimeWinRate = _trainer.ComputeSmoothedWinRate(0, resolvedCareerStarts.Value);
+                    lifetimeSource = "default smoothing";
+                }
+
+                AssignLifetimeWinRate(featureVector, flow, resolvedLifetimeWinRate.Value);
+                Console.WriteLine(
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "\t\t[FeaturePopulation] Resolved lifetime win rate for {0}: {1:F4} (source: {2}).",
+                        identifier,
+                        resolvedLifetimeWinRate.Value,
+                        lifetimeSource ?? existingSource));
                 return;
             }
 
@@ -1020,13 +1056,27 @@ namespace HorseRacingML.Scraping
                         "\t\t[FeaturePopulation] Resolved career starts for {0}: {1} (source: existing flow value).",
                         identifier,
                         resolvedCareerStarts.Value));
+                if (!resolvedLifetimeWinRate.HasValue)
+                {
+                    resolvedLifetimeWinRate = _trainer.ComputeSmoothedWinRate(0, resolvedCareerStarts.Value);
+                    lifetimeSource = "existing flow value";
+                }
+
+                AssignLifetimeWinRate(featureVector, flow, resolvedLifetimeWinRate.Value);
+                Console.WriteLine(
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "\t\t[FeaturePopulation] Resolved lifetime win rate for {0}: {1:F4} (source: {2}).",
+                        identifier,
+                        resolvedLifetimeWinRate.Value,
+                        lifetimeSource ?? "existing flow value"));
                 return;
             }
 
             string? prefetchCandidate;
             var resolvedFromPrefetch = ResolveHistoricalRaceCountFromPrefetch(flow, prefetchedCounts, out prefetchCandidate);
             string? resolutionSource = null;
-
+            int? resolvedCareerWins = null;
             if (resolvedFromPrefetch.HasValue)
             {
                 resolvedCareerStarts = resolvedFromPrefetch;
@@ -1036,6 +1086,17 @@ namespace HorseRacingML.Scraping
                         "prefetch candidate '{0}'",
                         prefetchCandidate)
                     : "prefetch match";
+                if (!string.IsNullOrWhiteSpace(prefetchCandidate) &&
+                    prefetchedCounts != null &&
+                    prefetchedCounts.TryGetWinCountByCandidate(prefetchCandidate, out var wins))
+                {
+                    resolvedCareerWins = wins;
+                    if (resolvedCareerStarts.Value >= 0)
+                    {
+                        resolvedLifetimeWinRate = _trainer.ComputeSmoothedWinRate(wins, resolvedCareerStarts.Value);
+                        lifetimeSource = resolutionSource;
+                    }
+                }
             }
             else
             {
@@ -1047,8 +1108,35 @@ namespace HorseRacingML.Scraping
                         ? "repository lookup"
                         : string.Format(
                             CultureInfo.InvariantCulture,
-                            "repository lookup for '{0}'",
-                            repositoryHorseName);
+                        "repository lookup for '{0}'",
+                        repositoryHorseName);
+
+                    if (!resolvedLifetimeWinRate.HasValue)
+                    {
+                        var lookupName = string.IsNullOrWhiteSpace(repositoryHorseName)
+                            ? flow.HorseName
+                            : repositoryHorseName;
+
+                        if (!string.IsNullOrWhiteSpace(lookupName))
+                        {
+                            try
+                            {
+                                var wins = _repo.GetHistoricalWinCountByHorseName(lookupName);
+                                resolvedCareerWins = wins;
+                                resolvedLifetimeWinRate = _trainer.ComputeSmoothedWinRate(wins, resolvedCareerStarts.Value);
+                                lifetimeSource = resolutionSource;
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.Error.WriteLine(
+                                    string.Format(
+                                        CultureInfo.InvariantCulture,
+                                        "\tFailed to resolve lifetime win rate for {0} via repository lookup: {1}",
+                                        identifier,
+                                        ex.Message));
+                            }
+                        }
+                    }
                 }
             }
 
@@ -1073,6 +1161,53 @@ namespace HorseRacingML.Scraping
 
             Console.WriteLine(
                 $"\t\t[FeaturePopulation] Resolved career starts for {identifier}: {resolvedCareerStarts.Value}{sourceSuffix}.");
+            if (!resolvedLifetimeWinRate.HasValue)
+            {
+                if (resolvedCareerWins.HasValue)
+                {
+                    resolvedLifetimeWinRate = _trainer.ComputeSmoothedWinRate(resolvedCareerWins.Value, resolvedCareerStarts.Value);
+                    lifetimeSource = resolutionSource;
+                }
+                else
+                {
+                    resolvedLifetimeWinRate = _trainer.ComputeSmoothedWinRate(0, resolvedCareerStarts.Value);
+                    lifetimeSource = string.IsNullOrWhiteSpace(resolutionSource)
+                        ? "default smoothing"
+                        : resolutionSource;
+                }
+            }
+
+            AssignLifetimeWinRate(featureVector, flow, resolvedLifetimeWinRate.Value);
+            Console.WriteLine(
+                string.Format(
+                    CultureInfo.InvariantCulture,
+                    "\t\t[FeaturePopulation] Resolved lifetime win rate for {0}: {1:F4} (source: {2}).",
+                    identifier,
+                    resolvedLifetimeWinRate.Value,
+                    lifetimeSource ?? resolutionSource ?? "default smoothing"));
+        }
+
+        private static void AssignLifetimeWinRate(
+            Dictionary<string, object?>? featureVector,
+            RunnerFlow? flow,
+            float lifetimeWinRate)
+        {
+            if (featureVector != null)
+            {
+                featureVector["LifetimeWinRate"] = lifetimeWinRate;
+            }
+
+            if (flow == null)
+            {
+                return;
+            }
+
+            if (flow.FeatureValues == null)
+            {
+                flow.FeatureValues = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+            }
+
+            flow.FeatureValues["LifetimeWinRate"] = lifetimeWinRate;
         }
 
         private void RestorePersistedHistoricalFeatures(

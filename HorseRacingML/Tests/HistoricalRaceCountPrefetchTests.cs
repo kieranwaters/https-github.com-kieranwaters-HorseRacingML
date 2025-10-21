@@ -117,7 +117,9 @@ namespace HorseRacingML.Tests
         private sealed class FakeHistoricalRepository : IRacingRepository
         {
             public Dictionary<string, int> BulkResult { get; init; } = new(StringComparer.OrdinalIgnoreCase);
+            public Dictionary<string, int> BulkWinResult { get; init; } = new(StringComparer.OrdinalIgnoreCase);
             public Func<string?, int?>? SingleLookup { get; init; }
+            public Func<string?, int>? SingleWinLookup { get; init; }
             public int BulkCallCount { get; private set; }
             public int SingleCallCount { get; private set; }
             public IReadOnlyList<string> LastBulkNames { get; private set; } = Array.Empty<string>();
@@ -143,20 +145,43 @@ namespace HorseRacingML.Tests
                 LastBulkNames = new List<string>(horseNames);
                 var candidates = new Dictionary<string, int>(BulkResult, StringComparer.OrdinalIgnoreCase);
                 var originals = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                var winCandidates = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                var winOriginals = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
                 foreach (var (name, count) in BulkResult)
                 {
                     originals[name] = count;
+                    var wins = BulkWinResult.TryGetValue(name, out var winCount) ? winCount : 0;
+                    winOriginals[name] = wins;
+                    winCandidates[name] = wins;
+                }
+
+                foreach (var (name, wins) in BulkWinResult)
+                {
+                    if (!winOriginals.ContainsKey(name))
+                    {
+                        winOriginals[name] = wins;
+                    }
+                    if (!winCandidates.ContainsKey(name))
+                    {
+                        winCandidates[name] = wins;
+                    }
                 }
 
                 return new HistoricalRaceCountPrefetchResult(
                     new ReadOnlyDictionary<string, int>(candidates),
                     new ReadOnlyDictionary<string, int>(originals),
+                    new ReadOnlyDictionary<string, int>(winCandidates),
+                    new ReadOnlyDictionary<string, int>(winOriginals),
                     matchedHorseIdCount: BulkResult.Count);
             }
             public HorseDistanceStats? GetHorseDistanceStatsByHorseName(string? horseName)
             {
                 return null;
+            }
+            public int GetHistoricalWinCountByHorseName(string? horseName)
+            {
+                return SingleWinLookup?.Invoke(horseName) ?? 0;
             }
             public IReadOnlyList<RunnerResult> GetLastSavedResults(string? raceTitle, DateTime? raceDate)
             {

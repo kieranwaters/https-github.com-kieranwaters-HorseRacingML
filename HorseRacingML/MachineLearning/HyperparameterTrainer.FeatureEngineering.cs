@@ -1457,7 +1457,7 @@ namespace HorseRacingML.ML
         }
 
         private float SmoothedWinRate(int wins, int starts)
-            => (wins + _winRateAlpha) / (starts + _winRateBeta);
+            => ComputeSmoothedWinRate(wins, starts);
 
 
         private static object? NormalizeDbValue(object? value)

@@ -91,7 +91,20 @@ namespace HorseRacingML.ML
             return total == 0 ? 0 : (double)correct / total;
         }
 
+        public float ComputeSmoothedWinRate(int wins, int starts)
+        {
+            if (wins < 0)
+            {
+                wins = 0;
+            }
 
+            if (starts < 0)
+            {
+                starts = 0;
+            }
+
+            return (wins + _winRateAlpha) / (starts + _winRateBeta);
+        }
         private TrainingDataset BuildTrainingDataset(
         PreparedDataset trainingPrepared,
         PreparedDataset validationPrepared)

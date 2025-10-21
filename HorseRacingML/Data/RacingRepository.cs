@@ -792,20 +792,25 @@ WHERE lookup.Normalized IN @Names;";
 
             const string countSql = @"
 SELECT rr.HorseId,
-       COUNT(*) AS RaceCount
+       COUNT(*) AS RaceCount,
+       SUM(CASE WHEN rr.FinishPos = 1 THEN 1 ELSE 0 END) AS WinCount
 FROM RunnerResult rr
 WHERE rr.HorseId IN @HorseIds
 GROUP BY rr.HorseId;";
 
             var countsByHorseId = new Dictionary<int, int>();
+            var winsByHorseId = new Dictionary<int, int>();
             foreach (var row in conn.Query(countSql, new { HorseIds = distinctHorseIds }))
             {
                 var horseId = (int)row.HorseId;
                 var count = (int)row.RaceCount;
+                var wins = (int)row.WinCount;
                 countsByHorseId[horseId] = count;
+                winsByHorseId[horseId] = wins;
             }
 
             var countsByOriginal = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            var winsByOriginal = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             foreach (var (original, horseIds) in horseIdsByOriginal)
             {
                 if (horseIds == null || horseIds.Count == 0)
@@ -814,15 +819,21 @@ GROUP BY rr.HorseId;";
                 }
 
                 var total = 0;
+                var totalWins = 0;
                 foreach (var horseId in horseIds)
                 {
                     if (countsByHorseId.TryGetValue(horseId, out var count))
                     {
                         total += count;
                     }
+                    if (winsByHorseId.TryGetValue(horseId, out var wins))
+                    {
+                        totalWins += wins;
+                    }
                 }
 
                 countsByOriginal[original] = total;
+                winsByOriginal[original] = totalWins;
             }
 
             if (countsByOriginal.Count == 0)
@@ -833,13 +844,19 @@ GROUP BY rr.HorseId;";
             // Expose counts for every candidate spelling so callers can resolve matches
             // using their preferred representation.
             var results = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            var winResults = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             foreach (var (original, count) in countsByOriginal)
             {
+                winsByOriginal.TryGetValue(original, out var wins);
                 foreach (var candidate in BuildHistoricalNameCandidates(original))
                 {
                     if (!results.ContainsKey(candidate))
                     {
                         results[candidate] = count;
+                    }
+                    if (!winResults.ContainsKey(candidate))
+                    {
+                        winResults[candidate] = wins;
                     }
                 }
             }
@@ -847,7 +864,31 @@ GROUP BY rr.HorseId;";
             return new HistoricalRaceCountPrefetchResult(
                 new ReadOnlyDictionary<string, int>(results),
                 new ReadOnlyDictionary<string, int>(countsByOriginal),
+                new ReadOnlyDictionary<string, int>(winResults),
+                new ReadOnlyDictionary<string, int>(winsByOriginal),
                 matchedHorseIdCount: distinctHorseIds.Length);
+        }
+        public int GetHistoricalWinCountByHorseName(string? horseName)
+        {
+            if (string.IsNullOrWhiteSpace(horseName))
+            {
+                return 0;
+            }
+
+            var candidates = BuildHistoricalNameCandidates(horseName);
+            if (candidates.Count == 0)
+            {
+                return 0;
+            }
+
+            const string sql = @"
+SELECT SUM(CASE WHEN rr.FinishPos = 1 THEN 1 ELSE 0 END)
+FROM RunnerResult rr
+INNER JOIN Horse h ON h.HorseId = rr.HorseId
+WHERE h.Name IN @Names;";
+
+            using var conn = OpenConnection();
+            return conn.QuerySingle<int>(sql, new { Names = candidates.ToArray() });
         }
         internal static IReadOnlyCollection<string> BuildHistoricalNameCandidates(string? horseName)
         {

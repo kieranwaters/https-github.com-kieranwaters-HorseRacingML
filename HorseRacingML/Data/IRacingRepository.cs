@@ -16,6 +16,7 @@ namespace HorseRacingML.Data
         UpcomingRace? GetUpcomingRaceByMarketId(string? marketId);
         int? GetHistoricalRaceCountByHorseName(string? horseName);
         HistoricalRaceCountPrefetchResult GetHistoricalRaceCountsByHorseNames(IEnumerable<string> horseNames);
+        int GetHistoricalWinCountByHorseName(string? horseName);
         HorseDistanceStats? GetHorseDistanceStatsByHorseName(string? horseName);
         int? GetLastRaceDistance(string? horseName, int? horseId, DateTime? beforeDate);
         IReadOnlyList<RunnerResult> GetLastSavedResults(string? raceTitle, DateTime? raceDate);

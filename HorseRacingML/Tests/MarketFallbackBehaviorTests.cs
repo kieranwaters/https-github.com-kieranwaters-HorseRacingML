@@ -561,7 +561,10 @@ namespace HorseRacingML.Tests
             {
                 return HistoricalRaceCountPrefetchResult.Empty;
             }
-
+            public int GetHistoricalWinCountByHorseName(string? horseName)
+            {
+                return 0;
+            }
             public HorseDistanceStats? GetHorseDistanceStatsByHorseName(string? horseName)
             {
                 return null;

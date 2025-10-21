@@ -1203,6 +1203,10 @@ new RunnerFlow { HorseName = "Alpha Runner" },
 
                 return HistoricalRaceCountPrefetchResult.Empty;
             }
+            public int GetHistoricalWinCountByHorseName(string? horseName)
+            {
+                return 0;
+            }
             public HorseDistanceStats? GetHorseDistanceStatsByHorseName(string? horseName)
             {
                 return null;
@@ -1480,6 +1484,10 @@ new RunnerFlow { HorseName = "Alpha Runner" },
             public HistoricalRaceCountPrefetchResult GetHistoricalRaceCountsByHorseNames(IEnumerable<string> horseNames)
             {
                 return HistoricalRaceCountPrefetchResult.Empty;
+            }
+            public int GetHistoricalWinCountByHorseName(string? horseName)
+            {
+                return 0;
             }
             public HorseDistanceStats? GetHorseDistanceStatsByHorseName(string? horseName)
             {
