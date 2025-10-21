@@ -392,6 +392,42 @@ namespace HorseRacingML.Scraping
 
         const detailRootSet = new Set();
         const detailRoots = [];
+ const candidateRows = (() => {
+            const items = [];
+            if (row) { items.push(row); }
+            const tableRow = row && row.closest ? row.closest('tr') : null;
+            if (tableRow && !items.includes(tableRow)) { items.push(tableRow); }
+            const related = [
+                row && row.previousElementSibling,
+                row && row.nextElementSibling,
+                tableRow && tableRow.previousElementSibling,
+                tableRow && tableRow.nextElementSibling
+            ];
+            for (const sibling of related) {
+                if (sibling && !items.includes(sibling)) {
+                    items.push(sibling);
+                }
+            }
+            return items.filter(Boolean);
+        })();
+        const belongsToCurrentRow = element => {
+            if (!element) { return false; }
+            const visited = new Set();
+            const stack = [element];
+            while (stack.length) {
+                const node = stack.pop();
+                if (!node || visited.has(node)) { continue; }
+                visited.add(node);
+                if (candidateRows.includes(node)) { return true; }
+                if (node.parentElement) { stack.push(node.parentElement); }
+                if (node.assignedSlot) { stack.push(node.assignedSlot); }
+                if (typeof node.getRootNode === 'function') {
+                    const rootNode = node.getRootNode();
+                    if (rootNode && rootNode.host) { stack.push(rootNode.host); }
+                }
+            }
+            return false;
+        };
         const addRoot = node => {
             if (!node || detailRootSet.has(node)) { return; }
             detailRootSet.add(node);
@@ -404,6 +440,7 @@ namespace HorseRacingML.Scraping
                 }
             }
         };
+        const ascendAncestors = start => {
         const ascendAncestors = start => {
             let current = start;
             for (let depth = 0; depth < 10 && current; depth++) {
@@ -482,7 +519,7 @@ namespace HorseRacingML.Scraping
                 if (!selector) { continue; }
                 for (const root of detailRoots) {
                     const element = queryWithin(root, selector);
-                    if (!element) { continue; }
+                    if (!element || !belongsToCurrentRow(element)) { continue; }
                     const text = textOrEmpty(element);
                     if (text) { return normalizeSpaces(text); }
                 }
