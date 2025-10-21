@@ -385,14 +385,14 @@ namespace HorseRacingML.Scraping
                 foreach (var row in rows)
                 {
                     var js = (IJavaScriptExecutor)driver; // cast to JS
-                    const string runnerExtractionScript = @"
+                    const string runnerExtractionScript = """
         const row = arguments[0];
         const textOrEmpty = el => el && el.textContent ? el.textContent.trim() : '';
         const normalizeSpaces = value => value ? value.replace(/\s+/g, ' ').trim() : '';
 
         const detailRootSet = new Set();
         const detailRoots = [];
- const candidateRows = (() => {
+        const candidateRows = (() => {
             const items = [];
             if (row) { items.push(row); }
             const tableRow = row && row.closest ? row.closest('tr') : null;
@@ -658,25 +658,25 @@ namespace HorseRacingML.Scraping
             '.runner-timeform-wrapper__details.runner-timeform-wrapper__age-weight-rating',
             '.runner-expanded-details .runner-timeform-wrapper__details.runner-timeform-wrapper__age-weight-rating',
             '.runner-expanded-details .runner-timeform-wrapper__details--age-weight',
-            '.runner-info-expanded [data-testid=""horse-age-weight""]',
+            '.runner-info-expanded [data-testid="horse-age-weight"]',
             '.runner-info-expanded .runner-timeform-wrapper__details--age-weight',
-            '[data-testid=""runner-age-weight""]',
-            '[data-test-id=""runner-age-weight""]'
+            '[data-testid="runner-age-weight"]',
+            '[data-test-id="runner-age-weight"]'
         ];
         const trainerSelectors = [
             '.runner-timeform-wrapper__horse-details .runner-timeform-wrapper__details.runner-timeform-wrapper__trainer',
             '.runner-timeform-wrapper__details.runner-timeform-wrapper__trainer',
             '.runner-expanded-details .runner-timeform-wrapper__details.runner-timeform-wrapper__trainer',
             '.runner-expanded-details .runner-timeform-wrapper__details--trainer',
-            '.runner-info-expanded [data-testid=""horse-trainer""]',
+            '.runner-info-expanded [data-testid="horse-trainer"]',
             '.runner-info-expanded .runner-timeform-wrapper__details--trainer',
-            '[data-testid=""runner-trainer""]',
-            '[data-test-id=""runner-trainer""]'
+            '[data-testid="runner-trainer"]',
+            '[data-test-id="runner-trainer"]'
         ];
         result['ageWeight'] = queryDetail(ageWeightSelectors);
         result['trainer'] = queryDetail(trainerSelectors);
         return result;
-    ";
+    """;
 
                     var elementData = (IDictionary<string, object>)js.ExecuteScript(runnerExtractionScript, row); // execute script
                     string Get(string key) => elementData.TryGetValue(key, out var v) ? v?.ToString() ?? string.Empty : string.Empty; // helper
@@ -869,6 +869,10 @@ namespace HorseRacingML.Scraping
 
                     var validAiBefore = flows.Where(f => f.AiOdds.HasValue && double.IsFinite(f.AiOdds.Value) && f.AiOdds.Value >= 0).Select(f => f.AiOdds!.Value).ToList(); // gather valid ai
                     var missingAiCount = flows.Count - validAiBefore.Count;
+                    if (validAiBefore.Count == 0)
+                    {
+                        Console.WriteLine($"\tAI probability summary before normalization for market {marketId}: no valid AI probabilities; missing={missingAiCount}."); // log missing summary
+                    }
                     else
                     {
                         var sumProb = validAiBefore.Sum(); // sum
