@@ -2962,11 +2962,37 @@ namespace HorseRacingML.Scraping
 
             try
             {
-                var fallbackRaceId = featureVector.TryGetValue("RaceId", out var raceIdObj)
+                int? fallbackRaceId = featureVector.TryGetValue("RaceId", out var raceIdObj)
                     ? TryConvertToInt32(raceIdObj)
                     : null;
 
-                if (!fallbackRaceId.HasValue)
+                if (!fallbackRaceId.HasValue || fallbackRaceId.Value <= 0)
+                {
+                    int? runnerResultId = featureVector.TryGetValue("RunnerResultId", out var runnerObj)
+                        ? TryConvertToInt32(runnerObj)
+                        : null;
+
+                    if (!runnerResultId.HasValue && flow?.FeatureValues != null &&
+                        flow.FeatureValues.TryGetValue("RunnerResultId", out var flowRunnerObj))
+                    {
+                        runnerResultId = TryConvertToInt32(flowRunnerObj);
+                    }
+
+                    if (runnerResultId.HasValue && runnerResultId.Value > 0)
+                    {
+                        try
+                        {
+                            fallbackRaceId = _repo.GetRaceIdByRunnerResult(runnerResultId.Value);
+                        }
+                        catch (Exception runnerResultEx)
+                        {
+                            var identifierLookup = DescribeRunner(flow);
+                            Console.Error.WriteLine($"\t\tFailed to resolve race id for {identifierLookup}: {runnerResultEx.Message}");
+                        }
+                    }
+                }
+
+                if (!fallbackRaceId.HasValue || fallbackRaceId.Value <= 0)
                 {
                     return;
                 }
