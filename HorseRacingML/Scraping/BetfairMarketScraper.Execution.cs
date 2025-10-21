@@ -389,6 +389,67 @@ namespace HorseRacingML.Scraping
         const row = arguments[0];
         const textOrEmpty = el => el && el.textContent ? el.textContent.trim() : '';
         const normalizeSpaces = value => value ? value.replace(/\s+/g, ' ').trim() : '';
+const runnerAttributeNames = [
+            'data-selection-id',
+            'data-selectionid',
+            'data-runner-id',
+            'data-runnerid',
+            'data-runner-name',
+            'data-runnername',
+            'data-horse-id',
+            'data-horseid'
+        ];
+        const runnerContainerSelectors = runnerAttributeNames.map(attr => `[${attr}]`).concat([
+            '[data-test-id=""runner""]',
+            '[data-test-id=""runner-name""]',
+            '.runner-info-wrapper',
+            '.runner-info-expanded',
+            '.runner-list-item',
+            '.runner-card'
+        ]);
+        const isElement = node => typeof Element !== 'undefined' && node instanceof Element;
+        const findRunnerContainer = node => {
+            if (!node || typeof node.closest !== 'function') { return null; }
+            for (const selector of runnerContainerSelectors) {
+                if (!selector) { continue; }
+                const found = node.closest(selector);
+                if (found) { return found; }
+            }
+            return null;
+        };
+        const describeRunnerNode = node => {
+            if (!isElement(node)) { return { container: null, attr: null, value: null }; }
+            const container = findRunnerContainer(node) || (typeof node.closest === 'function' ? node.closest('tr') : null) || (isElement(node) ? node : null);
+            if (!container) { return { container: null, attr: null, value: null }; }
+            for (const attr of runnerAttributeNames) {
+                if (container.hasAttribute && container.hasAttribute(attr)) {
+                    const value = container.getAttribute(attr);
+                    if (value) {
+                        return { container, attr, value: value.trim() };
+                    }
+                }
+            }
+            return { container, attr: null, value: null };
+        };
+        const rowIdentity = describeRunnerNode(row);
+        const rowTr = typeof row.closest === 'function' ? row.closest('tr') : null;
+        const belongsToRunner = element => {
+            if (!isElement(element)) { return false; }
+            if (row === element || row.contains(element)) { return true; }
+            if (rowTr && (rowTr === element || rowTr.contains(element))) { return true; }
+            if (rowIdentity.container && rowIdentity.container.contains && rowIdentity.container.contains(element)) { return true; }
+            const elementIdentity = describeRunnerNode(element);
+            if (rowIdentity.attr && elementIdentity.attr === rowIdentity.attr && elementIdentity.value && rowIdentity.value) {
+                return elementIdentity.value === rowIdentity.value;
+            }
+            if (rowIdentity.container && elementIdentity.container && rowIdentity.container === elementIdentity.container) {
+                return true;
+            }
+            if (rowTr && elementIdentity.container && rowTr.contains(elementIdentity.container)) {
+                return true;
+            }
+            return false;
+        };
         const detailRootSet = new Set();
         const detailRoots = [];
         const addRoot = node => {
@@ -434,11 +495,14 @@ namespace HorseRacingML.Scraping
         const tableRow = row.closest ? row.closest('tr') : null;
         if (tableRow && tableRow.nextElementSibling) { addRelated(tableRow.nextElementSibling); }
         const queryWithin = (root, selector) => {
-            if (!root || !selector) { return null; }
-            if (root instanceof Element && root.matches(selector)) { return root; }
-            if (typeof root.querySelector === 'function') {
-                const direct = root.querySelector(selector);
-                if (direct) { return direct; }
+            if (isElement(root) && typeof root.matches === 'function' && root.matches(selector) && belongsToRunner(root)) { return root; }
+            if (typeof root.querySelectorAll === 'function') {
+                const matches = root.querySelectorAll(selector);
+                if (matches && matches.length) {
+                    for (const candidate of matches) {
+                        if (belongsToRunner(candidate)) { return candidate; }
+                    }
+                }
             }
             if (typeof root.querySelectorAll !== 'function') { return null; }
             const all = root.querySelectorAll('*');
