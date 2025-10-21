@@ -218,6 +218,7 @@ namespace HorseRacingML.Tests
             public int? GetRaceIdByRunnerResult(int runnerResultId) => null;
             public decimal? GetDistanceBeatenLengths(int runnerResultId) => null;
             public decimal? GetLastDistanceBeatenLengths(string? horseName, int? horseId, DateTime? beforeDate) => null;
+            public int? GetLastWinningTimeMilliseconds(string? horseName, int? horseId, DateTime? beforeDate) => null;
         }
 
         private sealed class StubTrainer : HorseRacingML.ML.HyperparameterTrainer

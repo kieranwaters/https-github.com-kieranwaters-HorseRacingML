@@ -65,18 +65,22 @@ namespace HorseRacingML.ML
             DateTime Date,
             float NormFinish,
             short? Finish,
-             string? Going,
+            string? Going,
             string? Surface,
             int CourseId,
             string? Bucket,
             int? RaceClass,
+            float RaceSpeed,
             float Speed,
             float SpeedDiff,
             int Age,
             bool Won,
             float Rating,
             float Weight,
-            bool HasSpeed);
+            bool HasSpeed,
+            bool HasWinningTime,
+            float? WinningTimeMs,
+            float? DistanceYards);
 
         private sealed class FeatureEngineeringState
         {
@@ -438,6 +442,35 @@ namespace HorseRacingML.ML
                                 history = new List<HistoryEntry>();
                                 _horseHistory[horseId] = history;
                             }
+                            if (history.Count > 0)
+                            {
+                                var previous = history[^1];
+                                if (previous.HasWinningTime && previous.WinningTimeMs.HasValue && previous.WinningTimeMs.Value > 0f)
+                                {
+                                    row["WinningTimeMs"] = (int)previous.WinningTimeMs.Value;
+                                }
+                                else
+                                {
+                                    row["WinningTimeMs"] = null;
+                                }
+
+                                row["RaceSpeed"] = previous.HasWinningTime ? previous.RaceSpeed : 0f;
+                                row["RunnerSpeed"] = previous.HasSpeed ? previous.Speed : 0f;
+                                row["SpeedDiff"] = previous.HasSpeed ? previous.SpeedDiff : 0f;
+                                row["SpeedRatio"] = previous.HasSpeed && previous.RaceSpeed != 0f
+                                    ? previous.Speed / previous.RaceSpeed
+                                    : 0f;
+                                row["SpeedMissing"] = !previous.HasSpeed;
+                            }
+                            else
+                            {
+                                row["WinningTimeMs"] = null;
+                                row["RaceSpeed"] = 0f;
+                                row["RunnerSpeed"] = 0f;
+                                row["SpeedDiff"] = 0f;
+                                row["SpeedRatio"] = 0f;
+                                row["SpeedMissing"] = true;
+                            }
                             row["HistoricalDataMissing"] = history.Count == 0;
                             row["RatingChangeFromLast"] = history.Count > 0 ? rating - history[^1].Rating : 0f;
                             row["WeightChangeFromLast"] = history.Count > 0 ? weight - history[^1].Weight : 0f;
@@ -652,7 +685,6 @@ namespace HorseRacingML.ML
                             float raceSpeed = winningTimeAvailable && distanceYards > 0
                                 ? distanceYards / (float)winningMs.Value
                                 : 0f;
-                            row["RaceSpeed"] = raceSpeed;
                             bool distanceBeatenKnown = row.TryGetValue("DistanceBeatenKnown", out var distanceKnownObj) &&
                                 distanceKnownObj is bool distanceKnownBool && distanceKnownBool;
 
@@ -663,16 +695,8 @@ namespace HorseRacingML.ML
                                 float beaten = Convert.ToSingle(row["DistanceBeatenLengths"]);
                                 float runnerTime = winningMs!.Value + beaten * MsPerLength;
                                 runnerSpeed = runnerTime > 0f ? distanceYards / runnerTime : 0f;
-                                row["RunnerSpeed"] = runnerSpeed;
-                            }
-                            else
-                            {
-                                row["RunnerSpeed"] = 0f;
                             }
                             float speedDiff = hasRunnerSpeed ? runnerSpeed - raceSpeed : 0f;
-                            row["SpeedDiff"] = speedDiff;
-                            row["SpeedRatio"] = hasRunnerSpeed && raceSpeed != 0f ? runnerSpeed / raceSpeed : 0f;
-                            row["SpeedMissing"] = !hasRunnerSpeed;
                             string bucket = distanceMissing ? "Unknown" : DistanceBucket(distanceYards);
                             row["DistanceBucket"] = bucket;
                             row[$"RelativeDraw_{bucket}"] = (float)row["RelativeDraw"];
@@ -1030,13 +1054,17 @@ namespace HorseRacingML.ML
                                     courseId,
                                     distanceMissing ? null : bucket,
                                     classValue,
+                                    raceSpeed,
                                     runnerSpeed,
                                     speedDiff,
                                     age,
                                     finish.HasValue && finish.Value == 1,
                                     rating,
                                     weight,
-                                    hasRunnerSpeed));
+                                    hasRunnerSpeed,
+                                    winningTimeAvailable,
+                                    winningTimeAvailable ? (float?)winningMs : null,
+                                    distanceMissing ? null : (float?)distanceYards));
                                 if (!classMissing)
                                 {
                                     horseClassStat.starts++;
@@ -2287,13 +2315,17 @@ namespace HorseRacingML.ML
                     CourseId: 0,
                     Bucket: null,
                     RaceClass: null,
+                    RaceSpeed: 0f,
                     Speed: sample.Speed,
                     SpeedDiff: sample.SpeedDiff,
                     Age: 0,
                     Won: false,
                     Rating: 0f,
                     Weight: 0f,
-                    HasSpeed: sample.HasSpeed));
+                    HasSpeed: sample.HasSpeed,
+                    HasWinningTime: false,
+                    WinningTimeMs: null,
+                    DistanceYards: null));
             }
 
             var selected = FeatureEngineeringState.TakeRecentEntries(entries, window, h => h.HasSpeed);

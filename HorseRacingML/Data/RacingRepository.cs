@@ -1617,6 +1617,64 @@ ORDER BY RaceDate DESC, RunnerResultId DESC;";
 
             return new HorseDistanceStats(row.DistanceYards, row.AverageDistance);
         }
+        public int? GetLastWinningTimeMilliseconds(string? horseName, int? horseId, DateTime? beforeDate)
+        {
+            if (!horseId.HasValue && string.IsNullOrWhiteSpace(horseName))
+            {
+                return null;
+            }
+
+            var cutoffDate = beforeDate?.Date;
+
+            const string sqlById = @"SELECT TOP (1)
+    r.WinningTimeMs
+FROM RunnerResult rr
+INNER JOIN Race r ON r.RaceId = rr.RaceId
+WHERE rr.HorseId = @HorseId
+  AND r.WinningTimeMs IS NOT NULL
+  AND r.WinningTimeMs > 0
+  AND (@BeforeDate IS NULL OR r.RaceDate < @BeforeDate)
+ORDER BY r.RaceDate DESC, rr.RunnerResultId DESC;";
+
+            const string sqlByName = @"SELECT TOP (1)
+    r.WinningTimeMs
+FROM RunnerResult rr
+INNER JOIN Race r ON r.RaceId = rr.RaceId
+INNER JOIN Horse h ON h.HorseId = rr.HorseId
+WHERE h.Name IN @Names
+  AND r.WinningTimeMs IS NOT NULL
+  AND r.WinningTimeMs > 0
+  AND (@BeforeDate IS NULL OR r.RaceDate < @BeforeDate)
+ORDER BY r.RaceDate DESC, rr.RunnerResultId DESC;";
+
+            using var conn = OpenConnection();
+
+            if (horseId.HasValue && horseId.Value > 0)
+            {
+                var byId = conn.QueryFirstOrDefault<int?>(sqlById, new
+                {
+                    HorseId = horseId.Value,
+                    BeforeDate = cutoffDate
+                });
+
+                if (byId.HasValue)
+                {
+                    return byId;
+                }
+            }
+
+            var candidates = BuildHistoricalNameCandidates(horseName);
+            if (candidates.Count == 0)
+            {
+                return null;
+            }
+
+            return conn.QueryFirstOrDefault<int?>(sqlByName, new
+            {
+                Names = candidates.ToArray(),
+                BeforeDate = cutoffDate
+            });
+        }
         public IReadOnlyList<RunnerResult> GetLastSavedResults(string? raceTitle, DateTime? raceDate)
         {
             if (!raceDate.HasValue)

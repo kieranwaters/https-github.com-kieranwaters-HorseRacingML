@@ -2897,70 +2897,95 @@ namespace HorseRacingML.Scraping
                 }
             }
 
-            int? raceId = null;
-            if (featureVector.TryGetValue("RaceId", out var raceIdObj))
+            int? horseId = null;
+            if (featureVector.TryGetValue("HorseId", out var horseObj))
             {
-                raceId = TryConvertToInt32(raceIdObj);
+                horseId = TryConvertToInt32(horseObj);
             }
-            if (!raceId.HasValue || raceId.Value <= 0)
-            {
-                int? runnerResultId = null;
-                if (featureVector.TryGetValue("RunnerResultId", out var runnerObj))
-                {
-                    runnerResultId = TryConvertToInt32(runnerObj);
-                }
 
-                if (runnerResultId.HasValue && runnerResultId.Value > 0)
-                {
-                    try
-                    {
-                        raceId = _repo.GetRaceIdByRunnerResult(runnerResultId.Value);
-                        if (raceId.HasValue && raceId.Value > 0)
-                        {
-                            featureVector["RaceId"] = raceId.Value;
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        var identifier = DescribeRunner(flow);
-                        Console.Error.WriteLine($"\t\tFailed to resolve race id for {identifier}: {ex.Message}");
-                    }
-                }
-            }
-            if (!raceId.HasValue || raceId.Value <= 0)
+            if (!horseId.HasValue && flow?.FeatureValues != null &&
+                flow.FeatureValues.TryGetValue("HorseId", out var flowHorseId))
             {
-                return;
+                horseId = TryConvertToInt32(flowHorseId);
+            }
+
+            horseId = NormalizeHorseIdentifier(horseId);
+
+            string? horseName = flow?.HorseName;
+            if (string.IsNullOrWhiteSpace(horseName) &&
+                featureVector.TryGetValue("HorseName", out var horseNameObj) &&
+                horseNameObj is string horseNameStr)
+            {
+                horseName = horseNameStr;
+            }
+
+            DateTime? raceDate = flow?.RaceDate;
+            if (!raceDate.HasValue && featureVector.TryGetValue("RaceDate", out var raceDateObj))
+            {
+                raceDate = raceDateObj switch
+                {
+                    DateTime dt => dt,
+                    DateTimeOffset dto => dto.DateTime,
+                    _ => null
+                };
             }
 
             try
             {
-                var resolved = _repo.GetWinningTimeMilliseconds(raceId.Value);
+                var resolved = _repo.GetLastWinningTimeMilliseconds(horseName, horseId, raceDate);
                 if (resolved.HasValue && resolved.Value > 0)
                 {
                     featureVector["WinningTimeMs"] = (float)resolved.Value;
+
+                    try
+                    {
+                        var lastDistance = _repo.GetLastRaceDistance(horseName, horseId, raceDate);
+                        if (lastDistance.HasValue && lastDistance.Value > 0)
+                        {
+                            featureVector["LastRaceDistanceYards"] = lastDistance.Value;
+                        }
+                    }
+                    catch (Exception distanceEx)
+                    {
+                        var identifier = DescribeRunner(flow);
+                        Console.Error.WriteLine($"\t\tFailed to resolve previous race distance for {identifier}: {distanceEx.Message}");
+                    }
+
+                    return;
                 }
             }
             catch (Exception ex)
             {
                 var identifier = DescribeRunner(flow);
-                Console.Error.WriteLine($"\t\tFailed to resolve winning time for {identifier}: {ex.Message}");
+                Console.Error.WriteLine($"\t\tFailed to resolve previous winning time for {identifier}: {ex.Message}");
+            }
+
+            try
+            {
+                var fallbackRaceId = featureVector.TryGetValue("RaceId", out var raceIdObj)
+                    ? TryConvertToInt32(raceIdObj)
+                    : null;
+
+                if (!fallbackRaceId.HasValue)
+                {
+                    return;
+                }
+
+                var fallback = _repo.GetWinningTimeMilliseconds(fallbackRaceId.Value);
+                if (fallback.HasValue && fallback.Value > 0)
+                {
+                    featureVector["WinningTimeMs"] = (float)fallback.Value;
+                }
+            }
+            catch (Exception ex)
+            {
+                var identifier = DescribeRunner(flow);
+                Console.Error.WriteLine($"\t\tFailed to resolve fallback winning time for {identifier}: {ex.Message}");
             }
         }
-
         private void EnsureSpeedMetrics(Dictionary<string, object?> featureVector)
         {
             if (featureVector == null)
-            {
-                return;
-            }
-
-            if (!featureVector.TryGetValue("DistanceYards", out var distanceObj))
-            {
-                return;
-            }
-
-            var distanceYards = TryConvertToSingle(distanceObj);
-            if (!distanceYards.HasValue || distanceYards.Value <= 0f)
             {
                 return;
             }
@@ -2976,7 +3001,33 @@ namespace HorseRacingML.Scraping
                 return;
             }
 
-            var raceSpeed = distanceYards.Value / winningMs.Value;
+            float? distanceForSpeed = null;
+            if (featureVector.TryGetValue("LastRaceDistanceYards", out var lastDistanceObj))
+            {
+                var converted = TryConvertToSingle(lastDistanceObj);
+                if (converted.HasValue && converted.Value > 0f)
+                {
+                    distanceForSpeed = converted.Value;
+                }
+            }
+
+            if (!distanceForSpeed.HasValue)
+            {
+                if (!featureVector.TryGetValue("DistanceYards", out var distanceObj))
+                {
+                    return;
+                }
+
+                var distanceYards = TryConvertToSingle(distanceObj);
+                if (!distanceYards.HasValue || distanceYards.Value <= 0f)
+                {
+                    return;
+                }
+
+                distanceForSpeed = distanceYards.Value;
+            }
+
+            var raceSpeed = distanceForSpeed.Value / winningMs.Value;
             featureVector["RaceSpeed"] = raceSpeed;
 
             bool distanceKnown = featureVector.TryGetValue("DistanceBeatenKnown", out var knownObj) &&
@@ -2992,7 +3043,7 @@ namespace HorseRacingML.Scraping
                     var runnerTime = winningMs.Value + beaten.Value * MsPerLength;
                     if (runnerTime > 0f)
                     {
-                        runnerSpeed = distanceYards.Value / runnerTime;
+                        runnerSpeed = distanceForSpeed.Value / runnerTime;
                         hasRunnerSpeed = runnerSpeed > 0f;
                     }
                 }
@@ -3002,6 +3053,7 @@ namespace HorseRacingML.Scraping
             featureVector["SpeedDiff"] = hasRunnerSpeed ? runnerSpeed - raceSpeed : 0f;
             featureVector["SpeedRatio"] = hasRunnerSpeed && raceSpeed != 0f ? runnerSpeed / raceSpeed : 0f;
             featureVector["SpeedMissing"] = !hasRunnerSpeed;
+            featureVector.Remove("LastRaceDistanceYards");
         }
         private static string NormalizeHorseNameKeyForCache(string? name)
         {
