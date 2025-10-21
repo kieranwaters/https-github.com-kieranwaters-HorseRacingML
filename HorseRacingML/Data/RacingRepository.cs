@@ -1675,6 +1675,56 @@ ORDER BY r.RaceDate DESC, rr.RunnerResultId DESC;";
                 BeforeDate = cutoffDate
             });
         }
+        public byte? GetMostRecentRaceClass(string? horseName, int? horseId)
+        {
+            if (!horseId.HasValue && string.IsNullOrWhiteSpace(horseName))
+            {
+                return null;
+            }
+
+            const string sqlById = @"SELECT TOP (1)
+    r.Class
+FROM RunnerResult rr
+INNER JOIN Race r ON r.RaceId = rr.RaceId
+WHERE rr.HorseId = @HorseId
+  AND r.Class IS NOT NULL
+ORDER BY r.RaceDate DESC, rr.RunnerResultId DESC;";
+
+            const string sqlByName = @"SELECT TOP (1)
+    r.Class
+FROM RunnerResult rr
+INNER JOIN Race r ON r.RaceId = rr.RaceId
+INNER JOIN Horse h ON h.HorseId = rr.HorseId
+WHERE h.Name IN @Names
+  AND r.Class IS NOT NULL
+ORDER BY r.RaceDate DESC, rr.RunnerResultId DESC;";
+
+            using var conn = OpenConnection();
+
+            if (horseId.HasValue && horseId.Value > 0)
+            {
+                var byId = conn.QueryFirstOrDefault<byte?>(sqlById, new
+                {
+                    HorseId = horseId.Value
+                });
+
+                if (byId.HasValue)
+                {
+                    return byId;
+                }
+            }
+
+            var candidates = BuildHistoricalNameCandidates(horseName);
+            if (candidates.Count == 0)
+            {
+                return null;
+            }
+
+            return conn.QueryFirstOrDefault<byte?>(sqlByName, new
+            {
+                Names = candidates.ToArray()
+            });
+        }
         public IReadOnlyList<RunnerResult> GetLastSavedResults(string? raceTitle, DateTime? raceDate)
         {
             if (!raceDate.HasValue)

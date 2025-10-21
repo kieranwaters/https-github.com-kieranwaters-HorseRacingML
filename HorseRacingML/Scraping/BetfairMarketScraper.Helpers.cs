@@ -663,7 +663,48 @@ namespace HorseRacingML.Scraping
             {
                 SetIfMissing("AgeRestriction", parsed.AgeRestriction);
             }
-            if (parsed.Class.HasValue)
+            bool classFromHistory = false;
+            try
+            {
+                int? horseId = null;
+                if (featureVector.TryGetValue("HorseId", out var horseIdObj))
+                {
+                    horseId = TryConvertToInt32(horseIdObj);
+                }
+
+                if (!horseId.HasValue && flow?.FeatureValues != null &&
+                    flow.FeatureValues.TryGetValue("HorseId", out var flowHorseId))
+                {
+                    horseId = TryConvertToInt32(flowHorseId);
+                }
+
+                horseId = NormalizeHorseIdentifier(horseId);
+
+                string? horseName = flow?.HorseName;
+                if (string.IsNullOrWhiteSpace(horseName) &&
+                    featureVector.TryGetValue("HorseName", out var horseNameObj) &&
+                    horseNameObj is string horseNameStr)
+                {
+                    horseName = horseNameStr;
+                }
+
+                if (horseId.HasValue || !string.IsNullOrWhiteSpace(horseName))
+                {
+                    var resolvedClass = _repo.GetMostRecentRaceClass(horseName, horseId);
+                    if (resolvedClass.HasValue)
+                    {
+                        featureVector["Class"] = resolvedClass.Value;
+                        classFromHistory = true;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                var identifier = DescribeRunner(flow);
+                Console.Error.WriteLine($"\t\tFailed to resolve historical class for {identifier}: {ex.Message}");
+            }
+
+            if (!classFromHistory && parsed.Class.HasValue)
             {
                 SetIfMissing("Class", parsed.Class);
             }

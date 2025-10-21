@@ -25,5 +25,6 @@ namespace HorseRacingML.Data
         decimal? GetDistanceBeatenLengths(int runnerResultId);
         decimal? GetLastDistanceBeatenLengths(string? horseName, int? horseId, DateTime? beforeDate);
         int? GetLastWinningTimeMilliseconds(string? horseName, int? horseId, DateTime? beforeDate);
+        byte? GetMostRecentRaceClass(string? horseName, int? horseId);
     }
 }
