@@ -115,6 +115,45 @@ namespace HorseRacingML.Tests
             const string expected = "All AI win probabilities defaulted to market-implied odds for this race. Reason: Degenerate model outputs; using market-implied probability.";
             Assert.Equal(expected, report.RaceFallbackSummary);
         }
+        [Theory]
+        [InlineData("DaysSinceLastWin", 12)]
+        [InlineData("RacesSinceLastWin", 3)]
+        public void BuildRaceReport_PopulatesHasLastWinFlagWhenHistoryPresent(string historyKey, int historyValue)
+        {
+            var repo = new StubRepository();
+            var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
+            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), bankroll: 25m, settings);
+
+            var flows = new List<RunnerFlow>
+            {
+                new RunnerFlow
+                {
+                    HorseName = "History Runner",
+                    FeatureValues = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        [historyKey] = historyValue
+                    }
+                }
+            };
+
+            var race = scraper.TestBuildRaceReport(
+                marketId: "1.999",
+                raceTitle: "History Test",
+                venueName: "Test Course",
+                venueCountry: "GB",
+                raceDate: new DateTime(2024, 6, 1),
+                offTime: new TimeSpan(14, 30, 0),
+                raceDetails: "Test",
+                going: "Good",
+                backBookPercentage: null,
+                layBookPercentage: null,
+                raceUrl: null,
+                flows: flows);
+
+            var runner = Assert.Single(race.Runners);
+            Assert.True(runner.FeatureValues.TryGetValue("HasLastWin", out var flag));
+            Assert.True(Convert.ToBoolean(flag));
+        }
         [Fact]
         public void BuildRaceReport_ClonesEncodedFeatureValues()
         {

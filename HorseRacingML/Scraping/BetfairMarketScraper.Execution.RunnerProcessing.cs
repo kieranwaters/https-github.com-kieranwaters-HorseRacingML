@@ -1288,7 +1288,7 @@ namespace HorseRacingML.Scraping
                 var daysSince = TryConvertToInt32(daysObj);
                 if (daysSince.HasValue)
                 {
-                    featureVector["HasLastWin"] = daysSince.Value == 0;
+                    featureVector["HasLastWin"] = daysSince.Value >= 0;
                     return;
                 }
             }
@@ -1298,7 +1298,7 @@ namespace HorseRacingML.Scraping
                 var racesSince = TryConvertToInt32(racesObj);
                 if (racesSince.HasValue)
                 {
-                    featureVector["HasLastWin"] = racesSince.Value == 0;
+                    featureVector["HasLastWin"] = racesSince.Value >= 0;
                 }
             }
         }
