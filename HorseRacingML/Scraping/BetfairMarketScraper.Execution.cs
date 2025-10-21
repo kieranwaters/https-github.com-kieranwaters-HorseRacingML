@@ -868,7 +868,7 @@ namespace HorseRacingML.Scraping
                     }
 
                     var validAiBefore = flows.Where(f => f.AiOdds.HasValue && double.IsFinite(f.AiOdds.Value) && f.AiOdds.Value >= 0).Select(f => f.AiOdds!.Value).ToList(); // gather valid ai
-                    var missingAiCount = flows.Count - validAiBefore.Count; // count missing
+                    var missingAiCount = flows.Count - validAiBefore.Count;
                     else
                     {
                         var sumProb = validAiBefore.Sum(); // sum

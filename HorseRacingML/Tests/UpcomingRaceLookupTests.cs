@@ -1649,7 +1649,6 @@ new RunnerFlow { HorseName = "Alpha Runner" },
             {
                 return Array.Empty<RunnerResult>();
             }
-            public decimal? GetLastDistanceBeatenLengths(string? horseName, int? horseId, DateTime? beforeDate) => DistanceBeatenResult;
             public decimal? GetLastDistanceBeatenLengths(string? horseName, int? horseId, DateTime? beforeDate)
             {
                 LastDistanceBeatenHorseId = horseId;
