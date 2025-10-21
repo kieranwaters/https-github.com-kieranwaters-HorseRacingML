@@ -986,6 +986,66 @@ new RunnerFlow { HorseName = "Alpha Runner" },
             Assert.Equal(0.5f, Convert.ToSingle(beta.FeatureValues["RaceAvgWinRateLast5"]));
         }
         [Fact]
+        public void PopulateFeatureVectors_UsesHorseNameLookupWhenHorseIdIsSynthetic()
+        {
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:HorseRacingDb"] = "Data Source=(localdb)\\MSSQLLocalDB;Initial Catalog=HorseRacingML;Integrated Security=True;Persist Security Info=False;Pooling=False;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Application Name=\"SQL Server Management Studio\";Command Timeout=30"
+                })
+                .Build();
+
+            var preparedRow = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["HorseName"] = "Synthetic Lookup Runner"
+            };
+            var preparedRace = new PreparedRace(921, new List<Dictionary<string, object?>> { preparedRow });
+
+            var trainer = new FakeTrainer(configuration, preparedRace);
+            var repo = new MinimalRacingRepository
+            {
+                DistanceBeatenResult = 2.5m
+            };
+            var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
+            var scraper = new BetfairMarketScraper(repo, trainer, bankroll: 9m, settings);
+
+            var syntheticHorseId = unchecked((int)0x60000000) | 12345;
+            var flows = new List<RunnerFlow>
+            {
+                new RunnerFlow
+                {
+                    HorseName = "Synthetic Lookup Runner",
+                    FeatureValues = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        ["HorseName"] = "Synthetic Lookup Runner",
+                        ["HorseId"] = syntheticHorseId,
+                        ["DistanceBeatenKnown"] = false,
+                        ["DistanceBeatenLengths"] = 0f
+                    }
+                }
+            };
+
+            var report = scraper.TestBuildRaceReport(
+                marketId: "1.917",
+                raceTitle: "Synthetic Stakes",
+                venueName: "Synthetic Park",
+                venueCountry: "GB",
+                raceDate: new DateTime(2024, 12, 21),
+                offTime: new TimeSpan(18, 5, 0),
+                raceDetails: "Handicap",
+                going: "Standard",
+                backBookPercentage: 102m,
+                layBookPercentage: 104m,
+                raceUrl: null,
+                flows: flows);
+
+            var runner = Assert.Single(report.Runners);
+            Assert.True(Convert.ToBoolean(runner.FeatureValues["DistanceBeatenKnown"]));
+            Assert.Equal(2.5f, Convert.ToSingle(runner.FeatureValues["DistanceBeatenLengths"]));
+            Assert.Null(repo.LastDistanceBeatenHorseId);
+            Assert.Equal("Synthetic Lookup Runner", repo.LastDistanceBeatenHorseName);
+        }
+        [Fact]
         public void AverageSpeedWindow_UsesOlderHistoryWhenRecentMissing()
         {
             var history = new List<(bool HasSpeed, float Speed, float SpeedDiff)>
@@ -1525,6 +1585,9 @@ new RunnerFlow { HorseName = "Alpha Runner" },
             public int? LastDistanceResult { get; set; }
             public bool LastDistanceLookupCalled { get; private set; }
             public decimal? DistanceBeatenResult { get; set; }
+            public int? LastDistanceBeatenHorseId { get; private set; }
+            public string? LastDistanceBeatenHorseName { get; private set; }
+            public DateTime? LastDistanceBeatenBeforeDate { get; private set; }
             public void ClearDayReportTables()
             {
             }
@@ -1587,6 +1650,13 @@ new RunnerFlow { HorseName = "Alpha Runner" },
                 return Array.Empty<RunnerResult>();
             }
             public decimal? GetLastDistanceBeatenLengths(string? horseName, int? horseId, DateTime? beforeDate) => DistanceBeatenResult;
+            public decimal? GetLastDistanceBeatenLengths(string? horseName, int? horseId, DateTime? beforeDate)
+            {
+                LastDistanceBeatenHorseId = horseId;
+                LastDistanceBeatenHorseName = horseName;
+                LastDistanceBeatenBeforeDate = beforeDate;
+                return DistanceBeatenResult;
+            }
 
         }
 

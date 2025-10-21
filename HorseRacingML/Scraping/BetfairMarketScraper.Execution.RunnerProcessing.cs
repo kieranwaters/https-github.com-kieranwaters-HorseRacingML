@@ -2756,7 +2756,7 @@ namespace HorseRacingML.Scraping
             {
                 horseId = TryConvertToInt32(flowHorseId);
             }
-
+            horseId = NormalizeHorseIdentifier(horseId);
             string? horseName = flow?.HorseName;
             if (string.IsNullOrWhiteSpace(horseName) &&
                 featureVector.TryGetValue("HorseName", out var horseObj) &&
@@ -2854,17 +2854,13 @@ namespace HorseRacingML.Scraping
                 {
                     horseId = TryConvertToInt32(flowHorseId);
                 }
+                horseId = NormalizeHorseIdentifier(horseId);
                 string? horseName = flow?.HorseName;
                 if (string.IsNullOrWhiteSpace(horseName) &&
                     featureVector.TryGetValue("HorseName", out var horseNameObj) &&
                     horseNameObj is string horseNameStr)
                 {
                     horseName = horseNameStr;
-                }
-
-                if (horseId.HasValue && horseId.Value <= 0)
-                {
-                    horseId = null;
                 }
 
                 if (horseId.HasValue || !string.IsNullOrWhiteSpace(horseName))
@@ -3015,6 +3011,33 @@ namespace HorseRacingML.Scraping
             }
 
             return name.Trim().ToLowerInvariant();
+        }
+        private static int? NormalizeHorseIdentifier(int? horseId)
+        {
+            if (!horseId.HasValue)
+            {
+                return null;
+            }
+
+            var value = horseId.Value;
+            if (value <= 0 || IsSyntheticIdentifier(value))
+            {
+                return null;
+            }
+
+            return value;
+        }
+
+        private static bool IsSyntheticIdentifier(int value)
+        {
+            if (value == int.MaxValue)
+            {
+                return true;
+            }
+
+            const int syntheticPrefix = unchecked((int)0x60000000);
+            const int mask = unchecked((int)0xF0000000);
+            return (value & mask) == syntheticPrefix;
         }
     }
 }
