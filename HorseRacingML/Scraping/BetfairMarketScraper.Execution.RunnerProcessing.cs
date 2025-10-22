@@ -1299,6 +1299,7 @@ namespace HorseRacingML.Scraping
                 if (racesSince.HasValue)
                 {
                     featureVector["HasLastWin"] = racesSince.Value >= 0;
+
                 }
             }
         }
