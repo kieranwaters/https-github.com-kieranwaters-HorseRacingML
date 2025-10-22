@@ -1849,7 +1849,23 @@ namespace HorseRacingML.Scraping
             var neuralKeys = GetCachedNeuralFeatureKeys();
             if (neuralKeys != null && neuralKeys.Count > 0)
             {
-                return neuralKeys;
+                var combined = new List<string>(neuralKeys);
+                var seen = new HashSet<string>(combined, StringComparer.OrdinalIgnoreCase);
+
+                foreach (var key in EssentialTrackedFeatureKeys)
+                {
+                    if (string.IsNullOrWhiteSpace(key))
+                    {
+                        continue;
+                    }
+
+                    if (seen.Add(key))
+                    {
+                        combined.Add(key);
+                    }
+                }
+
+                return combined;
             }
 
             return HistoricalFeatureBackfillKeys;
@@ -2233,7 +2249,10 @@ namespace HorseRacingML.Scraping
          .Concat(PerformanceWindowPrefixes.SelectMany((string prefix) =>
                 PerformanceWindowSizes.Select(window => string.Concat(prefix, window.ToString(CultureInfo.InvariantCulture)))))
             .ToArray());
-
+        private static readonly string[] EssentialTrackedFeatureKeys =
+        {
+            "HasLastWin"
+        };
         private static string[] HistoricalFeatureBackfillKeys => HistoricalFeatureBackfillKeysLazy.Value;
         private static readonly HashSet<string> HistoricalFeaturesAlwaysRequired = new(//here
             new[]
