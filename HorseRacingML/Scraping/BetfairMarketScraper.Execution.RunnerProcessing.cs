@@ -2158,8 +2158,24 @@ namespace HorseRacingML.Scraping
                 "DistanceYards",
                 "DistanceText",
                  "DistanceBucket",
-                "DistanceBeatenLengths"
-           },
+                "DistanceBeatenLengths",
+                "ClassWinRate",
+                "ClassAvgNorm",
+                "LastClassNormPos",
+                "TrainerClassWinRate",
+                "TrainerClassAvgNorm",
+                "LastTrainerClassNormPos",
+                "JockeyClassWinRate",
+                "JockeyClassAvgNorm",
+                "LastJockeyClassNormPos",
+                "JockeyGoingDistanceWinRate",
+                "JockeyGoingDistanceAvgNorm",
+                "LastJockeyGoingDistanceNormPos",
+                "TrainerJockeyCourseWinRate"
+           }
+           .Concat(PerformanceWindowPrefixes.SelectMany(prefix =>
+               PerformanceWindowSizes.Select(window => string.Concat(prefix, window.ToString(CultureInfo.InvariantCulture)))))
+           .ToArray(),
            StringComparer.OrdinalIgnoreCase);
         private static readonly HashSet<string> NeutralFallbackAllowedKeys = new(
             new[]
