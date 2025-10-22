@@ -479,7 +479,7 @@ namespace HorseRacingML.Tests
             Assert.Contains("Class", summary.MissingKeys, StringComparer.OrdinalIgnoreCase);
         }
         [Fact]
-        public void FeaturePopulationSummary_ClassDependentFallbacksRequireHistoricalValues()
+        public void FeaturePopulationSummary_ClassDependentFallbacksPopulatedWhenContextAvailable()
         {
             var repo = new StubRepository();
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
@@ -495,6 +495,7 @@ namespace HorseRacingML.Tests
             var featureVector = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
             {
                 ["Class"] = 4,
+                ["CareerStarts"] = 3,
                 ["ClassWinRate"] = 0f,
                 ["AvgRatingLast5"] = 0f,
                 ["TrainerJockeyCourseWinRate"] = 0f
@@ -502,13 +503,12 @@ namespace HorseRacingML.Tests
 
             var summary = scraper.TestBuildFeaturePopulationSummary(featureVector);
 
-            Assert.Equal(0, summary.PopulatedCount);
-            Assert.Equal(3, summary.MissingCount);
-            Assert.Contains("ClassWinRate", summary.MissingKeys, StringComparer.OrdinalIgnoreCase);
-            Assert.Contains("AvgRatingLast5", summary.MissingKeys, StringComparer.OrdinalIgnoreCase);
+            Assert.Equal(2, summary.PopulatedCount);
+            Assert.Contains("ClassWinRate", summary.PopulatedKeys, StringComparer.OrdinalIgnoreCase);
+            Assert.Contains("AvgRatingLast5", summary.PopulatedKeys, StringComparer.OrdinalIgnoreCase);
+            Assert.DoesNotContain("ClassWinRate", summary.MissingKeys, StringComparer.OrdinalIgnoreCase);
+            Assert.DoesNotContain("AvgRatingLast5", summary.MissingKeys, StringComparer.OrdinalIgnoreCase);
             Assert.Contains("TrainerJockeyCourseWinRate", summary.MissingKeys, StringComparer.OrdinalIgnoreCase);
-            Assert.DoesNotContain("ClassWinRate", summary.PopulatedKeys, StringComparer.OrdinalIgnoreCase);
-            Assert.DoesNotContain("AvgRatingLast5", summary.PopulatedKeys, StringComparer.OrdinalIgnoreCase);
             Assert.DoesNotContain("TrainerJockeyCourseWinRate", summary.PopulatedKeys, StringComparer.OrdinalIgnoreCase);
         }
         [Fact]
@@ -530,6 +530,46 @@ namespace HorseRacingML.Tests
             Assert.Contains("HasLastWin", summary.PopulatedKeys, StringComparer.OrdinalIgnoreCase);
             Assert.DoesNotContain("HasLastWin", summary.MissingKeys, StringComparer.OrdinalIgnoreCase);
         }
+        [Fact]
+        public void FeaturePopulationSummary_RatingFallbacksPopulatedWhenHistoryInsufficient()
+        {
+            var repo = new StubRepository();
+            var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
+            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), bankroll: 25m, settings);
+
+            scraper.TestSetNeuralFeatureKeys(new[] { "AvgRatingLast10" });
+
+            var featureVector = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["CareerStarts"] = 4,
+                ["AvgRatingLast10"] = 0f
+            };
+
+            var summary = scraper.TestBuildFeaturePopulationSummary(featureVector);
+
+            Assert.Contains("AvgRatingLast10", summary.PopulatedKeys, StringComparer.OrdinalIgnoreCase);
+            Assert.DoesNotContain("AvgRatingLast10", summary.MissingKeys, StringComparer.OrdinalIgnoreCase);
+        }
+        [Fact]
+        public void FeaturePopulationSummary_RatingFallbacksRemainMissingWhenHistoryAvailable()
+        {
+            var repo = new StubRepository();
+            var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
+            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), bankroll: 25m, settings);
+
+            scraper.TestSetNeuralFeatureKeys(new[] { "AvgRatingLast10" });
+
+            var featureVector = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["CareerStarts"] = 12,
+                ["AvgRatingLast10"] = 0f
+            };
+
+            var summary = scraper.TestBuildFeaturePopulationSummary(featureVector);
+
+            Assert.Contains("AvgRatingLast10", summary.MissingKeys, StringComparer.OrdinalIgnoreCase);
+            Assert.DoesNotContain("AvgRatingLast10", summary.PopulatedKeys, StringComparer.OrdinalIgnoreCase);
+        }        
         [Fact]
         public void FeaturePopulationSummary_RetainsEssentialKeysWhenModelMetadataMissing()
         {

@@ -2087,12 +2087,125 @@ namespace HorseRacingML.Scraping
                 return false;
             }
 
-            if (IsNeutralFallbackValue(source, key, existing))
+            if (IsNeutralFallbackValue(source, key, existing) &&
+               !IsMeaningfulNeutralFallback(source, key, existing))
             {
                 return false;
             }
 
             value = existing;
+            return true;
+        }
+        private static bool IsMeaningfulNeutralFallback(
+            Dictionary<string, object?> source,
+            string key,
+            object? value)
+        {
+            if (source == null || string.IsNullOrWhiteSpace(key))
+            {
+                return false;
+            }
+
+            if (IsClassDependentKey(key) && HasMeaningfulNonNeutralValue(source, "Class"))
+            {
+                return true;
+            }
+
+            if (IsGoingDistanceDependentKey(key) &&
+                HasMeaningfulNonNeutralValue(source, "Going") &&
+                (HasMeaningfulNonNeutralValue(source, "DistanceBucket") ||
+                 HasMeaningfulNonNeutralValue(source, "DistanceText") ||
+                 HasMeaningfulNonNeutralValue(source, "DistanceYards")))
+            {
+                return true;
+            }
+
+            if (IsRatingAggregateKey(key))
+            {
+                if (TryExtractPerformanceWindow(key, out var window) &&
+                    TryGetCareerStarts(source, out var starts) &&
+                    window > 0 && starts > 0 && starts < window)
+                {
+                    return true;
+                }
+
+                if (HasMeaningfulNonNeutralValue(source, "OfficialRating"))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool HasMeaningfulNonNeutralValue(
+            Dictionary<string, object?> source,
+            string key)
+        {
+            if (source == null || string.IsNullOrWhiteSpace(key))
+            {
+                return false;
+            }
+
+            if (!source.TryGetValue(key, out var candidate) || !HasMeaningfulValue(candidate))
+            {
+                return false;
+            }
+
+            return !IsNeutralFallbackValue(source, key, candidate);
+        }
+
+        private static bool TryGetCareerStarts(
+            Dictionary<string, object?> source,
+            out int starts)
+        {
+            starts = 0;
+            if (source == null)
+            {
+                return false;
+            }
+
+            if (!source.TryGetValue("CareerStarts", out var startsObj))
+            {
+                return false;
+            }
+
+            var parsed = TryConvertToInt32(startsObj);
+            if (!parsed.HasValue)
+            {
+                return false;
+            }
+
+            starts = parsed.Value;
+            return true;
+        }
+
+        private static bool TryExtractPerformanceWindow(string key, out int window)
+        {
+            window = 0;
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                return false;
+            }
+
+            int end = key.Length - 1;
+            while (end >= 0 && char.IsDigit(key[end]))
+            {
+                end--;
+            }
+
+            if (end == key.Length - 1)
+            {
+                return false;
+            }
+
+            var span = key.AsSpan(end + 1);
+            if (!int.TryParse(span, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+            {
+                return false;
+            }
+
+            window = parsed;
             return true;
         }
 
@@ -2523,6 +2636,8 @@ namespace HorseRacingML.Scraping
         private static bool IsGoingDependentKey(string key) =>
             key.IndexOf("Going", StringComparison.OrdinalIgnoreCase) >= 0 ||
             key.StartsWith("LayoffNormalized_", StringComparison.OrdinalIgnoreCase);
+        private static bool IsGoingDistanceDependentKey(string key) =>
+            key.IndexOf("GoingDistance", StringComparison.OrdinalIgnoreCase) >= 0;
 
         private static bool IsDistanceBucketDependentKey(string key) =>
             string.Equals(key, "DistanceBucket", StringComparison.OrdinalIgnoreCase) ||
