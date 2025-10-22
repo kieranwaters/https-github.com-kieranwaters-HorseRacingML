@@ -363,6 +363,66 @@ namespace HorseRacingML.Tests
             Assert.Equal(0.22f, MathF.Round(Convert.ToSingle(featureVector["TrainerJockeySurfaceWinRate"]), 2));
             Assert.Equal(0.22f, MathF.Round(Convert.ToSingle(featureVector["TrainerJockeyCourseWinRate"]), 2));
         }
+        [Fact]
+        public void PromoteCalculatedHistoricalFallbacks_UsesPerRaceClassBaselines()
+        {
+            var repo = new StubRepository
+            {
+                HistoricalRatings = new List<RaceClassRating>
+                {
+                    new RaceClassRating
+                    {
+                        RaceDate = new DateTime(2024, 6, 10),
+                        OfficialRating = null,
+                        Class = 3
+                    },
+                    new RaceClassRating
+                    {
+                        RaceDate = new DateTime(2024, 5, 1),
+                        OfficialRating = 88,
+                        Class = 4
+                    },
+                    new RaceClassRating
+                    {
+                        RaceDate = new DateTime(2024, 4, 1),
+                        OfficialRating = null,
+                        Class = 5
+                    }
+                }
+            };
+
+            var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
+            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), bankroll: 25m, settings);
+
+            var featureVector = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["HorseId"] = 123,
+                ["HorseName"] = "Runner Echo"
+            };
+
+            var flow = new RunnerFlow
+            {
+                HorseName = "Runner Echo",
+                FeatureValues = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["HorseId"] = 123
+                }
+            };
+
+            scraper.TestApplyScrapedFeatureFallbacks(
+                featureVector,
+                flow,
+                raceDate: new DateTime(2024, 7, 1),
+                flows: new List<RunnerFlow> { flow });
+
+            Assert.True(featureVector.TryGetValue("AvgRatingLast1", out var last1Obj));
+            Assert.True(featureVector.TryGetValue("AvgRatingLast3", out var last3Obj));
+            Assert.True(featureVector.TryGetValue("AvgRatingLast5", out var last5Obj));
+
+            Assert.Equal(95f, Convert.ToSingle(last1Obj));
+            Assert.Equal(89.33f, MathF.Round(Convert.ToSingle(last3Obj), 2));
+            Assert.Equal(89.33f, MathF.Round(Convert.ToSingle(last5Obj), 2));
+        }
 
         [Fact]
         public void BuildRaceReport_SummarizesPartialMarketFallbackReason()
@@ -763,7 +823,7 @@ namespace HorseRacingML.Tests
             public void ClearDayReportTables()
             {
             }
-
+            public IReadOnlyList<RaceClassRating> HistoricalRatings { get; set; } = Array.Empty<RaceClassRating>();
             public void InsertRaceScreen(RaceScreen screen)
             {
             }
@@ -825,6 +885,17 @@ namespace HorseRacingML.Tests
             public int? GetLastRaceDistance(string? horseName, int? horseId, DateTime? beforeDate)
             {
                 return null;
+            }
+            public IReadOnlyList<RaceClassRating> GetHistoricalRaceClassRatings(string? horseName, int? horseId, int maxCount)
+            {
+                if (HistoricalRatings.Count == 0 || maxCount <= 0)
+                {
+                    return Array.Empty<RaceClassRating>();
+                }
+
+                return HistoricalRatings
+                    .Take(maxCount)
+                    .ToList();
             }
         }
 

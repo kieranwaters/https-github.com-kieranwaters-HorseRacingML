@@ -308,15 +308,48 @@ namespace HorseRacingML.Scraping
                 return;
             }
 
-            var ratingFallback = ResolveBaselineRating(featureVector, flow, flows);
-            if (ratingFallback.HasValue)
+            var ratingWindows = new List<int>();
+            foreach (var window in PerformanceWindowSizes)
             {
-                foreach (var window in PerformanceWindowSizes)
+                var ratingKey = $"AvgRatingLast{window}";
+                if (!TryGetMeaningfulValue(featureVector, ratingKey, out _))
                 {
-                    var ratingKey = $"AvgRatingLast{window}";
-                    if (!TryGetMeaningfulValue(featureVector, ratingKey, out _))
+                    ratingWindows.Add(window);
+                }
+            }
+
+            float? ratingFallback = null;
+            if (ratingWindows.Count > 0)
+            {
+                ratingFallback = ResolveBaselineRating(featureVector, flow, flows);
+                var historicalRatings = ResolveHistoricalRatings(featureVector, flow, ratingFallback);
+                if (historicalRatings.Count > 0)
+                {
+                    foreach (var window in ratingWindows)
                     {
-                        featureVector[ratingKey] = ratingFallback.Value;
+                        var ratingKey = $"AvgRatingLast{window}";
+                        if (TryGetMeaningfulValue(featureVector, ratingKey, out _))
+                        {
+                            continue;
+                        }
+
+                        int count = Math.Min(window, historicalRatings.Count);
+                        if (count > 0)
+                        {
+                            featureVector[ratingKey] = historicalRatings.Take(count).Average();
+                        }
+                    }
+                }
+
+                if (ratingFallback.HasValue)
+                {
+                    foreach (var window in ratingWindows)
+                    {
+                        var ratingKey = $"AvgRatingLast{window}";
+                        if (!TryGetMeaningfulValue(featureVector, ratingKey, out _))
+                        {
+                            featureVector[ratingKey] = ratingFallback.Value;
+                        }
                     }
                 }
             }
@@ -504,23 +537,117 @@ namespace HorseRacingML.Scraping
                 classValue = ResolveFeatureValue(flow.FeatureValues, "Class");
             }
 
-            if (classValue.HasValue)
+            var classBaseline = ResolveClassRatingBaseline(classValue);
+            if (classBaseline.HasValue)
             {
-                var classInt = (int)Math.Round(classValue.Value);
-                if (classInt > 0)
-                {
-                    if (ClassRatingBaselines.TryGetValue(classInt, out var baseline))
-                    {
-                        return baseline;
-                    }
-
-                    classInt = Math.Min(classInt, 12);
-                    return 110f - (classInt * 5f);
-                }
+                return classBaseline.Value;
             }
 
             return null;
         }
+
+        private IReadOnlyList<float> ResolveHistoricalRatings(
+            Dictionary<string, object?> featureVector,
+            RunnerFlow? flow,
+            float? ratingFallback)
+        {
+            int? horseId = null;
+            if (featureVector.TryGetValue("HorseId", out var horseIdObj))
+            {
+                horseId = TryConvertToInt32(horseIdObj);
+            }
+
+            if (!horseId.HasValue && flow?.FeatureValues != null &&
+                flow.FeatureValues.TryGetValue("HorseId", out var flowHorseId))
+            {
+                horseId = TryConvertToInt32(flowHorseId);
+            }
+
+            horseId = NormalizeHorseIdentifier(horseId);
+
+            string? horseName = flow?.HorseName;
+            if (string.IsNullOrWhiteSpace(horseName) && featureVector.TryGetValue("HorseName", out var horseNameObj) &&
+                horseNameObj is string horseNameStr)
+            {
+                horseName = horseNameStr;
+            }
+
+            if (string.IsNullOrWhiteSpace(horseName) && flow?.FeatureValues != null &&
+                flow.FeatureValues.TryGetValue("HorseName", out var flowHorseNameObj) &&
+                flowHorseNameObj is string flowHorseName)
+            {
+                horseName = flowHorseName;
+            }
+
+            var history = _repo.GetHistoricalRaceClassRatings(
+                horseName,
+                horseId,
+                PerformanceWindowSizes.Max());
+
+            if (history == null || history.Count == 0)
+            {
+                return Array.Empty<float>();
+            }
+
+            var resolved = new List<float>(history.Count);
+            foreach (var entry in history)
+            {
+                var rating = entry.OfficialRating.HasValue ? (float?)entry.OfficialRating.Value : null;
+                if (!rating.HasValue)
+                {
+                    rating = ResolveClassRatingBaseline(entry.Class);
+                }
+
+                if (!rating.HasValue)
+                {
+                    rating = ratingFallback;
+                }
+
+                if (rating.HasValue)
+                {
+                    resolved.Add(rating.Value);
+                }
+            }
+
+            return resolved;
+        }
+
+        private static float? ResolveClassRatingBaseline(float? classValue)
+        {
+            if (!classValue.HasValue)
+            {
+                return null;
+            }
+
+            var rounded = (int)Math.Round(classValue.Value);
+            return ResolveClassRatingBaseline(rounded);
+        }
+
+        private static float? ResolveClassRatingBaseline(byte? classValue)
+            => ResolveClassRatingBaseline(classValue.HasValue ? (int?)classValue.Value : null);
+
+        private static float? ResolveClassRatingBaseline(int? classValue)
+        {
+            if (!classValue.HasValue)
+            {
+                return null;
+            }
+
+            var classInt = classValue.Value;
+            if (classInt <= 0)
+            {
+                return null;
+            }
+
+            if (ClassRatingBaselines.TryGetValue(classInt, out var baseline))
+            {
+                return baseline;
+            }
+
+            classInt = Math.Min(classInt, 12);
+            return 110f - (classInt * 5f);
+        }
+
 
         private static float? CombineAverages(float? first, float? second)
         {

@@ -1725,6 +1725,60 @@ ORDER BY r.RaceDate DESC, rr.RunnerResultId DESC;";
                 Names = candidates.ToArray()
             });
         }
+        public IReadOnlyList<RaceClassRating> GetHistoricalRaceClassRatings(string? horseName, int? horseId, int maxCount)
+        {
+            if (maxCount <= 0 || (!horseId.HasValue && string.IsNullOrWhiteSpace(horseName)))
+            {
+                return Array.Empty<RaceClassRating>();
+            }
+
+            const string sqlById = @"SELECT TOP (@Limit)
+    r.RaceDate,
+    rr.OfficialRating,
+    r.Class
+FROM RunnerResult rr
+INNER JOIN Race r ON r.RaceId = rr.RaceId
+WHERE rr.HorseId = @HorseId
+ORDER BY r.RaceDate DESC, rr.RunnerResultId DESC;";
+
+            const string sqlByName = @"SELECT TOP (@Limit)
+    r.RaceDate,
+    rr.OfficialRating,
+    r.Class
+FROM RunnerResult rr
+INNER JOIN Race r ON r.RaceId = rr.RaceId
+INNER JOIN Horse h ON h.HorseId = rr.HorseId
+WHERE h.Name IN @Names
+ORDER BY r.RaceDate DESC, rr.RunnerResultId DESC;";
+
+            using var conn = OpenConnection();
+
+            if (horseId.HasValue && horseId.Value > 0)
+            {
+                var byId = conn.Query<RaceClassRating>(sqlById, new
+                {
+                    HorseId = horseId.Value,
+                    Limit = maxCount
+                }).ToList();
+
+                if (byId.Count > 0)
+                {
+                    return byId;
+                }
+            }
+
+            var candidates = BuildHistoricalNameCandidates(horseName);
+            if (candidates.Count == 0)
+            {
+                return Array.Empty<RaceClassRating>();
+            }
+
+            return conn.Query<RaceClassRating>(sqlByName, new
+            {
+                Names = candidates.ToArray(),
+                Limit = maxCount
+            }).ToList();
+        }
         public IReadOnlyList<RunnerResult> GetLastSavedResults(string? raceTitle, DateTime? raceDate)
         {
             if (!raceDate.HasValue)

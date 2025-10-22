@@ -78,6 +78,12 @@ namespace HorseRacingML.Models
         public short? CourseId { get; set; }
         public short DistanceYards { get; set; }
     }
+    public sealed class RaceClassRating
+    {
+        public DateTime RaceDate { get; set; }
+        public short? OfficialRating { get; set; }
+        public byte? Class { get; set; }
+    }
     public class RaceScreen
     {
         public long RaceScreenId { get; set; }
