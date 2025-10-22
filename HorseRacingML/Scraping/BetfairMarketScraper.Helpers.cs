@@ -135,6 +135,22 @@ namespace HorseRacingML.Scraping
                 ["ClassAvgNorm"] = 0f,
                 ["LastClassNormPos"] = 0f
             };
+        private static readonly string[] ClassDependentFeatureKeys =
+        {
+            "ClassWinRate",
+            "ClassAvgNorm",
+            "LastClassNormPos",
+            "TrainerClassWinRate",
+            "TrainerClassAvgNorm",
+            "LastTrainerClassNormPos",
+            "JockeyClassWinRate",
+            "JockeyClassAvgNorm",
+            "LastJockeyClassNormPos",
+            "JockeyGoingDistanceWinRate",
+            "JockeyGoingDistanceAvgNorm",
+            "LastJockeyGoingDistanceNormPos",
+            "TrainerJockeyCourseWinRate"
+        };
         private static readonly string[] RaceTypeKeywords =
         {
             "handicap",
@@ -203,7 +219,74 @@ namespace HorseRacingML.Scraping
                     }
             }
         }
+        private void PromoteClassDependentFallbacks(Dictionary<string, object?> featureVector)
+        {
+            if (featureVector == null)
+            {
+                return;
+            }
 
+            if (!TryGetMeaningfulValue(featureVector, "Class", out _))
+            {
+                return;
+            }
+
+            foreach (var key in ClassDependentFeatureKeys)
+            {
+                if (TryGetMeaningfulValue(featureVector, key, out _))
+                {
+                    continue;
+                }
+
+                if (!NeutralFeatureFallbacks.TryGetValue(key, out var fallback) || fallback == null)
+                {
+                    fallback = 0f;
+                }
+
+                featureVector[key] = fallback;
+            }
+        }
+
+        private void PromotePerformanceWindowFallbacks(Dictionary<string, object?> featureVector)
+        {
+            if (featureVector == null)
+            {
+                return;
+            }
+
+            var insertedAny = false;
+
+            foreach (var prefix in PerformanceWindowPrefixes)
+            {
+                foreach (var window in PerformanceWindowSizes)
+                {
+                    var key = string.Concat(prefix, window.ToString(CultureInfo.InvariantCulture));
+                    if (TryGetMeaningfulValue(featureVector, key, out _))
+                    {
+                        continue;
+                    }
+
+                    if (!NeutralFeatureFallbacks.TryGetValue(key, out var fallback) || fallback == null)
+                    {
+                        fallback = 0f;
+                    }
+
+                    featureVector[key] = fallback;
+                    insertedAny = true;
+                }
+            }
+
+            if (!insertedAny)
+            {
+                return;
+            }
+
+            if (featureVector.TryGetValue("RatingAggregatesMissing", out var ratingMissingObj) &&
+                ratingMissingObj is bool ratingMissing && ratingMissing)
+            {
+                featureVector["RatingAggregatesMissing"] = false;
+            }
+        }
         static string DistanceBucketFromYards(int yards)
             => yards < 1760 ? "Sprint" : yards < 2640 ? "Middle" : "Long";
 
