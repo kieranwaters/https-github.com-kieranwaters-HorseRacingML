@@ -312,6 +312,57 @@ namespace HorseRacingML.Tests
             Assert.Equal("9-6", Assert.IsType<string>(featureVector["WeightText"]));
             Assert.False(Convert.ToBoolean(featureVector["WeightMissing"]));
         }
+        [Fact]
+        public void ApplyScrapedFeatureFallbacks_PopulatesDerivedHistoricalFallbacks()
+        {
+            var repo = new StubRepository();
+            var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
+            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), bankroll: 25m, settings);
+
+            var featureVector = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["TrainerWinRate"] = 0.2f,
+                ["TrainerSurfaceAvgNorm"] = 0.4f,
+                ["LastTrainerSurfaceNormPos"] = 0.45f,
+                ["JockeyWinRate"] = 0.18f,
+                ["JockeyGoingWinRate"] = 0.22f,
+                ["JockeyDistanceBucketWinRate"] = 0.16f,
+                ["JockeyGoingAvgNorm"] = 0.55f,
+                ["JockeyDistanceBucketAvgNorm"] = 0.6f,
+                ["LastJockeyGoingNormPos"] = 0.48f,
+                ["LastJockeyDistanceBucketNormPos"] = 0.5f,
+                ["TrainerSurfaceWinRate"] = 0.24f,
+                ["JockeySurfaceWinRate"] = 0.2f,
+                ["TrainerCourseWinRate"] = 0.26f,
+                ["JockeyCourseWinRate"] = 0.18f,
+                ["LifetimeWinRate"] = 0.3f,
+                ["OfficialRating"] = 92f,
+                ["Class"] = 4
+            };
+
+            var flow = new RunnerFlow
+            {
+                HorseName = "Runner Delta"
+            };
+
+            scraper.TestApplyScrapedFeatureFallbacks(
+                featureVector,
+                flow,
+                raceDate: new DateTime(2024, 6, 1),
+                raceDetails: "Handicap",
+                flows: new List<RunnerFlow> { flow });
+
+            Assert.Equal(92f, Convert.ToSingle(featureVector["AvgRatingLast5"]));
+            Assert.Equal(0.3f, Convert.ToSingle(featureVector["ClassWinRate"]));
+            Assert.Equal(0.7f, MathF.Round(Convert.ToSingle(featureVector["ClassAvgNorm"]), 1));
+            Assert.Equal(0.2f, Convert.ToSingle(featureVector["TrainerClassWinRate"]));
+            Assert.Equal(0.4f, Convert.ToSingle(featureVector["TrainerClassAvgNorm"]));
+            Assert.Equal(0.19f, MathF.Round(Convert.ToSingle(featureVector["TrainerJockeyWinRate"]), 2));
+            Assert.Equal(0.19f, MathF.Round(Convert.ToSingle(featureVector["JockeyGoingDistanceWinRate"]), 2));
+            Assert.Equal(0.49f, MathF.Round(Convert.ToSingle(featureVector["LastJockeyGoingDistanceNormPos"]), 2));
+            Assert.Equal(0.22f, MathF.Round(Convert.ToSingle(featureVector["TrainerJockeySurfaceWinRate"]), 2));
+            Assert.Equal(0.22f, MathF.Round(Convert.ToSingle(featureVector["TrainerJockeyCourseWinRate"]), 2));
+        }
 
         [Fact]
         public void BuildRaceReport_SummarizesPartialMarketFallbackReason()

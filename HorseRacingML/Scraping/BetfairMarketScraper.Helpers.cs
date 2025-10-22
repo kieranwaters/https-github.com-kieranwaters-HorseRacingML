@@ -135,6 +135,17 @@ namespace HorseRacingML.Scraping
                 ["ClassAvgNorm"] = 0f,
                 ["LastClassNormPos"] = 0f
             };
+        private static readonly IReadOnlyDictionary<int, float> ClassRatingBaselines =
+           new Dictionary<int, float>
+           {
+               [1] = 105f,
+               [2] = 100f,
+               [3] = 95f,
+               [4] = 90f,
+               [5] = 85f,
+               [6] = 80f,
+               [7] = 75f
+           };
         private static readonly string[] ClassDependentFeatureKeys =
         {
             "ClassWinRate",
@@ -286,6 +297,264 @@ namespace HorseRacingML.Scraping
             {
                 featureVector["RatingAggregatesMissing"] = false;
             }
+        }
+        private void PromoteCalculatedHistoricalFallbacks(
+            Dictionary<string, object?> featureVector,
+            RunnerFlow? flow,
+            IReadOnlyList<RunnerFlow>? flows)
+        {
+            if (featureVector == null)
+            {
+                return;
+            }
+
+            var ratingFallback = ResolveBaselineRating(featureVector, flow, flows);
+            if (ratingFallback.HasValue)
+            {
+                foreach (var window in PerformanceWindowSizes)
+                {
+                    var ratingKey = $"AvgRatingLast{window}";
+                    if (!TryGetMeaningfulValue(featureVector, ratingKey, out _))
+                    {
+                        featureVector[ratingKey] = ratingFallback.Value;
+                    }
+                }
+            }
+
+            var lifetimeWinRate = ResolveFeatureValue(featureVector, "LifetimeWinRate");
+            if (!lifetimeWinRate.HasValue)
+            {
+                lifetimeWinRate = ResolveFeatureValue(flow?.FeatureValues, "LifetimeWinRate");
+            }
+
+            if (!lifetimeWinRate.HasValue)
+            {
+                var trainerWin = ResolveFeatureValue(featureVector, "TrainerWinRate");
+                var jockeyWin = ResolveFeatureValue(featureVector, "JockeyWinRate");
+                lifetimeWinRate = CombineAverages(trainerWin, jockeyWin);
+            }
+
+            if (lifetimeWinRate.HasValue)
+            {
+                foreach (var window in PerformanceWindowSizes)
+                {
+                    var winRateKey = $"WinRateLast{window}";
+                    if (!TryGetMeaningfulValue(featureVector, winRateKey, out _))
+                    {
+                        featureVector[winRateKey] = lifetimeWinRate.Value;
+                    }
+
+                    var normKey = $"AvgNormPosLast{window}";
+                    if (!TryGetMeaningfulValue(featureVector, normKey, out _))
+                    {
+                        featureVector[normKey] = ClampNormalizedPosition(1f - lifetimeWinRate.Value);
+                    }
+                }
+            }
+
+            var avgNormLast5 = ResolveFeatureValue(featureVector, "AvgNormPosLast5");
+            if (!avgNormLast5.HasValue && lifetimeWinRate.HasValue)
+            {
+                avgNormLast5 = ClampNormalizedPosition(1f - lifetimeWinRate.Value);
+            }
+
+            var classWinRate = ResolveFeatureValue(featureVector, "ClassWinRate");
+            if (!classWinRate.HasValue)
+            {
+                classWinRate = lifetimeWinRate ?? ResolveFeatureValue(featureVector, "TrainerWinRate")
+                    ?? ResolveFeatureValue(featureVector, "JockeyWinRate");
+            }
+
+            if (classWinRate.HasValue)
+            {
+                FillIfMissing(featureVector, "ClassWinRate", classWinRate);
+                var classAvgNorm = ResolveFeatureValue(featureVector, "ClassAvgNorm")
+                    ?? ClampNormalizedPosition(1f - classWinRate.Value);
+                FillIfMissing(featureVector, "ClassAvgNorm", classAvgNorm);
+
+                if (!TryGetMeaningfulValue(featureVector, "LastClassNormPos", out _))
+                {
+                    featureVector["LastClassNormPos"] = classAvgNorm;
+                }
+            }
+            else if (avgNormLast5.HasValue)
+            {
+                FillIfMissing(featureVector, "LastClassNormPos", avgNormLast5);
+            }
+
+            var trainerWinRate = ResolveFeatureValue(featureVector, "TrainerWinRate");
+            var trainerSurfaceAvg = ResolveFeatureValue(featureVector, "TrainerSurfaceAvgNorm");
+            var trainerGoingAvg = ResolveFeatureValue(featureVector, "TrainerGoingAvgNorm");
+            var trainerAvgNorm = trainerSurfaceAvg ?? trainerGoingAvg;
+            var lastTrainerSurface = ResolveFeatureValue(featureVector, "LastTrainerSurfaceNormPos");
+            var lastTrainerGoing = ResolveFeatureValue(featureVector, "LastTrainerGoingNormPos");
+            var lastTrainerNorm = lastTrainerSurface ?? lastTrainerGoing;
+
+            FillIfMissing(featureVector, "TrainerClassWinRate", trainerWinRate);
+            FillIfMissing(featureVector, "TrainerClassAvgNorm",
+                trainerAvgNorm ?? (trainerWinRate.HasValue ? ClampNormalizedPosition(1f - trainerWinRate.Value) : (float?)null));
+            FillIfMissing(featureVector, "LastTrainerClassNormPos",
+                lastTrainerNorm ?? trainerAvgNorm ?? (trainerWinRate.HasValue ? ClampNormalizedPosition(1f - trainerWinRate.Value) : (float?)null));
+
+            FillIfMissing(featureVector, "TrainerGoingWinRate", trainerWinRate);
+            FillIfMissing(featureVector, "TrainerGoingAvgNorm", trainerGoingAvg ?? trainerSurfaceAvg);
+            FillIfMissing(featureVector, "LastTrainerGoingNormPos", lastTrainerGoing ?? lastTrainerSurface);
+            FillIfMissing(featureVector, "LastTrainerSurfaceNormPos", lastTrainerSurface ?? lastTrainerGoing);
+
+            var jockeyWinRate = ResolveFeatureValue(featureVector, "JockeyWinRate");
+            var jockeySurfaceAvg = ResolveFeatureValue(featureVector, "JockeySurfaceAvgNorm");
+            var jockeyGoingAvg = ResolveFeatureValue(featureVector, "JockeyGoingAvgNorm");
+            var jockeyAvgNorm = jockeySurfaceAvg ?? jockeyGoingAvg;
+            var lastJockeySurface = ResolveFeatureValue(featureVector, "LastJockeySurfaceNormPos");
+            var lastJockeyGoing = ResolveFeatureValue(featureVector, "LastJockeyGoingNormPos");
+            var lastJockeyDistance = ResolveFeatureValue(featureVector, "LastJockeyDistanceBucketNormPos");
+
+            FillIfMissing(featureVector, "JockeyClassWinRate", jockeyWinRate);
+            FillIfMissing(featureVector, "JockeyClassAvgNorm",
+                jockeyAvgNorm ?? (jockeyWinRate.HasValue ? ClampNormalizedPosition(1f - jockeyWinRate.Value) : (float?)null));
+            FillIfMissing(featureVector, "LastJockeyClassNormPos",
+                lastJockeySurface ?? lastJockeyGoing ?? (jockeyAvgNorm ?? (jockeyWinRate.HasValue ? ClampNormalizedPosition(1f - jockeyWinRate.Value) : (float?)null)));
+
+            var jockeyGoingWin = ResolveFeatureValue(featureVector, "JockeyGoingWinRate");
+            var jockeyDistanceWin = ResolveFeatureValue(featureVector, "JockeyDistanceBucketWinRate");
+            FillIfMissing(featureVector, "JockeyGoingDistanceWinRate", CombineAverages(jockeyGoingWin, jockeyDistanceWin));
+
+            var jockeyDistanceAvg = ResolveFeatureValue(featureVector, "JockeyDistanceBucketAvgNorm");
+            FillIfMissing(featureVector, "JockeyGoingDistanceAvgNorm", CombineAverages(jockeyGoingAvg, jockeyDistanceAvg));
+            FillIfMissing(featureVector, "LastJockeyGoingDistanceNormPos", CombineAverages(lastJockeyGoing, lastJockeyDistance));
+
+            var trainerSurfaceWin = ResolveFeatureValue(featureVector, "TrainerSurfaceWinRate");
+            var jockeySurfaceWin = ResolveFeatureValue(featureVector, "JockeySurfaceWinRate");
+            var trainerCourseWin = ResolveFeatureValue(featureVector, "TrainerCourseWinRate");
+            var jockeyCourseWin = ResolveFeatureValue(featureVector, "JockeyCourseWinRate");
+
+            FillIfMissing(featureVector, "TrainerJockeyWinRate", CombineAverages(trainerWinRate, jockeyWinRate));
+            FillIfMissing(featureVector, "TrainerJockeySurfaceWinRate", CombineAverages(trainerSurfaceWin, jockeySurfaceWin));
+            FillIfMissing(featureVector, "TrainerJockeyCourseWinRate", CombineAverages(trainerCourseWin, jockeyCourseWin));
+        }
+
+        private static float ClampNormalizedPosition(float value)
+        {
+            if (float.IsNaN(value))
+            {
+                return 0f;
+            }
+
+            return Math.Clamp(value, -5f, 5f);
+        }
+
+        private static float? ResolveFeatureValue(Dictionary<string, object?>? source, string key)
+        {
+            if (source == null)
+            {
+                return null;
+            }
+
+            if (!TryGetMeaningfulValue(source, key, out var obj))
+            {
+                return null;
+            }
+
+            return TryConvertToSingle(obj);
+        }
+
+        private float? ResolveBaselineRating(
+            Dictionary<string, object?> featureVector,
+            RunnerFlow? flow,
+            IReadOnlyList<RunnerFlow>? flows)
+        {
+            var rating = ResolveFeatureValue(featureVector, "OfficialRating");
+            if (rating.HasValue)
+            {
+                return rating.Value;
+            }
+
+            rating = ResolveFeatureValue(flow?.FeatureValues, "OfficialRating");
+            if (rating.HasValue)
+            {
+                return rating.Value;
+            }
+
+            if (flows != null)
+            {
+                var collected = new List<float>();
+                foreach (var candidate in flows)
+                {
+                    if (candidate?.FeatureValues == null)
+                    {
+                        continue;
+                    }
+
+                    var candidateRating = ResolveFeatureValue(candidate.FeatureValues, "OfficialRating");
+                    if (candidateRating.HasValue)
+                    {
+                        collected.Add(candidateRating.Value);
+                    }
+                }
+
+                if (collected.Count > 0)
+                {
+                    return collected.Average();
+                }
+            }
+
+            var classValue = ResolveFeatureValue(featureVector, "Class");
+            if (!classValue.HasValue && flow?.FeatureValues != null)
+            {
+                classValue = ResolveFeatureValue(flow.FeatureValues, "Class");
+            }
+
+            if (classValue.HasValue)
+            {
+                var classInt = (int)Math.Round(classValue.Value);
+                if (classInt > 0)
+                {
+                    if (ClassRatingBaselines.TryGetValue(classInt, out var baseline))
+                    {
+                        return baseline;
+                    }
+
+                    classInt = Math.Min(classInt, 12);
+                    return 110f - (classInt * 5f);
+                }
+            }
+
+            return null;
+        }
+
+        private static float? CombineAverages(float? first, float? second)
+        {
+            if (first.HasValue && second.HasValue)
+            {
+                return (first.Value + second.Value) / 2f;
+            }
+
+            if (first.HasValue)
+            {
+                return first.Value;
+            }
+
+            if (second.HasValue)
+            {
+                return second.Value;
+            }
+
+            return null;
+        }
+
+        private static void FillIfMissing(Dictionary<string, object?> featureVector, string key, float? value)
+        {
+            if (!value.HasValue)
+            {
+                return;
+            }
+
+            if (TryGetMeaningfulValue(featureVector, key, out _))
+            {
+                return;
+            }
+
+            featureVector[key] = value.Value;
         }
         static string DistanceBucketFromYards(int yards)
             => yards < 1760 ? "Sprint" : yards < 2640 ? "Middle" : "Long";
@@ -991,6 +1260,7 @@ namespace HorseRacingML.Scraping
             {
                 MarkMissing("race date");
             }
+            PromoteCalculatedHistoricalFallbacks(featureVector, flow, flows);
         }
         private static ParsedRaceMetadata ParseRaceMetadata(
             RaceDayReport race,
