@@ -445,6 +445,25 @@ namespace HorseRacingML.Tests
             Assert.Contains("Class", summary.MissingKeys, StringComparer.OrdinalIgnoreCase);
         }
         [Fact]
+        public void FeaturePopulationSummary_TreatsFalseHasLastWinAsPopulated()
+        {
+            var repo = new StubRepository();
+            var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
+            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), bankroll: 25m, settings);
+
+            scraper.TestSetNeuralFeatureKeys(null);
+
+            var featureVector = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["HasLastWin"] = false
+            };
+
+            var summary = scraper.TestBuildFeaturePopulationSummary(featureVector);
+
+            Assert.Contains("HasLastWin", summary.PopulatedKeys, StringComparer.OrdinalIgnoreCase);
+            Assert.DoesNotContain("HasLastWin", summary.MissingKeys, StringComparer.OrdinalIgnoreCase);
+        }
+        [Fact]
         public void FeaturePopulationSummary_TracksEncodedDimensions()
         {
             var model = new TrainedModel

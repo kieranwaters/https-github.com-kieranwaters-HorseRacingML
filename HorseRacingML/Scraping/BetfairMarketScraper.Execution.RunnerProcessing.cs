@@ -2143,7 +2143,8 @@ namespace HorseRacingML.Scraping
             new[]
             {
                 "SpeedMissing",
-                "DistanceBeatenKnown"
+                "DistanceBeatenKnown",
+                "HasLastWin"
             },
             StringComparer.OrdinalIgnoreCase);
 
