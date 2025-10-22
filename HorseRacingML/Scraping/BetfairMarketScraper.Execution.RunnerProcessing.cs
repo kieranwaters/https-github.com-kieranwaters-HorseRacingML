@@ -1300,8 +1300,11 @@ namespace HorseRacingML.Scraping
                 {
                     featureVector["HasLastWin"] = racesSince.Value >= 0;
 
+                    return;
                 }
             }
+
+            featureVector["HasLastWin"] = false;
         }
         private void PopulateFeatureVectors(
             DateTime? raceDate,

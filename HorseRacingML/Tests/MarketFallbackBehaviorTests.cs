@@ -155,6 +155,40 @@ namespace HorseRacingML.Tests
             Assert.True(Convert.ToBoolean(flag));
         }
         [Fact]
+        public void BuildRaceReport_DefaultsHasLastWinFlagWhenHistoryUnavailable()
+        {
+            var repo = new StubRepository();
+            var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
+            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), bankroll: 25m, settings);
+
+            var flows = new List<RunnerFlow>
+            {
+                new RunnerFlow
+                {
+                    HorseName = "No History Runner",
+                    FeatureValues = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+                }
+            };
+
+            var race = scraper.TestBuildRaceReport(
+                marketId: "1.1000",
+                raceTitle: "Default History Test",
+                venueName: "Test Course",
+                venueCountry: "GB",
+                raceDate: new DateTime(2024, 6, 1),
+                offTime: new TimeSpan(14, 30, 0),
+                raceDetails: "Test",
+                going: "Good",
+                backBookPercentage: null,
+                layBookPercentage: null,
+                raceUrl: null,
+                flows: flows);
+
+            var runner = Assert.Single(race.Runners);
+            Assert.True(runner.FeatureValues.TryGetValue("HasLastWin", out var flag));
+            Assert.False(Convert.ToBoolean(flag));
+        }
+        [Fact]
         public void BuildRaceReport_ClonesEncodedFeatureValues()
         {
             var repo = new StubRepository();
