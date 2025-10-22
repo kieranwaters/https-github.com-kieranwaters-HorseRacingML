@@ -847,7 +847,7 @@ namespace HorseRacingML.Tests
 
                 calculator.CalculateOdds(flow);
 
-                var encoded = Assert.NotNull(flow.EncodedFeatureValues);
+                var encoded = Assert.IsType<List<EncodedFeatureValue>>(flow.EncodedFeatureValues);
                 Assert.Equal(2, encoded.Count);
                 Assert.All(encoded, value => Assert.True(value.Active));
                 Assert.Equal(0d, encoded[0].Value);
