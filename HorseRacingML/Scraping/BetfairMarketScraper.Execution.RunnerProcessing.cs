@@ -2258,38 +2258,43 @@ namespace HorseRacingML.Scraping
 
             return Equals(value, fallback);
         }
-        private static readonly HashSet<string> NeutralFallbackMissingKeys = new(
-           new[]
-           {
-                "BackBookPercentage",
-                "LayBookPercentage",
-                "RunnerCount",
-                "Class",
-                "RaceType",
-                "Surface",
-                "Going",
-                "DistanceYards",
-                "DistanceText",
-                 "DistanceBucket",
-                "DistanceBeatenLengths",
-                "ClassWinRate",
-                "ClassAvgNorm",
-                "LastClassNormPos",
-                "TrainerClassWinRate",
-                "TrainerClassAvgNorm",
-                "LastTrainerClassNormPos",
-                "JockeyClassWinRate",
-                "JockeyClassAvgNorm",
-                "LastJockeyClassNormPos",
-                "JockeyGoingDistanceWinRate",
-                "JockeyGoingDistanceAvgNorm",
-                "LastJockeyGoingDistanceNormPos",
-                "TrainerJockeyCourseWinRate"
-           }
-           .Concat(PerformanceWindowPrefixes.SelectMany(prefix =>
-               PerformanceWindowSizes.Select(window => string.Concat(prefix, window.ToString(CultureInfo.InvariantCulture)))))
-           .ToArray(),
-           StringComparer.OrdinalIgnoreCase);
+        private static readonly Lazy<HashSet<string>> NeutralFallbackMissingKeysLazy = new(CreateNeutralFallbackMissingKeys);
+        private static HashSet<string> NeutralFallbackMissingKeys => NeutralFallbackMissingKeysLazy.Value;
+        private static HashSet<string> CreateNeutralFallbackMissingKeys()
+        {
+            return new HashSet<string>(
+                new[]
+                {
+                    "BackBookPercentage",
+                    "LayBookPercentage",
+                    "RunnerCount",
+                    "Class",
+                    "RaceType",
+                    "Surface",
+                    "Going",
+                    "DistanceYards",
+                    "DistanceText",
+                    "DistanceBucket",
+                    "DistanceBeatenLengths",
+                    "ClassWinRate",
+                    "ClassAvgNorm",
+                    "LastClassNormPos",
+                    "TrainerClassWinRate",
+                    "TrainerClassAvgNorm",
+                    "LastTrainerClassNormPos",
+                    "JockeyClassWinRate",
+                    "JockeyClassAvgNorm",
+                    "LastJockeyClassNormPos",
+                    "JockeyGoingDistanceWinRate",
+                    "JockeyGoingDistanceAvgNorm",
+                    "LastJockeyGoingDistanceNormPos",
+                    "TrainerJockeyCourseWinRate"
+                }
+                .Concat(PerformanceWindowPrefixes.SelectMany(prefix =>
+                    PerformanceWindowSizes.Select(window => string.Concat(prefix, window.ToString(CultureInfo.InvariantCulture)))))
+                .ToArray(),
+                StringComparer.OrdinalIgnoreCase);
+        }
         private static readonly HashSet<string> NeutralFallbackAllowedKeys = new(
             new[]
             {
