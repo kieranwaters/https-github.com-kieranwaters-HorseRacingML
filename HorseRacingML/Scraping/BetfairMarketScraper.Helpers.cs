@@ -991,6 +991,8 @@ namespace HorseRacingML.Scraping
             {
                 MarkMissing("race date");
             }
+            PromoteClassDependentFallbacks(featureVector);
+            PromotePerformanceWindowFallbacks(featureVector);
         }
         private static ParsedRaceMetadata ParseRaceMetadata(
             RaceDayReport race,

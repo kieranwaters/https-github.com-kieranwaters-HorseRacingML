@@ -396,6 +396,63 @@ namespace HorseRacingML.Tests
             Assert.False(featureVector.ContainsKey("DistanceYards"));
             Assert.False(featureVector.ContainsKey("DistanceText"));
         }
+        [Fact]
+        public void ApplyScrapedFeatureFallbacks_PromotesClassDependentFallbacks()
+        {
+            var repo = new StubRepository();
+            var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
+            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), bankroll: 25m, settings);
+
+            var featureVector = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Class"] = 4,
+                ["ClassMissing"] = false
+            };
+
+            var flow = new RunnerFlow
+            {
+                HorseName = "Runner Echo"
+            };
+
+            scraper.TestApplyScrapedFeatureFallbacks(
+                featureVector,
+                flow,
+                raceDetails: "Handicap",
+                flows: new[] { flow });
+
+            Assert.Equal(0f, Convert.ToSingle(featureVector["ClassWinRate"]));
+            Assert.Equal(0f, Convert.ToSingle(featureVector["TrainerClassWinRate"]));
+            Assert.Equal(0f, Convert.ToSingle(featureVector["JockeyClassWinRate"]));
+            Assert.Equal(0f, Convert.ToSingle(featureVector["TrainerJockeyCourseWinRate"]));
+        }
+
+        [Fact]
+        public void ApplyScrapedFeatureFallbacks_PromotesPerformanceWindowFallbacks()
+        {
+            var repo = new StubRepository();
+            var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
+            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), bankroll: 25m, settings);
+
+            var featureVector = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["CareerStarts"] = 2,
+                ["RatingAggregatesMissing"] = true
+            };
+
+            var flow = new RunnerFlow
+            {
+                HorseName = "Runner Foxtrot"
+            };
+
+            scraper.TestApplyScrapedFeatureFallbacks(
+                featureVector,
+                flow,
+                flows: new[] { flow });
+
+            Assert.Equal(0f, Convert.ToSingle(featureVector["AvgRatingLast5"]));
+            Assert.Equal(0f, Convert.ToSingle(featureVector["AvgRatingLast10"]));
+            Assert.False(Convert.ToBoolean(featureVector["RatingAggregatesMissing"]));
+        }
 
         [Fact]
         public void ClampLowAiProbability_UsesMarketOddsAndRecordsFallbackReason()
