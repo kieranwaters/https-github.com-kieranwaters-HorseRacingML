@@ -1847,12 +1847,14 @@ namespace HorseRacingML.Scraping
         private static IReadOnlyList<string> ResolveTrackedFeatureKeys()
         {
             var neuralKeys = GetCachedNeuralFeatureKeys();
-            if (neuralKeys != null && neuralKeys.Count > 0)
+            if (neuralKeys.Count > 0)
             {
                 var combined = new List<string>(neuralKeys);
                 var seen = new HashSet<string>(combined, StringComparer.OrdinalIgnoreCase);
 
-                foreach (var key in EssentialTrackedFeatureKeys)
+                var essentialKeys = EssentialTrackedFeatureKeys ?? Array.Empty<string>();
+
+                foreach (var key in essentialKeys)
                 {
                     if (string.IsNullOrWhiteSpace(key))
                     {
@@ -1868,7 +1870,7 @@ namespace HorseRacingML.Scraping
                 return combined;
             }
 
-            return HistoricalFeatureBackfillKeys;
+            return HistoricalFeatureBackfillKeys ?? Array.Empty<string>();
         }
         private static FeaturePopulationSummary BuildFeaturePopulationSummary(Dictionary<string, object?> featureVector)
         {

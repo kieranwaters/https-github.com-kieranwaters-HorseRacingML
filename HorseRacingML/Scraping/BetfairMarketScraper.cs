@@ -147,8 +147,8 @@ namespace HorseRacingML.Scraping
 
             _neuralFeatureKeys = normalized.Length > 0 ? normalized : Array.Empty<string>();
         }
-
-        private static IReadOnlyList<string> GetCachedNeuralFeatureKeys() => _neuralFeatureKeys;
+        private static IReadOnlyList<string> GetCachedNeuralFeatureKeys() =>
+                    _neuralFeatureKeys ?? Array.Empty<string>();
         public IReadOnlyCollection<string> MissingScrapeFieldDescriptions => _missingScrapedFieldDescriptions;
 
         public IReadOnlyList<RaceDayReport> ScrapeOpenRaceTabsForReport(IWebDriver driver, IEnumerable<string>? handlesToProcess = null)
