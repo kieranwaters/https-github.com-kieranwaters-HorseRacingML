@@ -803,6 +803,64 @@ namespace HorseRacingML.Tests
             Assert.Equal(0, summary.MissingCount);
             Assert.Empty(summary.MissingKeys);
         }
+        [Fact]
+        public void AIOddsCalculator_ActivatesMissingIndicatorSlots()
+        {
+            var model = new TrainedModel
+            {
+                OutputLayer = new LayerWeights
+                {
+                    Weights = new[]
+                    {
+                        new[] { 0f },
+                        new[] { 0f }
+                    },
+                    Bias = new[] { 0f }
+                },
+                Metadata = new FeatureMetadata
+                {
+                    Keys = new List<string> { "TrainerClassWinRate" },
+                    FeatureDimensions = new Dictionary<string, int>
+                    {
+                        ["TrainerClassWinRate"] = 2
+                    }
+                },
+                Normalization = new NormalizationParameters
+                {
+                    Mean = new[] { 0f, 0f },
+                    StdDev = new[] { 1f, 1f }
+                }
+            };
+
+            var tempPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".json");
+            try
+            {
+                File.WriteAllText(tempPath, JsonSerializer.Serialize(model));
+                var calculator = new AIOddsCalculator(tempPath);
+
+                var flow = new RunnerFlow
+                {
+                    HorseName = "Missing Trainer Class",
+                    HasPreparedFeatures = true,
+                    FeatureValues = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+                };
+
+                calculator.CalculateOdds(flow);
+
+                var encoded = Assert.NotNull(flow.EncodedFeatureValues);
+                Assert.Equal(2, encoded.Count);
+                Assert.All(encoded, value => Assert.True(value.Active));
+                Assert.Equal(0d, encoded[0].Value);
+                Assert.Equal(1d, encoded[1].Value);
+            }
+            finally
+            {
+                if (File.Exists(tempPath))
+                {
+                    File.Delete(tempPath);
+                }
+            }
+        }
         private static void InvokeApplyMarketFallback(IReadOnlyList<RunnerFlow> flows)
         {
             if (flows == null)

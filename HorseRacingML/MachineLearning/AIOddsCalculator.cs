@@ -922,7 +922,15 @@ namespace HorseRacingML.ML
             if (value == null)
             {
                 var arr = new double[dim];
-                isPresent = false;
+                if (hasMissingIndicator && baseDim >= 0 && baseDim < dim)
+                {
+                    arr[baseDim] = 1d;
+                    isPresent = true;
+                }
+                else
+                {
+                    isPresent = false;
+                }
                 return arr;
             }
 
