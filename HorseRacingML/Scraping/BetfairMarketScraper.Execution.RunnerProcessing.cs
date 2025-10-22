@@ -2471,7 +2471,7 @@ namespace HorseRacingML.Scraping
                     continue;
                 }
                 if (!TryGetMeaningfulValue(target, key, out _) &&
-                    TryGetMeaningfulValue(source, key, out var replacement))
+                    TryGetBackfillValue(target, source, key, out var replacement))
                 {
                     target[key] = replacement;
                     if (IsRatingAggregateKey(key))
@@ -2494,9 +2494,10 @@ namespace HorseRacingML.Scraping
                     continue;
                 }
 
-                if (!TryGetMeaningfulValue(target, key, out _) && HasMeaningfulValue(kvp.Value))
+                if (!TryGetMeaningfulValue(target, key, out _) &&
+                    TryGetBackfillValue(target, source, key, out var replacement))
                 {
-                    target[key] = kvp.Value;
+                    target[key] = replacement;
                     if (IsRatingAggregateKey(key))
                     {
                         ratingAggregateInserted = true;
@@ -2509,6 +2510,39 @@ namespace HorseRacingML.Scraping
                 target["RatingAggregatesMissing"] = !HasAnyMeaningfulRating(target);
             }
         }
+        private static bool TryGetBackfillValue(
+            Dictionary<string, object?> target,
+            Dictionary<string, object?>? source,
+            string key,
+            out object? value)
+        {
+            value = null;
+            if (source == null || string.IsNullOrWhiteSpace(key))
+            {
+                return false;
+            }
+
+            if (!source.TryGetValue(key, out var candidate) || !HasMeaningfulValue(candidate))
+            {
+                return false;
+            }
+
+            if (!IsNeutralFallbackValue(source, key, candidate))
+            {
+                value = candidate;
+                return true;
+            }
+
+            if (IsMeaningfulNeutralFallback(source, key, candidate) ||
+                IsMeaningfulNeutralFallback(target, key, candidate))
+            {
+                value = candidate;
+                return true;
+            }
+
+            return false;
+        }
+       
         private static bool HasMeaningfulValue(object? value)
         {
             if (value == null)
