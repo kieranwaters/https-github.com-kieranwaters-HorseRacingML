@@ -371,56 +371,43 @@ namespace HorseRacingML.Scraping
         }
         private static Dictionary<string, object?> CreateFeatureDictionary(IDictionary<string, object?>? source)
         {
-            var result = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+            var normalized = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
 
-            if (source == null)
+            if (source != null)
             {
-                return result;
-            }
-
-            foreach (var entry in source)
-            {
-                if (entry.Key == null)
+                foreach (var entry in source)
                 {
-                    continue;
-                }
-
-                var trimmedKey = entry.Key.Trim();
-                if (trimmedKey.Length == 0)
-                {
-                    continue;
-                }
-
-                result[trimmedKey] = entry.Value;
-                if (result.Count == 0)
-                {
-                    return result;
-                }
-
-                var keys = result.Keys.ToList();
-                var removals = new List<string>();
-
-                foreach (var key in keys)
-                {
-                    if (!TryGetMeaningfulValue(result, key, out var meaningful))
+                    if (entry.Key == null)
                     {
-                        removals.Add(key);
                         continue;
                     }
 
-                    result[key] = meaningful;
-                }
-
-                if (removals.Count > 0)
-                {
-                    foreach (var key in removals)
+                    var trimmedKey = entry.Key.Trim();
+                    if (trimmedKey.Length == 0)
                     {
-                        result.Remove(key);
+                        continue;
                     }
-                }
 
+                    normalized[trimmedKey] = entry.Value;
+                }
+            }
+
+            var result = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+
+            if (normalized.Count == 0)
+            {
                 return result;
             }
+
+            foreach (var key in normalized.Keys)
+            {
+                if (TryGetMeaningfulValue(normalized, key, out var meaningful))
+                {
+                    result[key] = meaningful;
+                }
+            }
+
+            return result;
         }
         private static List<EncodedFeatureValue> CloneEncodedFeatureValues(IEnumerable<EncodedFeatureValue>? source)
         {
