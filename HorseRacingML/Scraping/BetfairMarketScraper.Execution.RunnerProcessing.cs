@@ -392,9 +392,35 @@ namespace HorseRacingML.Scraping
                 }
 
                 result[trimmedKey] = entry.Value;
-            }
+                if (result.Count == 0)
+                {
+                    return result;
+                }
 
-            return result;
+                var keys = result.Keys.ToList();
+                var removals = new List<string>();
+
+                foreach (var key in keys)
+                {
+                    if (!TryGetMeaningfulValue(result, key, out var meaningful))
+                    {
+                        removals.Add(key);
+                        continue;
+                    }
+
+                    result[key] = meaningful;
+                }
+
+                if (removals.Count > 0)
+                {
+                    foreach (var key in removals)
+                    {
+                        result.Remove(key);
+                    }
+                }
+
+                return result;
+            }
         }
         private static List<EncodedFeatureValue> CloneEncodedFeatureValues(IEnumerable<EncodedFeatureValue>? source)
         {

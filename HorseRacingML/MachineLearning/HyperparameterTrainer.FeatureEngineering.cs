@@ -628,7 +628,7 @@ namespace HorseRacingML.ML
                                     recent = new();
                                     row[$"WinRateLast{window}"] = _trainer.SmoothedWinRate(0, 0);
                                     row[$"AvgNormPosLast{window}"] = 0f;
-                                    row[$"AvgRatingLast{window}"] = 0f;
+                                    row[$"AvgRatingLast{window}"] = rating;
 
                                 }
                             }
