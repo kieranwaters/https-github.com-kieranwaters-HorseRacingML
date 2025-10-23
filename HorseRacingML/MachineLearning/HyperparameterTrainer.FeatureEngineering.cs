@@ -29,6 +29,8 @@ namespace HorseRacingML.ML
         private const float MsPerLength = 200f;
         private static readonly Regex HorseNameBracketTextRegex =
             new Regex("\\s*\\([^\\)]*\\)|\\s*\\[[^\\]]*\\]", RegexOptions.Compiled);
+        private static readonly Regex UpcomingClassRegex =
+            new("class\\s*(?:[:\\-]?\\s*)?(?<value>[0-9]+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex HorseNameWhitespaceRegex = new Regex("\\s+", RegexOptions.Compiled);
         private static string SelectColumn(
             HashSet<string> available,
@@ -2191,7 +2193,11 @@ namespace HorseRacingML.ML
                     ["LayPrice2"] = flow.LayPrice2,
                     ["LayPrice3"] = flow.LayPrice3
                 };
-
+                var resolvedClass = ResolveUpcomingRaceClass(upcoming, flow);
+                if (resolvedClass.HasValue)
+                {
+                    row["Class"] = resolvedClass.Value;
+                }
                 // Values that depend on historical lookups are populated below when data is available.
                 row["Purse"] = null;
                 row["TrainerId"] = null;
@@ -2337,6 +2343,41 @@ namespace HorseRacingML.ML
             return (
                 selected.Average(h => h.Speed),
                 selected.Average(h => h.SpeedDiff));
+        }
+        private static int? ResolveUpcomingRaceClass(UpcomingRace? upcoming, RunnerFlow? flow)
+        {
+            if (flow?.FeatureValues != null &&
+                flow.FeatureValues.TryGetValue("Class", out var classObj) &&
+                PreparedDataset.TryConvertToInt32(classObj, out var classFromFlow) &&
+                classFromFlow > 0)
+            {
+                return classFromFlow;
+            }
+
+            static int? ParseClassFromText(string? text)
+            {
+                if (string.IsNullOrWhiteSpace(text))
+                {
+                    return null;
+                }
+
+                var match = UpcomingClassRegex.Match(text);
+                if (!match.Success)
+                {
+                    return null;
+                }
+
+                return int.TryParse(match.Groups["value"].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) && value > 0
+                    ? value
+                    : null;
+            }
+
+            return ParseClassFromText(flow?.RaceDetails)
+                   ?? ParseClassFromText(flow?.RaceTitle)
+                   ?? ParseClassFromText(flow?.RaceType)
+                   ?? ParseClassFromText(upcoming?.RaceDetails)
+                   ?? ParseClassFromText(upcoming?.Title)
+                   ?? ParseClassFromText(upcoming?.RaceType);
         }
 
         protected virtual RunnerLookupData LoadRunnerLookupData(
