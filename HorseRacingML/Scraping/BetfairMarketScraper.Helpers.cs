@@ -2753,13 +2753,31 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
         }
 
         private static void NormalizeAiOdds(ICollection<RunnerFlow> flows, bool useMarketFallbackForDegeneracy)
-      {
+        {
+            static void SyncClampTargetWithOdds(RunnerFlow flow)
+            {
+                if (!flow.AiProbabilityClampedToMarket)
+                {
+                    return;
+                }
+
+                if (!flow.AiProbabilityClampTarget.HasValue)
+                {
+                    return;
+                }
+
+                if (!flow.AiOdds.HasValue || !double.IsFinite(flow.AiOdds.Value))
+                {
+                    return;
+                }
+
+                flow.AiProbabilityClampTarget = Math.Max(flow.AiOdds.Value, 0d);
+            }
             var valid = flows
                 .Where(f => f.AiOdds.HasValue && double.IsFinite(f.AiOdds.Value) && f.AiOdds.Value >= 0)
                 .ToList();
             var totalRunners = flows.Count;
             var missingCount = totalRunners - valid.Count;
-
             if (valid.Count == 0)
             {
                 if (totalRunners > 0)
