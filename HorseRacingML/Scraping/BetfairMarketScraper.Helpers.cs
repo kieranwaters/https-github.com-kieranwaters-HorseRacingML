@@ -3371,6 +3371,27 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
                 }
             }
             var others = flows.Where(f => !ReferenceEquals(f, winner)).ToList();
+            var uniformProbability = flows.Count > 0 ? 1.0 / flows.Count : 0d;
+
+            double minimumResidualMass = 0d;
+            if (others.Count > 0 && uniformProbability > 0d)
+            {
+                const double residualUniformFraction = 0.5d;
+                minimumResidualMass = uniformProbability * residualUniformFraction * others.Count;
+                minimumResidualMass = Math.Clamp(minimumResidualMass, 0d, 1d - probabilityFloor);
+
+                var maximumWinnerProbability = 1d - minimumResidualMass;
+                if (winnerProbability > maximumWinnerProbability)
+                {
+                    var originalWinnerProbability = winnerProbability;
+                    winnerProbability = Math.Max(maximumWinnerProbability, probabilityFloor);
+                    Console.WriteLine(
+                        $"\t\tWinner probability {originalWinnerProbability.ToString("0.####", CultureInfo.InvariantCulture)} " +
+                        $"exceeded degeneracy guard; clamped to {winnerProbability.ToString("0.####", CultureInfo.InvariantCulture)} " +
+                        $"to reserve {minimumResidualMass.ToString("0.####", CultureInfo.InvariantCulture)} probability mass for rivals."
+                    );
+                }
+            }
             var leftoverMass = Math.Max(1.0 - winnerProbability, 0);
 
             if (others.Count > 0)
