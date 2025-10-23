@@ -2970,6 +2970,10 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
 
                 var normalizedSum = valid.Sum(f => f.AiOdds!.Value);
                 Console.WriteLine($"\t\tNormalized probability sum: {normalizedSum.ToString("0.####", CultureInfo.InvariantCulture)}.");
+                if (ApplyPostNormalizationLowProbabilityClamp(flows))
+                {
+                    NormalizeAiOdds(flows, useMarketFallbackForDegeneracy);
+                }
                 return;
             }
 
@@ -3130,6 +3134,54 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
 
             var normalizedSumWithClamp = valid.Sum(f => f.AiOdds!.Value);
             Console.WriteLine($"\t\tNormalized probability sum: {normalizedSumWithClamp.ToString("0.####", CultureInfo.InvariantCulture)}.");
+            if (ApplyPostNormalizationLowProbabilityClamp(flows))
+            {
+                NormalizeAiOdds(flows, useMarketFallbackForDegeneracy);
+            }
+        }
+        private static bool ApplyPostNormalizationLowProbabilityClamp(ICollection<RunnerFlow>? flows)
+        {
+            if (flows is null || flows.Count == 0)
+            {
+                return false;
+            }
+
+            var clampApplied = false;
+
+            foreach (var flow in flows)
+            {
+                if (flow == null)
+                {
+                    continue;
+                }
+
+                if (flow.AiProbabilityClampedToMarket)
+                {
+                    continue;
+                }
+
+                if (!flow.AiOdds.HasValue || !double.IsFinite(flow.AiOdds.Value) || flow.AiOdds.Value <= 0d)
+                {
+                    continue;
+                }
+
+                if (flow.AiOdds.Value >= LowAiProbabilityClampThreshold)
+                {
+                    continue;
+                }
+
+                if (TryClampLowAiProbabilityToMarket(flow))
+                {
+                    clampApplied = true;
+                }
+            }
+
+            if (clampApplied)
+            {
+                Console.WriteLine("\t\tClamped normalized AI probabilities below threshold to market-implied values; re-normalizing distribution.");
+            }
+
+            return clampApplied;
         }
         private static void ApplyMarketFallbackForUnmatchedRunners(IReadOnlyList<RunnerFlow> flows)
         {

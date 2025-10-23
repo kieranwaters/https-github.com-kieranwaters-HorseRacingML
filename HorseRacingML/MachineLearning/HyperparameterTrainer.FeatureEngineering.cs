@@ -634,7 +634,7 @@ namespace HorseRacingML.ML
                             }
                             if (!_goingStats.TryGetValue(horseId, out var gDict))
                             {
-                                gDict = new();
+                                gDict = new Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>(StringComparer.OrdinalIgnoreCase);
                                 _goingStats[horseId] = gDict;
                             }
                             if (!gDict.TryGetValue(going, out var gStats))
@@ -646,7 +646,7 @@ namespace HorseRacingML.ML
                             row[$"LayoffNormalized_{goingFeatureKey}"] = (float)row["LayoffNormalized"];
                             if (!_surfaceStats.TryGetValue(horseId, out var sDict))
                             {
-                                sDict = new();
+                                sDict = new Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>(StringComparer.OrdinalIgnoreCase);
                                 _surfaceStats[horseId] = sDict;
                             }
                             if (!sDict.TryGetValue(surface, out var sStats))
@@ -670,7 +670,7 @@ namespace HorseRacingML.ML
                             string gcKey = going + "_" + courseId;
                             if (!_goingCourseStats.TryGetValue(horseId, out var gcDict))
                             {
-                                gcDict = new();
+                                gcDict = new Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>(StringComparer.OrdinalIgnoreCase);
                                 _goingCourseStats[horseId] = gcDict;
                             }
                             if (!gcDict.TryGetValue(gcKey, out var gcStats))
@@ -708,7 +708,7 @@ namespace HorseRacingML.ML
                                              _trainer.SmoothedWinRate(baseStat.wins, baseStat.starts);
                             if (!_distanceBucketStats.TryGetValue(horseId, out var dDict))
                             {
-                                dDict = new();
+                                dDict = new Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>(StringComparer.OrdinalIgnoreCase);
                                 _distanceBucketStats[horseId] = dDict;
                             }
                             if (!dDict.TryGetValue(bucket, out var dStats))
@@ -802,7 +802,7 @@ namespace HorseRacingML.ML
 
                                 if (!_trainerSurfaceStats.TryGetValue(trainerId.Value, out var tsDict))
                                 {
-                                    tsDict = new();
+                                    tsDict = new Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>(StringComparer.OrdinalIgnoreCase);
                                     _trainerSurfaceStats[trainerId.Value] = tsDict;
                                 }
                                 if (!tsDict.TryGetValue(surface, out var tsStats))
@@ -815,7 +815,7 @@ namespace HorseRacingML.ML
 
                                 if (!_trainerGoingStats.TryGetValue(trainerId.Value, out var tgDict))
                                 {
-                                    tgDict = new();
+                                    tgDict = new Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>(StringComparer.OrdinalIgnoreCase);
                                     _trainerGoingStats[trainerId.Value] = tgDict;
                                 }
                                 if (!tgDict.TryGetValue(going, out var tgStats))
@@ -828,7 +828,7 @@ namespace HorseRacingML.ML
 
                                 if (!_trainerDistanceStats.TryGetValue(trainerId.Value, out var tdDict))
                                 {
-                                    tdDict = new();
+                                    tdDict = new Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>(StringComparer.OrdinalIgnoreCase);
                                     _trainerDistanceStats[trainerId.Value] = tdDict;
                                 }
                                 if (!tdDict.TryGetValue(bucket, out var tdStats))
@@ -888,7 +888,7 @@ namespace HorseRacingML.ML
 
                                 if (!_jockeySurfaceStats.TryGetValue(jockeyId.Value, out var jsDict))
                                 {
-                                    jsDict = new();
+                                    jsDict = new Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>(StringComparer.OrdinalIgnoreCase);
                                     _jockeySurfaceStats[jockeyId.Value] = jsDict;
                                 }
                                 if (!jsDict.TryGetValue(surface, out var jsStats))
@@ -901,7 +901,7 @@ namespace HorseRacingML.ML
 
                                 if (!_jockeyGoingStats.TryGetValue(jockeyId.Value, out var jgDict))
                                 {
-                                    jgDict = new();
+                                    jgDict = new Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>(StringComparer.OrdinalIgnoreCase);
                                     _jockeyGoingStats[jockeyId.Value] = jgDict;
                                 }
                                 if (!jgDict.TryGetValue(going, out var jgStats))
@@ -914,7 +914,7 @@ namespace HorseRacingML.ML
 
                                 if (!_jockeyDistanceStats.TryGetValue(jockeyId.Value, out var jdDict))
                                 {
-                                    jdDict = new();
+                                    jdDict = new Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>(StringComparer.OrdinalIgnoreCase);
                                     _jockeyDistanceStats[jockeyId.Value] = jdDict;
                                 }
                                 if (!jdDict.TryGetValue(bucket, out var jdStats))
@@ -1162,7 +1162,7 @@ namespace HorseRacingML.ML
                                 {
                                     if (!surfaceMissing)
                                     {
-                                        if (!_trainerSurfaceStats.TryGetValue(trainerId.Value, out var tsDict)) tsDict = new();
+                                        if (!_trainerSurfaceStats.TryGetValue(trainerId.Value, out var tsDict)) tsDict = new Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>(StringComparer.OrdinalIgnoreCase);
                                         if (!tsDict.TryGetValue(surface, out var tsStats)) tsStats = (0, 0, 0f, 0f);
                                         tsStats.starts++;
                                         tsStats.sumNorm += normFinish;
@@ -1173,7 +1173,7 @@ namespace HorseRacingML.ML
 
                                     if (!goingMissing)
                                     {
-                                        if (!_trainerGoingStats.TryGetValue(trainerId.Value, out var tgDict)) tgDict = new();
+                                        if (!_trainerGoingStats.TryGetValue(trainerId.Value, out var tgDict)) tgDict = new Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>(StringComparer.OrdinalIgnoreCase);
                                         if (!tgDict.TryGetValue(going, out var tgStats)) tgStats = (0, 0, 0f, 0f);
                                         tgStats.starts++;
                                         tgStats.sumNorm += normFinish;
@@ -1184,7 +1184,7 @@ namespace HorseRacingML.ML
 
                                     if (!distanceMissing)
                                     {
-                                        if (!_trainerDistanceStats.TryGetValue(trainerId.Value, out var tdDict)) tdDict = new();
+                                        if (!_trainerDistanceStats.TryGetValue(trainerId.Value, out var tdDict)) tdDict = new Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>(StringComparer.OrdinalIgnoreCase);
                                         if (!tdDict.TryGetValue(bucket, out var tdStats)) tdStats = (0, 0, 0f, 0f);
                                         tdStats.starts++;
                                         tdStats.sumNorm += normFinish;
@@ -1202,7 +1202,7 @@ namespace HorseRacingML.ML
                                 {
                                     if (!surfaceMissing)
                                     {
-                                        if (!_jockeySurfaceStats.TryGetValue(jockeyId.Value, out var jsDict)) jsDict = new();
+                                        if (!_jockeySurfaceStats.TryGetValue(jockeyId.Value, out var jsDict)) jsDict = new Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>(StringComparer.OrdinalIgnoreCase);
                                         if (!jsDict.TryGetValue(surface, out var jsStats)) jsStats = (0, 0, 0f, 0f);
                                         jsStats.starts++;
                                         jsStats.sumNorm += normFinish;
@@ -1213,7 +1213,7 @@ namespace HorseRacingML.ML
 
                                     if (!goingMissing)
                                     {
-                                        if (!_jockeyGoingStats.TryGetValue(jockeyId.Value, out var jgDict)) jgDict = new();
+                                        if (!_jockeyGoingStats.TryGetValue(jockeyId.Value, out var jgDict)) jgDict = new Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>(StringComparer.OrdinalIgnoreCase);
                                         if (!jgDict.TryGetValue(going, out var jgStats)) jgStats = (0, 0, 0f, 0f);
                                         jgStats.starts++;
                                         jgStats.sumNorm += normFinish;
@@ -1224,7 +1224,7 @@ namespace HorseRacingML.ML
 
                                     if (!distanceMissing)
                                     {
-                                        if (!_jockeyDistanceStats.TryGetValue(jockeyId.Value, out var jdDict)) jdDict = new();
+                                        if (!_jockeyDistanceStats.TryGetValue(jockeyId.Value, out var jdDict)) jdDict = new Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>(StringComparer.OrdinalIgnoreCase);
                                         if (!jdDict.TryGetValue(bucket, out var jdStats)) jdStats = (0, 0, 0f, 0f);
                                         jdStats.starts++;
                                         jdStats.sumNorm += normFinish;
