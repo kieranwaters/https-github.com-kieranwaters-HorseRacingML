@@ -58,9 +58,10 @@ namespace HorseRacingML.ML
             {
                 flow.EncodedFeatureValues = null;
             }
+            bool hasFeatureValues = flow.FeatureValues != null && flow.FeatureValues.Count > 0;
+            bool markHistoricalDataMissing = !flow.HasPreparedFeatures;
             if (!flow.HasPreparedFeatures)
             {
-                var hasFeatureValues = flow.FeatureValues != null && flow.FeatureValues.Count > 0;
                 var hasLiveSignals = hasFeatureValues
                     || flow.BackPrice1.HasValue
                     || flow.BackPrice2.HasValue
@@ -77,10 +78,18 @@ namespace HorseRacingML.ML
                     return false;
                 }
 
-                scoredWithOpportunisticFeatures = true;
-                AppendFallbackDetail(flow, "Prepared features missing; scoring with opportunistic feature vector");
-                LogDebug(flow,
-                    "Prepared features missing; using opportunistic feature vector built from scraper values");
+                if (!hasFeatureValues)
+                {
+                    scoredWithOpportunisticFeatures = true;
+                    AppendFallbackDetail(flow, "Prepared features missing; scoring with opportunistic feature vector");
+                    LogDebug(flow,
+                        "Prepared features missing; using opportunistic feature vector built from scraper values");
+                }
+                else
+                {
+                    LogDebug(flow,
+                        "Prepared feature vector incomplete; proceeding with available values");
+                }
             }
 
             if (_metadata == null || _mean == null || _std == null ||
@@ -91,19 +100,33 @@ namespace HorseRacingML.ML
             }
 
             Dictionary<string, object?> rawFeatures = BuildRawFeatureMap(flow);
-            if (scoredWithOpportunisticFeatures)
+            if (markHistoricalDataMissing)
             {
                 rawFeatures["HistoricalDataMissing"] = true;
+            }
 
+            if (scoredWithOpportunisticFeatures)
+            {
                 if (flow != null)
                 {
                     flow.FeatureValues = new Dictionary<string, object?>(rawFeatures, StringComparer.OrdinalIgnoreCase);
                     flow.FeaturePopulationSummary = BuildFeaturePopulationSummaryFromMetadata(rawFeatures);
                 }
             }
-            else if (flow != null && flow.FeatureValues == null)
+            else if (flow != null)
             {
-                flow.FeatureValues = new Dictionary<string, object?>(rawFeatures, StringComparer.OrdinalIgnoreCase);
+                if (markHistoricalDataMissing)
+                {
+                    flow.FeatureValues = new Dictionary<string, object?>(rawFeatures, StringComparer.OrdinalIgnoreCase);
+                    if (flow.FeaturePopulationSummary == null)
+                    {
+                        flow.FeaturePopulationSummary = BuildFeaturePopulationSummaryFromMetadata(rawFeatures);
+                    }
+                }
+                else if (flow.FeatureValues == null)
+                {
+                    flow.FeatureValues = new Dictionary<string, object?>(rawFeatures, StringComparer.OrdinalIgnoreCase);
+                }
             }
             LogDebug(flow, $"Built raw feature map with {rawFeatures.Count} entries");
             if (_metadata != null)
