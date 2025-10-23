@@ -328,7 +328,6 @@ namespace HorseRacingML.Scraping
                             resolvedGoing = metadataGoing;
                             goingSource = "parsed metadata";
                             goingDisplay = resolvedGoing;
-                            Console.WriteLine($"\t[DayReport] Falling back to metadata going for market {marketId}: '{goingDisplay}'.");
                         }
                         short? distanceYards = metadata.DistanceYards > 0
                             ? (short)Math.Min(metadata.DistanceYards, short.MaxValue)
@@ -361,14 +360,12 @@ namespace HorseRacingML.Scraping
                             CacheUpcomingRace(persistedUpcoming);
                             persistedUpcoming.UpcomingRaceId = upcomingId;
                         }
-
-                        Console.WriteLine($"\tRecorded upcoming race {persistedUpcoming.UpcomingRaceId} for market {marketId}.");
                         if (!string.IsNullOrWhiteSpace(persistedUpcoming.Going))
                         {
                             resolvedGoing = persistedUpcoming.Going.Trim();
                             goingSource = "upcoming race record";
                             goingDisplay = string.IsNullOrWhiteSpace(resolvedGoing) ? "<null>" : resolvedGoing;
-                            Console.WriteLine($"\t[DayReport] Updated going for market {marketId} from upcoming race record: '{goingDisplay}'.");
+                            
                         }
                     }
                     catch (Exception ex)

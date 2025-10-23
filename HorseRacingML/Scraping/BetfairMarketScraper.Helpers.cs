@@ -3266,37 +3266,142 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
                 return;
             }
 
-            var sum = valid.Sum(f => f.AiOdds!.Value);
-            if (!double.IsFinite(sum) || sum <= double.Epsilon)
+            var marketDerived = valid
+                .Where(f => f.AiProbabilityMarketDerived)
+                .ToList();
+            var modelDerived = valid
+                .Where(f => !f.AiProbabilityMarketDerived)
+                .ToList();
+
+            double marketSum = marketDerived.Sum(f => f.AiOdds!.Value);
+            double modelSum = modelDerived.Sum(f => f.AiOdds!.Value);
+
+            if (!double.IsFinite(marketSum) || !double.IsFinite(modelSum))
             {
                 return;
             }
 
             const double tolerance = 1e-8;
-            if (Math.Abs(sum - 1d) <= tolerance)
+
+            if (marketDerived.Count == 0 && Math.Abs(modelSum - 1d) <= tolerance)
             {
                 return;
             }
 
-            var scale = 1d / sum;
+            var normalizedMarketSum = marketSum;
 
-            foreach (var flow in valid)
+            if (marketSum > 1d + tolerance)
             {
-                flow.AiOdds = Math.Max(flow.AiOdds!.Value * scale, 0d);
+                var marketScale = 1d / marketSum;
+                foreach (var flow in marketDerived)
+                {
+                    flow.AiOdds = Math.Max(flow.AiOdds!.Value * marketScale, 0d);
+
+                    if (flow.AiProbabilityClampTarget.HasValue && double.IsFinite(flow.AiProbabilityClampTarget.Value))
+                    {
+                        flow.AiProbabilityClampTarget = Math.Max(flow.AiProbabilityClampTarget.Value * marketScale, 0d);
+                    }
+                }
+
+                normalizedMarketSum = marketDerived.Sum(f => f.AiOdds!.Value);
+                modelSum = modelDerived.Sum(f => f.AiOdds!.Value);
+            }
+
+            var availableForModel = 1d - normalizedMarketSum;
+            if (availableForModel < 0d)
+            {
+                availableForModel = 0d;
+            }
+
+            if (modelDerived.Count == 0)
+            {
+                if (Math.Abs(normalizedMarketSum - 1d) <= tolerance)
+                {
+                    return;
+                }
+
+                if (normalizedMarketSum <= double.Epsilon)
+                {
+                    return;
+                }
+
+                var scale = 1d / normalizedMarketSum;
+                foreach (var flow in marketDerived)
+                {
+                    flow.AiOdds = Math.Max(flow.AiOdds!.Value * scale, 0d);
+
+                    if (flow.AiProbabilityClampTarget.HasValue && double.IsFinite(flow.AiProbabilityClampTarget.Value))
+                    {
+                        flow.AiProbabilityClampTarget = Math.Max(flow.AiProbabilityClampTarget.Value * scale, 0d);
+                    }
+                }
+
+                var normalizedSumOnlyMarket = marketDerived.Sum(f => f.AiOdds!.Value);
+                Console.WriteLine(
+                    "\t\tApplied post-fallback normalization to market-derived AI probabilities; " +
+                    $"scale={scale.ToString("0.####", CultureInfo.InvariantCulture)}, " +
+                    $"normalized sum={normalizedSumOnlyMarket.ToString("0.####", CultureInfo.InvariantCulture)}.");
+                return;
+            }
+
+            if (availableForModel <= tolerance)
+            {
+                foreach (var flow in modelDerived)
+                {
+                    flow.AiOdds = 0d;
+
+                    if (flow.AiProbabilityClampTarget.HasValue && double.IsFinite(flow.AiProbabilityClampTarget.Value))
+                    {
+                        flow.AiProbabilityClampTarget = 0d;
+                    }
+                }
+
+                var normalizedSumWithSuppressedModel = marketDerived.Sum(f => f.AiOdds!.Value);
+                Console.WriteLine(
+                    "\t\tSuppressed model-derived AI probabilities due to fully allocated market-derived share; " +
+                    $"normalized sum={normalizedSumWithSuppressedModel.ToString("0.####", CultureInfo.InvariantCulture)}.");
+                return;
+            }
+
+            if (modelSum <= double.Epsilon)
+            {
+                foreach (var flow in modelDerived)
+                {
+                    flow.AiOdds = Math.Max(availableForModel / modelDerived.Count, 0d);
+
+                    if (flow.AiProbabilityClampTarget.HasValue && double.IsFinite(flow.AiProbabilityClampTarget.Value))
+                    {
+                        flow.AiProbabilityClampTarget = Math.Max(flow.AiProbabilityClampTarget.Value, 0d);
+                    }
+                }
+
+                var normalizedSum = marketDerived.Sum(f => f.AiOdds!.Value) + modelDerived.Sum(f => f.AiOdds!.Value);
+                Console.WriteLine(
+                    "\t\tDistributed available probability mass uniformly across model-derived runners during normalization; " +
+                    $"normalized sum={normalizedSum.ToString("0.####", CultureInfo.InvariantCulture)}.");
+                return;
+            }
+
+            var modelScale = availableForModel / modelSum;
+
+            foreach (var flow in modelDerived)
+            {
+                flow.AiOdds = Math.Max(flow.AiOdds!.Value * modelScale, 0d);
 
                 if (flow.AiProbabilityClampTarget.HasValue && double.IsFinite(flow.AiProbabilityClampTarget.Value))
                 {
-                    flow.AiProbabilityClampTarget = Math.Max(flow.AiProbabilityClampTarget.Value * scale, 0d);
+                    flow.AiProbabilityClampTarget = Math.Max(flow.AiProbabilityClampTarget.Value * modelScale, 0d);
                 }
             }
 
-            var normalizedSum = valid.Sum(f => f.AiOdds!.Value);
+            var totalNormalizedSum = marketDerived.Sum(f => f.AiOdds!.Value) + modelDerived.Sum(f => f.AiOdds!.Value);
             Console.WriteLine(
-                $"\t\tApplied post-fallback normalization to AI probabilities; " +
-                $"scale={scale.ToString("0.####", CultureInfo.InvariantCulture)}, " +
-                $"normalized sum={normalizedSum.ToString("0.####", CultureInfo.InvariantCulture)}.");
+                "\t\tApplied post-fallback normalization to AI probabilities; " +
+                $"marketShare={normalizedMarketSum.ToString("0.####", CultureInfo.InvariantCulture)}, " +
+                $"modelScale={modelScale.ToString("0.####", CultureInfo.InvariantCulture)}, " +
+                $"normalized sum={totalNormalizedSum.ToString("0.####", CultureInfo.InvariantCulture)}.");
         }
-        
+
         private static void AppendMarketFallbackReason(RunnerFlow? flow, string detail)
         {
             if (flow == null || string.IsNullOrWhiteSpace(detail))
