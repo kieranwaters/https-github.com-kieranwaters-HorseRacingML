@@ -3186,7 +3186,7 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
         private static void ApplyMarketFallbackForUnmatchedRunners(IReadOnlyList<RunnerFlow> flows)
         {
             if (flows == null || flows.Count == 0) return; // return early if list is null or empty
-            bool fallbackApplied = false;
+            var fallbackApplied = false;
             foreach (var flow in flows)
             {
                 if (flow == null || flow.MatchedDatabaseRecord)
@@ -3221,10 +3221,11 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
                     flow.AiProbabilityFallbackReason = null;
                     Console.WriteLine($"\t\tNo database match for {identifier} and no usable back price; AI odds remain unavailable.");
                 }
-                if (fallbackApplied)
-                {
-                    RenormalizeAiProbabilities(flows);
-                }
+            }
+
+            if (fallbackApplied)
+            {
+                RenormalizeAiProbabilities(flows);
             }
         }
         private static bool TryClampLowAiProbabilityToMarket(RunnerFlow? flow)

@@ -9,7 +9,6 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
-using System.Threading.Tasks;
 
 namespace HorseRacingML.Scraping
 {
@@ -790,8 +789,7 @@ namespace HorseRacingML.Scraping
 
                     if (evaluationCandidates.Count > 0)
                     {
-                        var parallelOptions = new ParallelOptions { MaxDegreeOfParallelism = 6 };
-                        Parallel.ForEach(evaluationCandidates, parallelOptions, rf =>
+                        foreach (var rf in evaluationCandidates)
                         {
                             var rfIdentifier = DescribeRunner(rf);
                             try
@@ -831,7 +829,7 @@ namespace HorseRacingML.Scraping
                                     Console.WriteLine($"            Unable to clamp low AI probability for {rfIdentifier}: market price unavailable.");
                                 }
                             }
-                        });
+                        }
                     }
 
                     foreach (var rf in flowsSnapshot)

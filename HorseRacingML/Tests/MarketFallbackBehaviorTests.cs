@@ -70,6 +70,54 @@ namespace HorseRacingML.Tests
             Assert.Equal(1.0d, matched.AiOdds!.Value + synthetic.AiOdds!.Value + fallback.AiOdds!.Value, 12);
             Assert.False(string.IsNullOrWhiteSpace(fallback.AiProbabilityFallbackReason));
         }
+        [Fact]
+        public void ApplyMarketFallback_UsesRawMarketProbabilitiesBeforeNormalization()
+        {
+            var flows = new List<RunnerFlow>
+            {
+                new RunnerFlow
+                {
+                    HorseName = "Matched",
+                    MatchedDatabaseRecord = true,
+                    AiOdds = 0.4d,
+                    BackPrice1 = 2.5m
+                },
+                new RunnerFlow
+                {
+                    HorseName = "Fallback One",
+                    MatchedDatabaseRecord = false,
+                    AiOdds = null,
+                    BackPrice1 = 2m
+                },
+                new RunnerFlow
+                {
+                    HorseName = "Fallback Two",
+                    MatchedDatabaseRecord = false,
+                    AiOdds = null,
+                    BackPrice1 = 4m
+                }
+            };
+
+            InvokeApplyMarketFallback(flows);
+
+            var matched = flows[0];
+            var fallbackOne = flows[1];
+            var fallbackTwo = flows[2];
+
+            Assert.True(fallbackOne.AiOdds.HasValue);
+            Assert.True(fallbackTwo.AiOdds.HasValue);
+
+            const double matchedRawProbability = 0.4d;
+            var marketProbOne = 1.0d / (double)fallbackOne.BackPrice1!.Value;
+            var marketProbTwo = 1.0d / (double)fallbackTwo.BackPrice1!.Value;
+            var rawSum = matchedRawProbability + marketProbOne + marketProbTwo;
+            var expectedScale = 1.0d / rawSum;
+
+            Assert.Equal(marketProbOne * expectedScale, fallbackOne.AiOdds!.Value, 12);
+            Assert.Equal(marketProbTwo * expectedScale, fallbackTwo.AiOdds!.Value, 12);
+            Assert.Equal(matched.AiOdds!.Value, matchedRawProbability * expectedScale, 12);
+            Assert.Equal(1.0d, matched.AiOdds!.Value + fallbackOne.AiOdds!.Value + fallbackTwo.AiOdds!.Value, 12);
+        }
 
         [Fact]
         public void BuildRaceReport_SummarizesMarketFallbackReason()
