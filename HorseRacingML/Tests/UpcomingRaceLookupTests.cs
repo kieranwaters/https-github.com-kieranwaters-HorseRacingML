@@ -704,6 +704,7 @@ namespace HorseRacingML.Tests
 
             var runner = Assert.Single(report.Runners);
             Assert.True(runner.HasPreparedFeatures);
+            Assert.False(runner.HasPartialPreparedFeatures);
             Assert.True(Convert.ToBoolean(runner.FeatureValues["SpeedMissing"]));
             Assert.DoesNotContain("WinningTimeMs", runner.FeaturePopulation.MissingKeys);
             Assert.DoesNotContain("RaceSpeed", runner.FeaturePopulation.MissingKeys);
@@ -827,6 +828,7 @@ namespace HorseRacingML.Tests
 
             var runner = Assert.Single(report.Runners);
             Assert.True(runner.HasPreparedFeatures);
+            Assert.False(runner.HasPartialPreparedFeatures);
             Assert.NotNull(runner.AiOdds);
             Assert.DoesNotContain(
                 "Missing historical features",
@@ -884,7 +886,8 @@ namespace HorseRacingML.Tests
                 flows: flows);
 
             var runner = Assert.Single(report.Runners);
-            Assert.False(runner.HasPreparedFeatures);
+            Assert.True(runner.HasPreparedFeatures);
+            Assert.True(runner.HasPartialPreparedFeatures);
             Assert.True(Convert.ToBoolean(runner.FeatureValues["DistanceBeatenKnown"]));
             Assert.Equal(2.75f, Convert.ToSingle(runner.FeatureValues["DistanceBeatenLengths"]));
         }
@@ -1271,6 +1274,7 @@ new RunnerFlow { HorseName = "Alpha Runner" },
 
                 var runner = Assert.Single(report.Runners);
                 Assert.False(runner.HasPreparedFeatures);
+                Assert.False(runner.HasPartialPreparedFeatures);
                 Assert.NotNull(runner.AiProbabilityFallbackReason);
                 Assert.Contains("Missing historical features; database coverage required.", runner.AiProbabilityFallbackReason);
                 Assert.True(runner.AiProbabilityMarketDerived);

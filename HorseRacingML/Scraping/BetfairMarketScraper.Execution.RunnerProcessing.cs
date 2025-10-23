@@ -625,6 +625,7 @@ namespace HorseRacingML.Scraping
                 EncodedFeatureValues = CloneEncodedFeatureValues(flow.EncodedFeatureValues),
                 FeatureValues = displayFeatureValues,
                 HasPreparedFeatures = flow.HasPreparedFeatures,
+                HasPartialPreparedFeatures = flow.HasPartialPreparedFeatures,
                 FeaturePopulation = (flow.FeaturePopulationSummary ?? FeaturePopulationSummary.Empty).WithSortedKeys()
             };
 
@@ -1422,6 +1423,10 @@ namespace HorseRacingML.Scraping
             var fallbackAttempted = false;
             foreach (var flow in flows)
             {
+                if (flow != null)
+                {
+                    flow.HasPartialPreparedFeatures = false;
+                }
                 var persistedFeatureSnapshot = flow?.FeatureValues != null && flow.FeatureValues.Count > 0
                     ? CreateFeatureDictionary(flow.FeatureValues)
                     : null;
@@ -1591,8 +1596,10 @@ namespace HorseRacingML.Scraping
                     EnsureHasLastWinFlag(featureVector);
                     Console.WriteLine(
                         "\t\t[FeaturePopulation] Historical backfill remained incomplete; continuing with available data.");
+                    var hasFeatureVector = featureVector.Count > 0;
                     flow.FeatureValues = featureVector;
-                    flow.HasPreparedFeatures = false;
+                    flow.HasPreparedFeatures = featureVector.Count > 0;
+                    flow.HasPartialPreparedFeatures = flow.HasPreparedFeatures;
                     flow.FeaturePopulationSummary = BuildFeaturePopulationSummary(featureVector);
                     flow.MatchedDatabaseRecord = matchedLookupRow || usedTrainerFallback;
                     flow.AiProbabilityFallbackReason = BuildMissingHistoricalFeatureReason();
@@ -1615,6 +1622,7 @@ namespace HorseRacingML.Scraping
 
                 flow.FeatureValues = featureVector;
                 flow.HasPreparedFeatures = featureVector.Count > 0;
+                flow.HasPartialPreparedFeatures = false;
                 flow.FeaturePopulationSummary = BuildFeaturePopulationSummary(featureVector);
                 flow.MatchedDatabaseRecord = matchedLookupRow || usedTrainerFallback;
 
@@ -1625,6 +1633,7 @@ namespace HorseRacingML.Scraping
                     Console.WriteLine(
                         $"\t\t[FeaturePopulation] Runner missing features summary: {BuildFeaturePopulationSummary(featureVector)}.");
                     flow.HasPreparedFeatures = false;
+                    flow.HasPartialPreparedFeatures = false;
                     flow.AiProbabilityFallbackReason = BuildMissingHistoricalFeatureReason();
                     continue;
                 }

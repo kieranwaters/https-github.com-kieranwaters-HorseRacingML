@@ -2789,10 +2789,23 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
             const double degeneracyTolerance = 1e-8;
             double minValue = valid.Min(f => f.AiOdds!.Value);
             double maxValue = valid.Max(f => f.AiOdds!.Value);
+            bool treatAsDegenerate = false;
+            string degeneracyMessage = string.Empty;
 
             if (maxValue - minValue <= degeneracyTolerance)
             {
-                Console.WriteLine("\t\tDetected degenerate AI probability distribution; raw outputs are identical across runners.");
+                degeneracyMessage = "\t\tDetected degenerate AI probability distribution; raw outputs are identical across runners.";
+                treatAsDegenerate = true;
+            }
+            else if (IsSaturatedProbabilityDistribution(valid, out var saturationDetail))
+            {
+                degeneracyMessage = $"\t\tDetected saturated AI probability distribution; {saturationDetail}.";
+                treatAsDegenerate = true;
+            }
+
+            if (treatAsDegenerate)
+            {
+                Console.WriteLine(degeneracyMessage);
 
                 if (TryApplyLegacyFallback(flows))
                 {
@@ -3278,6 +3291,56 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
 
             Console.WriteLine("\t\tApplied legacy probability fallback due to degenerate trained model outputs.");
             return true;
+        }
+        private static bool IsSaturatedProbabilityDistribution(IReadOnlyCollection<RunnerFlow> flows, out string detail)
+        {
+            detail = string.Empty;
+
+            if (flows is null || flows.Count <= 2)
+            {
+                return false;
+            }
+
+            const double nearCertaintyThreshold = 1d - 1e-6;
+            const double nearZeroThreshold = 1e-6;
+
+            int nearCertaintyCount = 0;
+            int nearZeroCount = 0;
+
+            foreach (var flow in flows)
+            {
+                if (!flow.AiOdds.HasValue || !double.IsFinite(flow.AiOdds.Value))
+                {
+                    continue;
+                }
+
+                var value = flow.AiOdds.Value;
+                if (value >= nearCertaintyThreshold)
+                {
+                    nearCertaintyCount++;
+                }
+                else if (value <= nearZeroThreshold)
+                {
+                    nearZeroCount++;
+                }
+            }
+
+            int majorityThreshold = Math.Max(3, (flows.Count + 1) / 2);
+
+            if (nearCertaintyCount >= majorityThreshold)
+            {
+                detail = $"{nearCertaintyCount}/{flows.Count} runner(s) exceed {nearCertaintyThreshold.ToString("0.######", CultureInfo.InvariantCulture)} raw probability";
+                return true;
+            }
+
+            int nearZeroMajority = Math.Max(3, flows.Count - 1);
+            if (nearZeroCount >= nearZeroMajority)
+            {
+                detail = $"{nearZeroCount}/{flows.Count} runner(s) fall below {nearZeroThreshold.ToString("0.######", CultureInfo.InvariantCulture)} raw probability";
+                return true;
+            }
+
+            return false;
         }
         private static bool TryResolveDegenerateDistribution(ICollection<RunnerFlow> flows)
         {

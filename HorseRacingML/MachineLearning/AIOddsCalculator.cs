@@ -59,8 +59,15 @@ namespace HorseRacingML.ML
                 flow.EncodedFeatureValues = null;
             }
             bool hasFeatureValues = flow.FeatureValues != null && flow.FeatureValues.Count > 0;
-            bool markHistoricalDataMissing = !flow.HasPreparedFeatures;
-            if (!flow.HasPreparedFeatures)
+            bool hasPreparedFeatureVector = hasFeatureValues && (flow.HasPreparedFeatures || flow.HasPartialPreparedFeatures);
+            bool markHistoricalDataMissing = flow.HasPartialPreparedFeatures;
+            if (flow.HasPartialPreparedFeatures)
+            {
+                AppendFallbackDetail(flow, "Prepared feature vector incomplete; missing historical fields persisted");
+                LogDebug(flow,
+                    "Prepared feature vector incomplete; proceeding with available values");
+            }
+            else if (!flow.HasPreparedFeatures)
             {
                 var hasLiveSignals = hasFeatureValues
                     || flow.BackPrice1.HasValue
@@ -85,13 +92,15 @@ namespace HorseRacingML.ML
                     LogDebug(flow,
                         "Prepared features missing; using opportunistic feature vector built from scraper values");
                 }
-                else
-                {
-                    LogDebug(flow,
-                        "Prepared feature vector incomplete; proceeding with available values");
-                }
+                markHistoricalDataMissing = true;
             }
-
+            else if (flow.HasPartialPreparedFeatures)
+            {
+                AppendFallbackDetail(flow,
+                    "Prepared feature vector incomplete; scoring with available prepared values");
+                LogDebug(flow,
+                    "Prepared feature vector incomplete; proceeding with available values");
+            }
             if (_metadata == null || _mean == null || _std == null ||
                 _outputWeights == null || _outputBias == null)
             {
