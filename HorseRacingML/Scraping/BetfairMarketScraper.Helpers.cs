@@ -671,7 +671,7 @@ namespace HorseRacingML.Scraping
 
         private static void FillIfMissing(Dictionary<string, object?> featureVector, string key, float? value)
         {
-            if (!value.HasValue)
+            if (featureVector == null || string.IsNullOrWhiteSpace(key))
             {
                 return;
             }
@@ -681,7 +681,24 @@ namespace HorseRacingML.Scraping
                 return;
             }
 
-            featureVector[key] = value.Value;
+            if (value.HasValue)
+            {
+                featureVector[key] = value.Value;
+                return;
+            }
+
+            if (!NeutralFeatureFallbacks.TryGetValue(key, out var fallback) || fallback == null)
+            {
+                return;
+            }
+
+            var fallbackValue = TryConvertToSingle(fallback);
+            if (!fallbackValue.HasValue)
+            {
+                return;
+            }
+
+            featureVector[key] = fallbackValue.Value;
         }
         static string DistanceBucketFromYards(int yards)
             => yards < 1760 ? "Sprint" : yards < 2640 ? "Middle" : "Long";

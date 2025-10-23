@@ -615,13 +615,13 @@ namespace HorseRacingML.Tests
 
             var summary = scraper.TestBuildFeaturePopulationSummary(featureVector);
 
-            Assert.Equal(2, summary.PopulatedCount);
+            Assert.Equal(3, summary.PopulatedCount);
             Assert.Contains("ClassWinRate", summary.PopulatedKeys, StringComparer.OrdinalIgnoreCase);
             Assert.Contains("AvgRatingLast5", summary.PopulatedKeys, StringComparer.OrdinalIgnoreCase);
             Assert.DoesNotContain("ClassWinRate", summary.MissingKeys, StringComparer.OrdinalIgnoreCase);
             Assert.DoesNotContain("AvgRatingLast5", summary.MissingKeys, StringComparer.OrdinalIgnoreCase);
-            Assert.Contains("TrainerJockeyCourseWinRate", summary.MissingKeys, StringComparer.OrdinalIgnoreCase);
-            Assert.DoesNotContain("TrainerJockeyCourseWinRate", summary.PopulatedKeys, StringComparer.OrdinalIgnoreCase);
+            Assert.Contains("TrainerJockeyCourseWinRate", summary.PopulatedKeys, StringComparer.OrdinalIgnoreCase);
+            Assert.DoesNotContain("TrainerJockeyCourseWinRate", summary.MissingKeys, StringComparer.OrdinalIgnoreCase);
         }
         [Fact]
         public void FeaturePopulationSummary_TreatsFalseHasLastWinAsPopulated()

@@ -1943,7 +1943,7 @@ namespace HorseRacingML.Scraping
                     continue;
                 }
 
-                if (TryGetMeaningfulValue(featureVector, normalizedKey, out _))
+                if (HasMeaningfulOrFallbackValue(featureVector, normalizedKey))
                 {
                     populated.Add(normalizedKey);
                 }
@@ -1964,6 +1964,25 @@ namespace HorseRacingML.Scraping
                     ? normalizedMissing
                     : Array.Empty<string>()
             };
+        }
+        private static bool HasMeaningfulOrFallbackValue(Dictionary<string, object?>? featureVector, string key)
+        {
+            if (TryGetMeaningfulValue(featureVector, key, out _))
+            {
+                return true;
+            }
+
+            if (featureVector == null || string.IsNullOrWhiteSpace(key))
+            {
+                return false;
+            }
+
+            if (!featureVector.TryGetValue(key, out var existing) || !HasMeaningfulValue(existing))
+            {
+                return false;
+            }
+
+            return IsNeutralFallbackValue(featureVector, key, existing);
         }
         private static void EnsureRaceAverageSpeedLast5(IReadOnlyList<RunnerFlow> flows)
         {
@@ -2466,7 +2485,7 @@ namespace HorseRacingML.Scraping
                 {
                     continue;
                 }
-                if (!TryGetMeaningfulValue(featureVector, key, out _))
+                if (!HasMeaningfulOrFallbackValue(featureVector, key))
                 {
                     missing.Add(key);
                 }
