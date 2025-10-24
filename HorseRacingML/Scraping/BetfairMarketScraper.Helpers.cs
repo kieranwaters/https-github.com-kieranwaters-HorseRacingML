@@ -2940,6 +2940,51 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
             var normalizedSum = valid.Sum(f => f.AiOdds!.Value);
             Console.WriteLine($"\t\tNormalized probability sum: {normalizedSum.ToString("0.####", CultureInfo.InvariantCulture)}.");
         }
+        private static void ApplyMarketFallbackForUnmatchedRunners(IReadOnlyList<RunnerFlow> flows)
+        {
+            if (flows == null || flows.Count == 0) return; // return early if list is null or empty
+            var fallbackApplied = false;
+            foreach (var flow in flows)
+            {
+                if (flow == null || flow.MatchedDatabaseRecord)
+                {
+                    continue; // skip matched or null entries
+                }
+
+                var hasValidAiProbability = flow.AiOdds.HasValue
+                    && double.IsFinite(flow.AiOdds.Value)
+                    && flow.AiOdds.Value > 0d;
+
+                if (hasValidAiProbability)
+                {
+                    continue; // retain existing AI odds when available
+                }
+
+                var identifier = !string.IsNullOrWhiteSpace(flow.HorseName) ? flow.HorseName! : "unknown"; // determine identifier
+
+                if (flow.BackPrice1.HasValue && flow.BackPrice1.Value > 1m)
+                {
+                    var marketProbability = 1.0 / (double)flow.BackPrice1.Value; // calculate implied probability
+                    flow.AiOdds = marketProbability; flow.AiProbabilityMarketDerived = true;
+                    flow.AiProbabilityClampedToMarket = false;
+                    flow.AiProbabilityClampTarget = null;
+                    AppendMarketFallbackReason(flow, "Database record not found; using market-implied probability");
+                    Console.WriteLine($"\t\tNo database match for {identifier}; using market-implied probability {marketProbability.ToString("0.####", CultureInfo.InvariantCulture)} as AI odds.");
+                    fallbackApplied = true;
+                }
+                else
+                {
+                    flow.AiOdds = null; flow.AiProbabilityMarketDerived = false;
+                    flow.AiProbabilityFallbackReason = null;
+                    Console.WriteLine($"\t\tNo database match for {identifier} and no usable back price; AI odds remain unavailable.");
+                }
+            }
+
+            if (fallbackApplied)
+            {
+                RenormalizeAiProbabilities(flows);
+            }
+        }
         private static void RenormalizeAiProbabilities(IEnumerable<RunnerFlow>? flows)
         {
             if (flows == null)
