@@ -3215,6 +3215,7 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
 
             int nearCertaintyCount = 0;
             int nearZeroCount = 0;
+            int consideredCount = 0;
 
             foreach (var flow in flows)
             {
@@ -3222,7 +3223,7 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
                 {
                     continue;
                 }
-
+                consideredCount++;
                 var value = flow.AiOdds.Value;
                 if (value >= nearCertaintyThreshold)
                 {
@@ -3235,6 +3236,7 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
             }
 
             int majorityThreshold = Math.Max(3, (flows.Count + 1) / 2);
+            int consideredMajority = Math.Max(3, (consideredCount + 1) / 2);
 
             if (nearCertaintyCount >= majorityThreshold)
             {
@@ -3248,7 +3250,14 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
                 detail = $"{nearZeroCount}/{flows.Count} runner(s) fall below {nearZeroThreshold.ToString("0.######", CultureInfo.InvariantCulture)} raw probability";
                 return true;
             }
-
+            if (consideredCount >= 3 && nearCertaintyCount > 0 && nearZeroCount > 0)
+            {
+                if (nearCertaintyCount + nearZeroCount >= consideredMajority)
+                {
+                    detail = $"{nearCertaintyCount + nearZeroCount}/{consideredCount} runner(s) fall into near-certain or near-zero bands";
+                    return true;
+                }
+            }
             return false;
         }
         private static bool TryResolveDegenerateDistribution(ICollection<RunnerFlow> flows)

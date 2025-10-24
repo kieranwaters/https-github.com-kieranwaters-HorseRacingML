@@ -601,6 +601,50 @@ namespace HorseRacingML.Tests
             Assert.InRange(low.AiOdds!.Value, 0d, 1e-6);
         }
         [Fact]
+        public void NormalizeAiOdds_ResolvesDegenerateZeroOneDistribution()
+        {
+            var flows = new List<RunnerFlow>();
+            for (int i = 0; i < 4; i++)
+            {
+                flows.Add(new RunnerFlow
+                {
+                    HorseName = $"Contender {i + 1}",
+                    AiOdds = 1d,
+                    BackPrice1 = 3m + i
+                });
+            }
+
+            for (int i = 0; i < 7; i++)
+            {
+                flows.Add(new RunnerFlow
+                {
+                    HorseName = $"Longshot {i + 1}",
+                    AiOdds = 0d,
+                    BackPrice1 = 10m + i
+                });
+            }
+
+            var method = typeof(BetfairMarketScraper).GetMethod(
+                "NormalizeAiOdds",
+                BindingFlags.NonPublic | BindingFlags.Static);
+
+            Assert.NotNull(method);
+
+            method!.Invoke(null, new object?[] { flows, true });
+
+            foreach (var flow in flows)
+            {
+                Assert.True(flow.AiOdds.HasValue);
+                Assert.InRange(flow.AiOdds!.Value, 0d, 1d);
+            }
+
+            var sum = flows.Sum(f => f.AiOdds!.Value);
+            Assert.InRange(sum, 0.999999, 1.000001);
+
+            Assert.DoesNotContain(flows, f => f.AiOdds!.Value >= 0.99);
+            Assert.All(flows.Skip(4), f => Assert.True(f.AiOdds!.Value > 0.01));
+        }
+        [Fact]
         public void FeaturePopulationSummary_IncludesNeuralFeaturesWhenHistoryMissing()
         {
             var repo = new StubRepository();
