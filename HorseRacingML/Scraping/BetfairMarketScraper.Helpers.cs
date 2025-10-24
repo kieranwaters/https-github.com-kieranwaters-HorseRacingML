@@ -2936,9 +2936,74 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
                     }
                 }
             }
-
+            if (ApplyMarketFallbackForExtremelySmallProbabilities(flows, valid))
+            {
+                valid = flows
+                    .Where(f => f.AiOdds.HasValue && double.IsFinite(f.AiOdds.Value) && f.AiOdds.Value >= 0)
+                    .ToList();
+            }
             var normalizedSum = valid.Sum(f => f.AiOdds!.Value);
             Console.WriteLine($"\t\tNormalized probability sum: {normalizedSum.ToString("0.####", CultureInfo.InvariantCulture)}.");
+        }
+        private static bool ApplyMarketFallbackForExtremelySmallProbabilities(ICollection<RunnerFlow> flows, IList<RunnerFlow> normalized)
+        {
+            if (flows == null || normalized == null || normalized.Count == 0)
+            {
+                return false;
+            }
+
+            const double probabilityThreshold = 1e-9;
+            bool applied = false;
+
+            foreach (var flow in normalized)
+            {
+                if (flow == null)
+                {
+                    continue;
+                }
+
+                if (flow.AiProbabilityMarketDerived)
+                {
+                    continue;
+                }
+
+                if (!flow.AiOdds.HasValue || !double.IsFinite(flow.AiOdds.Value) || flow.AiOdds.Value > probabilityThreshold)
+                {
+                    continue;
+                }
+
+                if (!flow.BackPrice1.HasValue || flow.BackPrice1.Value <= 1m)
+                {
+                    continue;
+                }
+
+                var marketProbability = 1.0 / (double)flow.BackPrice1.Value;
+                if (!double.IsFinite(marketProbability) || marketProbability <= 0d)
+                {
+                    continue;
+                }
+
+                var identifier = !string.IsNullOrWhiteSpace(flow.HorseName) ? flow.HorseName! : "unknown runner";
+                Console.WriteLine(
+                    "\t\tNormalized probability for " + identifier +
+                    $" fell below {probabilityThreshold.ToString("0.####E+0", CultureInfo.InvariantCulture)}; " +
+                    $"substituting market-implied probability {marketProbability.ToString("0.####", CultureInfo.InvariantCulture)}."
+                );
+
+                flow.AiOdds = Math.Max(marketProbability, 0d);
+                flow.AiProbabilityMarketDerived = true;
+                flow.AiProbabilityClampedToMarket = true;
+                flow.AiProbabilityClampTarget = marketProbability;
+                AppendMarketFallbackReason(flow, "Normalized probability below threshold; using market-implied probability");
+                applied = true;
+            }
+
+            if (applied)
+            {
+                RenormalizeAiProbabilities(flows);
+            }
+
+            return applied;
         }
         private static void ApplyMarketFallbackForUnmatchedRunners(IReadOnlyList<RunnerFlow> flows)
         {

@@ -452,7 +452,11 @@ namespace HorseRacingML.Controllers
 
             try
             {
-                var refreshed = await betfair.RefreshRaceAsync(request.RaceUrl, _repository, trainer);
+                var refreshed = await betfair.RefreshRaceAsync(
+                    request.RaceUrl,
+                    _repository,
+                    trainer,
+                    includeAiProbabilities: false);
                 if (refreshed == null)
                 {
                     return NotFound(new { success = false, message = "Unable to refresh market data for the selected race." });

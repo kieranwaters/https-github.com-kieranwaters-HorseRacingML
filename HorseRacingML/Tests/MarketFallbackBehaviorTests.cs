@@ -601,6 +601,63 @@ namespace HorseRacingML.Tests
             Assert.InRange(low.AiOdds!.Value, 0d, 1e-6);
         }
         [Fact]
+        public void NormalizeAiOdds_DefaultsToMarketForExtremelySmallProbabilities()
+        {
+            var flows = new List<RunnerFlow>
+            {
+                new RunnerFlow
+                {
+                    HorseName = "Likely Winner",
+                    AiOdds = 0.85,
+                    AiProbabilityMarketDerived = false,
+                    BackPrice1 = 3m
+                },
+                new RunnerFlow
+                {
+                    HorseName = "Solid Contender",
+                    AiOdds = 0.15 - 1e-12,
+                    AiProbabilityMarketDerived = false,
+                    BackPrice1 = 6m
+                },
+                new RunnerFlow
+                {
+                    HorseName = "Massive Outsider",
+                    AiOdds = 1e-12,
+                    AiProbabilityMarketDerived = false,
+                    BackPrice1 = 26m
+                }
+            };
+
+            var method = typeof(BetfairMarketScraper).GetMethod(
+                "NormalizeAiOdds",
+                BindingFlags.NonPublic | BindingFlags.Static);
+
+            Assert.NotNull(method);
+
+            method!.Invoke(null, new object?[] { flows, false });
+
+            var outsider = flows.Single(f => f.HorseName == "Massive Outsider");
+            var others = flows.Where(f => f.HorseName != "Massive Outsider").ToList();
+
+            Assert.True(outsider.AiOdds.HasValue);
+            Assert.True(outsider.AiProbabilityMarketDerived);
+            Assert.True(outsider.AiProbabilityClampedToMarket);
+            Assert.NotNull(outsider.AiProbabilityFallbackReason);
+
+            var expectedMarketProbability = 1.0 / 26.0;
+            Assert.InRange(outsider.AiOdds!.Value, expectedMarketProbability * 0.95, expectedMarketProbability * 1.05);
+
+            var sum = flows.Sum(f => f.AiOdds!.Value);
+            Assert.InRange(sum, 0.999999, 1.000001);
+
+            Assert.All(others, runner =>
+            {
+                Assert.True(runner.AiOdds.HasValue);
+                Assert.False(runner.AiProbabilityMarketDerived);
+                Assert.False(runner.AiProbabilityClampedToMarket);
+            });
+        }
+        [Fact]
         public void NormalizeAiOdds_ResolvesDegenerateZeroOneDistribution()
         {
             var flows = new List<RunnerFlow>();
