@@ -14,7 +14,6 @@ namespace HorseRacingML.Scraping
 {
     public partial class BetfairMarketScraper
     {
-        private const double LowAiProbabilityClampThreshold = 0.002;
         private string? GetGoingForMarket(string? marketId)
         {
             if (string.IsNullOrWhiteSpace(marketId) || _raceGoingLookup == null)
@@ -822,12 +821,9 @@ namespace HorseRacingML.Scraping
                                 Console.Error.WriteLine($"  Failed to calculate AI odds for runner {rfIdentifier} in market {marketId}: {ex.Message}"); // log
                             }
 
-                            if (rf.AiOdds.HasValue && double.IsFinite(rf.AiOdds.Value) && rf.AiOdds.Value > 0 && rf.AiOdds.Value < LowAiProbabilityClampThreshold)
+                            if (!rf.AiOdds.HasValue)
                             {
-                                if (!TryClampLowAiProbabilityToMarket(rf))
-                                {
-                                    Console.WriteLine($"            Unable to clamp low AI probability for {rfIdentifier}: market price unavailable.");
-                                }
+                                continue;
                             }
                         }
                     }

@@ -493,7 +493,7 @@ namespace HorseRacingML.Tests
                     HorseName = "Runner Beta",
                     AiOdds = 0.35d,
                     AiProbabilityMarketDerived = true,
-                    AiProbabilityFallbackReason = "Model probability below clamp threshold; using market-implied probability",
+                    AiProbabilityFallbackReason = "Degenerate model outputs; using market-implied probability",
                     BackPrice1 = 3.5m
                 }
             };
@@ -512,7 +512,7 @@ namespace HorseRacingML.Tests
                 raceUrl: null,
                 flows: flows);
 
-            const string expected = "1 of 2 AI win probabilities defaulted to market-implied odds for this race. The remaining 1 runner retained their model-derived probabilities. Reason: Model probability below clamp threshold; using market-implied probability.";
+            const string expected = "1 of 2 AI win probabilities defaulted to market-implied odds for this race. The remaining 1 runner retained their model-derived probabilities. Reason: Degenerate model outputs; using market-implied probability.";
             Assert.Equal(expected, report.RaceFallbackSummary);
         }
         [Fact]
@@ -558,40 +558,47 @@ namespace HorseRacingML.Tests
 
 
         [Fact]
-        public void ClampLowAiProbability_UsesMarketOddsAndRecordsFallbackReason()
+        public void NormalizeAiOdds_RetainsLowProbabilitiesWithoutMarketClamp()
         {
-            var flow = new RunnerFlow
+            var flows = new List<RunnerFlow>
             {
-                HorseName = "Clamped Runner",
-                BackPrice1 = 4m,
-                AiOdds = 1e-8,
-                AiProbabilityMarketDerived = false,
-                AiProbabilityFallbackReason = null,
-                AiProbabilityClampedToMarket = false,
-                AiProbabilityClampTarget = null
+                new RunnerFlow
+                {
+                    HorseName = "High Probability Runner",
+                    AiOdds = 0.999999,
+                    AiProbabilityMarketDerived = false,
+                    BackPrice1 = 2m
+                },
+                new RunnerFlow
+                {
+                    HorseName = "Low Probability Runner",
+                    AiOdds = 1e-8,
+                    AiProbabilityMarketDerived = false,
+                    BackPrice1 = 20m
+                }
             };
 
             var method = typeof(BetfairMarketScraper).GetMethod(
-                "TryClampLowAiProbabilityToMarket",
+                "NormalizeAiOdds",
                 BindingFlags.NonPublic | BindingFlags.Static);
 
             Assert.NotNull(method);
 
-            var result = method!.Invoke(null, new object?[] { flow });
+            method!.Invoke(null, new object?[] { flows, false });
 
-            Assert.IsType<bool>(result);
-            Assert.True((bool)result!);
+            var high = flows[0];
+            var low = flows[1];
 
-            var expectedProbability = 1.0d / 4.0d;
+            Assert.True(high.AiOdds.HasValue);
+            Assert.True(low.AiOdds.HasValue);
 
-            Assert.True(flow.AiOdds.HasValue);
-            Assert.Equal(expectedProbability, flow.AiOdds!.Value, 12);
-            Assert.True(flow.AiProbabilityClampedToMarket);
-            Assert.True(flow.AiProbabilityClampTarget.HasValue);
-            Assert.Equal(expectedProbability, flow.AiProbabilityClampTarget!.Value, 12);
-            Assert.True(flow.AiProbabilityMarketDerived);
-            Assert.False(string.IsNullOrWhiteSpace(flow.AiProbabilityFallbackReason));
-            Assert.Contains("Model probability below clamp threshold", flow.AiProbabilityFallbackReason);
+            var sum = high.AiOdds!.Value + low.AiOdds!.Value;
+            Assert.InRange(sum, 0.999999, 1.000001);
+
+            Assert.False(low.AiProbabilityMarketDerived);
+            Assert.False(low.AiProbabilityClampedToMarket);
+            Assert.Null(low.AiProbabilityFallbackReason);
+            Assert.InRange(low.AiOdds!.Value, 0d, 1e-6);
         }
         [Fact]
         public void FeaturePopulationSummary_IncludesNeuralFeaturesWhenHistoryMissing()
