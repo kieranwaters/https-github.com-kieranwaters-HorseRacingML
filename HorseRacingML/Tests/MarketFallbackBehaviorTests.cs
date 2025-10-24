@@ -558,7 +558,7 @@ namespace HorseRacingML.Tests
 
 
         [Fact]
-        public void NormalizeAiOdds_RetainsLowProbabilitiesWithoutMarketClamp()
+        public void NormalizeAiOdds_RetainsLowProbabilitiesWhenMarketUnavailable()
         {
             var flows = new List<RunnerFlow>
             {
@@ -567,7 +567,7 @@ namespace HorseRacingML.Tests
                     HorseName = "High Probability Runner",
                     AiOdds = 0.999999,
                     AiProbabilityMarketDerived = false,
-                    BackPrice1 = 2m
+                    BackPrice1 = null
                 },
                 new RunnerFlow
                 {

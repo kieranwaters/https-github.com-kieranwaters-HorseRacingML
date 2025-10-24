@@ -2932,19 +2932,19 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
                             }
                         }
 
-                        Console.WriteLine("\t\tApplied probability smoothing with blend={blendWeight.ToString(\"0.####E+0\", CultureInfo.InvariantCulture)} to enforce minimum normalized probability {targetFloor.ToString(\"0.####\", CultureInfo.InvariantCulture)}.");
+                        Console.WriteLine($"\t\tApplied probability smoothing with blend={blendWeight.ToString(\"0.####E+0\", CultureInfo.InvariantCulture)} to enforce minimum normalized probability {targetFloor.ToString(\"0.####\", CultureInfo.InvariantCulture)}.");
                     }
                 }
-            }
-            if (ApplyMarketFallbackForExtremelySmallProbabilities(flows, valid))
-            {
-                valid = flows
-                    .Where(f => f.AiOdds.HasValue && double.IsFinite(f.AiOdds.Value) && f.AiOdds.Value >= 0)
-                    .ToList();
-            }
-            var normalizedSum = valid.Sum(f => f.AiOdds!.Value);
-            Console.WriteLine($"\t\tNormalized probability sum: {normalizedSum.ToString("0.####", CultureInfo.InvariantCulture)}.");
-        }
+                }
+                if (ApplyMarketFallbackForExtremelySmallProbabilities(flows, valid))
+                {
+                    valid = flows
+                        .Where(f => f.AiOdds.HasValue && double.IsFinite(f.AiOdds.Value) && f.AiOdds.Value >= 0)
+                        .ToList();
+                }
+                var normalizedSum = valid.Sum(f => f.AiOdds!.Value);
+                Console.WriteLine($"\t\tNormalized probability sum: {normalizedSum.ToString("0.####", CultureInfo.InvariantCulture)}.");
+            } }
         private static bool ApplyMarketFallbackForExtremelySmallProbabilities(ICollection<RunnerFlow> flows, IList<RunnerFlow> normalized)
         {
             if (flows == null || normalized == null || normalized.Count == 0)
@@ -2952,8 +2952,8 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
                 return false;
             }
 
-            const double probabilityThreshold = 1e-9;
             bool applied = false;
+            var uniformShare = normalized.Count > 0 ? 1d / normalized.Count : 0d;
 
             foreach (var flow in normalized)
             {
@@ -2967,7 +2967,7 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
                     continue;
                 }
 
-                if (!flow.AiOdds.HasValue || !double.IsFinite(flow.AiOdds.Value) || flow.AiOdds.Value > probabilityThreshold)
+                if (!flow.AiOdds.HasValue || !double.IsFinite(flow.AiOdds.Value) || flow.AiOdds.Value < 0d)
                 {
                     continue;
                 }
@@ -2983,28 +2983,68 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
                     continue;
                 }
 
-                var identifier = !string.IsNullOrWhiteSpace(flow.HorseName) ? flow.HorseName! : "unknown runner";
-                Console.WriteLine(
-                    "\t\tNormalized probability for " + identifier +
-                    $" fell below {probabilityThreshold.ToString("0.####E+0", CultureInfo.InvariantCulture)}; " +
-                    $"substituting market-implied probability {marketProbability.ToString("0.####", CultureInfo.InvariantCulture)}."
-                );
+                const double absoluteFloor = 1e-4;
+                const double uniformShareFraction = 0.05;
+                const double marketProbabilityFraction = 0.1;
 
-                flow.AiOdds = Math.Max(marketProbability, 0d);
-                flow.AiProbabilityMarketDerived = true;
-                flow.AiProbabilityClampedToMarket = true;
-                flow.AiProbabilityClampTarget = marketProbability;
-                AppendMarketFallbackReason(flow, "Normalized probability below threshold; using market-implied probability");
-                applied = true;
-            }
+                var normalizedProbability = flow.AiOdds.Value;
+                var thresholds = new List<string>();
+                bool triggerClamp = false;
 
-            if (applied)
-            {
-                RenormalizeAiProbabilities(flows);
-            }
+                if (normalizedProbability < absoluteFloor)
+                {
+                    triggerClamp = true;
+                    thresholds.Add($"absolute floor {absoluteFloor.ToString(\"0.####E+0\", CultureInfo.InvariantCulture)}");
+                }
 
-            return applied;
-        }
+                if (uniformShare > 0d)
+                    {
+                        var uniformThreshold = uniformShare * uniformShareFraction;
+                        if (normalizedProbability < uniformThreshold)
+                        {
+                            triggerClamp = true;
+                            thresholds.Add($"{uniformShareFraction.ToString(\"P0\", CultureInfo.InvariantCulture)} of uniform share ({uniformThreshold.ToString(\"0.####\", CultureInfo.InvariantCulture)})");
+                    }
+                    }
+
+                        var marketThreshold = marketProbability * marketProbabilityFraction;
+                        if (normalizedProbability < marketThreshold)
+                        {
+                            triggerClamp = true;
+                            thresholds.Add($"{marketProbabilityFraction.ToString(\"P0\", CultureInfo.InvariantCulture)} of market-implied probability ({marketThreshold.ToString(\"0.####\", CultureInfo.InvariantCulture)})");
+                }
+
+
+                if (!triggerClamp)
+                            {
+                                continue;
+                            }
+
+                            var identifier = !string.IsNullOrWhiteSpace(flow.HorseName) ? flow.HorseName! : "unknown runner";
+                            var thresholdSummary = thresholds.Count > 0
+                                ? string.Join(", ", thresholds)
+                                : "configured thresholds";
+
+                            Console.WriteLine(
+                                "\t\tNormalized probability for " + identifier +
+                                $" fell below {thresholdSummary}; substituting market-implied probability {marketProbability.ToString("0.####", CultureInfo.InvariantCulture)}."
+                            );
+
+                            flow.AiOdds = Math.Max(marketProbability, 0d);
+                            flow.AiProbabilityMarketDerived = true;
+                            flow.AiProbabilityClampedToMarket = true;
+                            flow.AiProbabilityClampTarget = marketProbability;
+                            AppendMarketFallbackReason(flow, "Normalized probability below threshold; using market-implied probability");
+                            applied = true;
+                        }
+
+                        if (applied)
+                        {
+                            RenormalizeAiProbabilities(flows);
+                        }
+
+                        return applied;
+                    } 
         private static void ApplyMarketFallbackForUnmatchedRunners(IReadOnlyList<RunnerFlow> flows)
         {
             if (flows == null || flows.Count == 0) return; // return early if list is null or empty
