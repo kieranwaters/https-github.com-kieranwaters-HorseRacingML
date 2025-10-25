@@ -2012,7 +2012,92 @@ ORDER BY r.RaceDate DESC, rr.RunnerResultId DESC;";
                 BeforeDate = cutoffDate
             });
         }
+        public (int Wins, int Starts)? GetRecentHorseWinStats(string? horseName, int? horseId, DateTime? beforeDate, int windowSize)
+        {
+            if (windowSize <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(windowSize));
+            }
 
+            if (!horseId.HasValue && string.IsNullOrWhiteSpace(horseName))
+            {
+                return null;
+            }
+
+            var cutoffDate = beforeDate?.Date;
+
+            const string sqlById = @"SELECT TOP (@Window)
+    rr.FinishPos
+FROM RunnerResult rr
+INNER JOIN Race r ON r.RaceId = rr.RaceId
+WHERE rr.HorseId = @HorseId
+  AND (@BeforeDate IS NULL OR r.RaceDate < @BeforeDate)
+ORDER BY r.RaceDate DESC, rr.RunnerResultId DESC;";
+
+            const string sqlByName = @"SELECT TOP (@Window)
+    rr.FinishPos
+FROM RunnerResult rr
+INNER JOIN Race r ON r.RaceId = rr.RaceId
+INNER JOIN Horse h ON h.HorseId = rr.HorseId
+WHERE h.Name IN @Names
+  AND (@BeforeDate IS NULL OR r.RaceDate < @BeforeDate)
+ORDER BY r.RaceDate DESC, rr.RunnerResultId DESC;";
+
+            using var conn = OpenConnection();
+
+            if (horseId.HasValue && horseId.Value > 0)
+            {
+                var byId = conn.Query<short?>(sqlById, new
+                {
+                    HorseId = horseId.Value,
+                    BeforeDate = cutoffDate,
+                    Window = windowSize
+                }).ToList();
+
+                var stats = ComputeWinStats(byId);
+                if (stats.HasValue)
+                {
+                    return stats;
+                }
+            }
+
+            var candidates = BuildHistoricalNameCandidates(horseName);
+            if (candidates.Count == 0)
+            {
+                return null;
+            }
+
+            var byName = conn.Query<short?>(sqlByName, new
+            {
+                Names = candidates.ToArray(),
+                BeforeDate = cutoffDate,
+                Window = windowSize
+            }).ToList();
+
+            return ComputeWinStats(byName);
+        }
+
+        private static (int Wins, int Starts)? ComputeWinStats(IReadOnlyCollection<short?> finishes)
+        {
+            if (finishes == null || finishes.Count == 0)
+            {
+                return null;
+            }
+
+            var starts = 0;
+            var wins = 0;
+
+            foreach (var finish in finishes)
+            {
+                starts++;
+                if (finish.HasValue && finish.Value == 1)
+                {
+                    wins++;
+                }
+            }
+
+            return starts > 0 ? (wins, starts) : null;
+        }
         public MLParameter? GetBestMLParameter()
         {
             const string sql = @"SELECT TOP (1)

@@ -2088,7 +2088,7 @@ namespace HorseRacingML.Scraping
                 }
             }
         }
-        private static void EnsureRaceAverageWinRateLast5(IReadOnlyList<RunnerFlow> flows)
+        private void EnsureRaceAverageWinRateLast5(IReadOnlyList<RunnerFlow> flows)
         {
             if (flows == null || flows.Count == 0)
             {
@@ -2111,6 +2111,9 @@ namespace HorseRacingML.Scraping
                 var featureValues = flow.FeatureValues;
                 object? winRateValue;
                 var usedLifetimeFallback = false;
+                var usedDatabaseFallback = false;
+                int? databaseFallbackWins = null;
+                int? databaseFallbackStarts = null;
 
                 if (!TryGetMeaningfulValue(featureValues, "WinRateLast5", out winRateValue))
                 {
@@ -2152,11 +2155,25 @@ namespace HorseRacingML.Scraping
                     }
                     else
                     {
-                        var raw = featureValues.TryGetValue("WinRateLast5", out var candidate)
-                            ? candidate
-                            : null;
-                        Console.WriteLine($"[RaceAvgWinRateLast5] Skipping {DescribeRunner(flow)}: WinRateLast5 missing or fallback (raw value: {raw ?? "<null>"}).");
-                        continue;
+                        var databaseFallback = TryResolveWinRateLast5FromDatabase(featureValues, flow);
+                        if (databaseFallback.HasValue)
+                        {
+                            featureValues["WinRateLast5"] = databaseFallback.Value.WinRate;
+                            EnsureWinRatePerformanceWindows(featureValues, flow?.FeatureValues ?? featureValues, databaseFallback.Value.WinRate);
+                            winRateValue = databaseFallback.Value.WinRate;
+                            usedDatabaseFallback = true;
+                            databaseFallbackWins = databaseFallback.Value.Wins;
+                            databaseFallbackStarts = databaseFallback.Value.Starts;
+                            Console.WriteLine($"[RaceAvgWinRateLast5] Using database fallback for {DescribeRunner(flow)} (wins: {databaseFallbackWins}, starts: {databaseFallbackStarts}, value: {databaseFallback.Value.WinRate:0.###}).");
+                        }
+                        else
+                        {
+                            var raw = featureValues.TryGetValue("WinRateLast5", out var candidate)
+                                ? candidate
+                                : null;
+                            Console.WriteLine($"[RaceAvgWinRateLast5] Skipping {DescribeRunner(flow)}: WinRateLast5 missing or fallback (raw value: {raw ?? "<null>"}).");
+                            continue;
+                        }
                     }
                 }
 
@@ -2173,6 +2190,17 @@ namespace HorseRacingML.Scraping
                 if (usedLifetimeFallback)
                 {
                     Console.WriteLine($"[RaceAvgWinRateLast5] Included {DescribeRunner(flow)} with WinRateLast5={converted.Value:0.###} (lifetime fallback).");
+                }
+                else if (usedDatabaseFallback)
+                {
+                    if (databaseFallbackWins.HasValue && databaseFallbackStarts.HasValue)
+                    {
+                        Console.WriteLine($"[RaceAvgWinRateLast5] Included {DescribeRunner(flow)} with WinRateLast5={converted.Value:0.###} (database fallback; wins={databaseFallbackWins.Value}, starts={databaseFallbackStarts.Value}).");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"[RaceAvgWinRateLast5] Included {DescribeRunner(flow)} with WinRateLast5={converted.Value:0.###} (database fallback).");
+                    }
                 }
                 else
                 {
@@ -2220,7 +2248,72 @@ namespace HorseRacingML.Scraping
                 }
             }
         }
+        private (float WinRate, int Wins, int Starts)? TryResolveWinRateLast5FromDatabase(
+            Dictionary<string, object?> featureValues,
+            RunnerFlow flow)
+        {
+            if (featureValues == null)
+            {
+                return null;
+            }
 
+            int? horseId = null;
+            if (featureValues.TryGetValue("HorseId", out var horseObj))
+            {
+                horseId = TryConvertToInt32(horseObj);
+            }
+
+            if (!horseId.HasValue && flow?.FeatureValues != null &&
+                flow.FeatureValues.TryGetValue("HorseId", out var flowHorseObj))
+            {
+                horseId = TryConvertToInt32(flowHorseObj);
+            }
+
+            horseId = NormalizeHorseIdentifier(horseId);
+
+            string? horseName = flow?.HorseName;
+            if (string.IsNullOrWhiteSpace(horseName) &&
+                featureValues.TryGetValue("HorseName", out var horseNameObj) &&
+                horseNameObj is string horseNameStr)
+            {
+                horseName = horseNameStr;
+            }
+
+            DateTime? raceDate = flow?.RaceDate;
+
+            try
+            {
+                const int windowSize = 5;
+                var stats = _repo.GetRecentHorseWinStats(horseName, horseId, raceDate, windowSize);
+                if (!stats.HasValue || stats.Value.Starts <= 0)
+                {
+                    return null;
+                }
+
+                var winRate = _trainer.ComputeSmoothedWinRate(stats.Value.Wins, stats.Value.Starts);
+                if (float.IsNaN(winRate) || float.IsInfinity(winRate))
+                {
+                    return null;
+                }
+
+                if (winRate < 0f)
+                {
+                    winRate = 0f;
+                }
+                else if (winRate > 1f)
+                {
+                    winRate = 1f;
+                }
+
+                return (winRate, stats.Value.Wins, stats.Value.Starts);
+            }
+            catch (Exception ex)
+            {
+                var identifier = DescribeRunner(flow);
+                Console.Error.WriteLine($"[RaceAvgWinRateLast5] Failed to resolve historical win rate for {identifier}: {ex.Message}");
+                return null;
+            }
+        }
         private static bool IsMeaningfulNeutralFallback(
             Dictionary<string, object?> source,
             string key,

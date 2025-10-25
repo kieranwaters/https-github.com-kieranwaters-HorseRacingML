@@ -191,6 +191,10 @@ namespace HorseRacingML.Tests
             {
                 return null;
             }
+            public (int Wins, int Starts)? GetRecentHorseWinStats(string? horseName, int? horseId, DateTime? beforeDate, int windowSize)
+            {
+                return null;
+            }
             public UpcomingRace? GetUpcomingRaceByMarketId(string? marketId)
             {
                 return null;
