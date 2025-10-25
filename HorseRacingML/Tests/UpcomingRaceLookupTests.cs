@@ -1066,6 +1066,63 @@ new RunnerFlow { HorseName = "Alpha Runner" },
             Assert.Equal(0.5f, Convert.ToSingle(beta.FeatureValues["RaceAvgWinRateLast5"]));
         }
         [Fact]
+        public void PopulateFeatureVectors_ComputesRaceAverageWinRateLast5_IgnoresMissingValues()
+        {
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:HorseRacingDb"] = "Data Source=(localdb)\\MSSQLLocalDB;Initial Catalog=HorseRacingML;Integrated Security=True;Persist Security Info=False;Pooling=False;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Application Name=\"SQL Server Management Studio\";Command Timeout=30"
+                })
+                .Build();
+
+            var rowWithWinRate = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["HorseName"] = "Alpha Runner",
+                ["WinRateLast5"] = 0.4f
+            };
+
+            var rowWithoutWinRate = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["HorseName"] = "Beta Runner"
+            };
+
+            var preparedRace = new PreparedRace(998, new List<Dictionary<string, object?>> { rowWithWinRate, rowWithoutWinRate });
+
+            var trainer = new FallbackTrainer(configuration, preparedRace);
+            var repo = new MinimalRacingRepository();
+            var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
+            var scraper = new BetfairMarketScraper(repo, trainer, bankroll: 20m, settings);
+
+            var flows = new List<RunnerFlow>
+            {
+                new RunnerFlow { HorseName = "Alpha Runner" },
+                new RunnerFlow { HorseName = "Beta Runner" }
+            };
+
+            var report = scraper.TestBuildRaceReport(
+                marketId: "1.778",
+                raceTitle: "Win Rate Stakes",
+                venueName: "Sample Park",
+                venueCountry: "GB",
+                raceDate: new DateTime(2024, 9, 22),
+                offTime: new TimeSpan(15, 45, 0),
+                raceDetails: "Handicap",
+                going: "Good",
+                backBookPercentage: 102m,
+                layBookPercentage: 104m,
+                raceUrl: null,
+                flows: flows);
+
+            var alpha = report.Runners.First(r => string.Equals(r.HorseName, "Alpha Runner", StringComparison.OrdinalIgnoreCase));
+            var beta = report.Runners.First(r => string.Equals(r.HorseName, "Beta Runner", StringComparison.OrdinalIgnoreCase));
+
+            Assert.Equal(0.4f, Convert.ToSingle(alpha.FeatureValues["WinRateLast5"]));
+            Assert.False(beta.FeatureValues.ContainsKey("WinRateLast5"));
+
+            Assert.Equal(0.4f, Convert.ToSingle(alpha.FeatureValues["RaceAvgWinRateLast5"]));
+            Assert.Equal(0.4f, Convert.ToSingle(beta.FeatureValues["RaceAvgWinRateLast5"]));
+        }
+        [Fact]
         public void PopulateFeatureVectors_UsesHorseNameLookupWhenHorseIdIsSynthetic()
         {
             var configuration = new ConfigurationBuilder()

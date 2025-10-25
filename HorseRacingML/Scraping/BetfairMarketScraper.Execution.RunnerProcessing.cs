@@ -2055,42 +2055,54 @@ namespace HorseRacingML.Scraping
                 return;
             }
 
+            Console.WriteLine($"[RaceAvgWinRateLast5] Evaluating {flows.Count} runners for average win rate.");
+
             double sum = 0d;
-            int participantCount = 0;
+            int validParticipantCount = 0;
 
             foreach (var flow in flows)
             {
-                if (flow == null)
+                if (flow?.FeatureValues == null)
                 {
+                    Console.WriteLine($"[RaceAvgWinRateLast5] Skipping {DescribeRunner(flow)}: missing feature dictionary.");
                     continue;
                 }
 
-                participantCount++;
-
-                float runnerWinRate = 0f;
-                if (flow.FeatureValues != null &&
-                    TryGetMeaningfulValue(flow.FeatureValues, "WinRateLast5", out var winRateValue))
+                if (!TryGetMeaningfulValue(flow.FeatureValues, "WinRateLast5", out var winRateValue))
                 {
-                    var converted = TryConvertToSingle(winRateValue);
-                    if (converted.HasValue && !float.IsNaN(converted.Value) && !float.IsInfinity(converted.Value))
-                    {
-                        runnerWinRate = converted.Value;
-                    }
+                    var raw = flow.FeatureValues.TryGetValue("WinRateLast5", out var candidate)
+                        ? candidate
+                        : null;
+                    Console.WriteLine($"[RaceAvgWinRateLast5] Skipping {DescribeRunner(flow)}: WinRateLast5 missing or fallback (raw value: {raw ?? "<null>"}).");
+                    continue;
                 }
 
-                sum += runnerWinRate;
+                var converted = TryConvertToSingle(winRateValue);
+                if (!converted.HasValue || float.IsNaN(converted.Value) || float.IsInfinity(converted.Value))
+                {
+                    Console.WriteLine($"[RaceAvgWinRateLast5] Skipping {DescribeRunner(flow)}: WinRateLast5 is not a finite number (raw value: {winRateValue}).");
+                    continue;
+                }
+
+                sum += converted.Value;
+                validParticipantCount++;
+                Console.WriteLine($"[RaceAvgWinRateLast5] Included {DescribeRunner(flow)} with WinRateLast5={converted.Value:0.###}.");
             }
 
-            if (participantCount == 0)
+            if (validParticipantCount == 0)
             {
+                Console.WriteLine("[RaceAvgWinRateLast5] No runners with meaningful WinRateLast5 values were found; average will not be set.");
                 return;
             }
 
-            var average = (float)(sum / participantCount);
+            var average = (float)(sum / validParticipantCount);
             if (float.IsNaN(average) || float.IsInfinity(average))
             {
+                Console.WriteLine($"[RaceAvgWinRateLast5] Computed average is not a finite number (average: {average}).");
                 return;
             }
+
+            Console.WriteLine($"[RaceAvgWinRateLast5] Computed race average {average:0.###} from {validParticipantCount} runners.");
 
             foreach (var flow in flows)
             {
@@ -2102,6 +2114,7 @@ namespace HorseRacingML.Scraping
                 if (!TryGetMeaningfulValue(flow.FeatureValues, "RaceAvgWinRateLast5", out var existingValue))
                 {
                     flow.FeatureValues["RaceAvgWinRateLast5"] = average;
+                    Console.WriteLine($"[RaceAvgWinRateLast5] Set average for {DescribeRunner(flow)} (no existing value).");
                     continue;
                 }
 
@@ -2109,33 +2122,33 @@ namespace HorseRacingML.Scraping
                 if (!existing.HasValue || float.IsNaN(existing.Value) || float.IsInfinity(existing.Value))
                 {
                     flow.FeatureValues["RaceAvgWinRateLast5"] = average;
+                    Console.WriteLine($"[RaceAvgWinRateLast5] Replaced non-finite existing value for {DescribeRunner(flow)} with {average:0.###}.");
+                }
+                else
+                {
+                    Console.WriteLine($"[RaceAvgWinRateLast5] Preserved existing RaceAvgWinRateLast5={existing.Value:0.###} for {DescribeRunner(flow)}.");
                 }
             }
         }
-        private static bool TryGetMeaningfulValue(
-                    Dictionary<string, object?>? source,
-                    string key,
-                    out object? value)
+
+        private static string DescribeRunner(RunnerFlow? flow)
         {
-            value = null;
-            if (source == null || string.IsNullOrWhiteSpace(key))
+            if (flow == null)
             {
-                return false;
+                return "<null runner>";
             }
 
-            if (!source.TryGetValue(key, out var existing) || !HasMeaningfulValue(existing))
-            {
-                return false;
-            }
+            var horse = string.IsNullOrWhiteSpace(flow.HorseName)
+                ? "Unknown horse"
+                : flow.HorseName.Trim();
+            var cloth = flow.ClothNumber.HasValue
+                ? flow.ClothNumber.Value.ToString(CultureInfo.InvariantCulture)
+                : "?";
+            var draw = flow.Draw.HasValue
+                ? flow.Draw.Value.ToString(CultureInfo.InvariantCulture)
+                : "?";
 
-            if (IsNeutralFallbackValue(source, key, existing) &&
-               !IsMeaningfulNeutralFallback(source, key, existing))
-            {
-                return false;
-            }
-
-            value = existing;
-            return true;
+            return $"{horse} (cloth {cloth}, draw {draw})";
         }
         private static bool IsMeaningfulNeutralFallback(
             Dictionary<string, object?> source,
