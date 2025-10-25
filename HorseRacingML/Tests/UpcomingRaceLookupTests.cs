@@ -5,6 +5,7 @@ using HorseRacingML.Scraping;
 using HorseRacingML.Services;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
+using System.Reflection;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -1066,6 +1067,91 @@ new RunnerFlow { HorseName = "Alpha Runner" },
             Assert.Equal(0.5f, Convert.ToSingle(beta.FeatureValues["RaceAvgWinRateLast5"]));
         }
         [Fact]
+        public void PopulateFeatureVectors_ComputesRaceAverageWinRateLast5_UsesLifetimeFallback()
+        {
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:HorseRacingDb"] = "Data Source=(localdb)\\MSSQLLocalDB;Initial Catalog=HorseRacingML;Integrated Security=True;Persist Security Info=False;Pooling=False;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Application Name=\"SQL Server Management Studio\";Command Timeout=30"
+                })
+                .Build();
+
+            var alphaRow = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["HorseName"] = "Alpha Runner",
+                ["CareerStarts"] = 10,
+                ["LifetimeWinRate"] = 0.4f
+            };
+
+            var betaRow = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["HorseName"] = "Beta Runner",
+                ["CareerStarts"] = 12,
+                ["LifetimeWinRate"] = 0.6f
+            };
+
+            var preparedRace = new PreparedRace(997, new List<Dictionary<string, object?>> { alphaRow, betaRow });
+
+            var trainer = new FallbackTrainer(configuration, preparedRace);
+            var repo = new MinimalRacingRepository();
+            var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
+            var scraper = new BetfairMarketScraper(repo, trainer, bankroll: 20m, settings);
+
+            var flows = new List<RunnerFlow>
+            {
+                new RunnerFlow { HorseName = "Alpha Runner" },
+                new RunnerFlow { HorseName = "Beta Runner" }
+            };
+
+            var report = scraper.TestBuildRaceReport(
+                marketId: "1.779",
+                raceTitle: "Win Rate Stakes",
+                venueName: "Sample Park",
+                venueCountry: "GB",
+                raceDate: new DateTime(2024, 9, 23),
+                offTime: new TimeSpan(16, 10, 0),
+                raceDetails: "Handicap",
+                going: "Good",
+                backBookPercentage: 102m,
+                layBookPercentage: 104m,
+                raceUrl: null,
+                flows: flows);
+
+            var alpha = report.Runners.First(r => string.Equals(r.HorseName, "Alpha Runner", StringComparison.OrdinalIgnoreCase));
+            var beta = report.Runners.First(r => string.Equals(r.HorseName, "Beta Runner", StringComparison.OrdinalIgnoreCase));
+
+            Assert.Equal(0.4f, Convert.ToSingle(alpha.FeatureValues["WinRateLast5"]));
+            Assert.Equal(0.6f, Convert.ToSingle(beta.FeatureValues["WinRateLast5"]));
+
+            Assert.Equal(0.5f, Convert.ToSingle(alpha.FeatureValues["RaceAvgWinRateLast5"]));
+            Assert.Equal(0.5f, Convert.ToSingle(beta.FeatureValues["RaceAvgWinRateLast5"]));
+        }
+
+        [Fact]
+        public void EnsureRaceAverageWinRateLast5_UsesLifetimeFallbackWhenWinRateMissing()
+        {
+            var flow = new RunnerFlow
+            {
+                HorseName = "Fallback Runner",
+                FeatureValues = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["LifetimeWinRate"] = 0.35f
+                }
+            };
+
+            var method = typeof(BetfairMarketScraper).GetMethod(
+                "EnsureRaceAverageWinRateLast5",
+                BindingFlags.NonPublic | BindingFlags.Static);
+
+            Assert.NotNull(method);
+
+            method!.Invoke(null, new object?[] { new List<RunnerFlow> { flow } });
+
+            Assert.True(flow.FeatureValues.ContainsKey("WinRateLast5"));
+            Assert.Equal(0.35f, Convert.ToSingle(flow.FeatureValues["WinRateLast5"]));
+            Assert.Equal(0.35f, Convert.ToSingle(flow.FeatureValues["RaceAvgWinRateLast5"]));
+        }
+        [Fact]
         public void PopulateFeatureVectors_ComputesRaceAverageWinRateLast5_IgnoresMissingValues()
         {
             var configuration = new ConfigurationBuilder()
@@ -1122,6 +1208,7 @@ new RunnerFlow { HorseName = "Alpha Runner" },
             Assert.Equal(0.4f, Convert.ToSingle(alpha.FeatureValues["RaceAvgWinRateLast5"]));
             Assert.Equal(0.4f, Convert.ToSingle(beta.FeatureValues["RaceAvgWinRateLast5"]));
         }
+        
         [Fact]
         public void PopulateFeatureVectors_UsesHorseNameLookupWhenHorseIdIsSynthetic()
         {

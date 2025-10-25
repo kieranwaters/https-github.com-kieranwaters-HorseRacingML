@@ -1222,8 +1222,48 @@ namespace HorseRacingML.Scraping
             }
 
             flow.FeatureValues["LifetimeWinRate"] = lifetimeWinRate;
+
+            EnsureWinRatePerformanceWindows(featureVector, flow.FeatureValues, lifetimeWinRate);
         }
 
+        private static void EnsureWinRatePerformanceWindows(
+            Dictionary<string, object?>? featureVector,
+            Dictionary<string, object?> flowFeatureValues,
+            float lifetimeWinRate)
+        {
+            if (featureVector != null)
+            {
+                EnsureWinRatePerformanceWindows(featureVector, lifetimeWinRate);
+            }
+
+            if (!ReferenceEquals(featureVector, flowFeatureValues))
+            {
+                EnsureWinRatePerformanceWindows(flowFeatureValues, lifetimeWinRate);
+            }
+        }
+
+        private static void EnsureWinRatePerformanceWindows(Dictionary<string, object?> target, float lifetimeWinRate)
+        {
+            if (target == null)
+            {
+                return;
+            }
+
+            foreach (var window in PerformanceWindowSizes)
+            {
+                var winRateKey = $"WinRateLast{window}";
+                if (!TryGetMeaningfulValue(target, winRateKey, out _))
+                {
+                    target[winRateKey] = lifetimeWinRate;
+                }
+
+                var normKey = $"AvgNormPosLast{window}";
+                if (!TryGetMeaningfulValue(target, normKey, out _))
+                {
+                    target[normKey] = ClampNormalizedPosition(1f - lifetimeWinRate);
+                }
+            }
+        }
         private void RestorePersistedHistoricalFeatures(
             Dictionary<string, object?> featureVector,
             Dictionary<string, object?>? persistedFeatures,
@@ -2068,13 +2108,56 @@ namespace HorseRacingML.Scraping
                     continue;
                 }
 
-                if (!TryGetMeaningfulValue(flow.FeatureValues, "WinRateLast5", out var winRateValue))
+                var featureValues = flow.FeatureValues;
+                object? winRateValue;
+                var usedLifetimeFallback = false;
+
+                if (!TryGetMeaningfulValue(featureValues, "WinRateLast5", out winRateValue))
                 {
-                    var raw = flow.FeatureValues.TryGetValue("WinRateLast5", out var candidate)
-                        ? candidate
-                        : null;
-                    Console.WriteLine($"[RaceAvgWinRateLast5] Skipping {DescribeRunner(flow)}: WinRateLast5 missing or fallback (raw value: {raw ?? "<null>"}).");
-                    continue;
+                    float? lifetimeFallback = null;
+                    object? lifetimeRaw = null;
+
+                    if (featureValues.TryGetValue("LifetimeWinRate", out lifetimeRaw))
+                    {
+                        var lifetimeConverted = TryConvertToSingle(lifetimeRaw);
+                        if (lifetimeConverted.HasValue &&
+                            !float.IsNaN(lifetimeConverted.Value) &&
+                            !float.IsInfinity(lifetimeConverted.Value))
+                        {
+                            var sanitized = lifetimeConverted.Value;
+                            if (sanitized < 0f)
+                            {
+                                sanitized = 0f;
+                            }
+                            else if (sanitized > 1f)
+                            {
+                                sanitized = 1f;
+                            }
+
+                            lifetimeFallback = sanitized;
+                        }
+                        else
+                        {
+                            Console.WriteLine($"[RaceAvgWinRateLast5] LifetimeWinRate fallback unusable for {DescribeRunner(flow)} (raw value: {lifetimeRaw ?? "<null>"}).");
+                        }
+                    }
+
+                    if (lifetimeFallback.HasValue)
+                    {
+                        featureValues["WinRateLast5"] = lifetimeFallback.Value;
+                        EnsureWinRatePerformanceWindows(featureValues, lifetimeFallback.Value);
+                        winRateValue = lifetimeFallback.Value;
+                        usedLifetimeFallback = true;
+                        Console.WriteLine($"[RaceAvgWinRateLast5] Using LifetimeWinRate fallback for {DescribeRunner(flow)} (value: {lifetimeFallback.Value:0.###}).");
+                    }
+                    else
+                    {
+                        var raw = featureValues.TryGetValue("WinRateLast5", out var candidate)
+                            ? candidate
+                            : null;
+                        Console.WriteLine($"[RaceAvgWinRateLast5] Skipping {DescribeRunner(flow)}: WinRateLast5 missing or fallback (raw value: {raw ?? "<null>"}).");
+                        continue;
+                    }
                 }
 
                 var converted = TryConvertToSingle(winRateValue);
@@ -2086,7 +2169,15 @@ namespace HorseRacingML.Scraping
 
                 sum += converted.Value;
                 validParticipantCount++;
-                Console.WriteLine($"[RaceAvgWinRateLast5] Included {DescribeRunner(flow)} with WinRateLast5={converted.Value:0.###}.");
+
+                if (usedLifetimeFallback)
+                {
+                    Console.WriteLine($"[RaceAvgWinRateLast5] Included {DescribeRunner(flow)} with WinRateLast5={converted.Value:0.###} (lifetime fallback).");
+                }
+                else
+                {
+                    Console.WriteLine($"[RaceAvgWinRateLast5] Included {DescribeRunner(flow)} with WinRateLast5={converted.Value:0.###}.");
+                }
             }
 
             if (validParticipantCount == 0)
@@ -2094,7 +2185,6 @@ namespace HorseRacingML.Scraping
                 Console.WriteLine("[RaceAvgWinRateLast5] No runners with meaningful WinRateLast5 values were found; average will not be set.");
                 return;
             }
-
             var average = (float)(sum / validParticipantCount);
             if (float.IsNaN(average) || float.IsInfinity(average))
             {
@@ -2171,6 +2261,32 @@ namespace HorseRacingML.Scraping
             }
 
             return false;
+        }
+        public static bool TryGetMeaningfulValue(
+            Dictionary<string, object?>? source,
+            string key,
+            out object? value)
+        {
+            value = null;
+
+            if (source == null || string.IsNullOrWhiteSpace(key))
+            {
+                return false;
+            }
+
+            if (!source.TryGetValue(key, out var candidate) || !HasMeaningfulValue(candidate))
+            {
+                return false;
+            }
+
+            if (IsNeutralFallbackValue(source, key, candidate) &&
+                !IsMeaningfulNeutralFallback(source, key, candidate))
+            {
+                return false;
+            }
+
+            value = candidate;
+            return true;
         }
 
         private static bool HasMeaningfulNonNeutralValue(
