@@ -2932,11 +2932,11 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
                             }
                         }
 
-                        Console.WriteLine($"\t\tApplied probability smoothing with blend={blendWeight.ToString(\"0.####E+0\", CultureInfo.InvariantCulture)} to enforce minimum normalized probability {targetFloor.ToString(\"0.####\", CultureInfo.InvariantCulture)}.");
+                        Console.WriteLine($"\t\tApplied probability smoothing with blend={blendWeight.ToString("0.####E+0", CultureInfo.InvariantCulture)} to enforce minimum normalized probability {targetFloor.ToString("0.####", CultureInfo.InvariantCulture)}.");
                     }
-                }
-                }
-                if (ApplyMarketFallbackForExtremelySmallProbabilities(flows, valid))
+                    }
+
+                    if (ApplyMarketFallbackForExtremelySmallProbabilities(flows, valid))
                 {
                     valid = flows
                         .Where(f => f.AiOdds.HasValue && double.IsFinite(f.AiOdds.Value) && f.AiOdds.Value >= 0)
@@ -2994,7 +2994,7 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
                 if (normalizedProbability < absoluteFloor)
                 {
                     triggerClamp = true;
-                    thresholds.Add($"absolute floor {absoluteFloor.ToString(\"0.####E+0\", CultureInfo.InvariantCulture)}");
+                    thresholds.Add($"absolute floor {absoluteFloor.ToString("0.####E+0", CultureInfo.InvariantCulture)}");
                 }
 
                 if (uniformShare > 0d)
@@ -3003,17 +3003,18 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
                         if (normalizedProbability < uniformThreshold)
                         {
                             triggerClamp = true;
-                            thresholds.Add($"{uniformShareFraction.ToString(\"P0\", CultureInfo.InvariantCulture)} of uniform share ({uniformThreshold.ToString(\"0.####\", CultureInfo.InvariantCulture)})");
+                        thresholds.Add($"{uniformShareFraction.ToString("P0", CultureInfo.InvariantCulture)} of uniform share ({uniformThreshold.ToString("0.####", CultureInfo.InvariantCulture)})");
+
                     }
-                    }
+                }
 
                         var marketThreshold = marketProbability * marketProbabilityFraction;
                         if (normalizedProbability < marketThreshold)
                         {
                             triggerClamp = true;
-                            thresholds.Add($"{marketProbabilityFraction.ToString(\"P0\", CultureInfo.InvariantCulture)} of market-implied probability ({marketThreshold.ToString(\"0.####\", CultureInfo.InvariantCulture)})");
-                }
+                    thresholds.Add($"{marketProbabilityFraction.ToString("P0", CultureInfo.InvariantCulture)} of market-implied probability ({marketThreshold.ToString("0.####", CultureInfo.InvariantCulture)})");
 
+                }
 
                 if (!triggerClamp)
                             {
@@ -3044,7 +3045,7 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
                         }
 
                         return applied;
-                    } 
+                    }
         private static void ApplyMarketFallbackForUnmatchedRunners(IReadOnlyList<RunnerFlow> flows)
         {
             if (flows == null || flows.Count == 0) return; // return early if list is null or empty
