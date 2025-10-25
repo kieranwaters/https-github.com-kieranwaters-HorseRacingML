@@ -2131,25 +2131,6 @@ namespace HorseRacingML.Scraping
             }
         }
 
-        private static string DescribeRunner(RunnerFlow? flow)
-        {
-            if (flow == null)
-            {
-                return "<null runner>";
-            }
-
-            var horse = string.IsNullOrWhiteSpace(flow.HorseName)
-                ? "Unknown horse"
-                : flow.HorseName.Trim();
-            var cloth = flow.ClothNumber.HasValue
-                ? flow.ClothNumber.Value.ToString(CultureInfo.InvariantCulture)
-                : "?";
-            var draw = flow.Draw.HasValue
-                ? flow.Draw.Value.ToString(CultureInfo.InvariantCulture)
-                : "?";
-
-            return $"{horse} (cloth {cloth}, draw {draw})";
-        }
         private static bool IsMeaningfulNeutralFallback(
             Dictionary<string, object?> source,
             string key,
