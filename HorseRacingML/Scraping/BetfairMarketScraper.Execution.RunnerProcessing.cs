@@ -782,23 +782,95 @@ namespace HorseRacingML.Scraping
         }
         private static void EnsureDisplayJockeyClassFallbacks(Dictionary<string, object?> featureValues)
         {
-            var jockeyWinRate = ResolveFeatureValue(featureValues, "JockeyWinRate");
-            var jockeySurfaceAvg = ResolveFeatureValue(featureValues, "JockeySurfaceAvgNorm");
-            var jockeyGoingAvg = ResolveFeatureValue(featureValues, "JockeyGoingAvgNorm");
-            var jockeyAvgNorm = jockeySurfaceAvg ?? jockeyGoingAvg;
-            var lastJockeySurface = ResolveFeatureValue(featureValues, "LastJockeySurfaceNormPos");
-            var lastJockeyGoing = ResolveFeatureValue(featureValues, "LastJockeyGoingNormPos");
+            var jockeyClassWinRate = ResolveJockeyClassWinRate(featureValues);
+            var jockeyClassAvgNorm = ResolveJockeyClassAvgNorm(featureValues, jockeyClassWinRate);
+            var lastJockeyClass = ResolveLastJockeyClassNorm(featureValues, jockeyClassAvgNorm);
 
-            FillIfMissing(featureValues, "JockeyClassWinRate", jockeyWinRate);
-            FillIfMissing(
-                featureValues,
-                "JockeyClassAvgNorm",
-                jockeyAvgNorm ?? (jockeyWinRate.HasValue ? ClampNormalizedPosition(1f - jockeyWinRate.Value) : (float?)null));
-            FillIfMissing(
-                featureValues,
-                "LastJockeyClassNormPos",
-                lastJockeySurface ?? lastJockeyGoing ??
-                (jockeyAvgNorm ?? (jockeyWinRate.HasValue ? ClampNormalizedPosition(1f - jockeyWinRate.Value) : (float?)null)));
+            FillIfMissing(featureValues, "JockeyClassWinRate", jockeyClassWinRate);
+            FillIfMissing(featureValues, "JockeyClassAvgNorm", jockeyClassAvgNorm);
+            FillIfMissing(featureValues, "LastJockeyClassNormPos", lastJockeyClass);
+        }
+
+        private static float? ResolveJockeyClassWinRate(Dictionary<string, object?> featureValues)
+        {
+            if (featureValues == null)
+            {
+                return null;
+            }
+
+            var primaryWinRate = ResolveFeatureValue(featureValues, "JockeyWinRate")
+                ?? ResolveFeatureValue(featureValues, "JockeyWinRateRecentDays")
+                ?? ResolveFeatureValue(featureValues, "JockeyWinRateLast50");
+
+            if (primaryWinRate.HasValue)
+            {
+                return primaryWinRate;
+            }
+
+            var blendedWinRate = CombineAverages(
+                ResolveFeatureValue(featureValues, "JockeyGoingWinRate"),
+                ResolveFeatureValue(featureValues, "JockeyDistanceBucketWinRate"))
+                ?? CombineAverages(
+                    ResolveFeatureValue(featureValues, "JockeySurfaceWinRate"),
+                    ResolveFeatureValue(featureValues, "JockeyCourseWinRate"));
+
+            if (blendedWinRate.HasValue)
+            {
+                return blendedWinRate;
+            }
+
+            return ResolveFeatureValue(featureValues, "TrainerJockeyWinRate");
+        }
+
+        private static float? ResolveJockeyClassAvgNorm(
+            Dictionary<string, object?> featureValues,
+            float? jockeyClassWinRate)
+        {
+            if (featureValues == null)
+            {
+                return null;
+            }
+
+            var surfaceAvg = ResolveFeatureValue(featureValues, "JockeySurfaceAvgNorm");
+            var goingAvg = ResolveFeatureValue(featureValues, "JockeyGoingAvgNorm");
+            var distanceAvg = ResolveFeatureValue(featureValues, "JockeyDistanceBucketAvgNorm");
+            var goingDistanceAvg = ResolveFeatureValue(featureValues, "JockeyGoingDistanceAvgNorm");
+
+            var blendedAvg = CombineAverages(surfaceAvg, goingAvg)
+                ?? CombineAverages(distanceAvg, goingDistanceAvg);
+
+            var resolvedAvg = blendedAvg
+                ?? surfaceAvg
+                ?? goingAvg
+                ?? distanceAvg
+                ?? goingDistanceAvg;
+
+            if (!resolvedAvg.HasValue && jockeyClassWinRate.HasValue)
+            {
+                resolvedAvg = ClampNormalizedPosition(1f - jockeyClassWinRate.Value);
+            }
+
+            return resolvedAvg;
+        }
+
+        private static float? ResolveLastJockeyClassNorm(
+            Dictionary<string, object?> featureValues,
+            float? jockeyClassAvgNorm)
+        {
+            if (featureValues == null)
+            {
+                return null;
+            }
+
+            var lastSurface = ResolveFeatureValue(featureValues, "LastJockeySurfaceNormPos");
+            var lastGoing = ResolveFeatureValue(featureValues, "LastJockeyGoingNormPos");
+            var lastDistance = ResolveFeatureValue(featureValues, "LastJockeyDistanceBucketNormPos");
+
+            return lastSurface
+                ?? lastGoing
+                ?? lastDistance
+                ?? CombineAverages(lastGoing, lastDistance)
+                ?? jockeyClassAvgNorm;
         }
         private void PopulateRunnerPricing(RunnerFlow flow, RunnerDayReport runner)
         {
