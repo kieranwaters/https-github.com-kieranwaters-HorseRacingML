@@ -865,10 +865,12 @@ namespace HorseRacingML.Scraping
             var lastSurface = ResolveFeatureValue(featureValues, "LastJockeySurfaceNormPos");
             var lastGoing = ResolveFeatureValue(featureValues, "LastJockeyGoingNormPos");
             var lastDistance = ResolveFeatureValue(featureValues, "LastJockeyDistanceBucketNormPos");
+            var lastGoingDistance = ResolveFeatureValue(featureValues, "LastJockeyGoingDistanceNormPos");
 
             return lastSurface
                 ?? lastGoing
                 ?? lastDistance
+                ?? lastGoingDistance
                 ?? CombineAverages(lastGoing, lastDistance)
                 ?? jockeyClassAvgNorm;
         }
@@ -2319,51 +2321,9 @@ namespace HorseRacingML.Scraping
         }
         private void ApplyJockeyClassFeatures(Dictionary<string, object?> featureValues)
         {
-            var jockeyWinRate = ResolveFeatureValue(featureValues, "JockeyWinRate");
             var jockeySurfaceAvg = ResolveFeatureValue(featureValues, "JockeySurfaceAvgNorm");
             var jockeyGoingAvg = ResolveFeatureValue(featureValues, "JockeyGoingAvgNorm");
-            var jockeyAvgNorm = jockeySurfaceAvg ?? jockeyGoingAvg;
-            var lastJockeySurface = ResolveFeatureValue(featureValues, "LastJockeySurfaceNormPos");
-            var lastJockeyGoing = ResolveFeatureValue(featureValues, "LastJockeyGoingNormPos");
-            var lastJockeyDistance = ResolveFeatureValue(featureValues, "LastJockeyDistanceBucketNormPos");
-
-            if (jockeyWinRate.HasValue)
-            {
-                featureValues["JockeyClassWinRate"] = jockeyWinRate.Value;
-            }
-            else
-            {
-                featureValues.Remove("JockeyClassWinRate");
-            }
-
-            float? jockeyClassNorm = null;
-            if (jockeyAvgNorm.HasValue)
-            {
-                jockeyClassNorm = jockeyAvgNorm.Value;
-            }
-            else if (jockeyWinRate.HasValue)
-            {
-                jockeyClassNorm = ClampNormalizedPosition(1f - jockeyWinRate.Value);
-            }
-
-            if (jockeyClassNorm.HasValue)
-            {
-                featureValues["JockeyClassAvgNorm"] = jockeyClassNorm.Value;
-            }
-            else
-            {
-                featureValues.Remove("JockeyClassAvgNorm");
-            }
-
-            var lastJockeyClass = lastJockeySurface ?? lastJockeyGoing ?? jockeyClassNorm;
-            if (lastJockeyClass.HasValue)
-            {
-                featureValues["LastJockeyClassNormPos"] = lastJockeyClass.Value;
-            }
-            else
-            {
-                featureValues.Remove("LastJockeyClassNormPos");
-            }
+            var jockeyDistanceAvg = ResolveFeatureValue(featureValues, "JockeyDistanceBucketAvgNorm");
 
             var goingDistanceWin = CombineAverages(
                 ResolveFeatureValue(featureValues, "JockeyGoingWinRate"),
@@ -2377,7 +2337,7 @@ namespace HorseRacingML.Scraping
                 featureValues.Remove("JockeyGoingDistanceWinRate");
             }
 
-            var goingDistanceAvg = CombineAverages(jockeyGoingAvg, ResolveFeatureValue(featureValues, "JockeyDistanceBucketAvgNorm"));
+            var goingDistanceAvg = CombineAverages(jockeyGoingAvg, jockeyDistanceAvg);
             if (goingDistanceAvg.HasValue)
             {
                 featureValues["JockeyGoingDistanceAvgNorm"] = goingDistanceAvg.Value;
@@ -2387,6 +2347,10 @@ namespace HorseRacingML.Scraping
                 featureValues.Remove("JockeyGoingDistanceAvgNorm");
             }
 
+            var lastJockeySurface = ResolveFeatureValue(featureValues, "LastJockeySurfaceNormPos");
+            var lastJockeyGoing = ResolveFeatureValue(featureValues, "LastJockeyGoingNormPos");
+            var lastJockeyDistance = ResolveFeatureValue(featureValues, "LastJockeyDistanceBucketNormPos");
+
             var lastGoingDistance = CombineAverages(lastJockeyGoing, lastJockeyDistance);
             if (lastGoingDistance.HasValue)
             {
@@ -2395,6 +2359,36 @@ namespace HorseRacingML.Scraping
             else
             {
                 featureValues.Remove("LastJockeyGoingDistanceNormPos");
+            }
+
+            var jockeyWinRate = ResolveJockeyClassWinRate(featureValues);
+            if (jockeyWinRate.HasValue)
+            {
+                featureValues["JockeyClassWinRate"] = jockeyWinRate.Value;
+            }
+            else
+            {
+                featureValues.Remove("JockeyClassWinRate");
+            }
+
+            var jockeyClassNorm = ResolveJockeyClassAvgNorm(featureValues, jockeyWinRate);
+            if (jockeyClassNorm.HasValue)
+            {
+                featureValues["JockeyClassAvgNorm"] = jockeyClassNorm.Value;
+            }
+            else
+            {
+                featureValues.Remove("JockeyClassAvgNorm");
+            }
+
+            var lastJockeyClass = ResolveLastJockeyClassNorm(featureValues, jockeyClassNorm);
+            if (lastJockeyClass.HasValue)
+            {
+                featureValues["LastJockeyClassNormPos"] = lastJockeyClass.Value;
+            }
+            else
+            {
+                featureValues.Remove("LastJockeyClassNormPos");
             }
         }
         private float? TryResolveAvgSpeedLast5FromDatabase(
