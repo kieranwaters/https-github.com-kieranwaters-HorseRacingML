@@ -1063,8 +1063,8 @@ new RunnerFlow { HorseName = "Alpha Runner" },
             Assert.Equal(0.4f, Convert.ToSingle(alpha.FeatureValues["WinRateLast5"]));
             Assert.Equal(0.6f, Convert.ToSingle(beta.FeatureValues["WinRateLast5"]));
 
-            Assert.Equal(0.5f, Convert.ToSingle(alpha.FeatureValues["RaceAvgWinRateLast5"]));
-            Assert.Equal(0.5f, Convert.ToSingle(beta.FeatureValues["RaceAvgWinRateLast5"]));
+            Assert.Equal(0.6f, Convert.ToSingle(alpha.FeatureValues["RaceAvgWinRateLast5"]));
+            Assert.Equal(0.4f, Convert.ToSingle(beta.FeatureValues["RaceAvgWinRateLast5"]));
         }
         [Fact]
         public void PopulateFeatureVectors_ComputesRaceAverageWinRateLast5_UsesLifetimeFallback()
@@ -1123,8 +1123,8 @@ new RunnerFlow { HorseName = "Alpha Runner" },
             Assert.Equal(0.4f, Convert.ToSingle(alpha.FeatureValues["WinRateLast5"]));
             Assert.Equal(0.6f, Convert.ToSingle(beta.FeatureValues["WinRateLast5"]));
 
-            Assert.Equal(0.5f, Convert.ToSingle(alpha.FeatureValues["RaceAvgWinRateLast5"]));
-            Assert.Equal(0.5f, Convert.ToSingle(beta.FeatureValues["RaceAvgWinRateLast5"]));
+            Assert.Equal(0.6f, Convert.ToSingle(alpha.FeatureValues["RaceAvgWinRateLast5"]));
+            Assert.Equal(0.4f, Convert.ToSingle(beta.FeatureValues["RaceAvgWinRateLast5"]));
         }
 
         [Fact]
@@ -1222,9 +1222,8 @@ new RunnerFlow { HorseName = "Alpha Runner" },
             Assert.Equal(expectedAlphaWinRate, Convert.ToSingle(alpha.FeatureValues["WinRateLast5"]));
             Assert.Equal(0.6f, Convert.ToSingle(beta.FeatureValues["WinRateLast5"]));
 
-            var expectedAverage = (expectedAlphaWinRate + 0.6f) / 2f;
-            Assert.Equal(expectedAverage, Convert.ToSingle(alpha.FeatureValues["RaceAvgWinRateLast5"]));
-            Assert.Equal(expectedAverage, Convert.ToSingle(beta.FeatureValues["RaceAvgWinRateLast5"]));
+            Assert.Equal(0.6f, Convert.ToSingle(alpha.FeatureValues["RaceAvgWinRateLast5"]));
+            Assert.Equal(expectedAlphaWinRate, Convert.ToSingle(beta.FeatureValues["RaceAvgWinRateLast5"]));
 
             Assert.NotNull(repo.LastRecentWinStatsRequest);
             Assert.Equal("Alpha Runner", repo.LastRecentWinStatsRequest?.HorseName);

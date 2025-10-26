@@ -2099,6 +2099,7 @@ namespace HorseRacingML.Scraping
 
             double sum = 0d;
             int validParticipantCount = 0;
+            var perRunnerWinRates = new Dictionary<RunnerFlow, float>();
 
             foreach (var flow in flows)
             {
@@ -2186,7 +2187,7 @@ namespace HorseRacingML.Scraping
 
                 sum += converted.Value;
                 validParticipantCount++;
-
+                perRunnerWinRates[flow] = converted.Value;
                 if (usedLifetimeFallback)
                 {
                     Console.WriteLine($"[RaceAvgWinRateLast5] Included {DescribeRunner(flow)} with WinRateLast5={converted.Value:0.###} (lifetime fallback).");
@@ -2229,23 +2230,25 @@ namespace HorseRacingML.Scraping
                     continue;
                 }
 
-                if (!TryGetMeaningfulValue(flow.FeatureValues, "RaceAvgWinRateLast5", out var existingValue))
+                float valueToAssign;
+                if (perRunnerWinRates.TryGetValue(flow, out var runnerWinRate))
                 {
-                    flow.FeatureValues["RaceAvgWinRateLast5"] = average;
-                    Console.WriteLine($"[RaceAvgWinRateLast5] Set average for {DescribeRunner(flow)} (no existing value).");
-                    continue;
-                }
-
-                var existing = TryConvertToSingle(existingValue);
-                if (!existing.HasValue || float.IsNaN(existing.Value) || float.IsInfinity(existing.Value))
-                {
-                    flow.FeatureValues["RaceAvgWinRateLast5"] = average;
-                    Console.WriteLine($"[RaceAvgWinRateLast5] Replaced non-finite existing value for {DescribeRunner(flow)} with {average:0.###}.");
+                    if (validParticipantCount > 1)
+                    {
+                        valueToAssign = (float)((sum - runnerWinRate) / (validParticipantCount - 1));
+                    }
+                    else
+                    {
+                        valueToAssign = runnerWinRate;
+                    }
                 }
                 else
                 {
-                    Console.WriteLine($"[RaceAvgWinRateLast5] Preserved existing RaceAvgWinRateLast5={existing.Value:0.###} for {DescribeRunner(flow)}.");
+                    valueToAssign = average;
                 }
+
+                flow.FeatureValues["RaceAvgWinRateLast5"] = valueToAssign;
+                Console.WriteLine($"[RaceAvgWinRateLast5] Assigned horse-specific race average {valueToAssign:0.###} for {DescribeRunner(flow)}.");
             }
         }
         private (float WinRate, int Wins, int Starts)? TryResolveWinRateLast5FromDatabase(
