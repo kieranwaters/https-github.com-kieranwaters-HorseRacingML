@@ -614,6 +614,10 @@ namespace HorseRacingML.Scraping
            RunnerFlow flow,
            HistoricalRaceCountPrefetchResult? prefetchedCounts)
         {
+            if (flow.FeatureValues != null)
+            {
+                EnsureDisplayJockeyClassFallbacks(flow.FeatureValues);
+            }
             var displayFeatureValues = CreateFeatureDictionary(flow.FeatureValues);
 
             var runner = new RunnerDayReport
@@ -772,6 +776,26 @@ namespace HorseRacingML.Scraping
                         identifier));
             }
             return runner;
+        }
+        private static void EnsureDisplayJockeyClassFallbacks(Dictionary<string, object?> featureValues)
+        {
+            var jockeyWinRate = ResolveFeatureValue(featureValues, "JockeyWinRate");
+            var jockeySurfaceAvg = ResolveFeatureValue(featureValues, "JockeySurfaceAvgNorm");
+            var jockeyGoingAvg = ResolveFeatureValue(featureValues, "JockeyGoingAvgNorm");
+            var jockeyAvgNorm = jockeySurfaceAvg ?? jockeyGoingAvg;
+            var lastJockeySurface = ResolveFeatureValue(featureValues, "LastJockeySurfaceNormPos");
+            var lastJockeyGoing = ResolveFeatureValue(featureValues, "LastJockeyGoingNormPos");
+
+            FillIfMissing(featureValues, "JockeyClassWinRate", jockeyWinRate);
+            FillIfMissing(
+                featureValues,
+                "JockeyClassAvgNorm",
+                jockeyAvgNorm ?? (jockeyWinRate.HasValue ? ClampNormalizedPosition(1f - jockeyWinRate.Value) : (float?)null));
+            FillIfMissing(
+                featureValues,
+                "LastJockeyClassNormPos",
+                lastJockeySurface ?? lastJockeyGoing ??
+                (jockeyAvgNorm ?? (jockeyWinRate.HasValue ? ClampNormalizedPosition(1f - jockeyWinRate.Value) : (float?)null)));
         }
         private void PopulateRunnerPricing(RunnerFlow flow, RunnerDayReport runner)
         {
