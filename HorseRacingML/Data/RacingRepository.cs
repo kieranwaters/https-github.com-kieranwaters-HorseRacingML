@@ -2076,6 +2076,81 @@ ORDER BY r.RaceDate DESC, rr.RunnerResultId DESC;";
 
             return ComputeWinStats(byName);
         }
+        public IReadOnlyList<HorseSpeedEntry> GetRecentHorseSpeedEntries(
+            string? horseName,
+            int? horseId,
+            DateTime? beforeDate,
+            int windowSize)
+        {
+            if (windowSize <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(windowSize));
+            }
+
+            if (!horseId.HasValue && string.IsNullOrWhiteSpace(horseName))
+            {
+                return Array.Empty<HorseSpeedEntry>();
+            }
+
+            var cutoffDate = beforeDate?.Date;
+
+            const string sqlById = @"SELECT TOP (@Window)
+    r.RaceDate,
+    r.DistanceYards,
+    r.WinningTimeMs AS WinningTimeMilliseconds,
+    rr.DistanceBeatenLengths
+FROM RunnerResult rr
+INNER JOIN Race r ON r.RaceId = rr.RaceId
+WHERE rr.HorseId = @HorseId
+  AND (@BeforeDate IS NULL OR r.RaceDate < @BeforeDate)
+ORDER BY r.RaceDate DESC, rr.RunnerResultId DESC;";
+
+            const string sqlByName = @"SELECT TOP (@Window)
+    r.RaceDate,
+    r.DistanceYards,
+    r.WinningTimeMs AS WinningTimeMilliseconds,
+    rr.DistanceBeatenLengths
+FROM RunnerResult rr
+INNER JOIN Race r ON r.RaceId = rr.RaceId
+INNER JOIN Horse h ON h.HorseId = rr.HorseId
+WHERE h.Name IN @Names
+  AND (@BeforeDate IS NULL OR r.RaceDate < @BeforeDate)
+ORDER BY r.RaceDate DESC, rr.RunnerResultId DESC;";
+
+            using var conn = OpenConnection();
+
+            if (horseId.HasValue && horseId.Value > 0)
+            {
+                var byId = conn.Query<HorseSpeedEntry>(sqlById, new
+                {
+                    HorseId = horseId.Value,
+                    BeforeDate = cutoffDate,
+                    Window = windowSize
+                }).ToList();
+
+                if (byId.Count > 0)
+                {
+                    return byId;
+                }
+            }
+
+            var candidates = BuildHistoricalNameCandidates(horseName);
+            if (candidates.Count == 0)
+            {
+                return Array.Empty<HorseSpeedEntry>();
+            }
+
+            var byName = conn.Query<HorseSpeedEntry>(sqlByName, new
+            {
+                Names = candidates.ToArray(),
+                BeforeDate = cutoffDate,
+                Window = windowSize
+            }).ToList();
+
+            return byName.Count > 0
+                ? byName
+                : Array.Empty<HorseSpeedEntry>();
+        }
 
         private static (int Wins, int Starts)? ComputeWinStats(IReadOnlyCollection<short?> finishes)
         {

@@ -1288,10 +1288,27 @@ namespace HorseRacingML.ML
                 }
                 if (includeRace)
                 {
-                    float raceAvgSpeed = rows
-                                            .Select(r => r.ContainsKey("AvgSpeedLast5") && r["AvgSpeedLast5"] != null ? Convert.ToSingle(r["AvgSpeedLast5"]) : 0f)
-                                            .DefaultIfEmpty(0f)
-                                            .Average();
+                    float ResolveRunnerSpeed(Dictionary<string, object?> row)
+                    {
+                        if (row == null)
+                        {
+                            return 0f;
+                        }
+
+                        if (!row.TryGetValue("AvgSpeedLast5", out var value) || value == null)
+                        {
+                            return 0f;
+                        }
+
+                        try
+                        {
+                            return Convert.ToSingle(value);
+                        }
+                        catch
+                        {
+                            return 0f;
+                        }
+                    }
                     float raceAvgWinRate = rows
                         .Select(r => r.ContainsKey("WinRateLast5") && r["WinRateLast5"] != null ? Convert.ToSingle(r["WinRateLast5"]) : 0f)
                         .DefaultIfEmpty(0f)
@@ -1299,7 +1316,8 @@ namespace HorseRacingML.ML
 
                     foreach (var raceRow in rows)
                     {
-                        raceRow["RaceAvgSpeedLast5"] = raceAvgSpeed;
+                        var runnerSpeed = ResolveRunnerSpeed(raceRow);
+                        raceRow["RaceAvgSpeedLast5"] = runnerSpeed;
                         raceRow["RaceAvgWinRateLast5"] = raceAvgWinRate;
                         if (!raceRow.TryGetValue("RatingSlope", out var slope) || slope is null)
                         {

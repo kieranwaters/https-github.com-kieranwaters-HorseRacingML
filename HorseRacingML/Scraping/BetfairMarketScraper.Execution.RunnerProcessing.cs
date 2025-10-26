@@ -1681,6 +1681,7 @@ namespace HorseRacingML.Scraping
             }
             EnsureRaceAverageWinRateLast5(flows);
             EnsureRaceAverageSpeedLast5(flows);
+            EnsureRunnerClassAndGoingDistanceFeatures(flows);
 
             foreach (var flow in flows)
             {
@@ -2024,46 +2025,56 @@ namespace HorseRacingML.Scraping
 
             return IsNeutralFallbackValue(featureVector, key, existing);
         }
-        private static void EnsureRaceAverageSpeedLast5(IReadOnlyList<RunnerFlow> flows)
+        private void EnsureRaceAverageSpeedLast5(IReadOnlyList<RunnerFlow> flows)
         {
             if (flows == null || flows.Count == 0)
             {
                 return;
             }
-
-            double sum = 0d;
-            int participantCount = 0;
-
             foreach (var flow in flows)
             {
-                if (flow == null)
+                if (flow?.FeatureValues == null)
                 {
                     continue;
                 }
 
-                participantCount++;
+                float? resolvedSpeed = null;
 
-                float runnerSpeed = 0f;
-                if (flow.FeatureValues != null &&
-                    TryGetMeaningfulValue(flow.FeatureValues, "AvgSpeedLast5", out var speedValue))
+                if (TryGetMeaningfulValue(flow.FeatureValues, "AvgSpeedLast5", out var speedValue))
                 {
                     var converted = TryConvertToSingle(speedValue);
-                    if (converted.HasValue && !float.IsNaN(converted.Value) && !float.IsInfinity(converted.Value))
+                    if (converted.HasValue &&
+                        !float.IsNaN(converted.Value) &&
+                        !float.IsInfinity(converted.Value) &&
+                        converted.Value > 0f)
                     {
-                        runnerSpeed = converted.Value;
+                        resolvedSpeed = converted.Value;
                     }
                 }
 
-                sum += runnerSpeed;
-            }
+                if (!resolvedSpeed.HasValue)
+                {
+                    var fallback = TryResolveAvgSpeedLast5FromDatabase(flow.FeatureValues, flow);
+                    if (fallback.HasValue && fallback.Value > 0f)
+                    {
+                        flow.FeatureValues["AvgSpeedLast5"] = fallback.Value;
+                        resolvedSpeed = fallback.Value;
+                    }
+                }
 
-            if (participantCount == 0)
-            {
-                return;
+                if (resolvedSpeed.HasValue)
+                {
+                    flow.FeatureValues["RaceAvgSpeedLast5"] = resolvedSpeed.Value;
+                }
+                else if (flow.FeatureValues.ContainsKey("RaceAvgSpeedLast5"))
+                {
+                    flow.FeatureValues.Remove("RaceAvgSpeedLast5");
+                }
             }
-
-            var average = (float)(sum / participantCount);
-            if (float.IsNaN(average) || float.IsInfinity(average))
+        }
+        private void EnsureRunnerClassAndGoingDistanceFeatures(IReadOnlyList<RunnerFlow> flows)
+        {
+            if (flows == null || flows.Count == 0)
             {
                 return;
             }
@@ -2075,17 +2086,233 @@ namespace HorseRacingML.Scraping
                     continue;
                 }
 
-                if (!TryGetMeaningfulValue(flow.FeatureValues, "RaceAvgSpeedLast5", out var existingValue))
+                ApplyTrainerClassFeatures(flow.FeatureValues);
+                ApplyJockeyClassFeatures(flow.FeatureValues);
+            }
+        }
+        private void ApplyTrainerClassFeatures(Dictionary<string, object?> featureValues)
+        {
+            var trainerWinRate = ResolveFeatureValue(featureValues, "TrainerWinRate");
+            var trainerSurfaceAvg = ResolveFeatureValue(featureValues, "TrainerSurfaceAvgNorm");
+            var trainerGoingAvg = ResolveFeatureValue(featureValues, "TrainerGoingAvgNorm");
+            var trainerAvgNorm = trainerSurfaceAvg ?? trainerGoingAvg;
+            var lastTrainerSurface = ResolveFeatureValue(featureValues, "LastTrainerSurfaceNormPos");
+            var lastTrainerGoing = ResolveFeatureValue(featureValues, "LastTrainerGoingNormPos");
+            var lastTrainerNorm = lastTrainerSurface ?? lastTrainerGoing ?? trainerAvgNorm;
+
+            if (trainerWinRate.HasValue)
+            {
+                featureValues["TrainerClassWinRate"] = trainerWinRate.Value;
+            }
+            else
+            {
+                featureValues.Remove("TrainerClassWinRate");
+            }
+
+            float? trainerClassNorm = null;
+            if (trainerAvgNorm.HasValue)
+            {
+                trainerClassNorm = trainerAvgNorm.Value;
+            }
+            else if (trainerWinRate.HasValue)
+            {
+                trainerClassNorm = ClampNormalizedPosition(1f - trainerWinRate.Value);
+            }
+
+            if (trainerClassNorm.HasValue)
+            {
+                featureValues["TrainerClassAvgNorm"] = trainerClassNorm.Value;
+            }
+            else
+            {
+                featureValues.Remove("TrainerClassAvgNorm");
+            }
+
+            var trainerLastClass = lastTrainerNorm ?? trainerClassNorm;
+            if (trainerLastClass.HasValue)
+            {
+                featureValues["LastTrainerClassNormPos"] = trainerLastClass.Value;
+            }
+            else
+            {
+                featureValues.Remove("LastTrainerClassNormPos");
+            }
+        }
+        private void ApplyJockeyClassFeatures(Dictionary<string, object?> featureValues)
+        {
+            var jockeyWinRate = ResolveFeatureValue(featureValues, "JockeyWinRate");
+            var jockeySurfaceAvg = ResolveFeatureValue(featureValues, "JockeySurfaceAvgNorm");
+            var jockeyGoingAvg = ResolveFeatureValue(featureValues, "JockeyGoingAvgNorm");
+            var jockeyAvgNorm = jockeySurfaceAvg ?? jockeyGoingAvg;
+            var lastJockeySurface = ResolveFeatureValue(featureValues, "LastJockeySurfaceNormPos");
+            var lastJockeyGoing = ResolveFeatureValue(featureValues, "LastJockeyGoingNormPos");
+            var lastJockeyDistance = ResolveFeatureValue(featureValues, "LastJockeyDistanceBucketNormPos");
+
+            if (jockeyWinRate.HasValue)
+            {
+                featureValues["JockeyClassWinRate"] = jockeyWinRate.Value;
+            }
+            else
+            {
+                featureValues.Remove("JockeyClassWinRate");
+            }
+
+            float? jockeyClassNorm = null;
+            if (jockeyAvgNorm.HasValue)
+            {
+                jockeyClassNorm = jockeyAvgNorm.Value;
+            }
+            else if (jockeyWinRate.HasValue)
+            {
+                jockeyClassNorm = ClampNormalizedPosition(1f - jockeyWinRate.Value);
+            }
+
+            if (jockeyClassNorm.HasValue)
+            {
+                featureValues["JockeyClassAvgNorm"] = jockeyClassNorm.Value;
+            }
+            else
+            {
+                featureValues.Remove("JockeyClassAvgNorm");
+            }
+
+            var lastJockeyClass = lastJockeySurface ?? lastJockeyGoing ?? jockeyClassNorm;
+            if (lastJockeyClass.HasValue)
+            {
+                featureValues["LastJockeyClassNormPos"] = lastJockeyClass.Value;
+            }
+            else
+            {
+                featureValues.Remove("LastJockeyClassNormPos");
+            }
+
+            var goingDistanceWin = CombineAverages(
+                ResolveFeatureValue(featureValues, "JockeyGoingWinRate"),
+                ResolveFeatureValue(featureValues, "JockeyDistanceBucketWinRate"));
+            if (goingDistanceWin.HasValue)
+            {
+                featureValues["JockeyGoingDistanceWinRate"] = goingDistanceWin.Value;
+            }
+            else
+            {
+                featureValues.Remove("JockeyGoingDistanceWinRate");
+            }
+
+            var goingDistanceAvg = CombineAverages(jockeyGoingAvg, ResolveFeatureValue(featureValues, "JockeyDistanceBucketAvgNorm"));
+            if (goingDistanceAvg.HasValue)
+            {
+                featureValues["JockeyGoingDistanceAvgNorm"] = goingDistanceAvg.Value;
+            }
+            else
+            {
+                featureValues.Remove("JockeyGoingDistanceAvgNorm");
+            }
+
+            var lastGoingDistance = CombineAverages(lastJockeyGoing, lastJockeyDistance);
+            if (lastGoingDistance.HasValue)
+            {
+                featureValues["LastJockeyGoingDistanceNormPos"] = lastGoingDistance.Value;
+            }
+            else
+            {
+                featureValues.Remove("LastJockeyGoingDistanceNormPos");
+            }
+        }
+        private float? TryResolveAvgSpeedLast5FromDatabase(
+            Dictionary<string, object?> featureValues,
+            RunnerFlow flow)
+        {
+            if (featureValues == null)
+            {
+                return null;
+            }
+
+            int? horseId = null;
+            if (featureValues.TryGetValue("HorseId", out var horseObj))
+            {
+                horseId = TryConvertToInt32(horseObj);
+            }
+
+            if (!horseId.HasValue && flow?.FeatureValues != null &&
+                flow.FeatureValues.TryGetValue("HorseId", out var flowHorseObj))
+            {
+                horseId = TryConvertToInt32(flowHorseObj);
+            }
+
+            horseId = NormalizeHorseIdentifier(horseId);
+
+            string? horseName = flow?.HorseName;
+            if (string.IsNullOrWhiteSpace(horseName) &&
+                featureValues.TryGetValue("HorseName", out var horseNameObj) &&
+                horseNameObj is string horseNameStr)
+            {
+                horseName = horseNameStr;
+            }
+
+            DateTime? raceDate = flow?.RaceDate;
+
+            try
+            {
+                const int windowSize = 5;
+                var entries = _repo.GetRecentHorseSpeedEntries(horseName, horseId, raceDate, windowSize);
+                if (entries == null || entries.Count == 0)
                 {
-                    flow.FeatureValues["RaceAvgSpeedLast5"] = average;
-                    continue;
+                    return null;
                 }
 
-                var existing = TryConvertToSingle(existingValue);
-                if (!existing.HasValue || float.IsNaN(existing.Value) || float.IsInfinity(existing.Value))
+                var speeds = new List<float>();
+
+                foreach (var entry in entries)
                 {
-                    flow.FeatureValues["RaceAvgSpeedLast5"] = average;
+                    if (!entry.DistanceYards.HasValue || entry.DistanceYards.Value <= 0)
+                    {
+                        continue;
+                    }
+
+                    if (!entry.WinningTimeMilliseconds.HasValue || entry.WinningTimeMilliseconds.Value <= 0)
+                    {
+                        continue;
+                    }
+
+                    var runnerTimeMs = (float)entry.WinningTimeMilliseconds.Value;
+                    if (entry.DistanceBeatenLengths.HasValue)
+                    {
+                        runnerTimeMs += (float)entry.DistanceBeatenLengths.Value * MsPerLength;
+                    }
+
+                    if (runnerTimeMs <= 0f)
+                    {
+                        continue;
+                    }
+
+                    var speed = entry.DistanceYards.Value / runnerTimeMs;
+                    if (float.IsNaN(speed) || float.IsInfinity(speed) || speed <= 0f)
+                    {
+                        continue;
+                    }
+
+                    speeds.Add(speed);
                 }
+
+                if (speeds.Count == 0)
+                {
+                    return null;
+                }
+
+                var average = speeds.Average();
+                if (float.IsNaN(average) || float.IsInfinity(average) || average <= 0f)
+                {
+                    return null;
+                }
+
+                Console.WriteLine($"[RaceAvgSpeedLast5] Using database fallback average {average:0.###} from {speeds.Count} historical race(s) for {DescribeRunner(flow)}.");
+                return average;
+            }
+            catch (Exception ex)
+            {
+                var identifier = DescribeRunner(flow);
+                Console.Error.WriteLine($"[RaceAvgSpeedLast5] Failed to resolve historical speed for {identifier}: {ex.Message}");
+                return null;
             }
         }
         private void EnsureRaceAverageWinRateLast5(IReadOnlyList<RunnerFlow> flows)

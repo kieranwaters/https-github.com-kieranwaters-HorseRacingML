@@ -1126,7 +1126,133 @@ new RunnerFlow { HorseName = "Alpha Runner" },
             Assert.Equal(0.6f, Convert.ToSingle(alpha.FeatureValues["RaceAvgWinRateLast5"]));
             Assert.Equal(0.4f, Convert.ToSingle(beta.FeatureValues["RaceAvgWinRateLast5"]));
         }
+        [Fact]
+        public void EnsureRaceAverageSpeedLast5_UsesDatabaseFallbackWhenAvgSpeedMissing()
+        {
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:HorseRacingDb"] = "Data Source=(localdb)\\MSSQLLocalDB;Initial Catalog=HorseRacingML;Integrated Security=True;Persist Security Info=False;Pooling=False;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Application Name=\"SQL Server Management Studio\";Command Timeout=30"
+                })
+                .Build();
 
+            var alphaRow = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["HorseName"] = "Alpha Runner"
+            };
+
+            var betaRow = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["HorseName"] = "Beta Runner"
+            };
+
+            var preparedRace = new PreparedRace(995, new List<Dictionary<string, object?>> { alphaRow, betaRow });
+
+            var trainer = new FallbackTrainer(configuration, preparedRace);
+            var repo = new MinimalRacingRepository();
+
+            var alphaEntries = new List<HorseSpeedEntry>
+            {
+                new HorseSpeedEntry
+                {
+                    DistanceYards = 2000,
+                    WinningTimeMilliseconds = 100000,
+                    DistanceBeatenLengths = 0m
+                },
+                new HorseSpeedEntry
+                {
+                    DistanceYards = 2100,
+                    WinningTimeMilliseconds = 101000,
+                    DistanceBeatenLengths = 0.5m
+                }
+            };
+
+            var betaEntries = new List<HorseSpeedEntry>
+            {
+                new HorseSpeedEntry
+                {
+                    DistanceYards = 1800,
+                    WinningTimeMilliseconds = 90000,
+                    DistanceBeatenLengths = 0m
+                },
+                new HorseSpeedEntry
+                {
+                    DistanceYards = 1750,
+                    WinningTimeMilliseconds = 115000,
+                    DistanceBeatenLengths = 1m
+                }
+            };
+
+            repo.RecentSpeedEntriesByHorse["Alpha Runner"] = alphaEntries;
+            repo.RecentSpeedEntriesByHorse["Beta Runner"] = betaEntries;
+
+            var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
+            var scraper = new BetfairMarketScraper(repo, trainer, bankroll: 20m, settings);
+
+            var flows = new List<RunnerFlow>
+            {
+                new RunnerFlow { HorseName = "Alpha Runner" },
+                new RunnerFlow { HorseName = "Beta Runner" }
+            };
+
+            var report = scraper.TestBuildRaceReport(
+                marketId: "1.781",
+                raceTitle: "Speed Stakes",
+                venueName: "Sample Park",
+                venueCountry: "GB",
+                raceDate: new DateTime(2024, 9, 25),
+                offTime: new TimeSpan(15, 0, 0),
+                raceDetails: "Handicap",
+                going: "Good",
+                backBookPercentage: 102m,
+                layBookPercentage: 104m,
+                raceUrl: null,
+                flows: flows);
+
+            Assert.NotNull(repo.LastRecentSpeedRequest);
+            Assert.Equal(5, repo.LastRecentSpeedRequest!.Value.WindowSize);
+
+            static float ComputeAverage(IReadOnlyList<HorseSpeedEntry> entries)
+            {
+                const float msPerLength = 200f;
+                var speeds = new List<float>();
+
+                foreach (var entry in entries)
+                {
+                    if (!entry.DistanceYards.HasValue || !entry.WinningTimeMilliseconds.HasValue)
+                    {
+                        continue;
+                    }
+
+                    var beaten = entry.DistanceBeatenLengths.HasValue
+                        ? (float)entry.DistanceBeatenLengths.Value
+                        : 0f;
+                    var runnerTime = entry.WinningTimeMilliseconds.Value + beaten * msPerLength;
+
+                    if (runnerTime <= 0f)
+                    {
+                        continue;
+                    }
+
+                    speeds.Add(entry.DistanceYards.Value / runnerTime);
+                }
+
+                return speeds.Count > 0
+                    ? speeds.Average()
+                    : 0f;
+            }
+
+            var expectedAlpha = ComputeAverage(alphaEntries);
+            var expectedBeta = ComputeAverage(betaEntries);
+            var alpha = report.Runners.First(r => string.Equals(r.HorseName, "Alpha Runner", StringComparison.OrdinalIgnoreCase));
+            var beta = report.Runners.First(r => string.Equals(r.HorseName, "Beta Runner", StringComparison.OrdinalIgnoreCase));
+
+            Assert.Equal(expectedAlpha, Convert.ToSingle(alpha.FeatureValues["AvgSpeedLast5"]), 6);
+            Assert.Equal(expectedBeta, Convert.ToSingle(beta.FeatureValues["AvgSpeedLast5"]), 6);
+
+            Assert.Equal(expectedAlpha, Convert.ToSingle(alpha.FeatureValues["RaceAvgSpeedLast5"]), 6);
+            Assert.Equal(expectedBeta, Convert.ToSingle(beta.FeatureValues["RaceAvgSpeedLast5"]), 6);
+        }
         [Fact]
         public void EnsureRaceAverageWinRateLast5_UsesLifetimeFallbackWhenWinRateMissing()
         {
@@ -1642,6 +1768,10 @@ new RunnerFlow { HorseName = "Alpha Runner" },
             {
                 return null;
             }
+            public IReadOnlyList<HorseSpeedEntry> GetRecentHorseSpeedEntries(string? horseName, int? horseId, DateTime? beforeDate, int windowSize)
+            {
+                return Array.Empty<HorseSpeedEntry>();
+            }
             public UpcomingRace? GetUpcomingRaceByMarketId(string? marketId)
             {
                 if (string.IsNullOrWhiteSpace(marketId))
@@ -1907,6 +2037,9 @@ new RunnerFlow { HorseName = "Alpha Runner" },
             public int? LastRaceIdByRunnerResultLookup { get; private set; }
             public int? WinningTimeLookupResult { get; set; }
             public int? LastWinningTimeLookupRaceId { get; private set; }
+            public (string? HorseName, int? HorseId, DateTime? BeforeDate, int WindowSize)? LastRecentSpeedRequest { get; private set; }
+            public Dictionary<string, IReadOnlyList<HorseSpeedEntry>> RecentSpeedEntriesByHorse { get; } = new(StringComparer.OrdinalIgnoreCase);
+            public IReadOnlyList<HorseSpeedEntry>? RecentSpeedEntriesResult { get; set; }
             public void ClearDayReportTables()
             {
             }
@@ -1953,6 +2086,17 @@ new RunnerFlow { HorseName = "Alpha Runner" },
                 }
 
                 return RecentWinStatsResult;
+            }
+            public IReadOnlyList<HorseSpeedEntry> GetRecentHorseSpeedEntries(string? horseName, int? horseId, DateTime? beforeDate, int windowSize)
+            {
+                LastRecentSpeedRequest = (horseName, horseId, beforeDate, windowSize);
+
+                if (!string.IsNullOrWhiteSpace(horseName) && RecentSpeedEntriesByHorse.TryGetValue(horseName, out var entries) && entries != null)
+                {
+                    return entries;
+                }
+
+                return RecentSpeedEntriesResult ?? Array.Empty<HorseSpeedEntry>();
             }
 
             public void InsertRaceScreen(RaceScreen screen)

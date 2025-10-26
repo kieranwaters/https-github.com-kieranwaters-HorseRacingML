@@ -195,6 +195,10 @@ namespace HorseRacingML.Tests
             {
                 return null;
             }
+            public IReadOnlyList<HorseSpeedEntry> GetRecentHorseSpeedEntries(string? horseName, int? horseId, DateTime? beforeDate, int windowSize)
+            {
+                return Array.Empty<HorseSpeedEntry>();
+            }
             public UpcomingRace? GetUpcomingRaceByMarketId(string? marketId)
             {
                 return null;
