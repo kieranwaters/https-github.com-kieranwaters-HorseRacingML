@@ -619,7 +619,10 @@ namespace HorseRacingML.Scraping
                 EnsureDisplayJockeyClassFallbacks(flow.FeatureValues);
             }
             var displayFeatureValues = CreateFeatureDictionary(flow.FeatureValues);
-
+            if (displayFeatureValues != null && displayFeatureValues.Count > 0)
+            {
+                EnsureDisplayJockeyClassFallbacks(displayFeatureValues);
+            }
             var runner = new RunnerDayReport
             {
                 ClothNumber = flow.ClothNumber,
@@ -2969,7 +2972,9 @@ namespace HorseRacingML.Scraping
             .ToArray());
         private static readonly string[] EssentialTrackedFeatureKeys =
         {
-            "HasLastWin"
+            "HasLastWin",
+            "JockeyClassWinRate",
+            "JockeyClassAvgNorm"
         };
         private static string[] HistoricalFeatureBackfillKeys => HistoricalFeatureBackfillKeysLazy.Value;
         private static readonly HashSet<string> HistoricalFeaturesAlwaysRequired = new(//here
