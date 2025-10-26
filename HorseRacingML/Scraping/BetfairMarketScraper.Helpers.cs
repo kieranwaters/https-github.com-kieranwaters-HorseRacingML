@@ -442,11 +442,35 @@ namespace HorseRacingML.Scraping
             var lastJockeyGoing = ResolveFeatureValue(featureVector, "LastJockeyGoingNormPos");
             var lastJockeyDistance = ResolveFeatureValue(featureVector, "LastJockeyDistanceBucketNormPos");
 
-            FillIfMissing(featureVector, "JockeyClassWinRate", jockeyWinRate);
+            var classWinRateFallback = ResolveFeatureValue(featureVector, "ClassWinRate")
+                ?? ResolveFeatureValue(featureVector, "TrainerClassWinRate")
+                ?? ResolveFeatureValue(featureVector, "TrainerWinRate");
+            var classAvgNormFallback = ResolveFeatureValue(featureVector, "ClassAvgNorm")
+                ?? ResolveFeatureValue(featureVector, "TrainerClassAvgNorm");
+            var lastClassFallback = ResolveFeatureValue(featureVector, "LastClassNormPos")
+                ?? ResolveFeatureValue(featureVector, "LastTrainerClassNormPos");
+
+            FillIfMissing(featureVector, "JockeyClassWinRate", jockeyWinRate ?? classWinRateFallback);
             FillIfMissing(featureVector, "JockeyClassAvgNorm",
-                jockeyAvgNorm ?? (jockeyWinRate.HasValue ? ClampNormalizedPosition(1f - jockeyWinRate.Value) : (float?)null));
+                jockeyAvgNorm
+                ?? classAvgNormFallback
+                ?? (jockeyWinRate.HasValue
+                    ? ClampNormalizedPosition(1f - jockeyWinRate.Value)
+                    : (classWinRateFallback.HasValue
+                        ? ClampNormalizedPosition(1f - classWinRateFallback.Value)
+                        : (float?)null)));
             FillIfMissing(featureVector, "LastJockeyClassNormPos",
-                lastJockeySurface ?? lastJockeyGoing ?? (jockeyAvgNorm ?? (jockeyWinRate.HasValue ? ClampNormalizedPosition(1f - jockeyWinRate.Value) : (float?)null)));
+                lastJockeySurface
+                ?? lastJockeyGoing
+                ?? lastJockeyDistance
+                ?? classAvgNormFallback
+                ?? lastClassFallback
+                ?? (jockeyAvgNorm
+                    ?? (jockeyWinRate.HasValue
+                        ? ClampNormalizedPosition(1f - jockeyWinRate.Value)
+                        : (classWinRateFallback.HasValue
+                            ? ClampNormalizedPosition(1f - classWinRateFallback.Value)
+                            : (float?)null))));
 
             var jockeyGoingWin = ResolveFeatureValue(featureVector, "JockeyGoingWinRate");
             var jockeyDistanceWin = ResolveFeatureValue(featureVector, "JockeyDistanceBucketWinRate");

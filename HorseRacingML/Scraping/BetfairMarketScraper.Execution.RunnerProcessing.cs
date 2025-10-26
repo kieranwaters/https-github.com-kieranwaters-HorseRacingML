@@ -819,7 +819,15 @@ namespace HorseRacingML.Scraping
                 return blendedWinRate;
             }
 
-            return ResolveFeatureValue(featureValues, "TrainerJockeyWinRate");
+            var trainerJockeyWinRate = ResolveFeatureValue(featureValues, "TrainerJockeyWinRate");
+            if (trainerJockeyWinRate.HasValue)
+            {
+                return trainerJockeyWinRate;
+            }
+
+            return ResolveFeatureValue(featureValues, "ClassWinRate")
+                ?? ResolveFeatureValue(featureValues, "TrainerClassWinRate")
+                ?? ResolveFeatureValue(featureValues, "TrainerWinRate");
         }
 
         private static float? ResolveJockeyClassAvgNorm(
@@ -849,7 +857,11 @@ namespace HorseRacingML.Scraping
             {
                 resolvedAvg = ClampNormalizedPosition(1f - jockeyClassWinRate.Value);
             }
-
+            if (!resolvedAvg.HasValue)
+            {
+                resolvedAvg = ResolveFeatureValue(featureValues, "ClassAvgNorm")
+                    ?? ResolveFeatureValue(featureValues, "TrainerClassAvgNorm");
+            }
             return resolvedAvg;
         }
 
@@ -872,7 +884,9 @@ namespace HorseRacingML.Scraping
                 ?? lastDistance
                 ?? lastGoingDistance
                 ?? CombineAverages(lastGoing, lastDistance)
-                ?? jockeyClassAvgNorm;
+                ?? jockeyClassAvgNorm
+                ?? ResolveFeatureValue(featureValues, "LastClassNormPos")
+                ?? ResolveFeatureValue(featureValues, "LastTrainerClassNormPos");
         }
         private void PopulateRunnerPricing(RunnerFlow flow, RunnerDayReport runner)
         {
