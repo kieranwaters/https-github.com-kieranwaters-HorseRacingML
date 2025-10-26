@@ -2086,8 +2086,82 @@ namespace HorseRacingML.Scraping
                     continue;
                 }
 
+                ApplyRunnerClassFeatures(flow.FeatureValues);
                 ApplyTrainerClassFeatures(flow.FeatureValues);
                 ApplyJockeyClassFeatures(flow.FeatureValues);
+            }
+        }
+        private void ApplyRunnerClassFeatures(Dictionary<string, object?> featureValues)
+        {
+            if (featureValues == null)
+            {
+                return;
+            }
+
+            var classWinRate = ResolveFeatureValue(featureValues, "ClassWinRate");
+
+            if (!classWinRate.HasValue)
+            {
+                var lifetimeWinRate = ResolveFeatureValue(featureValues, "LifetimeWinRate");
+                if (!lifetimeWinRate.HasValue)
+                {
+                    lifetimeWinRate = CombineAverages(
+                        ResolveFeatureValue(featureValues, "TrainerWinRate"),
+                        ResolveFeatureValue(featureValues, "JockeyWinRate"));
+                }
+
+                classWinRate = lifetimeWinRate
+                    ?? ResolveFeatureValue(featureValues, "TrainerClassWinRate")
+                    ?? ResolveFeatureValue(featureValues, "TrainerWinRate")
+                    ?? ResolveFeatureValue(featureValues, "JockeyClassWinRate")
+                    ?? ResolveFeatureValue(featureValues, "JockeyWinRate");
+            }
+
+            if (classWinRate.HasValue)
+            {
+                featureValues["ClassWinRate"] = classWinRate.Value;
+            }
+            else
+            {
+                featureValues.Remove("ClassWinRate");
+            }
+
+            float? classAvgNorm = ResolveFeatureValue(featureValues, "ClassAvgNorm");
+            if (!classAvgNorm.HasValue && classWinRate.HasValue)
+            {
+                classAvgNorm = ClampNormalizedPosition(1f - classWinRate.Value);
+            }
+
+            if (classAvgNorm.HasValue)
+            {
+                featureValues["ClassAvgNorm"] = classAvgNorm.Value;
+            }
+            else if (!TryGetMeaningfulValue(featureValues, "ClassAvgNorm", out _))
+            {
+                featureValues.Remove("ClassAvgNorm");
+            }
+
+            if (!TryGetMeaningfulValue(featureValues, "LastClassNormPos", out _))
+            {
+                var lastClass = classAvgNorm
+                    ?? ResolveFeatureValue(featureValues, "AvgNormPosLast5")
+                    ?? CombineAverages(
+                        ResolveFeatureValue(featureValues, "TrainerClassAvgNorm"),
+                        ResolveFeatureValue(featureValues, "JockeyClassAvgNorm"));
+
+                if (!lastClass.HasValue && classWinRate.HasValue)
+                {
+                    lastClass = ClampNormalizedPosition(1f - classWinRate.Value);
+                }
+
+                if (lastClass.HasValue)
+                {
+                    featureValues["LastClassNormPos"] = lastClass.Value;
+                }
+                else
+                {
+                    featureValues.Remove("LastClassNormPos");
+                }
             }
         }
         private void ApplyTrainerClassFeatures(Dictionary<string, object?> featureValues)
