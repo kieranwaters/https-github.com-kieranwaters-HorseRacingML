@@ -2086,9 +2086,9 @@ namespace HorseRacingML.Scraping
                     continue;
                 }
 
-                ApplyRunnerClassFeatures(flow.FeatureValues);
                 ApplyTrainerClassFeatures(flow.FeatureValues);
                 ApplyJockeyClassFeatures(flow.FeatureValues);
+                ApplyRunnerClassFeatures(flow.FeatureValues);
             }
         }
         private void ApplyRunnerClassFeatures(Dictionary<string, object?> featureValues)
@@ -2127,6 +2127,12 @@ namespace HorseRacingML.Scraping
             }
 
             float? classAvgNorm = ResolveFeatureValue(featureValues, "ClassAvgNorm");
+            if (!classAvgNorm.HasValue)
+            {
+                classAvgNorm = CombineAverages(
+                    ResolveFeatureValue(featureValues, "TrainerClassAvgNorm"),
+                    ResolveFeatureValue(featureValues, "JockeyClassAvgNorm"));
+            }
             if (!classAvgNorm.HasValue && classWinRate.HasValue)
             {
                 classAvgNorm = ClampNormalizedPosition(1f - classWinRate.Value);
