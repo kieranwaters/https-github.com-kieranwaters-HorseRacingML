@@ -3321,44 +3321,14 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
                 return;
             }
 
-            var normalizedMarketSum = marketSum;
-
-            if (marketSum > 1d + tolerance)
+             if (modelDerived.Count == 0)
             {
-                var marketScale = 1d / marketSum;
-                foreach (var flow in marketDerived)
-                {
-                    flow.AiOdds = Math.Max(flow.AiOdds!.Value * marketScale, 0d);
-
-                    if (flow.AiProbabilityClampTarget.HasValue && double.IsFinite(flow.AiProbabilityClampTarget.Value))
-                    {
-                        flow.AiProbabilityClampTarget = Math.Max(flow.AiProbabilityClampTarget.Value * marketScale, 0d);
-                    }
-                }
-
-                normalizedMarketSum = marketDerived.Sum(f => f.AiOdds!.Value);
-                modelSum = modelDerived.Sum(f => f.AiOdds!.Value);
-            }
-
-            var availableForModel = 1d - normalizedMarketSum;
-            if (availableForModel < 0d)
-            {
-                availableForModel = 0d;
-            }
-
-            if (modelDerived.Count == 0)
-            {
-                if (Math.Abs(normalizedMarketSum - 1d) <= tolerance)
+                if (!marketDerived.Any() || marketSum <= double.Epsilon)
                 {
                     return;
                 }
 
-                if (normalizedMarketSum <= double.Epsilon)
-                {
-                    return;
-                }
-
-                var scale = 1d / normalizedMarketSum;
+                var scale = 1d / marketSum;
                 foreach (var flow in marketDerived)
                 {
                     flow.AiOdds = Math.Max(flow.AiOdds!.Value * scale, 0d);
@@ -3377,62 +3347,139 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
                 return;
             }
 
-            if (availableForModel <= tolerance)
+            double normalizedModelSum = modelSum;
+            double modelScaleFactor = 1d;
+
+            if (modelSum > 1d + tolerance)
+            {
+                modelScaleFactor = 1d / modelSum;
+            }
+            else if (modelSum <= double.Epsilon)
+            {
+                modelScaleFactor = 0d;
+            }
+
+            if (modelScaleFactor != 1d)
             {
                 foreach (var flow in modelDerived)
                 {
-                    flow.AiOdds = 0d;
+                    flow.AiOdds = Math.Max(flow.AiOdds!.Value * modelScaleFactor, 0d);
 
                     if (flow.AiProbabilityClampTarget.HasValue && double.IsFinite(flow.AiProbabilityClampTarget.Value))
                     {
-                        flow.AiProbabilityClampTarget = 0d;
+                        flow.AiProbabilityClampTarget = Math.Max(flow.AiProbabilityClampTarget.Value * modelScaleFactor, 0d);
                     }
                 }
 
-                var normalizedSumWithSuppressedModel = marketDerived.Sum(f => f.AiOdds!.Value);
+                normalizedModelSum = modelDerived.Sum(f => f.AiOdds!.Value);
+            }
+
+            if (normalizedModelSum <= double.Epsilon)
+            {
+                // No meaningful model-derived probabilities survived; fall back entirely to market
+                if (!marketDerived.Any() || marketSum <= double.Epsilon)
+                {
+                    return;
+                }
+
+                var scale = 1d / marketSum;
+                foreach (var flow in marketDerived)
+                {
+                    flow.AiOdds = Math.Max(flow.AiOdds!.Value * scale, 0d);
+
+                    if (flow.AiProbabilityClampTarget.HasValue && double.IsFinite(flow.AiProbabilityClampTarget.Value))
+                    {
+                        flow.AiProbabilityClampTarget = Math.Max(flow.AiProbabilityClampTarget.Value * scale, 0d);
+                    }
+                }
+
+                var normalizedSumOnlyMarket = marketDerived.Sum(f => f.AiOdds!.Value);
                 Console.WriteLine(
-                    "\t\tSuppressed model-derived AI probabilities due to fully allocated market-derived share; " +
-                    $"normalized sum={normalizedSumWithSuppressedModel.ToString("0.####", CultureInfo.InvariantCulture)}.");
+                    "\t\tApplied post-fallback normalization to market-derived AI probabilities; " +
+                    $"scale={scale.ToString("0.####", CultureInfo.InvariantCulture)}, " +
+                    $"normalized sum={normalizedSumOnlyMarket.ToString("0.####", CultureInfo.InvariantCulture)}.");
                 return;
             }
 
-            if (modelSum <= double.Epsilon)
+            var availableForMarket = 1d - normalizedModelSum;
+            if (availableForMarket < 0d)
             {
+                availableForMarket = 0d;
+            }
+
+            if (!marketDerived.Any())
+            {
+                if (Math.Abs(normalizedModelSum - 1d) <= tolerance)
+                {
+                    return;
+                }
+
+                if (normalizedModelSum <= double.Epsilon)
+                {
+                    return;
+                }
+
+                var scale = 1d / normalizedModelSum;
                 foreach (var flow in modelDerived)
                 {
-                    flow.AiOdds = Math.Max(availableForModel / modelDerived.Count, 0d);
+                    flow.AiOdds = Math.Max(flow.AiOdds!.Value * scale, 0d);
 
                     if (flow.AiProbabilityClampTarget.HasValue && double.IsFinite(flow.AiProbabilityClampTarget.Value))
                     {
-                        flow.AiProbabilityClampTarget = Math.Max(flow.AiProbabilityClampTarget.Value, 0d);
+                        flow.AiProbabilityClampTarget = Math.Max(flow.AiProbabilityClampTarget.Value * scale, 0d);
                     }
                 }
 
-                var normalizedSum = marketDerived.Sum(f => f.AiOdds!.Value) + modelDerived.Sum(f => f.AiOdds!.Value);
+                var normalizedSumOnlyModel = modelDerived.Sum(f => f.AiOdds!.Value);
                 Console.WriteLine(
-                    "\t\tDistributed available probability mass uniformly across model-derived runners during normalization; " +
+                    "\t\tNormalized model-derived AI probabilities to consume full distribution; " +
+                    $"normalized sum={normalizedSumOnlyModel.ToString("0.####", CultureInfo.InvariantCulture)}.");
+                return;
+            }
+
+            if (marketSum <= double.Epsilon)
+            {
+                if (availableForMarket <= tolerance)
+                {
+                    return;
+                }
+
+                var uniform = availableForMarket / marketDerived.Count;
+                foreach (var flow in marketDerived)
+                {
+                    flow.AiOdds = Math.Max(uniform, 0d);
+
+                    if (flow.AiProbabilityClampTarget.HasValue && double.IsFinite(flow.AiProbabilityClampTarget.Value))
+                    {
+                        flow.AiProbabilityClampTarget = Math.Max(uniform, 0d);
+                    }
+                }
+
+                var normalizedSum = normalizedModelSum + marketDerived.Sum(f => f.AiOdds!.Value);
+                Console.WriteLine(
+                    "\t\tDistributed residual probability uniformly across market-derived runners; " +
                     $"normalized sum={normalizedSum.ToString("0.####", CultureInfo.InvariantCulture)}.");
                 return;
             }
 
-            var modelScale = availableForModel / modelSum;
+            var marketScaleFactor = availableForMarket / marketSum;
 
-            foreach (var flow in modelDerived)
+            foreach (var flow in marketDerived)
             {
-                flow.AiOdds = Math.Max(flow.AiOdds!.Value * modelScale, 0d);
+                flow.AiOdds = Math.Max(flow.AiOdds!.Value * marketScaleFactor, 0d);
 
                 if (flow.AiProbabilityClampTarget.HasValue && double.IsFinite(flow.AiProbabilityClampTarget.Value))
                 {
-                    flow.AiProbabilityClampTarget = Math.Max(flow.AiProbabilityClampTarget.Value * modelScale, 0d);
+                    flow.AiProbabilityClampTarget = Math.Max(flow.AiProbabilityClampTarget.Value * marketScaleFactor, 0d);
                 }
             }
 
-            var totalNormalizedSum = marketDerived.Sum(f => f.AiOdds!.Value) + modelDerived.Sum(f => f.AiOdds!.Value);
+            var totalNormalized = normalizedModelSum + marketDerived.Sum(f => f.AiOdds!.Value);
             Console.WriteLine(
-                "\t\tApplied post-fallback normalization to AI probabilities; " +
-                $"marketShare={normalizedMarketSum.ToString("0.####", CultureInfo.InvariantCulture)}, " +
-                $"modelScale={modelScale.ToString("0.####", CultureInfo.InvariantCulture)}, " +
-                $"normalized sum={totalNormalizedSum.ToString("0.####", CultureInfo.InvariantCulture)}.");
+                "\t\tApplied post-fallback normalization prioritizing model-derived probabilities; " +
+                $"modelShare={normalizedModelSum.ToString("0.####", CultureInfo.InvariantCulture)}, " +
+                $"marketScale={marketScaleFactor.ToString("0.####", CultureInfo.InvariantCulture)}, " +
+                $"normalized sum={totalNormalized.ToString("0.####", CultureInfo.InvariantCulture)}.");
         }
 
         private static void AppendMarketFallbackReason(RunnerFlow? flow, string detail)

@@ -763,7 +763,70 @@ namespace HorseRacingML.Tests
                 Assert.False(runner.AiProbabilityClampedToMarket);
             });
         }
+        [Fact]
+        public void NormalizeAiOdds_PreservesModelShareWhenMarketFallbackApplied()
+        {
+            var flows = new List<RunnerFlow>
+            {
+                new RunnerFlow
+                {
+                    HorseName = "Dominant AI Runner",
+                    AiOdds = 0.8,
+                    AiProbabilityMarketDerived = false,
+                    BackPrice1 = 3m
+                },
+                new RunnerFlow
+                {
+                    HorseName = "Secondary AI Runner",
+                    AiOdds = 0.4,
+                    AiProbabilityMarketDerived = false,
+                    BackPrice1 = 4m
+                },
+                new RunnerFlow
+                {
+                    HorseName = "Fallback Runner One",
+                    AiOdds = 0.01,
+                    AiProbabilityMarketDerived = false,
+                    BackPrice1 = 5m
+                },
+                new RunnerFlow
+                {
+                    HorseName = "Fallback Runner Two",
+                    AiOdds = 0.01,
+                    AiProbabilityMarketDerived = false,
+                    BackPrice1 = 6m
+                }
+            };
 
+            var method = typeof(BetfairMarketScraper).GetMethod(
+                "NormalizeAiOdds",
+                BindingFlags.NonPublic | BindingFlags.Static);
+
+            Assert.NotNull(method);
+
+            method!.Invoke(null, new object?[] { flows, false });
+
+            var modelRunners = flows.Where(f => !f.AiProbabilityMarketDerived).ToList();
+            var fallbackRunners = flows.Where(f => f.AiProbabilityMarketDerived).ToList();
+
+            Assert.Equal(2, modelRunners.Count);
+            Assert.Equal(2, fallbackRunners.Count);
+
+            var total = flows.Sum(f => f.AiOdds!.Value);
+            Assert.InRange(total, 0.999999, 1.000001);
+
+            var modelSum = modelRunners.Sum(f => f.AiOdds!.Value);
+            var fallbackSum = fallbackRunners.Sum(f => f.AiOdds!.Value);
+
+            Assert.True(modelSum > fallbackSum);
+            Assert.InRange(modelSum, 0.95, 1.0);
+            Assert.InRange(fallbackSum, 0.01, 0.05);
+
+            var fallbackOne = flows.Single(f => f.HorseName == "Fallback Runner One");
+            var fallbackTwo = flows.Single(f => f.HorseName == "Fallback Runner Two");
+
+            Assert.True(fallbackOne.AiOdds!.Value > fallbackTwo.AiOdds!.Value);
+        }
         [Fact]
         public void NormalizeAiOdds_ResolvesDegenerateZeroOneDistribution()
         {
