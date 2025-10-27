@@ -921,7 +921,8 @@ namespace HorseRacingML.Scraping
             decimal? backBookPercentage,
             decimal? layBookPercentage,
             IReadOnlyList<RunnerFlow>? flows,
-            ISet<string>? missingScrapeFields = null)
+            ISet<string>? missingScrapeFields = null,
+            Dictionary<string, object?>? persistedFeatures = null)
         {
             if (featureVector == null)
             {
@@ -1183,7 +1184,40 @@ namespace HorseRacingML.Scraping
             {
                 SetIfMissing("AgeRestriction", parsed.AgeRestriction);
             }
+            int? ResolveClassFrom(Dictionary<string, object?>? source)
+            {
+                if (source == null)
+                {
+                    return null;
+                }
+
+                if (!source.TryGetValue("Class", out var existingClass) ||
+                    !TryGetInt(existingClass, out var parsedClass) ||
+                    parsedClass <= 0)
+                {
+                    return null;
+                }
+
+                return parsedClass;
+            }
+
             bool classFromHistory = false;
+
+            if (TryGetMeaningfulValue(featureVector, "Class", out _))
+            {
+                classFromHistory = true;
+            }
+            else
+            {
+                var historicalClass = ResolveClassFrom(persistedFeatures)
+                    ?? ResolveClassFrom(flow?.FeatureValues);
+
+                if (historicalClass.HasValue)
+                {
+                    featureVector["Class"] = historicalClass.Value;
+                    classFromHistory = true;
+                }
+            }
             try
             {
                 int? horseId = null;
@@ -1197,7 +1231,11 @@ namespace HorseRacingML.Scraping
                 {
                     horseId = TryConvertToInt32(flowHorseId);
                 }
-
+                if (!horseId.HasValue && persistedFeatures != null &&
+                    persistedFeatures.TryGetValue("HorseId", out var persistedHorseId))
+                {
+                    horseId = TryConvertToInt32(persistedHorseId);
+                }
                 horseId = NormalizeHorseIdentifier(horseId);
 
                 string? horseName = flow?.HorseName;
@@ -1207,15 +1245,74 @@ namespace HorseRacingML.Scraping
                 {
                     horseName = horseNameStr;
                 }
+                if (string.IsNullOrWhiteSpace(horseName) && persistedFeatures != null &&
+                    persistedFeatures.TryGetValue("HorseName", out var persistedHorseNameObj) &&
+                    persistedHorseNameObj is string persistedHorseName)
 
-                if (horseId.HasValue || !string.IsNullOrWhiteSpace(horseName))
+                    if (horseId.HasValue || !string.IsNullOrWhiteSpace(horseName))
                 {
-                    var resolvedClass = _repo.GetMostRecentRaceClass(horseName, horseId);
-                    if (resolvedClass.HasValue)
-                    {
-                        featureVector["Class"] = resolvedClass.Value;
-                        classFromHistory = true;
+                        horseName = persistedHorseName;
                     }
+
+                horseName = horseName?.Trim();
+
+                int? jockeyId = null;
+                if (featureVector.TryGetValue("JockeyId", out var jockeyIdObj))
+                {
+                    jockeyId = TryConvertToInt32(jockeyIdObj);
+                }
+
+                if (!jockeyId.HasValue && flow?.FeatureValues != null &&
+                    flow.FeatureValues.TryGetValue("JockeyId", out var flowJockeyId))
+                {
+                    jockeyId = TryConvertToInt32(flowJockeyId);
+                }
+
+                if (!jockeyId.HasValue && persistedFeatures != null &&
+                    persistedFeatures.TryGetValue("JockeyId", out var persistedJockeyId))
+                {
+                    jockeyId = TryConvertToInt32(persistedJockeyId);
+                }
+
+                string? jockeyName = flow?.JockeyName;
+                if (string.IsNullOrWhiteSpace(jockeyName) &&
+                    featureVector.TryGetValue("JockeyName", out var jockeyNameObj) &&
+                    jockeyNameObj is string jockeyNameStr)
+                {
+                    jockeyName = jockeyNameStr;
+                }
+
+                if (string.IsNullOrWhiteSpace(jockeyName) && persistedFeatures != null &&
+                    persistedFeatures.TryGetValue("JockeyName", out var persistedJockeyNameObj) &&
+                    persistedJockeyNameObj is string persistedJockeyName)
+                {
+                    jockeyName = persistedJockeyName;
+                }
+
+                jockeyName = jockeyName?.Trim();
+
+                byte? resolvedClass = null;
+
+                if ((horseId.HasValue || !string.IsNullOrWhiteSpace(horseName)) &&
+                    (jockeyId.HasValue || !string.IsNullOrWhiteSpace(jockeyName)))
+                {
+                    resolvedClass = _repo.GetMostRecentRaceClassForHorseJockey(
+                        horseName,
+                        horseId,
+                        jockeyName,
+                        jockeyId);
+                }
+
+                if (!resolvedClass.HasValue &&
+                    (horseId.HasValue || !string.IsNullOrWhiteSpace(horseName)))
+                {
+                    resolvedClass = _repo.GetMostRecentRaceClass(horseName, horseId);
+                }
+
+                if (resolvedClass.HasValue)
+                {
+                    featureVector["Class"] = resolvedClass.Value;
+                    classFromHistory = true;
                 }
             }
             catch (Exception ex)

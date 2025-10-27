@@ -234,7 +234,14 @@ namespace HorseRacingML.Tests
             {
                 return null;
             }
-
+            public byte? GetMostRecentRaceClassForHorseJockey(
+                string? horseName,
+                int? horseId,
+                string? jockeyName,
+                int? jockeyId)
+            {
+                return null;
+            }
             public IReadOnlyList<RaceClassRating> GetHistoricalRaceClassRatings(string? horseName, int? horseId, int maxCount)
             {
                 return Array.Empty<RaceClassRating>();

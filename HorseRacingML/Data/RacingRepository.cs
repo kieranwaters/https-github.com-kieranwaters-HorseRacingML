@@ -1833,6 +1833,125 @@ ORDER BY rr.RunnerResultId DESC;";
                 ? rows
                 : Array.Empty<RunnerResult>();
         }
+        public byte? GetMostRecentRaceClassForHorseJockey(
+            string? horseName,
+            int? horseId,
+            string? jockeyName,
+            int? jockeyId)
+        {
+            bool hasHorseIdentifier = horseId.HasValue && horseId.Value > 0;
+            bool hasHorseName = !string.IsNullOrWhiteSpace(horseName);
+            bool hasJockeyIdentifier = jockeyId.HasValue && jockeyId.Value > 0;
+            bool hasJockeyName = !string.IsNullOrWhiteSpace(jockeyName);
+
+            if ((!hasHorseIdentifier && !hasHorseName) || (!hasJockeyIdentifier && !hasJockeyName))
+            {
+                return null;
+            }
+
+            const string sqlByIds = @"SELECT TOP (1)
+    r.Class
+FROM RunnerResult rr
+INNER JOIN Race r ON r.RaceId = rr.RaceId
+WHERE rr.HorseId = @HorseId
+  AND rr.JockeyId = @JockeyId
+  AND r.Class IS NOT NULL
+ORDER BY r.RaceDate DESC, rr.RunnerResultId DESC;";
+
+            const string sqlByHorseIdJockeyNames = @"SELECT TOP (1)
+    r.Class
+FROM RunnerResult rr
+INNER JOIN Race r ON r.RaceId = rr.RaceId
+INNER JOIN Jockey j ON j.JockeyId = rr.JockeyId
+WHERE rr.HorseId = @HorseId
+  AND j.Name IN @Names
+  AND r.Class IS NOT NULL
+ORDER BY r.RaceDate DESC, rr.RunnerResultId DESC;";
+
+            const string sqlByHorseNamesJockeyId = @"SELECT TOP (1)
+    r.Class
+FROM RunnerResult rr
+INNER JOIN Race r ON r.RaceId = rr.RaceId
+INNER JOIN Horse h ON h.HorseId = rr.HorseId
+WHERE h.Name IN @Names
+  AND rr.JockeyId = @JockeyId
+  AND r.Class IS NOT NULL
+ORDER BY r.RaceDate DESC, rr.RunnerResultId DESC;";
+
+            const string sqlByNames = @"SELECT TOP (1)
+    r.Class
+FROM RunnerResult rr
+INNER JOIN Race r ON r.RaceId = rr.RaceId
+INNER JOIN Horse h ON h.HorseId = rr.HorseId
+INNER JOIN Jockey j ON j.JockeyId = rr.JockeyId
+WHERE h.Name IN @HorseNames
+  AND j.Name IN @JockeyNames
+  AND r.Class IS NOT NULL
+ORDER BY r.RaceDate DESC, rr.RunnerResultId DESC;";
+
+            using var conn = OpenConnection();
+
+            if (hasHorseIdentifier && hasJockeyIdentifier)
+            {
+                var byIds = conn.QueryFirstOrDefault<byte?>(sqlByIds, new
+                {
+                    HorseId = horseId!.Value,
+                    JockeyId = jockeyId!.Value
+                });
+
+                if (byIds.HasValue)
+                {
+                    return byIds;
+                }
+            }
+
+            var horseCandidates = hasHorseName
+                ? BuildHistoricalNameCandidates(horseName)
+                : Array.Empty<string>();
+
+            var jockeyCandidates = hasJockeyName
+                ? BuildHistoricalNameCandidates(jockeyName)
+                : Array.Empty<string>();
+
+            if (hasHorseIdentifier && jockeyCandidates.Count > 0)
+            {
+                var byHorseIdAndNames = conn.QueryFirstOrDefault<byte?>(sqlByHorseIdJockeyNames, new
+                {
+                    HorseId = horseId!.Value,
+                    Names = jockeyCandidates.ToArray()
+                });
+
+                if (byHorseIdAndNames.HasValue)
+                {
+                    return byHorseIdAndNames;
+                }
+            }
+
+            if (hasJockeyIdentifier && horseCandidates.Count > 0)
+            {
+                var byNamesAndJockeyId = conn.QueryFirstOrDefault<byte?>(sqlByHorseNamesJockeyId, new
+                {
+                    Names = horseCandidates.ToArray(),
+                    JockeyId = jockeyId!.Value
+                });
+
+                if (byNamesAndJockeyId.HasValue)
+                {
+                    return byNamesAndJockeyId;
+                }
+            }
+
+            if (horseCandidates.Count == 0 || jockeyCandidates.Count == 0)
+            {
+                return null;
+            }
+
+            return conn.QueryFirstOrDefault<byte?>(sqlByNames, new
+            {
+                HorseNames = horseCandidates.ToArray(),
+                JockeyNames = jockeyCandidates.ToArray()
+            });
+        }
         public int? GetWinningTimeMilliseconds(int raceId)
         {
             if (raceId <= 0)

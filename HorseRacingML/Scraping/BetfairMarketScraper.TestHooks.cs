@@ -166,7 +166,8 @@ namespace HorseRacingML.Scraping
             decimal? backBookPercentage = null,
             decimal? layBookPercentage = null,
             IReadOnlyList<RunnerFlow>? flows = null,
-            ISet<string>? missingScrapeFields = null)
+            ISet<string>? missingScrapeFields = null,
+            Dictionary<string, object?>? persistedFeatures = null)
         {
             ApplyScrapedFeatureFallbacks(
                 featureVector,
@@ -182,7 +183,8 @@ namespace HorseRacingML.Scraping
                 backBookPercentage,
                 layBookPercentage,
                 flows,
-                missingScrapeFields);
+                missingScrapeFields,
+                persistedFeatures);
         }
         internal FeaturePopulationSummary TestBuildFeaturePopulationSummary(Dictionary<string, object?> featureVector)
         {

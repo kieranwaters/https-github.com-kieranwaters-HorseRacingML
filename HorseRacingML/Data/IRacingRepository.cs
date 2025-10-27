@@ -26,6 +26,11 @@ namespace HorseRacingML.Data
         decimal? GetLastDistanceBeatenLengths(string? horseName, int? horseId, DateTime? beforeDate);
         int? GetLastWinningTimeMilliseconds(string? horseName, int? horseId, DateTime? beforeDate);
         byte? GetMostRecentRaceClass(string? horseName, int? horseId);
+        byte? GetMostRecentRaceClassForHorseJockey(
+            string? horseName,
+            int? horseId,
+            string? jockeyName,
+            int? jockeyId);
         IReadOnlyList<RaceClassRating> GetHistoricalRaceClassRatings(string? horseName, int? horseId, int maxCount);
         (int Wins, int Starts)? GetRecentHorseWinStats(string? horseName, int? horseId, DateTime? beforeDate, int windowSize);
         IReadOnlyList<HorseSpeedEntry> GetRecentHorseSpeedEntries(string? horseName, int? horseId, DateTime? beforeDate, int windowSize);
