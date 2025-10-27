@@ -390,12 +390,15 @@ namespace HorseRacingML.Scraping
             {
                 avgNormLast5 = ClampNormalizedPosition(1f - lifetimeWinRate.Value);
             }
-
+            var generalWinRateFallback = ResolveGeneralWinRateFallback(featureVector)
+                ?? lifetimeWinRate;
             var classWinRate = ResolveFeatureValue(featureVector, "ClassWinRate");
             if (!classWinRate.HasValue)
             {
-                classWinRate = lifetimeWinRate ?? ResolveFeatureValue(featureVector, "TrainerWinRate")
-                    ?? ResolveFeatureValue(featureVector, "JockeyWinRate");
+                classWinRate = lifetimeWinRate
+                    ?? ResolveFeatureValue(featureVector, "TrainerWinRate")
+                    ?? ResolveFeatureValue(featureVector, "JockeyWinRate")
+                    ?? generalWinRateFallback;
             }
 
             if (classWinRate.HasValue)
@@ -444,33 +447,42 @@ namespace HorseRacingML.Scraping
 
             var classWinRateFallback = ResolveFeatureValue(featureVector, "ClassWinRate")
                 ?? ResolveFeatureValue(featureVector, "TrainerClassWinRate")
-                ?? ResolveFeatureValue(featureVector, "TrainerWinRate");
+                ?? ResolveFeatureValue(featureVector, "TrainerWinRate")
+                ?? generalWinRateFallback;
+            var generalAvgNormFallback = ResolveGeneralNormalizedFinishFallback(
+                featureVector,
+                classWinRateFallback ?? generalWinRateFallback);
             var classAvgNormFallback = ResolveFeatureValue(featureVector, "ClassAvgNorm")
-                ?? ResolveFeatureValue(featureVector, "TrainerClassAvgNorm");
+                ?? ResolveFeatureValue(featureVector, "TrainerClassAvgNorm")
+                ?? generalAvgNormFallback;
             var lastClassFallback = ResolveFeatureValue(featureVector, "LastClassNormPos")
-                ?? ResolveFeatureValue(featureVector, "LastTrainerClassNormPos");
+                ?? ResolveFeatureValue(featureVector, "LastTrainerClassNormPos")
+                ?? generalAvgNormFallback;
 
-            FillIfMissing(featureVector, "JockeyClassWinRate", jockeyWinRate ?? classWinRateFallback);
-            FillIfMissing(featureVector, "JockeyClassAvgNorm",
-                jockeyAvgNorm
+            var resolvedJockeyClassWinRate = jockeyWinRate
+                ?? classWinRateFallback
+                ?? generalWinRateFallback;
+            var resolvedJockeyClassAvgNorm = jockeyAvgNorm
                 ?? classAvgNormFallback
-                ?? (jockeyWinRate.HasValue
-                    ? ClampNormalizedPosition(1f - jockeyWinRate.Value)
-                    : (classWinRateFallback.HasValue
-                        ? ClampNormalizedPosition(1f - classWinRateFallback.Value)
-                        : (float?)null)));
-            FillIfMissing(featureVector, "LastJockeyClassNormPos",
-                lastJockeySurface
+                ?? generalAvgNormFallback
+                ?? (resolvedJockeyClassWinRate.HasValue
+                    ? ClampNormalizedPosition(1f - resolvedJockeyClassWinRate.Value)
+                    : (float?)null);
+
+            var resolvedLastJockeyClass = lastJockeySurface
                 ?? lastJockeyGoing
                 ?? lastJockeyDistance
                 ?? classAvgNormFallback
                 ?? lastClassFallback
-                ?? (jockeyAvgNorm
-                    ?? (jockeyWinRate.HasValue
-                        ? ClampNormalizedPosition(1f - jockeyWinRate.Value)
-                        : (classWinRateFallback.HasValue
-                            ? ClampNormalizedPosition(1f - classWinRateFallback.Value)
-                            : (float?)null))));
+                ?? generalAvgNormFallback
+                ?? resolvedJockeyClassAvgNorm
+                ?? (resolvedJockeyClassWinRate.HasValue
+                    ? ClampNormalizedPosition(1f - resolvedJockeyClassWinRate.Value)
+                    : (float?)null);
+
+            FillIfMissing(featureVector, "JockeyClassWinRate", resolvedJockeyClassWinRate);
+            FillIfMissing(featureVector, "JockeyClassAvgNorm", resolvedJockeyClassAvgNorm);
+            FillIfMissing(featureVector, "LastJockeyClassNormPos", resolvedLastJockeyClass);
 
             var jockeyGoingWin = ResolveFeatureValue(featureVector, "JockeyGoingWinRate");
             var jockeyDistanceWin = ResolveFeatureValue(featureVector, "JockeyDistanceBucketWinRate");
@@ -498,6 +510,57 @@ namespace HorseRacingML.Scraping
             }
 
             return Math.Clamp(value, -5f, 5f);
+        }
+        private static float? ResolveGeneralWinRateFallback(Dictionary<string, object?>? featureVector)
+        {
+            if (featureVector == null || featureVector.Count == 0)
+            {
+                return null;
+            }
+
+            foreach (var window in PerformanceWindowSizes)
+            {
+                var winKey = $"WinRateLast{window}";
+                var winRate = ResolveFeatureValue(featureVector, winKey);
+                if (winRate.HasValue)
+                {
+                    return winRate;
+                }
+            }
+
+            return ResolveFeatureValue(featureVector, "LifetimeWinRate")
+                ?? ResolveFeatureValue(featureVector, "RaceAvgWinRateLast5");
+        }
+        private static float? ResolveGeneralNormalizedFinishFallback(
+                    Dictionary<string, object?>? featureVector,
+                    float? winRateFallback = null)
+        {
+            if (featureVector == null || featureVector.Count == 0)
+            {
+                return winRateFallback.HasValue
+                    ? ClampNormalizedPosition(1f - winRateFallback.Value)
+                    : (float?)null;
+            }
+
+            foreach (var window in PerformanceWindowSizes)
+            {
+                var normKey = $"AvgNormPosLast{window}";
+                var norm = ResolveFeatureValue(featureVector, normKey);
+                if (norm.HasValue)
+                {
+                    return norm;
+                }
+            }
+
+            if (winRateFallback.HasValue)
+            {
+                return ClampNormalizedPosition(1f - winRateFallback.Value);
+            }
+
+            var derivedWinRate = ResolveGeneralWinRateFallback(featureVector);
+            return derivedWinRate.HasValue
+                ? ClampNormalizedPosition(1f - derivedWinRate.Value)
+                : (float?)null;
         }
 
         private static float? ResolveFeatureValue(Dictionary<string, object?>? source, string key)

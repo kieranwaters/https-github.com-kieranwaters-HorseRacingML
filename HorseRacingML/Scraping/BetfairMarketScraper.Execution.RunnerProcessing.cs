@@ -946,7 +946,17 @@ namespace HorseRacingML.Scraping
                     runnerIdentifier);
                 return fallbackWinRate;
             }
-
+            var generalWinRate = ResolveGeneralWinRateFallback(featureValues);
+            if (generalWinRate.HasValue)
+            {
+                LogFeatureFallback(
+                    "JockeyClassWinRate",
+                    AppendResolvedValue(
+                        "resolved from general performance win rate metrics (WinRateLast*/LifetimeWinRate)",
+                        generalWinRate),
+                    runnerIdentifier);
+                return generalWinRate;
+            }
             LogFeatureFallback(
                 "JockeyClassWinRate",
                 AppendResolvedValue(
@@ -1040,7 +1050,17 @@ namespace HorseRacingML.Scraping
 
                 return resolvedAvg;
             }
-
+            var generalAvgNorm = ResolveGeneralNormalizedFinishFallback(featureValues, jockeyClassWinRate);
+            if (generalAvgNorm.HasValue)
+            {
+                LogFeatureFallback(
+                    "JockeyClassAvgNorm",
+                    AppendResolvedValue(
+                        "resolved from general performance normalized finish metrics (AvgNormPosLast*/WinRateLast*)",
+                        generalAvgNorm),
+                    runnerIdentifier);
+                return generalAvgNorm;
+            }
             LogFeatureFallback(
                 "JockeyClassAvgNorm",
                 AppendResolvedValue(
