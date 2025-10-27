@@ -3150,7 +3150,6 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
                 {
                     continue;
                 }
-
                 if (!flow.AiOdds.HasValue || !double.IsFinite(flow.AiOdds.Value) || flow.AiOdds.Value < 0d)
                 {
                     continue;

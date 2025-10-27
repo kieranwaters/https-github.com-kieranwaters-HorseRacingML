@@ -763,6 +763,7 @@ namespace HorseRacingML.Tests
                 Assert.False(runner.AiProbabilityClampedToMarket);
             });
         }
+
         [Fact]
         public void NormalizeAiOdds_ResolvesDegenerateZeroOneDistribution()
         {

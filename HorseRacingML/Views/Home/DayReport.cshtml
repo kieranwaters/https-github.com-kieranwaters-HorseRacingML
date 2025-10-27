@@ -542,22 +542,14 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                 {
                                     aiOdds = "-";
                                 }
-                                var aiWinPrimary = aiProb;
+                                var aiWinPrimary = runner.AiDecimalOdds.HasValue ? aiOdds : aiProb;
                                 var aiWinTitle = aiProbTitle;
                                 string? aiWinSecondary = null;
 
-                                if (runner.AiTrainedModelApplied && runner.AiDecimalOdds.HasValue)
+                                if (runner.AiTrainedModelApplied && runner.AiDecimalOdds.HasValue && runner.AiProbability.HasValue)
                                 {
-                                    aiWinPrimary = aiOdds;
-                                    aiWinTitle = aiProbTitle;
-
-                                    if (runner.AiProbability.HasValue)
-                                    {
-                                        aiWinSecondary = aiProb;
-                                    }
+                                    aiWinSecondary = aiProb;
                                 }
-
-
                                 var marketProb = runner.MarketProbability.HasValue
                                     ? (runner.MarketProbability.Value * 100).ToString("0.##", CultureInfo.CurrentCulture) + "%"
                                     : "-";
