@@ -7,5 +7,8 @@
         public string Label { get; set; } = string.Empty;
         public double Value { get; set; }
         public bool Active { get; set; }
+        public double? NormalizedValue { get; set; }
+        public double? Weight { get; set; }
+        public double? Contribution { get; set; }
     }
 }

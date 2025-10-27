@@ -156,10 +156,6 @@ namespace HorseRacingML.ML
                     : $"feature encoding length mismatch (expected {_featureCount}, observed {encoded.Values.Length})");
                 return false;
             }
-            if (flow != null)
-            {
-                flow.EncodedFeatureValues = BuildEncodedFeatureDetails(encoded);
-            }
             LogDebug(flow, $"Encoded feature vector length {_featureCount}");
             bool hasSignal = false;
             for (int i = 0; i < encoded.Values.Length; i++)
@@ -182,6 +178,13 @@ namespace HorseRacingML.ML
                 Console.WriteLine($"[AI] Encoded feature vector for {DescribeRunner(flow)} contains no usable signal; neural output will rely on bias terms.");
             }
             var normalized = new double[_featureCount];
+            double[]? linearWeights = null;
+            double[]? contributions = null;
+            if (flow != null && TryGetLinearOutputWeights(out var candidateWeights))
+            {
+                linearWeights = candidateWeights;
+                contributions = new double[_featureCount];
+            }
             bool loggedNonFiniteValue = false;
             bool loggedInvalidStd = false;
             bool loggedNonFiniteMean = false;
@@ -227,7 +230,12 @@ namespace HorseRacingML.ML
                     }
                 }
 
-                normalized[i] = (value - mean) / std;
+                var normalizedValue = (value - mean) / std;
+                normalized[i] = normalizedValue;
+                if (contributions != null && linearWeights != null && i < linearWeights.Length)
+                {
+                    contributions[i] = normalizedValue * linearWeights[i];
+                }
             }
 
             var activations = normalized;
@@ -256,6 +264,15 @@ namespace HorseRacingML.ML
             if (flow != null)
             {
                 flow.AiLogit = logit;
+                flow.EncodedFeatureValues = BuildEncodedFeatureDetails(
+                    encoded,
+                    normalized,
+                    linearWeights,
+                    contributions);
+                if (contributions != null && Math.Abs(logit) >= 10d)
+                {
+                    LogTopLinearContributions(flow, logit);
+                }
             }
             probability = prob;
             var formattedProbability = probability.ToString("0.0000", CultureInfo.InvariantCulture);
@@ -866,7 +883,11 @@ namespace HorseRacingML.ML
 
             return new EncodedVector(vector, active);
         }
-        private List<EncodedFeatureValue> BuildEncodedFeatureDetails(EncodedVector encoded)
+        private List<EncodedFeatureValue> BuildEncodedFeatureDetails(
+            EncodedVector encoded,
+            double[]? normalized = null,
+            double[]? weights = null,
+            double[]? contributions = null)
         {
             var result = new List<EncodedFeatureValue>(_featureCount);
 
@@ -915,7 +936,16 @@ namespace HorseRacingML.ML
                         FeatureKey = key,
                         Label = label,
                         Value = slotIndex < encoded.Values.Length ? encoded.Values[slotIndex] : 0d,
-                        Active = slotIndex < encoded.Active.Length && encoded.Active[slotIndex]
+                        Active = slotIndex < encoded.Active.Length && encoded.Active[slotIndex],
+                        NormalizedValue = normalized != null && slotIndex < normalized.Length
+                            ? normalized[slotIndex]
+                            : (double?)null,
+                        Weight = weights != null && slotIndex < weights.Length
+                            ? weights[slotIndex]
+                            : (double?)null,
+                        Contribution = contributions != null && slotIndex < contributions.Length
+                            ? contributions[slotIndex]
+                            : (double?)null
                     });
                 }
 
@@ -923,6 +953,76 @@ namespace HorseRacingML.ML
             }
 
             return result;
+        }
+
+        private bool TryGetLinearOutputWeights(out double[] weights)
+        {
+            weights = Array.Empty<double>();
+
+            if (_hiddenWeights.Count > 0)
+            {
+                return false;
+            }
+
+            if (_outputWeights == null || _featureCount == 0 || _outputWeights.Length != _featureCount)
+            {
+                return false;
+            }
+
+            if (_outputWeights.Length == 0 || _outputWeights[0] == null || _outputWeights[0].Length != 1)
+            {
+                return false;
+            }
+
+            var linear = new double[_featureCount];
+            for (int i = 0; i < _featureCount; i++)
+            {
+                var row = _outputWeights[i];
+                if (row == null || row.Length == 0)
+                {
+                    return false;
+                }
+
+                linear[i] = row[0];
+            }
+
+            weights = linear;
+            return true;
+        }
+
+        private void LogTopLinearContributions(RunnerFlow flow, double logit)
+        {
+            if (flow?.EncodedFeatureValues == null || flow.EncodedFeatureValues.Count == 0)
+            {
+                return;
+            }
+
+            var topContributors = flow.EncodedFeatureValues
+                .Select(value => (Entry: value, Contribution: value?.Contribution))
+                .Where(item => item.Entry != null && item.Contribution is double contribution && Math.Abs(contribution) > 1e-3)
+                .Select(item => new
+                {
+                    Entry = item.Entry!,
+                    Contribution = item.Contribution!.Value
+                })
+                .OrderByDescending(item => Math.Abs(item.Contribution))
+                .Take(10)
+                .Select(item =>
+                {
+                    var label = string.IsNullOrWhiteSpace(item.Entry.Label)
+                        ? item.Entry.FeatureKey
+                        : item.Entry.Label;
+                    return $"{label}: {item.Contribution:+0.###;-0.###}";
+                })
+                .ToList();
+
+            if (topContributors.Count == 0)
+            {
+                return;
+            }
+
+            LogDebug(flow,
+                $"Top linear logit contributions (logit {logit:0.###}): {string.Join(", ", topContributors)}");
         }
 
         private static string BuildEncodedFeatureLabel(

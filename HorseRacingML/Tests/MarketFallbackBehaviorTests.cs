@@ -251,7 +251,10 @@ namespace HorseRacingML.Tests
                     FeatureKey = "Pace",
                     Label = "Pace=Forward",
                     Value = 0.75d,
-                    Active = true
+                    Active = true,
+                    NormalizedValue = 0.25d,
+                    Weight = 1.5d,
+                    Contribution = 0.375d
                 },
                 new EncodedFeatureValue
                 {
@@ -259,7 +262,10 @@ namespace HorseRacingML.Tests
                     FeatureKey = "Pace",
                     Label = "Pace=HeldUp",
                     Value = 0.1d,
-                    Active = false
+                    Active = false,
+                    NormalizedValue = -0.3d,
+                    Weight = -0.4d,
+                    Contribution = 0.12d
                 }
             };
 
@@ -317,12 +323,38 @@ namespace HorseRacingML.Tests
                        string.Equals(x.FeatureKey, y.FeatureKey, StringComparison.Ordinal) &&
                        string.Equals(x.Label, y.Label, StringComparison.Ordinal) &&
                        Math.Abs(x.Value - y.Value) < 1e-12 &&
-                       x.Active == y.Active;
+                       x.Active == y.Active &&
+                       NullableEquals(x.NormalizedValue, y.NormalizedValue) &&
+                       NullableEquals(x.Weight, y.Weight) &&
+                       NullableEquals(x.Contribution, y.Contribution);
             }
 
             public int GetHashCode(EncodedFeatureValue obj)
             {
-                return HashCode.Combine(obj.Index, obj.FeatureKey, obj.Label, obj.Value, obj.Active);
+                return HashCode.Combine(
+                    obj.Index,
+                    obj.FeatureKey,
+                    obj.Label,
+                    obj.Value,
+                    obj.Active,
+                    obj.NormalizedValue,
+                    obj.Weight,
+                    obj.Contribution);
+            }
+
+            private static bool NullableEquals(double? x, double? y)
+            {
+                if (x.HasValue != y.HasValue)
+                {
+                    return false;
+                }
+
+                if (!x.HasValue)
+                {
+                    return true;
+                }
+
+                return Math.Abs(x.Value - y!.Value) < 1e-12;
             }
         }
         [Fact]

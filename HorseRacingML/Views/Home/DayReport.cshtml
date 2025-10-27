@@ -624,6 +624,9 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                             var encodedActiveFromValues = hasEncodedValues
                                             ? encodedValues.Count(value => value.Active)
                                             : 0;
+                                            var showNormalized = encodedValues.Any(value => value.NormalizedValue.HasValue);
+                                            var showWeight = encodedValues.Any(value => value.Weight.HasValue);
+                                            var showContribution = encodedValues.Any(value => value.Contribution.HasValue);
                                             var populationEncodedActive = runner.FeaturePopulation?.ActiveEncodedDimensions ?? 0;
                                             var populationEncodedTotal = runner.FeaturePopulation?.TotalEncodedDimensions ?? 0;
                                             var displayEncodedActive = populationEncodedActive > 0
@@ -716,7 +719,23 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                                                         <tr>
                                                                             <th scope="col">Idx</th>
                                                                             <th scope="col">Label</th>
+                                                                            @if (showNormalized)
+                                                                            {
+                                                                                <th scope="col" class="text-end">Normalized</th>
+                                                                            }
+                                                                            @if (showWeight)
+                                                                            {
+                                                                                <th scope="col" class="text-end">Weight</th>
+                                                                            }
                                                                             <th scope="col" class="text-end">Value</th>
+                                                                            @if (showNormalized)
+                                                                            {
+                                                                                <th scope="col" class="text-end">Normalized</th>
+                                                                            }
+                                                                            @if (showWeight)
+                                                                            {
+                                                                                <th scope="col" class="text-end">Weight</th>
+                                                                            }
                                                                             <th scope="col" class="text-center">State</th>
                                                                         </tr>
                                                                     </thead>
@@ -725,10 +744,31 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                                                         {
                                                                             var encodedRowClass = encoded.Active ? string.Empty : "text-muted";
                                                                             var encodedValueText = encoded.Value.ToString("0.######", CultureInfo.CurrentCulture);
+                                                                            var normalizedText = showNormalized && encoded.NormalizedValue.HasValue
+                                                                            ? encoded.NormalizedValue.Value.ToString("0.######", CultureInfo.CurrentCulture)
+                                                                            : "-";
+                                                                            var weightText = showWeight && encoded.Weight.HasValue
+                                                                            ? encoded.Weight.Value.ToString("0.######", CultureInfo.CurrentCulture)
+                                                                            : "-";
+                                                                            var contributionText = showContribution && encoded.Contribution.HasValue
+                                                                            ? encoded.Contribution.Value.ToString("+0.######;-0.######", CultureInfo.CurrentCulture)
+                                                                            : "-";
                                                                             <tr class="@encodedRowClass">
                                                                                 <td>@encoded.Index</td>
                                                                                 <td title="@encoded.FeatureKey">@encoded.Label</td>
+                                                                                @if (showNormalized)
+                                                                                {
+                                                                                    <td class="text-end">@normalizedText</td>
+                                                                                }
+                                                                                @if (showWeight)
+                                                                                {
+                                                                                    <td class="text-end">@weightText</td>
+                                                                                }
                                                                                 <td class="text-end">@encodedValueText</td>
+                                                                                @if (showContribution)
+                                                                                {
+                                                                                    <td class="text-end">@contributionText</td>
+                                                                                }
                                                                                 <td class="text-center">@(encoded.Active ? "Active" : "Suppressed")</td>
                                                                             </tr>
                                                                         }
@@ -756,7 +796,19 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                                                 <tr>
                                                                     <th scope="col">Idx</th>
                                                                     <th scope="col">Label</th>
+                                                                    @if (showNormalized)
+                                                                    {
+                                                                        <th scope="col" class="text-end">Normalized</th>
+                                                                    }
+                                                                    @if (showWeight)
+                                                                    {
+                                                                        <th scope="col" class="text-end">Weight</th>
+                                                                    }
                                                                     <th scope="col" class="text-end">Value</th>
+                                                                    @if (showContribution)
+                                                                    {
+                                                                        <th scope="col" class="text-end">Contribution</th>
+                                                                    }
                                                                     <th scope="col" class="text-center">State</th>
                                                                 </tr>
                                                             </thead>
@@ -765,10 +817,31 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                                                 {
                                                                     var encodedRowClass = encoded.Active ? string.Empty : "text-muted";
                                                                     var encodedValueText = encoded.Value.ToString("0.######", CultureInfo.CurrentCulture);
+                                                                    var normalizedText = showNormalized && encoded.NormalizedValue.HasValue
+                                                                    ? encoded.NormalizedValue.Value.ToString("0.######", CultureInfo.CurrentCulture)
+                                                                    : "-";
+                                                                    var weightText = showWeight && encoded.Weight.HasValue
+                                                                    ? encoded.Weight.Value.ToString("0.######", CultureInfo.CurrentCulture)
+                                                                    : "-";
+                                                                    var contributionText = showContribution && encoded.Contribution.HasValue
+                                                                    ? encoded.Contribution.Value.ToString("+0.######;-0.######", CultureInfo.CurrentCulture)
+                                                                    : "-";
                                                                     <tr class="@encodedRowClass">
                                                                         <td>@encoded.Index</td>
                                                                         <td title="@encoded.FeatureKey">@encoded.Label</td>
+                                                                        @if (showNormalized)
+                                                                        {
+                                                                            <td class="text-end">@normalizedText</td>
+                                                                        }
+                                                                        @if (showWeight)
+                                                                        {
+                                                                            <td class="text-end">@weightText</td>
+                                                                        }
                                                                         <td class="text-end">@encodedValueText</td>
+                                                                        @if (showContribution)
+                                                                        {
+                                                                            <td class="text-end">@contributionText</td>
+                                                                        }
                                                                         <td class="text-center">@(encoded.Active ? "Active" : "Suppressed")</td>
                                                                     </tr>
                                                                 }
