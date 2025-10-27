@@ -542,6 +542,20 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                 {
                                     aiOdds = "-";
                                 }
+                                var aiWinPrimary = aiProb;
+                                var aiWinTitle = aiProbTitle;
+                                string? aiWinSecondary = null;
+
+                                if (runner.AiTrainedModelApplied && runner.AiDecimalOdds.HasValue)
+                                {
+                                    aiWinPrimary = aiOdds;
+                                    aiWinTitle = aiProbTitle;
+
+                                    if (runner.AiProbability.HasValue)
+                                    {
+                                        aiWinSecondary = aiProb;
+                                    }
+                                }
 
 
                                 var marketProb = runner.MarketProbability.HasValue
@@ -857,13 +871,18 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                     <td class="text-end">@marketOdds</td>
                                     <td class="text-end">@layOdds</td>
                                     <td class="text-end">
-                                        @if (runner.AiProbability.HasValue)
+                                        @if (!string.IsNullOrEmpty(aiWinTitle))
                                         {
-                                            <span title="@aiProbTitle">@aiProb</span>
+                                            <span title="@aiWinTitle">@aiWinPrimary</span>
                                         }
                                         else
                                         {
-                                            @aiProb
+                                            @aiWinPrimary
+                                        }
+
+                                        @if (!string.IsNullOrEmpty(aiWinSecondary))
+                                        {
+                                            <div class="text-muted small">@aiWinSecondary</div>
                                         }
                                         @if (runner.AiTrainedModelApplied)
                                         {
