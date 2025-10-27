@@ -3210,26 +3210,35 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
                                 ? string.Join(", ", thresholds)
                                 : "configured thresholds";
 
-                            Console.WriteLine(
-                                "\t\tNormalized probability for " + identifier +
-                                $" fell below {thresholdSummary}; substituting market-implied probability {marketProbability.ToString("0.####", CultureInfo.InvariantCulture)}."
-                            );
+                var softmaxNote = flow.AiProbabilitySoftmaxApplied
+                     ? " (softmax-adjusted distribution)"
+                     : string.Empty;
 
-                            flow.AiOdds = Math.Max(marketProbability, 0d);
-                            flow.AiProbabilityMarketDerived = true;
-                            flow.AiProbabilityClampedToMarket = true;
-                            flow.AiProbabilityClampTarget = marketProbability;
-                            AppendMarketFallbackReason(flow, "Normalized probability below threshold; using market-implied probability");
-                            applied = true;
-                        }
+                Console.WriteLine(
+                    "\t\tNormalized probability for " + identifier +
+                    $" fell below {thresholdSummary}; substituting market-implied probability {marketProbability.ToString("0.####", CultureInfo.InvariantCulture)}" +
+                    softmaxNote +
+                    "."
+                );
 
-                        if (applied)
-                        {
-                            RenormalizeAiProbabilities(flows);
-                        }
+                flow.AiOdds = Math.Max(marketProbability, 0d);
+                flow.AiProbabilityMarketDerived = true;
+                flow.AiProbabilityClampedToMarket = true;
+                flow.AiProbabilityClampTarget = marketProbability;
+                var fallbackReason = flow.AiProbabilitySoftmaxApplied
+                    ? "Normalized probability below threshold after softmax; using market-implied probability"
+                    : "Normalized probability below threshold; using market-implied probability";
+                AppendMarketFallbackReason(flow, fallbackReason);
+                applied = true;
+            }
 
-                        return applied;
-                    }
+            if (applied)
+            {
+                RenormalizeAiProbabilities(flows);
+            }
+
+            return applied;
+        }
         private static void ApplyMarketFallbackForUnmatchedRunners(IReadOnlyList<RunnerFlow> flows)
         {
             if (flows == null || flows.Count == 0) return; // return early if list is null or empty
@@ -3563,7 +3572,7 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
 
             var weights = new Dictionary<RunnerFlow, double>();
             double? temperatureUsed = null;
-
+            bool softmaxApplied = false;
             if (logitCandidates.Count >= 2)
             {
                 var maxLogit = logitCandidates.Max(f => f.AiLogit!.Value);
@@ -3572,6 +3581,36 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
                 var denominator = Math.Max(logitCandidates.Count - 1, 1);
                 var temperature = Math.Clamp(span / denominator, 0.5d, 25d);
                 temperatureUsed = temperature;
+                softmaxApplied = true;
+
+                Console.WriteLine(
+                    "\t\tSoftmax input logits span " +
+                    minLogit.ToString("0.####", CultureInfo.InvariantCulture) +
+                    " to " +
+                    maxLogit.ToString("0.####", CultureInfo.InvariantCulture) +
+                    " (spread=" + span.ToString("0.####", CultureInfo.InvariantCulture) + ").");
+
+                var extremeThreshold = 6d;
+                var extremeLogits = logitCandidates
+                    .OrderByDescending(f => Math.Abs(f.AiLogit!.Value))
+                    .Take(5)
+                    .Where(f => Math.Abs(f.AiLogit!.Value) >= extremeThreshold)
+                    .ToList();
+
+                if (extremeLogits.Count > 0)
+                {
+                    Console.WriteLine("\t\tIdentified extreme logits (|value| >= " + extremeThreshold.ToString("0.####", CultureInfo.InvariantCulture) + ") contributing to softmax:");
+                    foreach (var candidate in extremeLogits)
+                    {
+                        var horseIdentifier = !string.IsNullOrWhiteSpace(candidate.HorseName)
+                            ? candidate.HorseName!
+                            : "unknown runner";
+
+                        Console.WriteLine(
+                            "\t\t\t" + horseIdentifier +
+                            ": logit=" + candidate.AiLogit!.Value.ToString("0.####", CultureInfo.InvariantCulture));
+                    }
+                }
 
                 foreach (var flow in logitCandidates)
                 {
@@ -3659,7 +3698,15 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
                     .Where(f => f != null && f.AiOdds.HasValue && double.IsFinite(f.AiOdds.Value))
                     .Sum(f => f.AiOdds!.Value);
             }
+            foreach (var flow in flows)
+            {
+                if (flow == null)
+                {
+                    continue;
+                }
 
+                flow.AiProbabilitySoftmaxApplied = softmaxApplied;
+            }
             if (temperatureUsed.HasValue)
             {
                 Console.WriteLine($"\t\tInterpreting degenerate predictions using softmax over model logits (temperature={temperatureUsed.Value.ToString("0.####", CultureInfo.InvariantCulture)}).");

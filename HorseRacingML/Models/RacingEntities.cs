@@ -144,6 +144,7 @@ namespace HorseRacingML.Models
         public bool AiProbabilityClampedToMarket { get; set; }
         public double? AiProbabilityClampTarget { get; set; }
         public string? AiProbabilityFallbackReason { get; set; }
+        public bool AiProbabilitySoftmaxApplied { get; set; }
 
         public byte? Age { get; set; }
         public byte? WeightLbs { get; set; }
