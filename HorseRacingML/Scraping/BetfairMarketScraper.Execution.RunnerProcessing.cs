@@ -920,7 +920,7 @@ namespace HorseRacingML.Scraping
                 return blendedWinRate;
             }
 
-            var trainerJockeyWinRate = ResolveFeatureValue(featureValues, "TrainerJockeyWinRate");
+            var trainerJockeyWinRate = ResolveNonNeutralFeatureValue(featureValues, "TrainerJockeyWinRate");
             if (trainerJockeyWinRate.HasValue)
             {
                 LogFeatureFallback(
@@ -932,9 +932,9 @@ namespace HorseRacingML.Scraping
                 return trainerJockeyWinRate;
             }
 
-            var fallbackWinRate = ResolveFeatureValue(featureValues, "ClassWinRate")
-                ?? ResolveFeatureValue(featureValues, "TrainerClassWinRate")
-                ?? ResolveFeatureValue(featureValues, "TrainerWinRate");
+            var fallbackWinRate = ResolveNonNeutralFeatureValue(featureValues, "ClassWinRate")
+                ?? ResolveNonNeutralFeatureValue(featureValues, "TrainerClassWinRate")
+                ?? ResolveNonNeutralFeatureValue(featureValues, "TrainerWinRate");
 
             if (fallbackWinRate.HasValue)
             {
@@ -980,10 +980,10 @@ namespace HorseRacingML.Scraping
                 return null;
             }
 
-            var surfaceAvg = ResolveFeatureValue(featureValues, "JockeySurfaceAvgNorm");
-            var goingAvg = ResolveFeatureValue(featureValues, "JockeyGoingAvgNorm");
-            var distanceAvg = ResolveFeatureValue(featureValues, "JockeyDistanceBucketAvgNorm");
-            var goingDistanceAvg = ResolveFeatureValue(featureValues, "JockeyGoingDistanceAvgNorm");
+            var surfaceAvg = ResolveNonNeutralFeatureValue(featureValues, "JockeySurfaceAvgNorm");
+            var goingAvg = ResolveNonNeutralFeatureValue(featureValues, "JockeyGoingAvgNorm");
+            var distanceAvg = ResolveNonNeutralFeatureValue(featureValues, "JockeyDistanceBucketAvgNorm");
+            var goingDistanceAvg = ResolveNonNeutralFeatureValue(featureValues, "JockeyGoingDistanceAvgNorm");
 
             var blendedAvg = CombineAverages(surfaceAvg, goingAvg)
                 ?? CombineAverages(distanceAvg, goingDistanceAvg);
@@ -1011,8 +1011,8 @@ namespace HorseRacingML.Scraping
 
             if (!resolvedAvg.HasValue)
             {
-                resolvedAvg = ResolveFeatureValue(featureValues, "ClassAvgNorm")
-                    ?? ResolveFeatureValue(featureValues, "TrainerClassAvgNorm");
+                resolvedAvg = ResolveNonNeutralFeatureValue(featureValues, "ClassAvgNorm")
+                    ?? ResolveNonNeutralFeatureValue(featureValues, "TrainerClassAvgNorm");
             }
 
             if (resolvedAvg.HasValue)
@@ -1079,10 +1079,10 @@ namespace HorseRacingML.Scraping
                 return null;
             }
 
-            var lastSurface = ResolveFeatureValue(featureValues, "LastJockeySurfaceNormPos");
-            var lastGoing = ResolveFeatureValue(featureValues, "LastJockeyGoingNormPos");
-            var lastDistance = ResolveFeatureValue(featureValues, "LastJockeyDistanceBucketNormPos");
-            var lastGoingDistance = ResolveFeatureValue(featureValues, "LastJockeyGoingDistanceNormPos");
+            var lastSurface = ResolveNonNeutralFeatureValue(featureValues, "LastJockeySurfaceNormPos");
+            var lastGoing = ResolveNonNeutralFeatureValue(featureValues, "LastJockeyGoingNormPos");
+            var lastDistance = ResolveNonNeutralFeatureValue(featureValues, "LastJockeyDistanceBucketNormPos");
+            var lastGoingDistance = ResolveNonNeutralFeatureValue(featureValues, "LastJockeyGoingDistanceNormPos");
 
             var resolved = lastSurface
                 ?? lastGoing
@@ -1107,8 +1107,8 @@ namespace HorseRacingML.Scraping
                 return resolved;
             }
 
-            var lastClassNorm = ResolveFeatureValue(featureValues, "LastClassNormPos")
-                ?? ResolveFeatureValue(featureValues, "LastTrainerClassNormPos");
+            var lastClassNorm = ResolveNonNeutralFeatureValue(featureValues, "LastClassNormPos")
+                ?? ResolveNonNeutralFeatureValue(featureValues, "LastTrainerClassNormPos");
 
             if (lastClassNorm.HasValue)
             {
@@ -1392,14 +1392,6 @@ namespace HorseRacingML.Scraping
                 {
                     featureVector["CareerStarts"] = resolvedCareerStarts.Value;
                 }
-
-                Console.WriteLine(
-                    string.Format(
-                        CultureInfo.InvariantCulture,
-                        "\t\t[FeaturePopulation] Resolved career starts for {0}: {1} (source: {2}).",
-                        identifier,
-                        resolvedCareerStarts.Value,
-                        existingSource));
                 if (!resolvedLifetimeWinRate.HasValue)
                 {
                     resolvedLifetimeWinRate = _trainer.ComputeSmoothedWinRate(0, resolvedCareerStarts.Value);
@@ -1407,13 +1399,6 @@ namespace HorseRacingML.Scraping
                 }
 
                 AssignLifetimeWinRate(featureVector, flow, resolvedLifetimeWinRate.Value);
-                Console.WriteLine(
-                    string.Format(
-                        CultureInfo.InvariantCulture,
-                        "\t\t[FeaturePopulation] Resolved lifetime win rate for {0}: {1:F4} (source: {2}).",
-                        identifier,
-                        resolvedLifetimeWinRate.Value,
-                        lifetimeSource ?? existingSource));
                 return;
             }
 
@@ -2782,20 +2767,16 @@ namespace HorseRacingML.Scraping
                 {
                     return null;
                 }
-
                 var average = speeds.Average();
                 if (float.IsNaN(average) || float.IsInfinity(average) || average <= 0f)
                 {
                     return null;
-                }
-
-                Console.WriteLine($"[RaceAvgSpeedLast5] Using database fallback average {average:0.###} from {speeds.Count} historical race(s) for {DescribeRunner(flow)}.");
+                }               
                 return average;
             }
             catch (Exception ex)
             {
                 var identifier = DescribeRunner(flow);
-                Console.Error.WriteLine($"[RaceAvgSpeedLast5] Failed to resolve historical speed for {identifier}: {ex.Message}");
                 return null;
             }
         }
@@ -2805,21 +2786,12 @@ namespace HorseRacingML.Scraping
             {
                 return;
             }
-
-            Console.WriteLine($"[RaceAvgWinRateLast5] Evaluating {flows.Count} runners for average win rate.");
-
             double sum = 0d;
             int validParticipantCount = 0;
             var perRunnerWinRates = new Dictionary<RunnerFlow, float>();
 
             foreach (var flow in flows)
             {
-                if (flow?.FeatureValues == null)
-                {
-                    Console.WriteLine($"[RaceAvgWinRateLast5] Skipping {DescribeRunner(flow)}: missing feature dictionary.");
-                    continue;
-                }
-
                 var featureValues = flow.FeatureValues;
                 object? winRateValue;
                 var usedLifetimeFallback = false;
@@ -2851,10 +2823,6 @@ namespace HorseRacingML.Scraping
 
                             lifetimeFallback = sanitized;
                         }
-                        else
-                        {
-                            Console.WriteLine($"[RaceAvgWinRateLast5] LifetimeWinRate fallback unusable for {DescribeRunner(flow)} (raw value: {lifetimeRaw ?? "<null>"}).");
-                        }
                     }
 
                     if (lifetimeFallback.HasValue)
@@ -2863,7 +2831,7 @@ namespace HorseRacingML.Scraping
                         EnsureWinRatePerformanceWindows(featureValues, lifetimeFallback.Value);
                         winRateValue = lifetimeFallback.Value;
                         usedLifetimeFallback = true;
-                        Console.WriteLine($"[RaceAvgWinRateLast5] Using LifetimeWinRate fallback for {DescribeRunner(flow)} (value: {lifetimeFallback.Value:0.###}).");
+                        
                     }
                     else
                     {
@@ -2876,64 +2844,35 @@ namespace HorseRacingML.Scraping
                             usedDatabaseFallback = true;
                             databaseFallbackWins = databaseFallback.Value.Wins;
                             databaseFallbackStarts = databaseFallback.Value.Starts;
-                            Console.WriteLine($"[RaceAvgWinRateLast5] Using database fallback for {DescribeRunner(flow)} (wins: {databaseFallbackWins}, starts: {databaseFallbackStarts}, value: {databaseFallback.Value.WinRate:0.###}).");
+                            
                         }
                         else
                         {
                             var raw = featureValues.TryGetValue("WinRateLast5", out var candidate)
                                 ? candidate
                                 : null;
-                            Console.WriteLine($"[RaceAvgWinRateLast5] Skipping {DescribeRunner(flow)}: WinRateLast5 missing or fallback (raw value: {raw ?? "<null>"}).");
+                            
                             continue;
                         }
                     }
                 }
 
                 var converted = TryConvertToSingle(winRateValue);
-                if (!converted.HasValue || float.IsNaN(converted.Value) || float.IsInfinity(converted.Value))
-                {
-                    Console.WriteLine($"[RaceAvgWinRateLast5] Skipping {DescribeRunner(flow)}: WinRateLast5 is not a finite number (raw value: {winRateValue}).");
-                    continue;
-                }
-
                 sum += converted.Value;
                 validParticipantCount++;
                 perRunnerWinRates[flow] = converted.Value;
-                if (usedLifetimeFallback)
-                {
-                    Console.WriteLine($"[RaceAvgWinRateLast5] Included {DescribeRunner(flow)} with WinRateLast5={converted.Value:0.###} (lifetime fallback).");
-                }
-                else if (usedDatabaseFallback)
-                {
-                    if (databaseFallbackWins.HasValue && databaseFallbackStarts.HasValue)
-                    {
-                        Console.WriteLine($"[RaceAvgWinRateLast5] Included {DescribeRunner(flow)} with WinRateLast5={converted.Value:0.###} (database fallback; wins={databaseFallbackWins.Value}, starts={databaseFallbackStarts.Value}).");
-                    }
-                    else
-                    {
-                        Console.WriteLine($"[RaceAvgWinRateLast5] Included {DescribeRunner(flow)} with WinRateLast5={converted.Value:0.###} (database fallback).");
-                    }
-                }
-                else
-                {
-                    Console.WriteLine($"[RaceAvgWinRateLast5] Included {DescribeRunner(flow)} with WinRateLast5={converted.Value:0.###}.");
-                }
             }
 
             if (validParticipantCount == 0)
             {
-                Console.WriteLine("[RaceAvgWinRateLast5] No runners with meaningful WinRateLast5 values were found; average will not be set.");
+                
                 return;
             }
             var average = (float)(sum / validParticipantCount);
             if (float.IsNaN(average) || float.IsInfinity(average))
             {
-                Console.WriteLine($"[RaceAvgWinRateLast5] Computed average is not a finite number (average: {average}).");
                 return;
             }
-
-            Console.WriteLine($"[RaceAvgWinRateLast5] Computed race average {average:0.###} from {validParticipantCount} runners.");
-
             foreach (var flow in flows)
             {
                 if (flow?.FeatureValues == null)
@@ -2959,7 +2898,7 @@ namespace HorseRacingML.Scraping
                 }
 
                 flow.FeatureValues["RaceAvgWinRateLast5"] = valueToAssign;
-                Console.WriteLine($"[RaceAvgWinRateLast5] Assigned horse-specific race average {valueToAssign:0.###} for {DescribeRunner(flow)}.");
+               
             }
         }
         private (float WinRate, int Wins, int Starts)? TryResolveWinRateLast5FromDatabase(
@@ -3167,7 +3106,19 @@ namespace HorseRacingML.Scraping
             starts = parsed.Value;
             return true;
         }
+        private static float? ResolveNonNeutralFeatureValue(
+            Dictionary<string, object?>? source,
+            string key)
+        {
+            if (source == null)
+            {
+                return null;
+            }
 
+            return HasMeaningfulNonNeutralValue(source, key)
+                ? ResolveFeatureValue(source, key)
+                : null;
+        }
         private static bool TryExtractPerformanceWindow(string key, out int window)
         {
             window = 0;
@@ -3270,6 +3221,9 @@ namespace HorseRacingML.Scraping
                     "TrainerClassWinRate",
                     "TrainerClassAvgNorm",
                     "LastTrainerClassNormPos",
+                    "TrainerJockeyWinRate",
+                    "TrainerJockeySurfaceWinRate",
+                    "TrainerJockeyCourseWinRate",
                     "JockeyClassWinRate",
                     "JockeyClassAvgNorm",
                     "LastJockeyClassNormPos",

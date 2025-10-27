@@ -661,23 +661,16 @@ namespace HorseRacingML.Tests
         public void NormalizeAiOdds_ResolvesDegenerateZeroOneDistribution()
         {
             var flows = new List<RunnerFlow>();
-            for (int i = 0; i < 4; i++)
-            {
-                flows.Add(new RunnerFlow
-                {
-                    HorseName = $"Contender {i + 1}",
-                    AiOdds = 1d,
-                    BackPrice1 = 3m + i
-                });
-            }
+            var logits = new[] { 4d, 3.5d, 3d, 2.5d, 1.25d, 0.75d, 0.25d, -0.25d, -0.75d, -1.25d, -1.75d };
 
-            for (int i = 0; i < 7; i++)
+            for (int i = 0; i < logits.Length; i++)
             {
                 flows.Add(new RunnerFlow
                 {
-                    HorseName = $"Longshot {i + 1}",
-                    AiOdds = 0d,
-                    BackPrice1 = 10m + i
+                    HorseName = $"Runner {i + 1}",
+                    AiOdds = i < 4 ? 1d : 0d,
+                    AiLogit = logits[i],
+                    BackPrice1 = 3m + i
                 });
             }
 
@@ -689,17 +682,28 @@ namespace HorseRacingML.Tests
 
             method!.Invoke(null, new object?[] { flows, true });
 
-            foreach (var flow in flows)
+            var maxLogit = logits.Max();
+            var minLogit = logits.Min();
+            var span = Math.Max(maxLogit - minLogit, 1e-6);
+            var denominator = Math.Max(logits.Length - 1, 1);
+            var temperature = Math.Clamp(span / denominator, 0.5d, 25d);
+
+            var expectedWeights = logits
+                .Select(logit => Math.Exp((logit - maxLogit) / temperature))
+                .ToArray();
+            var expectedSum = expectedWeights.Sum();
+
+            for (int i = 0; i < flows.Count; i++)
             {
-                Assert.True(flow.AiOdds.HasValue);
-                Assert.InRange(flow.AiOdds!.Value, 0d, 1d);
+                Assert.True(flows[i].AiOdds.HasValue);
+                Assert.InRange(flows[i].AiOdds!.Value, 0d, 1d);
+
+                var expected = expectedWeights[i] / expectedSum;
+                Assert.Equal(expected, flows[i].AiOdds!.Value, 6);
             }
 
             var sum = flows.Sum(f => f.AiOdds!.Value);
             Assert.InRange(sum, 0.999999, 1.000001);
-
-            Assert.DoesNotContain(flows, f => f.AiOdds!.Value >= 0.99);
-            Assert.All(flows.Skip(4), f => Assert.True(f.AiOdds!.Value > 0.01));
         }
         [Fact]
         public void FeaturePopulationSummary_IncludesNeuralFeaturesWhenHistoryMissing()

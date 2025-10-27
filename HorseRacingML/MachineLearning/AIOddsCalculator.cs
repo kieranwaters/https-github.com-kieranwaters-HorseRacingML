@@ -47,6 +47,10 @@ namespace HorseRacingML.ML
         {
             probability = 0d;
             scoredWithOpportunisticFeatures = false;
+            if (flow != null)
+            {
+                flow.AiLogit = null;
+            }
             LogDebug(flow, "Attempting to calculate probability with trained model");
             if (!_hasTrainedModel)
             {
@@ -241,14 +245,18 @@ namespace HorseRacingML.ML
                 return false;
             }
 
-            var logit = Math.Clamp(output[0], -700d, 700d);
+            var rawLogit = output[0];
+            var logit = Math.Clamp(rawLogit, -700d, 700d);
             var prob = Sigmoid(logit);
             if (!double.IsFinite(prob) || prob < 0)
             {
                 LogFallback(flow, "model produced a non-finite probability");
                 return false;
             }
-
+            if (flow != null)
+            {
+                flow.AiLogit = logit;
+            }
             probability = prob;
             var formattedProbability = probability.ToString("0.0000", CultureInfo.InvariantCulture);
             if (probability > 0 && probability < 1e-3)
@@ -372,6 +380,7 @@ namespace HorseRacingML.ML
                 flow.LegacyProbability = legacyProbability;
                 flow.AiTrainedModelApplied = false;
                 flow.AiUsedLegacyModel = false;
+                flow.AiLogit = null;
             }
 
             if (TryCalculateWithTrainedModel(flow, out var probability, out var opportunistic))

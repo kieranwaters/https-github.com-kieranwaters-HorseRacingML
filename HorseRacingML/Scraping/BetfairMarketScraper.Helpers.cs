@@ -3557,138 +3557,122 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
                 return false;
             }
 
-            var winner = ResolveLikelyWinnerFromFeatures(flows);
-            if (winner == null || !winner.AiOdds.HasValue || !double.IsFinite(winner.AiOdds.Value) || winner.AiOdds.Value <= 0)
+            var logitCandidates = flows
+                .Where(f => f != null && f.AiLogit.HasValue && double.IsFinite(f.AiLogit.Value))
+                .ToList();
+
+            var weights = new Dictionary<RunnerFlow, double>();
+            double? temperatureUsed = null;
+
+            if (logitCandidates.Count >= 2)
             {
-                return false;
-            }
+                var maxLogit = logitCandidates.Max(f => f.AiLogit!.Value);
+                var minLogit = logitCandidates.Min(f => f.AiLogit!.Value);
+                var span = Math.Max(maxLogit - minLogit, 1e-6);
+                var denominator = Math.Max(logitCandidates.Count - 1, 1);
+                var temperature = Math.Clamp(span / denominator, 0.5d, 25d);
+                temperatureUsed = temperature;
 
-            var winnerProbability = winner.AiOdds.Value;
-            const double probabilityFloor = 1e-6;
-            bool substitutedWinnerProbability = false;
-            if (winnerProbability <= probabilityFloor)
-            {
-                if (winner.BackPrice1.HasValue && winner.BackPrice1.Value > 1m)
+                foreach (var flow in logitCandidates)
                 {
-                    winnerProbability = 1.0 / (double)winner.BackPrice1.Value;
-                    substitutedWinnerProbability = true;
-                }
-                else
-                {
-                    winnerProbability = probabilityFloor;
-                }
-            }
-            var others = flows.Where(f => !ReferenceEquals(f, winner)).ToList();
-            var uniformProbability = flows.Count > 0 ? 1.0 / flows.Count : 0d;
-
-            double minimumResidualMass = 0d;
-            if (others.Count > 0 && uniformProbability > 0d)
-            {
-                const double residualUniformFraction = 0.5d;
-                minimumResidualMass = uniformProbability * residualUniformFraction * others.Count;
-                minimumResidualMass = Math.Clamp(minimumResidualMass, 0d, 1d - probabilityFloor);
-
-                var maximumWinnerProbability = 1d - minimumResidualMass;
-                if (winnerProbability > maximumWinnerProbability)
-                {
-                    var originalWinnerProbability = winnerProbability;
-                    winnerProbability = Math.Max(maximumWinnerProbability, probabilityFloor);
-                    Console.WriteLine(
-                        $"\t\tWinner probability {originalWinnerProbability.ToString("0.####", CultureInfo.InvariantCulture)} " +
-                        $"exceeded degeneracy guard; clamped to {winnerProbability.ToString("0.####", CultureInfo.InvariantCulture)} " +
-                        $"to reserve {minimumResidualMass.ToString("0.####", CultureInfo.InvariantCulture)} probability mass for rivals."
-                    );
-                }
-            }
-            var leftoverMass = Math.Max(1.0 - winnerProbability, 0);
-
-            if (others.Count > 0)
-            {
-                var weights = new Dictionary<RunnerFlow, double>();
-                foreach (var flow in others)
-                {
-                    double weight = 0d;
-
-                    if (flow.BackPrice1.HasValue && flow.BackPrice1.Value > 1m)
-                    {
-                        weight = 1.0 / (double)flow.BackPrice1.Value;
-                    }
-                    else if (flow.AiOdds.HasValue && double.IsFinite(flow.AiOdds.Value) && flow.AiOdds.Value > 0)
-                    {
-                        weight = flow.AiOdds.Value;
-                    }
-                    else
-                    {
-                        weight = 1d;
-                    }
-
-                    if (!double.IsFinite(weight) || weight < 0)
+                    var adjusted = (flow.AiLogit!.Value - maxLogit) / temperature;
+                    var weight = Math.Exp(adjusted);
+                    if (!double.IsFinite(weight) || weight <= 0d)
                     {
                         weight = 0d;
                     }
 
                     weights[flow] = weight;
                 }
-
-                var weightSum = weights.Values.Sum();
-                if (weightSum <= double.Epsilon)
-                {
-                    var uniform = others.Count > 0 ? leftoverMass / others.Count : 0d;
-                    foreach (var flow in others)
-                    {
-                        flow.AiOdds = uniform;
-                        flow.AiProbabilityClampedToMarket = false;
-                        flow.AiProbabilityClampTarget = null;
-                    }
-                }
-                else
-                {
-                    foreach (var kvp in weights)
-                    {
-                        var share = leftoverMass * (kvp.Value / weightSum);
-                        kvp.Key.AiOdds = Math.Max(share, 0d);
-                        kvp.Key.AiProbabilityClampedToMarket = false;
-                        kvp.Key.AiProbabilityClampTarget = null;
-                    }
-                }
             }
 
-            winner.AiOdds = winnerProbability;
-            winner.AiProbabilityClampedToMarket = false;
-            winner.AiProbabilityClampTarget = null;
-
-            var validAfter = flows
-                .Where(f => f.AiOdds.HasValue && double.IsFinite(f.AiOdds.Value) && f.AiOdds.Value >= 0)
-                .ToList();
-            var missingAfter = flows.Count - validAfter.Count;
-            if (missingAfter > 0)
+            foreach (var flow in flows)
             {
-                Console.WriteLine($"\t\tMissing AI predictions detected for {missingAfter} runner(s); surviving probabilities may be inflated relative to the full field.");
+                if (flow == null || weights.ContainsKey(flow))
+                {
+                    continue;
+                }
+
+                double fallbackWeight = 0d;
+                if (flow.AiOdds.HasValue && double.IsFinite(flow.AiOdds.Value) && flow.AiOdds.Value > 0d)
+                {
+                    fallbackWeight = flow.AiOdds.Value;
+                }
+
+                weights[flow] = fallbackWeight;
             }
 
-            var winnerName = !string.IsNullOrWhiteSpace(winner.HorseName)
-                ? winner.HorseName!
-                : "unknown";
-
-            if (substitutedWinnerProbability)
+            var sumWeights = weights.Values.Sum();
+            if (sumWeights <= double.Epsilon)
             {
-                Console.WriteLine($"\t\tWinner probability substituted with market-implied value {winnerProbability.ToString("0.####", CultureInfo.InvariantCulture)} for {winnerName}.");
+                var uniform = flows.Count > 0 ? 1d / flows.Count : 0d;
+                foreach (var flow in flows)
+                {
+                    if (flow == null)
+                    {
+                        continue;
+                    }
+
+                    flow.AiOdds = uniform;
+                    flow.AiProbabilityClampedToMarket = false;
+                    flow.AiProbabilityClampTarget = null;
+                    flow.AiProbabilityMarketDerived = false;
+                }
+
+                Console.WriteLine("\t\tDegenerate outputs lacked usable spread; assigned uniform probability across runners.");
+                Console.WriteLine("\t\tNormalized probability sum: 1.");
+                return true;
+            }
+
+            foreach (var kvp in weights)
+            {
+                var flow = kvp.Key;
+                if (flow == null)
+                {
+                    continue;
+                }
+
+                var share = kvp.Value / sumWeights;
+                flow.AiOdds = Math.Max(share, 0d);
+                flow.AiProbabilityClampedToMarket = false;
+                flow.AiProbabilityClampTarget = null;
+                flow.AiProbabilityMarketDerived = false;
+            }
+
+            var normalized = flows
+                .Where(f => f != null && f.AiOdds.HasValue && double.IsFinite(f.AiOdds.Value))
+                .Sum(f => f.AiOdds!.Value);
+
+            if (Math.Abs(normalized - 1d) > 1e-9 && normalized > 0d)
+            {
+                foreach (var flow in flows)
+                {
+                    if (flow?.AiOdds == null || !double.IsFinite(flow.AiOdds.Value))
+                    {
+                        continue;
+                    }
+
+                    flow.AiOdds = Math.Max(flow.AiOdds.Value / normalized, 0d);
+                }
+
+                normalized = flows
+                    .Where(f => f != null && f.AiOdds.HasValue && double.IsFinite(f.AiOdds.Value))
+                    .Sum(f => f.AiOdds!.Value);
+            }
+
+            if (temperatureUsed.HasValue)
+            {
+                Console.WriteLine($"\t\tInterpreting degenerate predictions using softmax over model logits (temperature={temperatureUsed.Value.ToString("0.####", CultureInfo.InvariantCulture)}).");
             }
             else
             {
-                Console.WriteLine($"\t\tInterpreting degenerate predictions as winner-only probability; assigning {winnerProbability.ToString("0.####", CultureInfo.InvariantCulture)} to {winnerName}.");
-            }
-            if (others.Count > 0 && leftoverMass > 0)
-            {
-                Console.WriteLine($"\t\tRedistributed remaining {leftoverMass.ToString("0.####", CultureInfo.InvariantCulture)} probability mass across {others.Count} runner(s) using market-derived weights.");
+                Console.WriteLine("\t\tInterpreting degenerate predictions using normalized model probabilities.");
             }
 
-            var normalized = validAfter.Sum(f => f.AiOdds!.Value);
             Console.WriteLine($"\t\tNormalized probability sum: {normalized.ToString("0.####", CultureInfo.InvariantCulture)}.");
 
             return true;
         }
-
         private static RunnerFlow? ResolveLikelyWinnerFromFeatures(IEnumerable<RunnerFlow> flows)
         {
             if (flows is null)
