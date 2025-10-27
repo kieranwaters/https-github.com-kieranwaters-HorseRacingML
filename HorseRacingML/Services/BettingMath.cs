@@ -17,6 +17,10 @@ namespace HorseRacingML.Services
             }
 
             var inverted = 1.0 / aiProbability;
+            if (double.IsPositiveInfinity(inverted))
+            {
+                return decimal.MaxValue;
+            }
 
             if (!double.IsFinite(inverted) || inverted <= 0)
             {

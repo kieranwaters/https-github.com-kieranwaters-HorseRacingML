@@ -548,6 +548,80 @@ namespace HorseRacingML.Tests
             Assert.Equal(expected, report.RaceFallbackSummary);
         }
         [Fact]
+        public void CreateRunnerReport_ComputesDecimalOddsFromAiProbability()
+        {
+            var repo = new StubRepository();
+            var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
+            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), bankroll: 50m, settings);
+
+            var flows = new List<RunnerFlow>
+            {
+                new RunnerFlow
+                {
+                    HorseName = "Decimal Winner",
+                    AiOdds = 0.25d,
+                    AiProbabilityMarketDerived = false,
+                    BackPrice1 = 4m
+                }
+            };
+
+            var race = scraper.TestBuildRaceReport(
+                marketId: "1.200",
+                raceTitle: "Decimal Odds Race",
+                venueName: "Test Venue",
+                venueCountry: "GB",
+                raceDate: new DateTime(2024, 6, 20),
+                offTime: new TimeSpan(14, 30, 0),
+                raceDetails: "Allowance",
+                going: null,
+                backBookPercentage: null,
+                layBookPercentage: null,
+                raceUrl: null,
+                flows: flows);
+
+            var runner = Assert.Single(race.Runners);
+            Assert.Equal(0.25d, runner.AiProbability);
+            Assert.NotNull(runner.AiDecimalOdds);
+            Assert.Equal(4m, runner.AiDecimalOdds!.Value);
+        }
+
+        [Fact]
+        public void CreateRunnerReport_FallsBackToMarketDecimalOddsWhenProbabilityMissing()
+        {
+            var repo = new StubRepository();
+            var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
+            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), bankroll: 50m, settings);
+
+            var flows = new List<RunnerFlow>
+            {
+                new RunnerFlow
+                {
+                    HorseName = "Fallback Runner",
+                    AiOdds = null,
+                    AiProbabilityMarketDerived = true,
+                    BackPrice1 = 6m
+                }
+            };
+
+            var race = scraper.TestBuildRaceReport(
+                marketId: "1.201",
+                raceTitle: "Fallback Race",
+                venueName: "Test Venue",
+                venueCountry: "GB",
+                raceDate: new DateTime(2024, 6, 21),
+                offTime: new TimeSpan(15, 0, 0),
+                raceDetails: "Handicap",
+                going: null,
+                backBookPercentage: null,
+                layBookPercentage: null,
+                raceUrl: null,
+                flows: flows);
+
+            var runner = Assert.Single(race.Runners);
+            Assert.Null(runner.AiProbability);
+            Assert.Equal(6m, runner.AiDecimalOdds);
+        }
+        [Fact]
         public void ApplyScrapedFeatureFallbacks_SetsMetadataMissingFlagsWhenUnavailable()
         {
             var repo = new StubRepository();

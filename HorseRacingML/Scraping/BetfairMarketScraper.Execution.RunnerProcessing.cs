@@ -1168,13 +1168,30 @@ namespace HorseRacingML.Scraping
             if (flow.AiOdds.HasValue && double.IsFinite(flow.AiOdds.Value))
             {
                 var candidate = flow.AiOdds.Value;
-                if (candidate > 0 && candidate <= 1)
+                if (candidate > 0)
                 {
+                    if (candidate > 1d)
+                    {
+                        candidate = 1d;
+                    }
+
                     runner.AiProbability = candidate;
                     var decimalOdds = BettingMath.CalculateAiDecimalOdds(candidate);
-                    runner.AiDecimalOdds = decimalOdds > 0m ? decimalOdds : null;
+                    if (decimalOdds > 0m)
+                    {
+                        runner.AiDecimalOdds = decimalOdds;
+                    }
                 }
             }
+
+            if (!runner.AiDecimalOdds.HasValue &&
+                runner.AiProbabilityMarketDerived &&
+                runner.MarketDecimalOdds.HasValue &&
+                runner.MarketDecimalOdds.Value > 0m)
+            {
+                runner.AiDecimalOdds = runner.MarketDecimalOdds.Value;
+            }
+
 
             runner.Differential = null;
             if (runner.AiProbability.HasValue && runner.MarketProbability.HasValue)
