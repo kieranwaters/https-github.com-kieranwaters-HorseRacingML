@@ -1833,6 +1833,11 @@ new RunnerFlow { HorseName = "Alpha Runner" },
             public decimal? GetLastDistanceBeatenLengths(string? horseName, int? horseId, DateTime? beforeDate) => null;
             public int? GetLastWinningTimeMilliseconds(string? horseName, int? horseId, DateTime? beforeDate) => null;
             public byte? GetMostRecentRaceClass(string? horseName, int? horseId) => null;
+            public byte? GetMostRecentRaceClassForHorseJockey(
+                string? horseName,
+                int? horseId,
+                string? jockeyName,
+                int? jockeyId) => null;
             private static UpcomingRace Clone(UpcomingRace race)
             {
                 return new UpcomingRace
@@ -2140,6 +2145,11 @@ new RunnerFlow { HorseName = "Alpha Runner" },
 
             public int? GetLastWinningTimeMilliseconds(string? horseName, int? horseId, DateTime? beforeDate) => null;
             public byte? GetMostRecentRaceClass(string? horseName, int? horseId) => null;
+            public byte? GetMostRecentRaceClassForHorseJockey(
+                string? horseName,
+                int? horseId,
+                string? jockeyName,
+                int? jockeyId) => null;
             public IReadOnlyList<RaceClassRating> GetHistoricalRaceClassRatings(string? horseName, int? horseId, int maxCount)
                 => Array.Empty<RaceClassRating>();
         }

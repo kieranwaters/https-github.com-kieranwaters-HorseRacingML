@@ -1097,6 +1097,11 @@ namespace HorseRacingML.Tests
             public int? GetLastWinningTimeMilliseconds(string? horseName, int? horseId, DateTime? beforeDate) => null;
             public (int Wins, int Starts)? GetRecentHorseWinStats(string? horseName, int? horseId, DateTime? beforeDate, int windowSize) => null;
             public byte? GetMostRecentRaceClass(string? horseName, int? horseId) => null;
+            public byte? GetMostRecentRaceClassForHorseJockey(
+                string? horseName,
+                int? horseId,
+                string? jockeyName,
+                int? jockeyId) => null;
             public IReadOnlyList<HorseSpeedEntry> GetRecentHorseSpeedEntries(string? horseName, int? horseId, DateTime? beforeDate, int windowSize)
                => Array.Empty<HorseSpeedEntry>();
             public int? GetLastRaceDistance(string? horseName, int? horseId, DateTime? beforeDate)
