@@ -1779,6 +1779,64 @@ ORDER BY r.RaceDate DESC, rr.RunnerResultId DESC;";
                 Limit = maxCount
             }).ToList();
         }
+        public IReadOnlyList<HorseHistoricalRaceSummary> GetRecentHorseResults(string? horseName, int? horseId, int maxCount)
+        {
+            if (maxCount <= 0 || (!horseId.HasValue && string.IsNullOrWhiteSpace(horseName)))
+            {
+                return Array.Empty<HorseHistoricalRaceSummary>();
+            }
+
+            const string sqlById = @"SELECT TOP (@Limit)
+    r.RaceDate,
+    r.Title AS RaceTitle,
+    rr.FinishPos AS FinishPosition,
+    rr.OutcomeCode,
+    r.RunnerCount
+FROM RunnerResult rr
+INNER JOIN Race r ON r.RaceId = rr.RaceId
+WHERE rr.HorseId = @HorseId
+ORDER BY r.RaceDate DESC, rr.RunnerResultId DESC;";
+
+            const string sqlByName = @"SELECT TOP (@Limit)
+    r.RaceDate,
+    r.Title AS RaceTitle,
+    rr.FinishPos AS FinishPosition,
+    rr.OutcomeCode,
+    r.RunnerCount
+FROM RunnerResult rr
+INNER JOIN Race r ON r.RaceId = rr.RaceId
+INNER JOIN Horse h ON h.HorseId = rr.HorseId
+WHERE h.Name IN @Names
+ORDER BY r.RaceDate DESC, rr.RunnerResultId DESC;";
+
+            using var conn = OpenConnection();
+
+            if (horseId.HasValue && horseId.Value > 0)
+            {
+                var byId = conn.Query<HorseHistoricalRaceSummary>(sqlById, new
+                {
+                    HorseId = horseId.Value,
+                    Limit = maxCount
+                }).ToList();
+
+                if (byId.Count > 0)
+                {
+                    return byId;
+                }
+            }
+
+            var candidates = BuildHistoricalNameCandidates(horseName);
+            if (candidates.Count == 0)
+            {
+                return Array.Empty<HorseHistoricalRaceSummary>();
+            }
+
+            return conn.Query<HorseHistoricalRaceSummary>(sqlByName, new
+            {
+                Names = candidates.ToArray(),
+                Limit = maxCount
+            }).ToList();
+        }
         public IReadOnlyList<RunnerResult> GetLastSavedResults(string? raceTitle, DateTime? raceDate)
         {
             if (!raceDate.HasValue)

@@ -772,6 +772,11 @@ namespace HorseRacingML.Scraping
                             "\t[FeaturePopulation] Using historical race count {0} for {1}; CareerStarts feature updated.",
                             historyCount.Value,
                             identifier));
+                    var historicalRaces = ResolveRunnerHistory(flow);
+                    if (historicalRaces.Count > 0)
+                    {
+                        runner.HistoricalRaces = historicalRaces.ToList();
+                    }
                 }
             }
             else
@@ -783,6 +788,44 @@ namespace HorseRacingML.Scraping
                         identifier));
             }
             return runner;
+        }
+        private IReadOnlyList<HorseHistoricalRaceSummary> ResolveRunnerHistory(RunnerFlow? flow)
+        {
+            if (flow == null)
+            {
+                return Array.Empty<HorseHistoricalRaceSummary>();
+            }
+
+            int? horseId = null;
+            if (flow.FeatureValues != null && flow.FeatureValues.TryGetValue("HorseId", out var horseObj))
+            {
+                horseId = TryConvertToInt32(horseObj);
+            }
+
+            horseId = NormalizeHorseIdentifier(horseId);
+            var cacheKey = (horseId, NormalizeHorseNameKeyForCache(flow.HorseName));
+
+            if (!_runnerHistoryCache.TryGetValue(cacheKey, out var cached))
+            {
+                IReadOnlyList<HorseHistoricalRaceSummary> resolved;
+                try
+                {
+                    resolved = _repo.GetRecentHorseResults(flow.HorseName, horseId, maxCount: 5);
+                }
+                catch (Exception ex)
+                {
+                    var identifier = !string.IsNullOrWhiteSpace(flow.HorseName)
+                        ? flow.HorseName
+                        : DescribeRunner(flow) ?? "unknown runner";
+                    Console.Error.WriteLine($"\tFailed to resolve historical race summaries for {identifier}: {ex.Message}");
+                    resolved = Array.Empty<HorseHistoricalRaceSummary>();
+                }
+
+                cached = resolved ?? Array.Empty<HorseHistoricalRaceSummary>();
+                _runnerHistoryCache[cacheKey] = cached;
+            }
+
+            return cached;
         }
         private static void LogFeatureFallback(string featureName, string message, string? runnerIdentifier = null)
         {

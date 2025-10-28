@@ -69,5 +69,6 @@ namespace HorseRacingML.Models
         public FeaturePopulationSummary FeaturePopulation { get; set; } = FeaturePopulationSummary.Empty;
         public bool AiTrainedModelApplied { get; set; }
         public bool AiUsedLegacyModel { get; set; }
+        public List<HorseHistoricalRaceSummary> HistoricalRaces { get; set; } = new();
     }
 }

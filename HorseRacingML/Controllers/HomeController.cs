@@ -321,6 +321,7 @@ namespace HorseRacingML.Controllers
                     layKellyFraction = runner.LayKellyFraction,
                     laySuggestedStake = runner.LaySuggestedStake,
                     historicalRaceCount = runner.HistoricalRaceCount,
+                    historicalRaces = runner.HistoricalRaces,
                     featureValues = runner.FeatureValues,
                     encodedFeatureValues = runner.EncodedFeatureValues,
                     hasPreparedFeatures = runner.HasPreparedFeatures,

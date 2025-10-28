@@ -1772,6 +1772,10 @@ new RunnerFlow { HorseName = "Alpha Runner" },
             {
                 return Array.Empty<HorseSpeedEntry>();
             }
+            public IReadOnlyList<HorseHistoricalRaceSummary> GetRecentHorseResults(string? horseName, int? horseId, int maxCount)
+            {
+                return Array.Empty<HorseHistoricalRaceSummary>();
+            }
             public UpcomingRace? GetUpcomingRaceByMarketId(string? marketId)
             {
                 if (string.IsNullOrWhiteSpace(marketId))
@@ -2091,6 +2095,10 @@ new RunnerFlow { HorseName = "Alpha Runner" },
                 }
 
                 return RecentWinStatsResult;
+            }
+            public IReadOnlyList<HorseHistoricalRaceSummary> GetRecentHorseResults(string? horseName, int? horseId, int maxCount)
+            {
+                return Array.Empty<HorseHistoricalRaceSummary>();
             }
             public IReadOnlyList<HorseSpeedEntry> GetRecentHorseSpeedEntries(string? horseName, int? horseId, DateTime? beforeDate, int windowSize)
             {

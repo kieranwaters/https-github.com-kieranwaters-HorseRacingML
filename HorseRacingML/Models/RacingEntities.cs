@@ -84,6 +84,14 @@ namespace HorseRacingML.Models
         public short? OfficialRating { get; set; }
         public byte? Class { get; set; }
     }
+    public class HorseHistoricalRaceSummary
+    {
+        public DateTime RaceDate { get; set; }
+        public string? RaceTitle { get; set; }
+        public short? FinishPosition { get; set; }
+        public string? OutcomeCode { get; set; }
+        public byte? RunnerCount { get; set; }
+    }
     public class RaceScreen
     {
         public long RaceScreenId { get; set; }

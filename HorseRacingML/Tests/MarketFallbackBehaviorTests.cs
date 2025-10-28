@@ -1279,6 +1279,8 @@ namespace HorseRacingML.Tests
                 int? jockeyId) => null;
             public IReadOnlyList<HorseSpeedEntry> GetRecentHorseSpeedEntries(string? horseName, int? horseId, DateTime? beforeDate, int windowSize)
                => Array.Empty<HorseSpeedEntry>();
+            public IReadOnlyList<HorseHistoricalRaceSummary> GetRecentHorseResults(string? horseName, int? horseId, int maxCount)
+                => Array.Empty<HorseHistoricalRaceSummary>();
             public int? GetLastRaceDistance(string? horseName, int? horseId, DateTime? beforeDate)
             {
                 return null;

@@ -437,6 +437,7 @@ namespace HorseRacingML.Tests
             {
                 return Array.Empty<HorseSpeedEntry>();
             }
+            private readonly Dictionary<(int? HorseId, string NameKey), IReadOnlyList<HorseHistoricalRaceSummary>> _runnerHistoryCache = new();
         }
 
         private sealed class StubTrainer : HyperparameterTrainer
