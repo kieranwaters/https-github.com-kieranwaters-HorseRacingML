@@ -730,6 +730,60 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                             }
                                             <details class="small mt-1">
                                                 <summary class="text-muted">@summaryLabel</summary>
+                @{
+                    var contributionThreshold = 1e-6d;
+                    var topContributorItems = showContribution && hasEncodedValues
+                    ? encodedValues
+                    .Where(value => value.Active && value.Contribution.HasValue && value.Contribution.Value > contributionThreshold)
+                    .OrderByDescending(value => value.Contribution!.Value)
+                    .Take(3)
+                    .ToList()
+                    : new List<EncodedFeatureValue>();
+                    var suppressedHeadwinds = showContribution && hasEncodedValues
+                    ? encodedValues
+                    .Where(value => !value.Active && value.Contribution.HasValue && value.Contribution.Value < -contributionThreshold)
+                    .OrderBy(value => value.Contribution!.Value)
+                    .Take(3)
+                    .ToList()
+                    : new List<EncodedFeatureValue>();
+                }
+                @if (topContributorItems.Count > 0 || suppressedHeadwinds.Count > 0)
+                {
+                                                    <div class="mt-2">
+                                                        <div class="small text-muted text-uppercase fw-semibold">Model signal explainer</div>
+                                                        @if (topContributorItems.Count > 0)
+                                                        {
+                                                            <div class="small mt-1">
+                                                                <span class="fw-semibold">Top contributing features:</span>
+                                                                <ul class="mb-0 ps-3">
+                                                                    @foreach (var item in topContributorItems)
+                                                                    {
+                                                                        var contributionText = item.Contribution!.Value.ToString("+0.######;-0.######", CultureInfo.CurrentCulture);
+                                                                        <li>
+                                                                            <span class="fw-semibold">@item.Label</span>
+                                                                            <span class="text-success">@contributionText</span>
+                                                                        </li>
+                                                                    }
+                                                                </ul>
+                                                            </div>
+                                                        }
+                                                        @if (suppressedHeadwinds.Count > 0)
+                                                        {
+                                                            <div class="small mt-2">
+                                                                <span class="fw-semibold">Suppressed dimensions reducing confidence:</span>
+                                                                <ul class="mb-0 ps-3">
+                                                                    @foreach (var item in suppressedHeadwinds)
+                                                                    {
+                                                                        var contributionText = item.Contribution!.Value.ToString("+0.######;-0.######", CultureInfo.CurrentCulture);
+                                                                        <li>
+                                                                            <span class="fw-semibold">@item.Label</span>
+                                                                            <span class="text-danger">@contributionText</span>
+                                                                        </li>
+                                                                    }
+                                                                </ul>
+                                                            </div>
+                                                        }
+                                                    </div>
                                                 <dl class="row mb-0">
                                                     @if (hasFeatureValues)
                                                     {
