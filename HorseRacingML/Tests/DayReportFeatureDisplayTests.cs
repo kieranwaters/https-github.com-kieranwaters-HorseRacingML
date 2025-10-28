@@ -437,6 +437,46 @@ namespace HorseRacingML.Tests
             {
                 return Array.Empty<HorseSpeedEntry>();
             }
+            public IReadOnlyList<HorseHistoricalRaceSummary> GetRecentHorseResults(string? horseName, int? horseId, int maxCount)
+            {
+                if (maxCount <= 0)
+                {
+                    return Array.Empty<HorseHistoricalRaceSummary>();
+                }
+
+                var key = (horseId, NormalizeHorseNameKey(horseName));
+                if (_runnerHistoryCache.TryGetValue(key, out var cached))
+                {
+                    if (cached.Count <= maxCount)
+                    {
+                        return cached;
+                    }
+
+                    var limited = new List<HorseHistoricalRaceSummary>(maxCount);
+                    for (var i = 0; i < maxCount; i++)
+                    {
+                        limited.Add(cached[i]);
+                    }
+
+                    return limited;
+                }
+
+                return Array.Empty<HorseHistoricalRaceSummary>();
+            }
+
+            public void SetRecentHorseResults(int? horseId, string? horseName, IReadOnlyList<HorseHistoricalRaceSummary> results)
+            {
+                var key = (horseId, NormalizeHorseNameKey(horseName));
+                _runnerHistoryCache[key] = results ?? Array.Empty<HorseHistoricalRaceSummary>();
+            }
+
+            private static string NormalizeHorseNameKey(string? horseName)
+            {
+                return string.IsNullOrWhiteSpace(horseName)
+                    ? string.Empty
+                    : horseName.Trim().ToUpperInvariant();
+            }
+
             private readonly Dictionary<(int? HorseId, string NameKey), IReadOnlyList<HorseHistoricalRaceSummary>> _runnerHistoryCache = new();
         }
 
