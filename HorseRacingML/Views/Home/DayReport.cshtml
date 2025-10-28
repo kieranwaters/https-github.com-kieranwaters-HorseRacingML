@@ -517,20 +517,22 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                     ? runner.LayDecimalOdds.Value.ToString("0.00", CultureInfo.CurrentCulture)
                                     : "-";
 
-                                string aiProb;
+                                string? aiProb = null;
                                 string? aiProbTitle = null;
                                 if (runner.AiProbability.HasValue)
                                 {
                                     aiProb = FormatProbabilityPercent(runner.AiProbability.Value, CultureInfo.CurrentCulture);
                                     aiProbTitle = BuildProbabilityTooltip(runner.AiProbability.Value, CultureInfo.CurrentCulture);
                                 }
-                                else
+                                string? aiOdds = null;
+                                if (runner.AiProbabilityMarketDerived)
                                 {
-                                    aiProb = "-";
+                                    if (runner.MarketDecimalOdds.HasValue)
+                                    {
+                                        aiOdds = runner.MarketDecimalOdds.Value.ToString("0.00", CultureInfo.CurrentCulture);
+                                    }
                                 }
-
-                                string aiOdds;
-                                if (runner.AiDecimalOdds.HasValue)
+                                else if (runner.AiDecimalOdds.HasValue)
                                 {
                                     aiOdds = runner.AiDecimalOdds.Value.ToString("0.00", CultureInfo.CurrentCulture);
                                     if (runner.AiProbabilityClampedToMarket)
@@ -538,18 +540,31 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                         aiOdds += "!";
                                     }
                                 }
-                                else
-                                {
-                                    aiOdds = "-";
-                                }
-                                var aiWinPrimary = runner.AiDecimalOdds.HasValue ? aiOdds : aiProb;
-                                var aiWinTitle = aiProbTitle;
+                                var aiWinPrimary = "-";
                                 string? aiWinSecondary = null;
 
-                                if (runner.AiTrainedModelApplied && runner.AiDecimalOdds.HasValue && runner.AiProbability.HasValue)
-                                {
-                                    aiWinSecondary = aiProb;
-                                }
+            var aiWinTitle = aiProbTitle;
+
+            if (!string.IsNullOrEmpty(aiProb) && runner.AiProbabilityMarketDerived)
+            {
+                aiWinPrimary = aiProb;
+                if (!string.IsNullOrEmpty(aiOdds))
+                {
+                    aiWinSecondary = aiOdds;
+                }
+            }
+            else if (!string.IsNullOrEmpty(aiOdds))
+            {
+                aiWinPrimary = aiOdds;
+                if (runner.AiTrainedModelApplied && !string.IsNullOrEmpty(aiProb))
+                {
+                    aiWinSecondary = aiProb;
+                }
+            }
+            else if (!string.IsNullOrEmpty(aiProb))
+            {
+                aiWinPrimary = aiProb;
+            }
                                 var marketProb = runner.MarketProbability.HasValue
                                     ? (runner.MarketProbability.Value * 100).ToString("0.##", CultureInfo.CurrentCulture) + "%"
                                     : "-";
