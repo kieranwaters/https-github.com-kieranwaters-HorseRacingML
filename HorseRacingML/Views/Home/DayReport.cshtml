@@ -526,7 +526,7 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                 }
                                 else if (runner.AiDecimalOdds.HasValue && runner.AiDecimalOdds.Value > 0)
                                 {
-                                    var derivedProbability = 1.0 / runner.AiDecimalOdds.Value;
+                                    var derivedProbability = 1.0 / (double)runner.AiDecimalOdds.Value;
                                     aiProb = FormatProbabilityPercent(derivedProbability, CultureInfo.CurrentCulture);
                                     aiProbTitle = BuildProbabilityTooltip(derivedProbability, CultureInfo.CurrentCulture);
                                 }
