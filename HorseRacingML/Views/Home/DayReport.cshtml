@@ -524,6 +524,12 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                     aiProb = FormatProbabilityPercent(runner.AiProbability.Value, CultureInfo.CurrentCulture);
                                     aiProbTitle = BuildProbabilityTooltip(runner.AiProbability.Value, CultureInfo.CurrentCulture);
                                 }
+                                else if (runner.AiDecimalOdds.HasValue && runner.AiDecimalOdds.Value > 0)
+                                {
+                                    var derivedProbability = 1.0 / runner.AiDecimalOdds.Value;
+                                    aiProb = FormatProbabilityPercent(derivedProbability, CultureInfo.CurrentCulture);
+                                    aiProbTitle = BuildProbabilityTooltip(derivedProbability, CultureInfo.CurrentCulture);
+                                }
                                 string? aiOdds = null;
                                 if (runner.AiProbabilityMarketDerived)
                                 {
@@ -543,28 +549,20 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                 var aiWinPrimary = "-";
                                 string? aiWinSecondary = null;
 
-            var aiWinTitle = aiProbTitle;
+                                var aiWinTitle = aiProbTitle;
 
-            if (!string.IsNullOrEmpty(aiProb) && runner.AiProbabilityMarketDerived)
-            {
-                aiWinPrimary = aiProb;
-                if (!string.IsNullOrEmpty(aiOdds))
-                {
-                    aiWinSecondary = aiOdds;
-                }
-            }
-            else if (!string.IsNullOrEmpty(aiOdds))
-            {
-                aiWinPrimary = aiOdds;
-                if (runner.AiTrainedModelApplied && !string.IsNullOrEmpty(aiProb))
-                {
-                    aiWinSecondary = aiProb;
-                }
-            }
-            else if (!string.IsNullOrEmpty(aiProb))
-            {
-                aiWinPrimary = aiProb;
-            }
+                                if (!string.IsNullOrEmpty(aiProb))
+                                {
+                                    aiWinPrimary = aiProb;
+                                    if (!string.IsNullOrEmpty(aiOdds))
+                                    {
+                                        aiWinSecondary = aiOdds;
+                                    }
+                                }
+                                else if (!string.IsNullOrEmpty(aiOdds))
+                                {
+                                    aiWinPrimary = aiOdds;
+                                }
                                 var marketProb = runner.MarketProbability.HasValue
                                     ? (runner.MarketProbability.Value * 100).ToString("0.##", CultureInfo.CurrentCulture) + "%"
                                     : "-";
