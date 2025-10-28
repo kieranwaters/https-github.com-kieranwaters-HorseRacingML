@@ -153,10 +153,9 @@ namespace HorseRacingML.Scraping
         }
         private bool TryGetExistingRaceTab(string marketId, out string? handle)
         {
-            handle = null;
-
             if (string.IsNullOrWhiteSpace(marketId))
             {
+                handle = null;
                 return false;
             }
 
@@ -170,10 +169,14 @@ namespace HorseRacingML.Scraping
                 originalHandle = null;
             }
 
+            handle = null;
             bool found = false;
+            string? resolvedHandle = null;
 
-            bool ValidateCandidate(string? candidate)
+            bool ValidateCandidate(string? candidate, out string? candidateHandle)
             {
+                candidateHandle = null;
+
                 if (string.IsNullOrWhiteSpace(candidate))
                 {
                     return false;
@@ -201,7 +204,7 @@ namespace HorseRacingML.Scraping
                     if (!string.IsNullOrWhiteSpace(currentMarketId) &&
                         string.Equals(currentMarketId, marketId, StringComparison.OrdinalIgnoreCase))
                     {
-                        handle = candidate;
+                        candidateHandle = candidate;
                         return true;
                     }
                 }
@@ -222,8 +225,10 @@ namespace HorseRacingML.Scraping
                 }
             }
 
-            if (!string.IsNullOrWhiteSpace(cachedHandle) && ValidateCandidate(cachedHandle))
+            if (!string.IsNullOrWhiteSpace(cachedHandle) &&
+                ValidateCandidate(cachedHandle, out var validatedHandle))
             {
+                resolvedHandle = validatedHandle;
                 found = true;
             }
             else if (!string.IsNullOrWhiteSpace(cachedHandle))
@@ -238,12 +243,13 @@ namespace HorseRacingML.Scraping
             {
                 foreach (var candidate in _driver.WindowHandles)
                 {
-                    if (ValidateCandidate(candidate))
+                    if (ValidateCandidate(candidate, out var validatedHandle))
                     {
+                        resolvedHandle = validatedHandle;
                         found = true;
                         lock (_raceTabLock)
                         {
-                            _raceTabHandles[marketId] = candidate;
+                            _raceTabHandles[marketId] = validatedHandle;
                         }
                         break;
                     }
@@ -262,6 +268,7 @@ namespace HorseRacingML.Scraping
                 }
             }
 
+            handle = resolvedHandle;
             return found;
         }
 

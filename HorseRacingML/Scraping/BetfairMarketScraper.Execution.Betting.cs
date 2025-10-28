@@ -884,7 +884,27 @@ namespace HorseRacingML.Scraping
 
             return decimal.Round(stake, 2, MidpointRounding.ToZero);
         }
+        private decimal CalculateLayStakeWithLimits(decimal bankroll, decimal layKellyFraction, decimal layDecimalOdds)
+        {
+            var stake = BettingMath.CalculateLayStake(bankroll, layKellyFraction, layDecimalOdds);
+            if (stake <= 0m)
+            {
+                return 0m;
+            }
 
+            var maxStake = DetermineMaxStake(bankroll);
+            if (maxStake.HasValue && maxStake.Value > 0m && stake > maxStake.Value)
+            {
+                stake = maxStake.Value;
+            }
+
+            if (stake < 0m)
+            {
+                return 0m;
+            }
+
+            return decimal.Round(stake, 2, MidpointRounding.ToZero);
+        }
         private decimal? DetermineMaxStake(decimal bankroll)
         {
             decimal? raw = _maxStakeMode switch

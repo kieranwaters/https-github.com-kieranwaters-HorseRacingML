@@ -1238,7 +1238,7 @@ namespace HorseRacingML.Scraping
 
                     if (_bankroll > 0m)
                     {
-                        var layStake = BettingMath.CalculateLayStake(_bankroll, layKelly, runner.LayDecimalOdds.Value);
+                        var layStake = CalculateLayStakeWithLimits(_bankroll, layKelly, runner.LayDecimalOdds.Value);
                         if (layStake > 0m)
                         {
                             runner.LaySuggestedStake = layStake;

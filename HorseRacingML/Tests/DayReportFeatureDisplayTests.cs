@@ -240,7 +240,46 @@ namespace HorseRacingML.Tests
             Assert.Equal(0.36f, Assert.IsType<float>(runner.FeatureValues["JockeyClassAvgNorm"]));
             Assert.Equal(0.36f, Assert.IsType<float>(runner.FeatureValues["LastJockeyClassNormPos"]));
         }
-        
+        [Fact]
+        public void CreateRunnerReport_AppliesMaxStakeLimitToLayRecommendations()
+        {
+            var repo = new StubRepository();
+            var trainer = new StubTrainer();
+            var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.FixedAmount, null, 10m);
+            var scraper = new BetfairMarketScraper(repo, trainer, bankroll: 100m, settings);
+
+            var flows = new List<RunnerFlow>
+            {
+                new RunnerFlow
+                {
+                    HorseName = "Lay Runner",
+                    ClothNumber = 1,
+                    LayPrice1 = 2.0m,
+                    BackPrice1 = 2.0m,
+                    AiOdds = 0.25,
+                    HasPreparedFeatures = true
+                }
+            };
+
+            var report = scraper.TestBuildRaceReport(
+                marketId: "1.234",
+                raceTitle: "Sample Race",
+                venueName: "Sample Venue",
+                venueCountry: "GB",
+                raceDate: new DateTime(2024, 1, 1),
+                offTime: new TimeSpan(12, 0, 0),
+                raceDetails: null,
+                going: "Good",
+                backBookPercentage: 100m,
+                layBookPercentage: 101m,
+                raceUrl: null,
+                flows: flows);
+
+            var runner = Assert.Single(report.Runners);
+            Assert.Equal(0.5m, runner.LayKellyFraction);
+            Assert.Equal(10m, runner.LaySuggestedStake);
+        }
+
         [Fact]
         public void CreateRunnerReport_UsesRecentPerformanceWhenClassAndTrainerDataMissing()
         {
