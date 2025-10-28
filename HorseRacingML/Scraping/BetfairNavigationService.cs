@@ -226,9 +226,9 @@ namespace HorseRacingML.Scraping
             }
 
             if (!string.IsNullOrWhiteSpace(cachedHandle) &&
-                ValidateCandidate(cachedHandle, out var validatedHandle))
+                ValidateCandidate(cachedHandle, out var cachedValidatedHandle))
             {
-                resolvedHandle = validatedHandle;
+                resolvedHandle = cachedValidatedHandle;
                 found = true;
             }
             else if (!string.IsNullOrWhiteSpace(cachedHandle))
