@@ -3,6 +3,8 @@
 @using System.Collections.Generic
 @using System.Globalization
 @using System
+@using System.Text.Json
+@using System.Text.Json.Serialization
 @using System.Linq
 @using HorseRacingML.ML
 @using HorseRacingML.Models
@@ -220,6 +222,10 @@
             TrackCount = regionTrackSets.TryGetValue(region, out var tracks) ? tracks.Count : 0
         })
         .ToList();
+    var historicalRaceSerializerOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    };
 }
 
 <div class="d-flex justify-content-between align-items-center mb-3">
@@ -506,9 +512,19 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                 var draw = runner.Draw.HasValue
                                     ? runner.Draw.Value.ToString(CultureInfo.CurrentCulture)
                                     : "-";
-                                var historyCount = runner.HistoricalRaceCount.HasValue
-                                    ? runner.HistoricalRaceCount.Value.ToString("N0", CultureInfo.CurrentCulture)
-                                    : "-";
+                                string historyCountText = "-";
+                                string? historicalRacesJson = null;
+                                if (runner.HistoricalRaceCount.HasValue)
+                                {
+                                    historyCountText = runner.HistoricalRaceCount.Value.ToString("N0", CultureInfo.CurrentCulture);
+                                }
+                                if (runner.HistoricalRaces != null && runner.HistoricalRaces.Count > 0)
+                                {
+                                    var orderedHistorical = runner.HistoricalRaces
+                                    .OrderByDescending(r => r.RaceDate)
+                                    .ToList();
+                                    historicalRacesJson = JsonSerializer.Serialize(orderedHistorical, historicalRaceSerializerOptions);
+                                }
 
 
                                 var marketOdds = runner.MarketDecimalOdds.HasValue
@@ -887,7 +903,22 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                         }
                                     </td>
                                     <td>@runner.JockeyName</td>
-                                    <td class="text-end">@historyCount</td>
+                                    <td class="text-end">
+                                        @if (!string.IsNullOrEmpty(historicalRacesJson))
+                                        {
+                                            <button type="button"
+                                                    class="btn btn-link p-0 historical-races-btn"
+                                                    data-runner-name="@(runner.HorseName ?? string.Empty)"
+                                                    data-history-count="@(runner.HistoricalRaceCount?.ToString(CultureInfo.InvariantCulture) ?? string.Empty)"
+                                                    data-historical-races='@Html.Raw(historicalRacesJson)'>
+                                                @historyCountText
+                                            </button>
+                                        }
+                                        else
+                                        {
+                                            @historyCountText
+                                        }
+                                    </td>
                                     <td class="text-end">@marketOdds</td>
                                     <td class="text-end">@layOdds</td>
                                     <td class="text-end">
@@ -952,6 +983,23 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
         </div>
     }
 }
+<div class="modal fade" id="historicalRacesModal" tabindex="-1" aria-labelledby="historicalRacesModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="historicalRacesModalLabel">Historical races</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="historical-races-summary text-muted small mb-3"></div>
+                <div class="historical-races-content">
+                    <div class="text-muted">No historical races are available for this runner.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 
 @section Scripts {
     <script>
@@ -1278,7 +1326,221 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
 
                 return stakeType === 'lay' ? `Lay ${formatted}` : formatted;
             };
+            const historicalRacesModalElement = document.getElementById('historicalRacesModal');
+            const historicalRacesModalLabel = document.getElementById('historicalRacesModalLabel');
+            const historicalRacesSummary = historicalRacesModalElement
+                ? historicalRacesModalElement.querySelector('.historical-races-summary')
+                : null;
+            const historicalRacesContent = historicalRacesModalElement
+                ? historicalRacesModalElement.querySelector('.historical-races-content')
+                : null;
 
+            const parseHistoricalRaceList = (raw) => {
+                if (!raw) {
+                    return [];
+                }
+
+                if (Array.isArray(raw)) {
+                    return raw;
+                }
+
+                if (typeof raw === 'string') {
+                    const trimmed = raw.trim();
+                    if (trimmed.length === 0) {
+                        return [];
+                    }
+
+                    try {
+                        const parsed = JSON.parse(trimmed);
+                        return Array.isArray(parsed) ? parsed : [];
+                    } catch (error) {
+                        console.warn('Unable to parse historical races payload', error);
+                        return [];
+                    }
+                }
+
+                return [];
+            };
+
+            const buildHistoricalRacesTable = (races) => {
+                const table = document.createElement('table');
+                table.className = 'table table-sm table-striped mb-0';
+
+                const thead = document.createElement('thead');
+                const headRow = document.createElement('tr');
+                [
+                    { text: 'Date' },
+                    { text: 'Race' },
+                    { text: 'Pos', className: 'text-end' },
+                    { text: 'Outcome' },
+                    { text: 'Runners', className: 'text-end' }
+                ].forEach(header => {
+                    const th = document.createElement('th');
+                    th.scope = 'col';
+                    th.textContent = header.text;
+                    if (header.className) {
+                        th.className = header.className;
+                    }
+                    headRow.appendChild(th);
+                });
+                thead.appendChild(headRow);
+                table.appendChild(thead);
+
+                const tbody = document.createElement('tbody');
+                const sorted = Array.isArray(races) ? races.slice() : [];
+                sorted.sort((a, b) => {
+                    const dateA = Date.parse(a?.raceDate ?? '');
+                    const dateB = Date.parse(b?.raceDate ?? '');
+                    const safeA = Number.isNaN(dateA) ? 0 : dateA;
+                    const safeB = Number.isNaN(dateB) ? 0 : dateB;
+                    return safeB - safeA;
+                });
+
+                sorted.forEach(race => {
+                    const row = document.createElement('tr');
+
+                    const dateCell = document.createElement('td');
+                    dateCell.textContent = formatDate(race?.raceDate) ?? '-';
+                    row.appendChild(dateCell);
+
+                    const titleCell = document.createElement('td');
+                    titleCell.textContent = race?.raceTitle ?? '';
+                    row.appendChild(titleCell);
+
+                    const positionCell = document.createElement('td');
+                    positionCell.className = 'text-end';
+                    const finishRaw = race?.finishPosition;
+                    const finishNumber = typeof finishRaw === 'number'
+                        ? finishRaw
+                        : Number.parseInt(finishRaw, 10);
+                    if (Number.isFinite(finishNumber)) {
+                        positionCell.textContent = finishNumber.toLocaleString(undefined, { maximumFractionDigits: 0 });
+                    } else if (typeof finishRaw === 'string' && finishRaw.trim().length > 0) {
+                        positionCell.textContent = finishRaw.trim();
+                    } else {
+                        positionCell.textContent = '-';
+                    }
+                    row.appendChild(positionCell);
+
+                    const outcomeCell = document.createElement('td');
+                    outcomeCell.textContent = race?.outcomeCode ?? '';
+                    row.appendChild(outcomeCell);
+
+                    const runnerCountCell = document.createElement('td');
+                    runnerCountCell.className = 'text-end';
+                    const runnersRaw = race?.runnerCount;
+                    const runnersNumber = typeof runnersRaw === 'number'
+                        ? runnersRaw
+                        : Number.parseInt(runnersRaw, 10);
+                    if (Number.isFinite(runnersNumber)) {
+                        runnerCountCell.textContent = runnersNumber.toLocaleString(undefined, { maximumFractionDigits: 0 });
+                    } else if (typeof runnersRaw === 'string' && runnersRaw.trim().length > 0) {
+                        runnerCountCell.textContent = runnersRaw.trim();
+                    } else {
+                        runnerCountCell.textContent = '-';
+                    }
+                    row.appendChild(runnerCountCell);
+
+                    tbody.appendChild(row);
+                });
+
+                table.appendChild(tbody);
+                return table;
+            };
+
+            const showHistoricalRacesModal = (runnerName, historyCount, races) => {
+                if (!historicalRacesModalElement || !historicalRacesContent) {
+                    return;
+                }
+
+                const displayName = (runnerName ?? '').trim().length > 0
+                    ? runnerName.trim()
+                    : 'Runner';
+
+                if (historicalRacesModalLabel) {
+                    historicalRacesModalLabel.textContent = `${displayName} — Historical races`;
+                }
+
+                if (historicalRacesSummary) {
+                    const available = Array.isArray(races) ? races.length : 0;
+                    if (Number.isFinite(historyCount) && historyCount > 0) {
+                        historicalRacesSummary.textContent = `Showing ${available.toLocaleString()} recent race(s) of ${historyCount.toLocaleString()} recorded.`;
+                    } else {
+                        historicalRacesSummary.textContent = `Showing ${available.toLocaleString()} recent race(s).`;
+                    }
+                }
+
+                historicalRacesContent.innerHTML = '';
+
+                if (!Array.isArray(races) || races.length === 0) {
+                    const empty = document.createElement('div');
+                    empty.className = 'text-muted';
+                    empty.textContent = 'No historical races are available for this runner.';
+                    historicalRacesContent.appendChild(empty);
+                } else {
+                    const table = buildHistoricalRacesTable(races);
+                    historicalRacesContent.appendChild(table);
+                }
+
+                if (typeof bootstrap !== 'undefined' && bootstrap?.Modal) {
+                    const modalInstance = bootstrap.Modal.getOrCreateInstance(historicalRacesModalElement);
+                    modalInstance.show();
+                } else {
+                    const fallbackLines = Array.isArray(races) && races.length > 0
+                        ? races.map(race => {
+                            const dateText = formatDate(race?.raceDate) ?? '-';
+                            const titleText = race?.raceTitle ?? '';
+                            const finishRaw = race?.finishPosition;
+                            const finishNumber = typeof finishRaw === 'number'
+                                ? finishRaw
+                                : Number.parseInt(finishRaw, 10);
+                            const finishText = Number.isFinite(finishNumber)
+                                ? finishNumber.toString()
+                                : (typeof finishRaw === 'string' && finishRaw.trim().length > 0
+                                    ? finishRaw.trim()
+                                    : '-');
+                            return `${dateText} — ${titleText} (${finishText})`;
+                        }).join('\n')
+                        : 'No historical races are available for this runner.';
+                    alert(`${displayName} — Historical races\n\n${fallbackLines}`);
+                }
+            };
+
+            const handleHistoricalRacesClick = (event) => {
+                event.preventDefault();
+                const button = event.currentTarget;
+                if (!button) {
+                    return;
+                }
+
+                const runnerName = button.dataset.runnerName ?? '';
+                const historyCountRaw = button.dataset.historyCount ?? '';
+                const parsedCount = Number.parseInt(historyCountRaw, 10);
+                const historyCount = Number.isFinite(parsedCount) && parsedCount >= 0 ? parsedCount : null;
+                const races = parseHistoricalRaceList(button.dataset.historicalRaces ?? '[]');
+
+                showHistoricalRacesModal(runnerName, historyCount, races);
+            };
+
+            const bindHistoricalRaceButtons = (root = document) => {
+                if (!root || typeof root.querySelectorAll !== 'function') {
+                    return;
+                }
+
+                const buttons = root.querySelectorAll('.historical-races-btn');
+                if (!buttons || buttons.length === 0) {
+                    return;
+                }
+
+                buttons.forEach(button => {
+                    if (!button || button.dataset.historicalBound === '1') {
+                        return;
+                    }
+
+                    button.dataset.historicalBound = '1';
+                    button.addEventListener('click', handleHistoricalRacesClick);
+                });
+            };
             const parseTimeToMinutes = (value) => {
                 if (value === null || typeof value === 'undefined') {
                     return null;
@@ -1866,9 +2128,42 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                     row.appendChild(horseCell);
 
                     appendCell(runner?.jockeyName ?? '');
-                    appendCell(Number.isFinite(runner?.historicalRaceCount)
-                        ? runner.historicalRaceCount.toLocaleString(undefined, { maximumFractionDigits: 0 })
-                        : '-', 'text-end');
+                    const historyCell = document.createElement('td');
+                    historyCell.className = 'text-end';
+                    let historyCount = null;
+                    if (typeof runner?.historicalRaceCount === 'number' && Number.isFinite(runner.historicalRaceCount)) {
+                        historyCount = runner.historicalRaceCount;
+                    } else if (typeof runner?.historicalRaceCount === 'string') {
+                        const parsed = Number.parseInt(runner.historicalRaceCount, 10);
+                        if (Number.isFinite(parsed)) {
+                            historyCount = parsed;
+                        }
+                    }
+
+                    const hasHistoricalRaces = Array.isArray(runner?.historicalRaces)
+                        && runner.historicalRaces.length > 0;
+
+                    if (hasHistoricalRaces && typeof historyCount === 'number' && Number.isFinite(historyCount) && historyCount > 0) {
+                        const button = document.createElement('button');
+                        button.type = 'button';
+                        button.className = 'btn btn-link p-0 historical-races-btn';
+                        button.textContent = historyCount.toLocaleString(undefined, { maximumFractionDigits: 0 });
+                        button.dataset.runnerName = typeof runner?.horseName === 'string' ? runner.horseName : '';
+                        button.dataset.historyCount = historyCount.toString();
+                        try {
+                            button.dataset.historicalRaces = JSON.stringify(runner.historicalRaces);
+                        } catch (error) {
+                            console.warn('Failed to serialize historical races for runner', error);
+                            button.dataset.historicalRaces = '[]';
+                        }
+                        historyCell.appendChild(button);
+                    } else if (typeof historyCount === 'number' && Number.isFinite(historyCount)) {
+                        historyCell.textContent = historyCount.toLocaleString(undefined, { maximumFractionDigits: 0 });
+                    } else {
+                        historyCell.textContent = '-';
+                    }
+
+                    row.appendChild(historyCell);
 
                     appendCell(typeof runner?.marketDecimalOdds === 'number'
                         ? formatDecimal(runner.marketDecimalOdds)
@@ -1942,7 +2237,7 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
 
                     tbody.appendChild(row);
                 });
-
+                bindHistoricalRaceButtons(tbody);
                 updateStakeDisplays();
             };
 
@@ -2329,7 +2624,7 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                     });
                 });
             }
-
+            bindHistoricalRaceButtons(document);
             updateStakeDisplays();
         })();
     </script>
