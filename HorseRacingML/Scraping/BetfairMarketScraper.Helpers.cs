@@ -3321,7 +3321,7 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
                 return;
             }
 
-             if (modelDerived.Count == 0)
+            if (modelDerived.Count == 0)
             {
                 if (!marketDerived.Any() || marketSum <= double.Epsilon)
                 {
@@ -3481,6 +3481,7 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
                 $"marketScale={marketScaleFactor.ToString("0.####", CultureInfo.InvariantCulture)}, " +
                 $"normalized sum={totalNormalized.ToString("0.####", CultureInfo.InvariantCulture)}.");
         }
+
 
         private static void AppendMarketFallbackReason(RunnerFlow? flow, string detail)
         {
