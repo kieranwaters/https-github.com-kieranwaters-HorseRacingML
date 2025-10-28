@@ -15,6 +15,7 @@ namespace HorseRacingML.Controllers
 {
     public class HomeController : Controller
     {
+        private const double AiProbabilityDisplayThreshold = 0.01d;
         private readonly ILogger<HomeController> _logger;
         private readonly RacingRepository _repository;
         private readonly ScrapingStatusService _status;
