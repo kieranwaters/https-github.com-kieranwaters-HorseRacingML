@@ -57,6 +57,8 @@ namespace HorseRacingML.Scraping
         private readonly Dictionary<string, string?> _raceGoingByMarketId = new(StringComparer.OrdinalIgnoreCase);
         private readonly object _raceGoingLock = new();
         private readonly Dictionary<string, string?> _raceGoingByVenue = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, string> _raceTabHandles = new(StringComparer.OrdinalIgnoreCase);
+        private readonly object _raceTabLock = new();
         private static readonly TimeSpan SchedulePageReadyTimeout = TimeSpan.FromSeconds(120);
         private string? _activeScheduleRegion;
 
@@ -118,6 +120,10 @@ namespace HorseRacingML.Scraping
                     _raceGoingByMarketId.Clear();
                     _raceGoingByVenue.Clear();
                 }
+                lock (_raceTabLock)
+                {
+                    _raceTabHandles.Clear();
+                }
             }
         }
 
@@ -145,20 +151,16 @@ namespace HorseRacingML.Scraping
             ResetWebDriver();
             return true;
         }
-
-        public async Task<RaceDayReport?> RefreshRaceAsync(
-            string raceUrl,
-            RacingRepository repo,
-            HyperparameterTrainer trainer,
-            bool includeAiProbabilities = true)
+        private bool TryGetExistingRaceTab(string marketId, out string? handle)
         {
-            if (string.IsNullOrWhiteSpace(raceUrl))
+            handle = null;
+
+            if (string.IsNullOrWhiteSpace(marketId))
             {
-                return null;
+                return false;
             }
 
             string? originalHandle = null;
-            string? originalUrl = null;
             try
             {
                 originalHandle = _driver.CurrentWindowHandle;
@@ -168,93 +170,221 @@ namespace HorseRacingML.Scraping
                 originalHandle = null;
             }
 
-            try
+            bool found = false;
+
+            bool ValidateCandidate(string? candidate)
             {
-                originalUrl = _driver.Url;
+                if (string.IsNullOrWhiteSpace(candidate))
+                {
+                    return false;
+                }
+
+                var handles = _driver.WindowHandles;
+                if (!handles.Contains(candidate))
+                {
+                    return false;
+                }
+
+                try
+                {
+                    _driver.SwitchTo().Window(candidate);
+                }
+                catch (WebDriverException)
+                {
+                    return false;
+                }
+
+                try
+                {
+                    var currentUrl = _driver.Url;
+                    var currentMarketId = BetfairMarketScraper.ExtractMarketId(currentUrl);
+                    if (!string.IsNullOrWhiteSpace(currentMarketId) &&
+                        string.Equals(currentMarketId, marketId, StringComparison.OrdinalIgnoreCase))
+                    {
+                        handle = candidate;
+                        return true;
+                    }
+                }
+                catch (WebDriverException)
+                {
+                    // Ignore failures while reading the current tab state.
+                }
+
+                return false;
             }
-            catch (WebDriverException)
+
+            string? cachedHandle = null;
+            lock (_raceTabLock)
             {
-                originalUrl = null;
+                if (_raceTabHandles.TryGetValue(marketId, out var known))
+                {
+                    cachedHandle = known;
+                }
             }
 
-            await LoginAsync();
+            if (!string.IsNullOrWhiteSpace(cachedHandle) && ValidateCandidate(cachedHandle))
+            {
+                found = true;
+            }
+            else if (!string.IsNullOrWhiteSpace(cachedHandle))
+            {
+                lock (_raceTabLock)
+                {
+                    _raceTabHandles.Remove(marketId);
+                }
+            }
 
-            var priorHandles = _driver.WindowHandles.ToList();
-            var priorHandleSet = new HashSet<string>(priorHandles);
-            var newHandles = new List<string>();
-            var openedNewTab = false;
-            var restoreUrl = string.IsNullOrWhiteSpace(raceUrl) ? originalUrl : raceUrl;
+            if (!found)
+            {
+                foreach (var candidate in _driver.WindowHandles)
+                {
+                    if (ValidateCandidate(candidate))
+                    {
+                        found = true;
+                        lock (_raceTabLock)
+                        {
+                            _raceTabHandles[marketId] = candidate;
+                        }
+                        break;
+                    }
+                }
+            }
 
-            try
+            if (!string.IsNullOrEmpty(originalHandle) && _driver.WindowHandles.Contains(originalHandle))
             {
                 try
                 {
-                    ((IJavaScriptExecutor)_driver).ExecuteScript("window.open(arguments[0],'_blank');", raceUrl);
-                    await Task.Delay(500);
-                    newHandles = _driver.WindowHandles
-                        .Where(h => !priorHandleSet.Contains(h))
-                        .ToList();
-                    openedNewTab = newHandles.Count > 0;
+                    _driver.SwitchTo().Window(originalHandle);
                 }
-                catch (Exception)
+                catch (WebDriverException)
                 {
-                    newHandles.Clear();
+                    // Ignore failures when restoring the original tab.
                 }
+            }
 
-                if (!openedNewTab)
-                {
-                    _driver.Navigate().GoToUrl(raceUrl);
-                    await Task.Delay(500);
-                    var current = _driver.CurrentWindowHandle;
-                    if (!string.IsNullOrWhiteSpace(current))
-                    {
-                        newHandles = new List<string> { current };
-                    }
-                }
+            return found;
+        }
 
-                if (newHandles.Count == 0)
+        public async Task<RaceDayReport?> RefreshRaceAsync(
+            string raceUrl,
+            RacingRepository repo,
+            HyperparameterTrainer trainer,
+            bool includeAiProbabilities = true,
+            bool refreshBankrollFromPage = true)
+        {
+            {
+                if (string.IsNullOrWhiteSpace(raceUrl))
                 {
                     return null;
                 }
 
-                var bankroll = GetEffectiveBankroll();
-                var settings = _automationSettings.GetSnapshot();
-                var scraper = new BetfairMarketScraper(
-                    repo,
-                    trainer,
-                    bankroll,
-                    settings,
-                    _useMarketFallbackForAiDegeneracy,
-                    GetRaceGoingSnapshot(),
-                    computeAiProbabilities: includeAiProbabilities,
-                    scheduleRegion: GetActiveScheduleRegion(),
-                    raceGoingByVenueLookup: GetRaceGoingByVenueSnapshot());
-                var races = scraper.ScrapeOpenRaceTabsForReport(_driver, newHandles);
-
-                var targetMarketId = BetfairMarketScraper.ExtractMarketId(raceUrl);
-                RaceDayReport? refreshed = null;
-                if (!string.IsNullOrWhiteSpace(targetMarketId))
+                string? originalHandle = null;
+                string? originalUrl = null;
+                try
                 {
-                    refreshed = races.FirstOrDefault(r =>
-                        string.Equals(r.MarketId, targetMarketId, StringComparison.OrdinalIgnoreCase));
+                    originalHandle = _driver.CurrentWindowHandle;
+                }
+                catch (WebDriverException)
+                {
+                    originalHandle = null;
                 }
 
-                return refreshed ?? races.FirstOrDefault();
-            }
-            finally
-            {
-                if (openedNewTab)
+                try
                 {
-                    foreach (var handle in newHandles)
+                    originalUrl = _driver.Url;
+                }
+                catch (WebDriverException)
+                {
+                    originalUrl = null;
+                }
+
+                await LoginAsync();
+
+                var priorHandles = _driver.WindowHandles.ToList();
+                var priorHandleSet = new HashSet<string>(priorHandles);
+                var newHandles = new List<string>();
+                var openedNewTab = false;
+                var reusedExistingTab = false;
+                var restoreUrl = string.IsNullOrWhiteSpace(raceUrl) ? originalUrl : raceUrl;
+                var targetMarketId = BetfairMarketScraper.ExtractMarketId(raceUrl);
+
+                if (!string.IsNullOrWhiteSpace(targetMarketId) &&
+                    TryGetExistingRaceTab(targetMarketId, out var existingHandle) &&
+                    !string.IsNullOrWhiteSpace(existingHandle))
+                {
+                    newHandles.Add(existingHandle);
+                    reusedExistingTab = true;
+                }
+
+                try
+                {
+                    if (!reusedExistingTab)
                     {
                         try
                         {
-                            _driver.SwitchTo().Window(handle);
-                            _driver.Close();
+                            ((IJavaScriptExecutor)_driver).ExecuteScript("window.open(arguments[0],'_blank');", raceUrl);
+                            await Task.Delay(500);
+                            newHandles = _driver.WindowHandles
+                                .Where(h => !priorHandleSet.Contains(h))
+                                .ToList();
+                            openedNewTab = newHandles.Count > 0;
                         }
-                        catch (WebDriverException)
+                        catch (Exception)
                         {
-                            // Ignore failures when closing transient tabs.
+                            newHandles.Clear();
+                        }
+
+                        if (!openedNewTab)
+                        {
+                            _driver.Navigate().GoToUrl(raceUrl);
+                            await Task.Delay(500);
+                            var current = _driver.CurrentWindowHandle;
+                            if (!string.IsNullOrWhiteSpace(current))
+                            {
+                                newHandles = new List<string> { current };
+                            }
+                        }
+                    }
+
+                    if (newHandles.Count == 0)
+                    {
+                        return null;
+                    }
+
+                    var bankroll = GetEffectiveBankroll(refreshBankrollFromPage);
+                    var settings = _automationSettings.GetSnapshot();
+                    var scraper = new BetfairMarketScraper(
+                        repo,
+                        trainer,
+                        bankroll,
+                        settings,
+                        _useMarketFallbackForAiDegeneracy,
+                        GetRaceGoingSnapshot(),
+                        computeAiProbabilities: includeAiProbabilities,
+                        scheduleRegion: GetActiveScheduleRegion(),
+                        raceGoingByVenueLookup: GetRaceGoingByVenueSnapshot());
+                    var races = scraper.ScrapeOpenRaceTabsForReport(_driver, newHandles);
+
+                    RaceDayReport? refreshed = null;
+                    if (!string.IsNullOrWhiteSpace(targetMarketId))
+                    {
+                        refreshed = races.FirstOrDefault(r =>
+                            string.Equals(r.MarketId, targetMarketId, StringComparison.OrdinalIgnoreCase));
+                    }
+
+                    return refreshed ?? races.FirstOrDefault();
+                }
+                finally
+                {
+                    if (!string.IsNullOrWhiteSpace(targetMarketId) && newHandles.Count > 0)
+                    {
+                        var handleToRemember = newHandles[0];
+                        if (!string.IsNullOrWhiteSpace(handleToRemember))
+                        {
+                            lock (_raceTabLock)
+                            {
+                                _raceTabHandles[targetMarketId] = handleToRemember;
+                            }
                         }
                     }
 
@@ -263,7 +393,7 @@ namespace HorseRacingML.Scraping
                     {
                         handleToRestore = originalHandle;
                     }
-                    else
+                    else if (priorHandles.Count > 0)
                     {
                         handleToRestore = priorHandles.FirstOrDefault(h => _driver.WindowHandles.Contains(h));
                     }
@@ -284,39 +414,22 @@ namespace HorseRacingML.Scraping
                             // Ignore failures when switching back to the original tab.
                         }
                     }
-                }
-                else if (priorHandles.Count > 0)
-                {
-                    var current = !string.IsNullOrEmpty(originalHandle) && _driver.WindowHandles.Contains(originalHandle)
-                        ? originalHandle
-                        : priorHandles[0];
-                    if (!string.IsNullOrEmpty(current) && _driver.WindowHandles.Contains(current))
+
+                    if (!string.IsNullOrWhiteSpace(restoreUrl))
                     {
                         try
                         {
-                            _driver.SwitchTo().Window(current);
+                            var currentUrl = _driver.Url;
+                            if (string.IsNullOrWhiteSpace(currentUrl) ||
+                                !string.Equals(currentUrl, restoreUrl, StringComparison.OrdinalIgnoreCase))
+                            {
+                                _driver.Navigate().GoToUrl(restoreUrl);
+                            }
                         }
                         catch (WebDriverException)
                         {
-                            // Ignore failures when switching tabs.
+                            // Ignore failures when restoring the previous URL.
                         }
-                    }
-                }
-
-                if (!string.IsNullOrWhiteSpace(restoreUrl))
-                {
-                    try
-                    {
-                        var currentUrl = _driver.Url;
-                        if (string.IsNullOrWhiteSpace(currentUrl) ||
-                            !string.Equals(currentUrl, restoreUrl, StringComparison.OrdinalIgnoreCase))
-                        {
-                            _driver.Navigate().GoToUrl(restoreUrl);
-                        }
-                    }
-                    catch (WebDriverException)
-                    {
-                        // Ignore failures when restoring the previous URL.
                     }
                 }
             }

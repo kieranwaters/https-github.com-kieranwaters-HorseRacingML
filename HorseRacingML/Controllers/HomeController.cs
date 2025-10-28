@@ -280,6 +280,56 @@ namespace HorseRacingML.Controllers
                 }
             }
         }
+        private static object BuildRaceResponse(RaceDayReport race)
+        {
+            return new
+            {
+                marketId = race.MarketId,
+                raceTitle = race.RaceTitle,
+                venueName = race.VenueName,
+                venueCountry = race.VenueCountry,
+                raceDate = race.RaceDate?.ToString("o"),
+                offTime = race.OffTime?.ToString(@"hh\:mm"),
+                raceDetails = race.RaceDetails,
+                raceType = race.RaceType,
+                going = string.IsNullOrWhiteSpace(race.Going) ? null : race.Going.Trim(),
+                backBookPercentage = race.BackBookPercentage,
+                layBookPercentage = race.LayBookPercentage,
+                raceUrl = race.RaceUrl,
+                raceFallbackSummary = race.RaceFallbackSummary,
+                upcomingRaceId = race.UpcomingRaceId,
+                runners = (race.Runners ?? new List<RunnerDayReport>()).Select(runner => new
+                {
+                    clothNumber = runner.ClothNumber,
+                    draw = runner.Draw,
+                    horseName = runner.HorseName,
+                    jockeyName = runner.JockeyName,
+                    marketDecimalOdds = runner.MarketDecimalOdds,
+                    layDecimalOdds = runner.LayDecimalOdds,
+                    aiDecimalOdds = runner.AiDecimalOdds,
+                    aiProbability = runner.AiProbability,
+                    displayedAiProbability = runner.DisplayedAiProbability,
+                    aiProbabilityMarketDerived = runner.AiProbabilityMarketDerived,
+                    displayedAiProbabilityMarketDerived = runner.DisplayedAiProbabilityMarketDerived,
+                    aiProbabilityClampedToMarket = runner.AiProbabilityClampedToMarket,
+                    aiProbabilityFallbackReason = runner.AiProbabilityFallbackReason,
+                    marketProbability = runner.MarketProbability,
+                    differential = runner.Differential,
+                    displayedDifferential = runner.DisplayedDifferential,
+                    kellyFraction = runner.KellyFraction,
+                    suggestedStake = runner.SuggestedStake,
+                    layKellyFraction = runner.LayKellyFraction,
+                    laySuggestedStake = runner.LaySuggestedStake,
+                    historicalRaceCount = runner.HistoricalRaceCount,
+                    featureValues = runner.FeatureValues,
+                    encodedFeatureValues = runner.EncodedFeatureValues,
+                    hasPreparedFeatures = runner.HasPreparedFeatures,
+                    hasPartialPreparedFeatures = runner.HasPartialPreparedFeatures,
+                    aiTrainedModelApplied = runner.AiTrainedModelApplied,
+                    aiUsedLegacyModel = runner.AiUsedLegacyModel
+                }).ToList()
+            };
+        }
 
         private static bool TryParseTimeOfDay(string? value, out TimeSpan? time)
         {
@@ -546,7 +596,8 @@ namespace HorseRacingML.Controllers
                     request.RaceUrl,
                     _repository,
                     trainer,
-                    includeAiProbabilities: false);
+                    includeAiProbabilities: false,
+                    refreshBankrollFromPage: false);
                 if (refreshed == null)
                 {
                     return NotFound(new { success = false, message = "Unable to refresh market data for the selected race." });
@@ -557,6 +608,7 @@ namespace HorseRacingML.Controllers
                     MarketId = refreshed.MarketId,
                     BackBookPercentage = refreshed.BackBookPercentage,
                     LayBookPercentage = refreshed.LayBookPercentage,
+                    Going = string.IsNullOrWhiteSpace(refreshed.Going) ? null : refreshed.Going.Trim(),
                     Runners = refreshed.Runners?.Select(runner => new RunnerMarketOddsUpdate
                     {
                         HorseName = runner.HorseName,
@@ -569,7 +621,20 @@ namespace HorseRacingML.Controllers
                     }).ToList() ?? new List<RunnerMarketOddsUpdate>()
                 };
 
-                return Json(new { success = true, update });
+                var normalizedUpdatedGoing = string.IsNullOrWhiteSpace(update.Going) ? null : update.Going.Trim();
+                var normalizedRequestGoing = string.IsNullOrWhiteSpace(request.CurrentGoing)
+                    ? null
+                    : request.CurrentGoing.Trim();
+                var goingChanged = !string.Equals(normalizedUpdatedGoing, normalizedRequestGoing, StringComparison.OrdinalIgnoreCase);
+
+                return Json(new
+                {
+                    success = true,
+                    update,
+                    goingChanged,
+                    newGoing = normalizedUpdatedGoing,
+                    aiRefreshed = false
+                });
             }
             catch (Exception ex)
             {
@@ -607,7 +672,8 @@ namespace HorseRacingML.Controllers
                     request.RaceUrl,
                     _repository,
                     trainer,
-                    includeAiProbabilities: shouldRecalculateAi);
+                    includeAiProbabilities: shouldRecalculateAi,
+                    refreshBankrollFromPage: shouldRecalculateAi);
                 if (refreshed == null)
                 {
                     return NotFound(new { success = false, message = "Unable to refresh market data for the selected race." });
@@ -630,6 +696,12 @@ namespace HorseRacingML.Controllers
                                 : null)
                     }).ToList() ?? new List<RunnerMarketOddsUpdate>()
                 };
+                var tempReport = new DayReportViewModel
+                {
+                    Races = new List<RaceDayReport> { refreshed }
+                };
+                ApplyDisplayedAiProbabilities(tempReport);
+                var race = BuildRaceResponse(refreshed);
 
                 var normalizedUpdatedGoing = string.IsNullOrWhiteSpace(update.Going) ? null : update.Going.Trim();
                 if (normalizedUpdatedGoing == null && !string.IsNullOrWhiteSpace(latestGoing))
@@ -643,8 +715,10 @@ namespace HorseRacingML.Controllers
                 {
                     success = true,
                     update,
+                    race,
                     goingChanged,
-                    newGoing = normalizedUpdatedGoing
+                    newGoing = normalizedUpdatedGoing,
+                    aiRefreshed = shouldRecalculateAi
                 });
             }
             catch (Exception ex)
