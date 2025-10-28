@@ -1194,6 +1194,7 @@ namespace HorseRacingML.Scraping
 
 
             runner.Differential = null;
+            runner.DisplayedDifferential = null;
             if (runner.AiProbability.HasValue && runner.MarketProbability.HasValue)
             {
                 runner.Differential = runner.AiProbability.Value - runner.MarketProbability.Value;

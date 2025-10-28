@@ -570,8 +570,19 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                     ? (runner.MarketProbability.Value * 100).ToString("0.##", CultureInfo.CurrentCulture) + "%"
                                     : "-";
 
-                                var diff = runner.Differential.HasValue
-                                    ? (runner.Differential.Value * 100).ToString("0.##", CultureInfo.CurrentCulture) + "%"
+                                var aiProbabilityAttrValue = runner.DisplayedAiProbability ?? runner.AiProbability;
+                                var effectiveAiProbability = aiProbabilityAttrValue;
+                                double? displayedDifferential = runner.DisplayedDifferential;
+                                if (!displayedDifferential.HasValue && effectiveAiProbability.HasValue && runner.MarketProbability.HasValue)
+                                {
+                                    displayedDifferential = effectiveAiProbability.Value - runner.MarketProbability.Value;
+                                }
+                                if (!displayedDifferential.HasValue && runner.Differential.HasValue)
+                                {
+                                    displayedDifferential = runner.Differential.Value;
+                                }
+                                var diff = displayedDifferential.HasValue
+                                ? (displayedDifferential.Value * 100).ToString("0.##", CultureInfo.CurrentCulture) + "%"
                                     : "-";
 
                                var hasBackEdge = runner.KellyFraction.HasValue && runner.KellyFraction.Value > 0;
@@ -583,7 +594,6 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                         : string.Empty;
 
                                 var horseNameAttr = runner.HorseName?.Trim() ?? string.Empty;
-                                var aiProbabilityAttrValue = runner.DisplayedAiProbability ?? runner.AiProbability;
                                 var aiProbabilityAttr = aiProbabilityAttrValue.HasValue
                                 ? aiProbabilityAttrValue.Value.ToString("0.################", CultureInfo.InvariantCulture)
                                     : string.Empty;
@@ -1758,10 +1768,18 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                         delete row.dataset.horseName;
                     }
 
-                    if (typeof runner?.aiProbability === 'number' && Number.isFinite(runner.aiProbability) && runner.aiProbability > 0) {
-                        row.dataset.aiProbability = runner.aiProbability.toString();
+                    let aiProbability = null;
+                    if (typeof runner?.displayedAiProbability === 'number' && Number.isFinite(runner.displayedAiProbability) && runner.displayedAiProbability >= 0) {
+                        aiProbability = runner.displayedAiProbability;
+                    } else if (typeof runner?.aiProbability === 'number' && Number.isFinite(runner.aiProbability) && runner.aiProbability >= 0) {
+                        aiProbability = runner.aiProbability;
+                    }
+
+                    if (Number.isFinite(aiProbability) && aiProbability >= 0) {
+                        row.dataset.aiProbability = aiProbability.toString();
                     } else {
                         delete row.dataset.aiProbability;
+                        aiProbability = null;
                     }
 
                     if (typeof runner?.marketProbability === 'number' && Number.isFinite(runner.marketProbability) && runner.marketProbability > 0) {
@@ -1846,12 +1864,12 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                         : '-', 'text-end');
 
                     const aiProbCell = appendCell('-', 'text-end');
-                    if (typeof runner?.aiProbability === 'number') {
-                        const display = formatProbabilityPercent(runner.aiProbability);
+                    if (Number.isFinite(aiProbability) && aiProbability >= 0) {
+                        const display = formatProbabilityPercent(aiProbability);
                         if (display !== '-') {
                             const span = document.createElement('span');
                             span.textContent = display;
-                            const tooltip = buildProbabilityTooltip(runner.aiProbability);
+                            const tooltip = buildProbabilityTooltip(aiProbability);
                             if (tooltip) {
                                 span.title = tooltip;
                             }
@@ -1871,8 +1889,20 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                         : null;
                     appendCell(marketPercent ?? '-', 'text-end');
 
-                    const diffPercent = typeof runner?.differential === 'number'
-                        ? formatPercentage(runner.differential * 100)
+                    let displayedDifferential = null;
+                    if (typeof runner?.displayedDifferential === 'number' && Number.isFinite(runner.displayedDifferential)) {
+                        displayedDifferential = runner.displayedDifferential;
+                    } else if (typeof runner?.differential === 'number' && Number.isFinite(runner.differential)) {
+                        displayedDifferential = runner.differential;
+                    } else if (Number.isFinite(aiProbability)) {
+                        const marketProbability = Number.parseFloat(row.dataset.marketProbability ?? '');
+                        if (Number.isFinite(marketProbability)) {
+                            displayedDifferential = aiProbability - marketProbability;
+                        }
+                    }
+
+                    const diffPercent = Number.isFinite(displayedDifferential)
+                        ? formatPercentage(displayedDifferential * 100)
                         : null;
                     appendCell(diffPercent ?? '-', 'text-end');
 

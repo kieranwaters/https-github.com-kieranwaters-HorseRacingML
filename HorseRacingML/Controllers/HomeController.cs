@@ -254,6 +254,7 @@ namespace HorseRacingML.Controllers
                     {
                         entry.Runner.DisplayedAiProbability = null;
                         entry.Runner.DisplayedAiProbabilityMarketDerived = false;
+                        entry.Runner.DisplayedDifferential = null;
                     }
 
                     continue;
@@ -267,11 +268,15 @@ namespace HorseRacingML.Controllers
                     {
                         entry.Runner.DisplayedAiProbability = null;
                         entry.Runner.DisplayedAiProbabilityMarketDerived = false;
+                        entry.Runner.DisplayedDifferential = null;
                         continue;
                     }
 
                     entry.Runner.DisplayedAiProbability = scaled;
                     entry.Runner.DisplayedAiProbabilityMarketDerived = entry.FromMarket;
+                    entry.Runner.DisplayedDifferential = entry.Runner.MarketProbability.HasValue
+                        ? scaled - entry.Runner.MarketProbability.Value
+                        : (double?)null;
                 }
             }
         }
