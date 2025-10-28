@@ -516,13 +516,16 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                 var layOdds = runner.LayDecimalOdds.HasValue
                                     ? runner.LayDecimalOdds.Value.ToString("0.00", CultureInfo.CurrentCulture)
                                     : "-";
-
+                                var displayAiProbability = runner.DisplayedAiProbability ?? runner.AiProbability;
+                                var displayAiFromMarket = runner.DisplayedAiProbability.HasValue
+                                ? runner.DisplayedAiProbabilityMarketDerived
+                                : runner.AiProbabilityMarketDerived;
                                 string? aiProb = null;
                                 string? aiProbTitle = null;
-                                if (runner.AiProbability.HasValue)
+                                if (displayAiProbability.HasValue)
                                 {
-                                    aiProb = FormatProbabilityPercent(runner.AiProbability.Value, CultureInfo.CurrentCulture);
-                                    aiProbTitle = BuildProbabilityTooltip(runner.AiProbability.Value, CultureInfo.CurrentCulture);
+                                    aiProb = FormatProbabilityPercent(displayAiProbability.Value, CultureInfo.CurrentCulture);
+                                    aiProbTitle = BuildProbabilityTooltip(displayAiProbability.Value, CultureInfo.CurrentCulture);
                                 }
                                 else if (runner.AiDecimalOdds.HasValue && runner.AiDecimalOdds.Value > 0)
                                 {
@@ -531,7 +534,7 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                     aiProbTitle = BuildProbabilityTooltip(derivedProbability, CultureInfo.CurrentCulture);
                                 }
                                 string? aiOdds = null;
-                                if (runner.AiProbabilityMarketDerived)
+                                if (displayAiFromMarket)
                                 {
                                     if (runner.MarketDecimalOdds.HasValue)
                                     {
@@ -580,8 +583,9 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                         : string.Empty;
 
                                 var horseNameAttr = runner.HorseName?.Trim() ?? string.Empty;
-                                var aiProbabilityAttr = runner.AiProbability.HasValue
-                                    ? runner.AiProbability.Value.ToString("0.################", CultureInfo.InvariantCulture)
+                                var aiProbabilityAttrValue = runner.DisplayedAiProbability ?? runner.AiProbability;
+                                var aiProbabilityAttr = aiProbabilityAttrValue.HasValue
+                                ? aiProbabilityAttrValue.Value.ToString("0.################", CultureInfo.InvariantCulture)
                                     : string.Empty;
                                 var marketProbabilityAttr = runner.MarketProbability.HasValue
                                     ? runner.MarketProbability.Value.ToString("0.################", CultureInfo.InvariantCulture)

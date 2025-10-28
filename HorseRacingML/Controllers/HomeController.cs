@@ -177,6 +177,7 @@ namespace HorseRacingML.Controllers
             {
                 ApplyTimeFilters(report, startTimeSpan, endTimeSpan);
                 report.InitialRegion = normalizedRegion;
+                ApplyDisplayedAiProbabilities(report);
             }
             else
             {
@@ -189,6 +190,89 @@ namespace HorseRacingML.Controllers
             }
 
             return View(report);
+        }
+        private static void ApplyDisplayedAiProbabilities(DayReportViewModel? report)
+        {
+            if (report?.Races == null)
+            {
+                return;
+            }
+
+            foreach (var race in report.Races)
+            {
+                if (race?.Runners == null || race.Runners.Count == 0)
+                {
+                    continue;
+                }
+
+                var candidates = new List<(RunnerDayReport Runner, double Probability, bool FromMarket)>(race.Runners.Count);
+
+                foreach (var runner in race.Runners)
+                {
+                    if (runner == null)
+                    {
+                        continue;
+                    }
+
+                    var probability = 0d;
+                    var fromMarket = false;
+                    var aiProbability = runner.AiProbability;
+                    var hasAiProbability = aiProbability.HasValue && double.IsFinite(aiProbability.Value) && aiProbability.Value > 0d;
+
+                    if (hasAiProbability && aiProbability!.Value >= AiProbabilityDisplayThreshold)
+                    {
+                        probability = aiProbability.Value;
+                    }
+                    else if (runner.MarketProbability.HasValue && double.IsFinite(runner.MarketProbability.Value) && runner.MarketProbability.Value > 0d)
+                    {
+                        probability = runner.MarketProbability.Value;
+                        fromMarket = true;
+                    }
+                    else if (hasAiProbability)
+                    {
+                        probability = aiProbability!.Value;
+                    }
+                    else if (runner.AiDecimalOdds.HasValue && runner.AiDecimalOdds.Value > 0m)
+                    {
+                        probability = 1.0 / (double)runner.AiDecimalOdds.Value;
+                    }
+
+                    if (probability < 0d || double.IsNaN(probability) || double.IsInfinity(probability))
+                    {
+                        probability = 0d;
+                        fromMarket = false;
+                    }
+
+                    candidates.Add((runner, probability, fromMarket));
+                }
+
+                var total = candidates.Sum(entry => entry.Probability);
+                if (total <= 0d || double.IsNaN(total) || double.IsInfinity(total))
+                {
+                    foreach (var entry in candidates)
+                    {
+                        entry.Runner.DisplayedAiProbability = null;
+                        entry.Runner.DisplayedAiProbabilityMarketDerived = false;
+                    }
+
+                    continue;
+                }
+
+                var scale = 1d / total;
+                foreach (var entry in candidates)
+                {
+                    var scaled = entry.Probability * scale;
+                    if (scaled < 0d || double.IsNaN(scaled) || double.IsInfinity(scaled))
+                    {
+                        entry.Runner.DisplayedAiProbability = null;
+                        entry.Runner.DisplayedAiProbabilityMarketDerived = false;
+                        continue;
+                    }
+
+                    entry.Runner.DisplayedAiProbability = scaled;
+                    entry.Runner.DisplayedAiProbabilityMarketDerived = entry.FromMarket;
+                }
+            }
         }
 
         private static bool TryParseTimeOfDay(string? value, out TimeSpan? time)
