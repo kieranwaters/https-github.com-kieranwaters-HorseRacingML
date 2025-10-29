@@ -365,29 +365,69 @@ namespace HorseRacingML.Controllers
             viewModel.RequestedEpochs = requestedEpochs;
             viewModel.RequestedBatchSize = requestedBatchSize;
             viewModel.RequestedFolds = requestedFolds;
+            static bool HasValidUnits(int units) => MLParameterValidator.EnsureUnits(units, int.MinValue) == units;
+            static bool HasValidDropout(double dropout) => !double.IsNaN(MLParameterValidator.EnsureDropout(dropout, double.NaN));
+            static bool HasValidLayers(int layers) => MLParameterValidator.EnsureLayers(layers, int.MinValue) == layers;
+            static bool HasValidLearningRate(double learningRate) => !double.IsNaN(MLParameterValidator.EnsureLearningRate(learningRate, double.NaN));
+            static bool HasValidPositive(int value) => MLParameterValidator.EnsurePositive(value, int.MinValue) == value;
 
-            bool hasRequestedHyperparameters =
-                requestedUnits.HasValue ||
-                requestedDropout.HasValue ||
-                requestedLayers.HasValue ||
-                requestedLearningRate.HasValue ||
-                requestedEpochs.HasValue ||
-                requestedBatchSize.HasValue ||
-                requestedFolds.HasValue;
-
-            var savedParameter = _repository.GetMostRecentMLParameter();
-            if (savedParameter is null && !hasRequestedHyperparameters)
+            var invalidHyperparameters = new List<string>();
+            if (requestedUnits.HasValue && !HasValidUnits(requestedUnits.Value))
             {
-                viewModel.Message = "No saved AI parameters were found. Please train the AI before running a test.";
+                invalidHyperparameters.Add("Units per layer");
+            }
+
+            if (requestedDropout.HasValue && !HasValidDropout(requestedDropout.Value))
+            {
+                invalidHyperparameters.Add("Dropout");
+            }
+
+            if (requestedLayers.HasValue && !HasValidLayers(requestedLayers.Value))
+            {
+                invalidHyperparameters.Add("Layers");
+            }
+
+            if (requestedLearningRate.HasValue && !HasValidLearningRate(requestedLearningRate.Value))
+            {
+                invalidHyperparameters.Add("Learning rate");
+            }
+
+            if (requestedEpochs.HasValue && !HasValidPositive(requestedEpochs.Value))
+            {
+                invalidHyperparameters.Add("Epochs");
+            }
+
+            if (requestedBatchSize.HasValue && !HasValidPositive(requestedBatchSize.Value))
+            {
+                invalidHyperparameters.Add("Batch size");
+            }
+
+            if (requestedFolds.HasValue && !HasValidPositive(requestedFolds.Value))
+            {
+                invalidHyperparameters.Add("Folds");
+            }
+
+            if (invalidHyperparameters.Count > 0)
+            {
+                var invalidList = string.Join(", ", invalidHyperparameters);
+                ModelState.AddModelError(string.Empty, $"The following hyperparameter values are invalid: {invalidList}. Please correct them and try again.");
                 return View(viewModel);
             }
 
-            if (savedParameter is null)
+
+            bool hasRequestedHyperparameters =
+               requestedUnits.HasValue &&
+               requestedDropout.HasValue &&
+               requestedLayers.HasValue &&
+               requestedLearningRate.HasValue &&
+               requestedEpochs.HasValue &&
+               requestedBatchSize.HasValue &&
+               requestedFolds.HasValue;
+
+            if (!hasRequestedHyperparameters)
             {
-                savedParameter = new MLParameter
-                {
-                    RunDate = DateTime.UtcNow
-                };
+                viewModel.Message = "Please supply all hyperparameter values before running the AI test.";
+                return View(viewModel);
             }
 
             var validationRaceIds = _repository.GetRaceIdsBetweenDates(validationStart, validationEnd);
@@ -409,119 +449,25 @@ namespace HorseRacingML.Controllers
                 viewModel.Message = "The training dataset was empty after preparation.";
                 return View(viewModel);
             }
-
-            var persistedHyperparameters = _trainer.LoadPersistedHyperparameters();
-            static bool HasValidUnits(int units) => MLParameterValidator.EnsureUnits(units, int.MinValue) == units;
-            static bool HasValidDropout(double dropout) => !double.IsNaN(MLParameterValidator.EnsureDropout(dropout, double.NaN));
-            static bool HasValidLayers(int layers) => MLParameterValidator.EnsureLayers(layers, int.MinValue) == layers;
-            static bool HasValidLearningRate(double learningRate) => !double.IsNaN(MLParameterValidator.EnsureLearningRate(learningRate, double.NaN));
-            static bool HasValidPositive(int value) => MLParameterValidator.EnsurePositive(value, int.MinValue) == value;
-
-            int ResolveUnitsFallback()
+            if (!HasValidUnits(requestedUnits.Value) ||
+                !HasValidDropout(requestedDropout.Value) ||
+                !HasValidLayers(requestedLayers.Value) ||
+                !HasValidLearningRate(requestedLearningRate.Value) ||
+                !HasValidPositive(requestedEpochs.Value) ||
+                !HasValidPositive(requestedBatchSize.Value) ||
+                !HasValidPositive(requestedFolds.Value))
             {
-                if (persistedHyperparameters != null && HasValidUnits(persistedHyperparameters.Units))
-                {
-                    return persistedHyperparameters.Units;
-                }
-
-                return 1;
+                viewModel.Message = "One or more hyperparameter values are invalid. Please correct them and try again.";
+                return View(viewModel);
             }
 
-            double ResolveDropoutFallback()
-            {
-                if (persistedHyperparameters != null && HasValidDropout(persistedHyperparameters.Dropout))
-                {
-                    return persistedHyperparameters.Dropout;
-                }
-
-                return 0.1d;
-            }
-
-            int ResolveLayersFallback()
-            {
-                if (persistedHyperparameters != null && HasValidLayers(persistedHyperparameters.Layers))
-                {
-                    return persistedHyperparameters.Layers;
-                }
-
-                return 1;
-            }
-
-            double ResolveLearningRateFallback()
-            {
-                if (persistedHyperparameters != null && HasValidLearningRate(persistedHyperparameters.LearningRate))
-                {
-                    return persistedHyperparameters.LearningRate;
-                }
-
-                return 0.005d;
-            }
-
-            int ResolveEpochsFallback()
-            {
-                if (persistedHyperparameters != null && HasValidPositive(persistedHyperparameters.Epochs))
-                {
-                    return persistedHyperparameters.Epochs;
-                }
-
-                return 1;
-            }
-
-            int ResolveBatchSizeFallback()
-            {
-                if (persistedHyperparameters != null && HasValidPositive(persistedHyperparameters.BatchSize))
-                {
-                    return persistedHyperparameters.BatchSize;
-                }
-
-                return 1;
-            }
-
-            int ResolveFoldsFallback()
-            {
-                if (persistedHyperparameters != null && HasValidPositive(persistedHyperparameters.Folds))
-                {
-                    return persistedHyperparameters.Folds;
-                }
-
-                return 1;
-            }
-
-            var units = requestedUnits.HasValue && HasValidUnits(requestedUnits.Value)
-                ? requestedUnits.Value
-                : HasValidUnits(savedParameter.Units)
-                    ? savedParameter.Units
-                    : ResolveUnitsFallback();
-            var dropout = requestedDropout.HasValue && HasValidDropout(requestedDropout.Value)
-                ? requestedDropout.Value
-                : HasValidDropout(savedParameter.Dropout)
-                    ? savedParameter.Dropout
-                    : ResolveDropoutFallback();
-            var layers = requestedLayers.HasValue && HasValidLayers(requestedLayers.Value)
-                ? requestedLayers.Value
-                : HasValidLayers(savedParameter.Layers)
-                    ? savedParameter.Layers
-                    : ResolveLayersFallback();
-            var learningRate = requestedLearningRate.HasValue && HasValidLearningRate(requestedLearningRate.Value)
-                ? requestedLearningRate.Value
-                : HasValidLearningRate(savedParameter.LearningRate)
-                    ? savedParameter.LearningRate
-                    : ResolveLearningRateFallback();
-            var epochs = requestedEpochs.HasValue && HasValidPositive(requestedEpochs.Value)
-                ? requestedEpochs.Value
-                : HasValidPositive(savedParameter.Epochs)
-                    ? savedParameter.Epochs
-                    : ResolveEpochsFallback();
-            var batchSize = requestedBatchSize.HasValue && HasValidPositive(requestedBatchSize.Value)
-                ? requestedBatchSize.Value
-                : HasValidPositive(savedParameter.BatchSize)
-                    ? savedParameter.BatchSize
-                    : ResolveBatchSizeFallback();
-            var folds = requestedFolds.HasValue && HasValidPositive(requestedFolds.Value)
-                ? requestedFolds.Value
-                : HasValidPositive(savedParameter.Folds)
-                    ? savedParameter.Folds
-                    : ResolveFoldsFallback();
+            var units = requestedUnits.Value;
+            var dropout = requestedDropout.Value;
+            var layers = requestedLayers.Value;
+            var learningRate = requestedLearningRate.Value;
+            var epochs = requestedEpochs.Value;
+            var batchSize = requestedBatchSize.Value;
+            var folds = requestedFolds.Value;
             var parameter = new MLParameter
             {
                 Units = units,
@@ -532,19 +478,10 @@ namespace HorseRacingML.Controllers
                 BatchSize = batchSize,
                 Folds = folds,
                 Fold = null,
-                RunDate = savedParameter.RunDate
+                RunDate = DateTime.UtcNow
             };
 
             var result = await Task.Run(() => _trainer.Train(parameter, 0, 1, dataset, persistWeights: false));
-
-            savedParameter.Units = parameter.Units;
-            savedParameter.Dropout = parameter.Dropout;
-            savedParameter.Layers = parameter.Layers;
-            savedParameter.LearningRate = parameter.LearningRate;
-            savedParameter.Epochs = parameter.Epochs;
-            savedParameter.BatchSize = parameter.BatchSize;
-            savedParameter.Folds = parameter.Folds;
-            savedParameter.Fold = parameter.Fold;
             viewModel.ParameterUsed = new MLParameter
             {
                 RunDate = parameter.RunDate,
