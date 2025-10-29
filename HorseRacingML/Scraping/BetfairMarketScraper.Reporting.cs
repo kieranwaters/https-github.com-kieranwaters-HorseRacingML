@@ -217,7 +217,6 @@ namespace HorseRacingML.Scraping
                     if (byMetadata != null)
                     {
                         upcoming = byMetadata;
-                        Console.WriteLine($"    Located UpcomingRaces row: UpcomingRaceId={byMetadata.UpcomingRaceId}, MarketId={byMetadata.MarketId ?? "<null>"}.");
                     }
                 }
                 catch (Exception ex)
@@ -256,18 +255,6 @@ namespace HorseRacingML.Scraping
 
                 Console.WriteLine("     Constructed synthetic upcoming race metadata for feature synthesis.");
             }
-            else
-            {
-                if (persistedAccepted)
-                {
-                    Console.WriteLine($"        Using persisted upcoming race metadata for market {upcoming.MarketId ?? marketId ?? "<unknown>"}.");
-                }
-                else
-                {
-                    Console.WriteLine($"        Using UpcomingRaces metadata from repository for market {upcoming.MarketId ?? marketId ?? "<unknown>"}.");
-                }
-            }
-
             var cacheKey = new RacePreparationKey(
                 upcoming.RaceDate.Date,
                 upcoming.Title ?? raceTitle,
