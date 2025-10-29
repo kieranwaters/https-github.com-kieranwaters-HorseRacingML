@@ -17,7 +17,7 @@
                 <th>Learning Rate</th>
                 <th>Epochs</th>
                 <th>Batch Size</th>
-                <th>Folds</th>
+                      <th>Folds</th>
                 <th></th>
             </tr>
         </thead>
@@ -42,10 +42,7 @@
     </table>
     <button type="button" class="btn btn-secondary" onclick="addRow()">Add Row</button>
     <button type="submit" class="btn btn-primary">Run</button>
-    <a id="testAiLink"
-       href="@testAiUrl"
-       data-base-url="@testAiUrl"
-       class="btn btn-info ms-2">Test AI</a>
+    <button type="button" class="btn btn-info ms-2" onclick="redirectToTestAI()">Test AI</button>
 </form>
 
 @section Scripts {
@@ -89,45 +86,62 @@
                 });
             });
         }
-        document.getElementById('testAiLink')?.addEventListener('click', function (event) {
-            const link = this;
-            const baseUrl = link.getAttribute('data-base-url');
-            if (!baseUrl) {
-                return;
-            }
 
+        function redirectToTestAI() {
             const firstRow = document.querySelector('#parameterRows tr');
+            const testAiUrl = '@Url.Action("TestAI", "Hyperparameter")';
+
             if (!firstRow) {
+                window.location.href = testAiUrl;
                 return;
             }
-
-            event.preventDefault();
 
             const params = new URLSearchParams();
-            const setters = [
-                { name: 'units', selector: 'input[name$=".Units"]' },
-                { name: 'dropout', selector: 'input[name$=".Dropout"]' },
-                { name: 'layers', selector: 'input[name$=".Layers"]' },
-                { name: 'learningRate', selector: 'input[name$=".LearningRate"]' },
-                { name: 'epochs', selector: 'input[name$=".Epochs"]' },
-                { name: 'batchSize', selector: 'input[name$=".BatchSize"]' },
-                { name: 'folds', selector: 'input[name$=".Folds"]' }
-            ];
 
-            setters.forEach(({ name, selector }) => {
-                const input = firstRow.querySelector(selector);
-                if (input && input.value.trim() !== '') {
-                    params.set(name, input.value.trim());
+            const addIntParam = (field, key) => {
+                const input = firstRow.querySelector(`input[name$=".${field}"]`);
+                if (!input) {
+                    return;
                 }
-            });
+                const rawValue = input.value.trim();
+                if (!rawValue) {
+                    return;
+                }
+                const parsed = Number.parseInt(rawValue, 10);
+                if (Number.isNaN(parsed)) {
+                    return;
+                }
+                params.set(key, parsed.toString());
+            };
 
-            const targetUrl = new URL(baseUrl, window.location.origin);
+            const addFloatParam = (field, key) => {
+                const input = firstRow.querySelector(`input[name$=".${field}"]`);
+                if (!input) {
+                    return;
+                }
+                const rawValue = input.value.trim();
+                if (!rawValue) {
+                    return;
+                }
+                const normalized = rawValue.replace(',', '.');
+                const parsed = Number.parseFloat(normalized);
+                if (!Number.isFinite(parsed)) {
+                    return;
+                }
+                params.set(key, parsed.toString());
+            };
+
+            addIntParam('Units', 'units');
+            addFloatParam('Dropout', 'dropout');
+            addIntParam('Layers', 'layers');
+            addFloatParam('LearningRate', 'learningRate');
+            addIntParam('Epochs', 'epochs');
+            addIntParam('BatchSize', 'batchSize');
+            addIntParam('Folds', 'folds');
+
             const query = params.toString();
-            if (query) {
-                targetUrl.search = query;
-            }
-
-            window.location.href = targetUrl.toString();
-        });
+            const target = query ? `${testAiUrl}?${query}` : testAiUrl;
+            window.location.href = target;
+        }
     </script>
-}
+    }
