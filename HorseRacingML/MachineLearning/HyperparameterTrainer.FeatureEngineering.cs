@@ -654,6 +654,13 @@ namespace HorseRacingML.ML
                                     row[$"AvgRatingLast{window}"] = recent.Sum(h => h.Rating) / count;
 
                                 }
+                                else
+                                {
+                                    recent = new List<HistoryEntry>();
+                                    row[$"WinRateLast{window}"] = _trainer.SmoothedWinRate(0, 0);
+                                    row[$"AvgNormPosLast{window}"] = 0f;
+                                    row[$"AvgRatingLast{window}"] = rating;
+                                }
                                 int recentTop3 = recent.Count(h => h.Finish.HasValue && h.Finish.Value > 0 && h.Finish.Value <= 3);
                                 int recentTop5 = recent.Count(h => h.Finish.HasValue && h.Finish.Value > 0 && h.Finish.Value <= 5);
                                 row[$"Top3RateLast{window}"] = _trainer.SmoothedWinRate(recentTop3, count);
@@ -665,15 +672,6 @@ namespace HorseRacingML.ML
                                 row[$"NormFinishStdDevLast{window}"] = recentNorms.Count >= 2
                                     ? ComputeStandardDeviation(recentNorms)
                                     : 0f;
-
-                                else
-                                {
-                                    recent = new();
-                                    row[$"WinRateLast{window}"] = _trainer.SmoothedWinRate(0, 0);
-                                    row[$"AvgNormPosLast{window}"] = 0f;
-                                    row[$"AvgRatingLast{window}"] = rating;
-
-                                }
                             }
                             if (!_goingStats.TryGetValue(horseId, out var gDict))
                             {
