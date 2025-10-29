@@ -6,6 +6,7 @@ using HorseRacingML.Data;
 using HorseRacingML.Models;
 using HorseRacingML.ML;
 using HorseRacingML.Services;
+using System.Globalization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 
@@ -204,27 +205,68 @@ namespace HorseRacingML.Controllers
 
         [HttpGet]
         public IActionResult TestAI(
-            int? units,
-            double? dropout,
-            int? layers,
-            double? learningRate,
-            int? epochs,
-            int? batchSize,
-            int? folds)
+           string? units,
+           string? dropout,
+           string? layers,
+           string? learningRate,
+           string? epochs,
+           string? batchSize,
+           string? folds)
         {
+            static int? ParseNullableInt(string? value)
+            {
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    return null;
+                }
+
+                if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+                {
+                    return parsed;
+                }
+
+                if (int.TryParse(value, NumberStyles.Integer, CultureInfo.CurrentCulture, out parsed))
+                {
+                    return parsed;
+                }
+
+                return null;
+            }
+
+            static double? ParseNullableDouble(string? value)
+            {
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    return null;
+                }
+
+                const NumberStyles style = NumberStyles.Float | NumberStyles.AllowThousands;
+                if (double.TryParse(value, style, CultureInfo.InvariantCulture, out var parsed))
+                {
+                    return parsed;
+                }
+
+                if (double.TryParse(value, style, CultureInfo.CurrentCulture, out parsed))
+                {
+                    return parsed;
+                }
+
+                return null;
+            }
+
             return View(new AITestResultViewModel
             {
                 ValidationStart = DateTime.Today.AddMonths(-1),
                 ValidationEnd = DateTime.Today,
                 SelectedValidationMonths = 1,
                 StartingBankroll = 100m,
-                RequestedUnits = units,
-                RequestedDropout = dropout,
-                RequestedLayers = layers,
-                RequestedLearningRate = learningRate,
-                RequestedEpochs = epochs,
-                RequestedBatchSize = batchSize,
-                RequestedFolds = folds
+                RequestedUnits = ParseNullableInt(units),
+                RequestedDropout = ParseNullableDouble(dropout),
+                RequestedLayers = ParseNullableInt(layers),
+                RequestedLearningRate = ParseNullableDouble(learningRate),
+                RequestedEpochs = ParseNullableInt(epochs),
+                RequestedBatchSize = ParseNullableInt(batchSize),
+                RequestedFolds = ParseNullableInt(folds)
             });
         }
 
@@ -232,6 +274,67 @@ namespace HorseRacingML.Controllers
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> TestAI(AITestResultViewModel request)
         {
+            int? ReadRequestedInt(int? current, string key)
+            {
+                if (current.HasValue)
+                {
+                    return current;
+                }
+
+                var raw = Request.Form[key];
+                if (string.IsNullOrWhiteSpace(raw))
+                {
+                    return null;
+                }
+
+                if (int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedInt))
+                {
+                    return parsedInt;
+                }
+
+                if (int.TryParse(raw, NumberStyles.Integer, CultureInfo.CurrentCulture, out parsedInt))
+                {
+                    return parsedInt;
+                }
+
+                return null;
+            }
+
+            double? ReadRequestedDouble(double? current, string key)
+            {
+                if (current.HasValue)
+                {
+                    return current;
+                }
+
+                var raw = Request.Form[key];
+                if (string.IsNullOrWhiteSpace(raw))
+                {
+                    return null;
+                }
+
+                const NumberStyles style = NumberStyles.Float | NumberStyles.AllowThousands;
+                if (double.TryParse(raw, style, CultureInfo.InvariantCulture, out var parsedDouble))
+                {
+                    return parsedDouble;
+                }
+
+                if (double.TryParse(raw, style, CultureInfo.CurrentCulture, out parsedDouble))
+                {
+                    return parsedDouble;
+                }
+
+                return null;
+            }
+
+            var requestedUnits = ReadRequestedInt(request.RequestedUnits, nameof(request.RequestedUnits));
+            var requestedDropout = ReadRequestedDouble(request.RequestedDropout, nameof(request.RequestedDropout));
+            var requestedLayers = ReadRequestedInt(request.RequestedLayers, nameof(request.RequestedLayers));
+            var requestedLearningRate = ReadRequestedDouble(request.RequestedLearningRate, nameof(request.RequestedLearningRate));
+            var requestedEpochs = ReadRequestedInt(request.RequestedEpochs, nameof(request.RequestedEpochs));
+            var requestedBatchSize = ReadRequestedInt(request.RequestedBatchSize, nameof(request.RequestedBatchSize));
+            var requestedFolds = ReadRequestedInt(request.RequestedFolds, nameof(request.RequestedFolds));
+
             int months = request.SelectedValidationMonths;
             if (months <= 0)
             {
@@ -255,22 +358,22 @@ namespace HorseRacingML.Controllers
                 StartingBankroll = startingBankroll
             };
 
-            viewModel.RequestedUnits = request.RequestedUnits;
-            viewModel.RequestedDropout = request.RequestedDropout;
-            viewModel.RequestedLayers = request.RequestedLayers;
-            viewModel.RequestedLearningRate = request.RequestedLearningRate;
-            viewModel.RequestedEpochs = request.RequestedEpochs;
-            viewModel.RequestedBatchSize = request.RequestedBatchSize;
-            viewModel.RequestedFolds = request.RequestedFolds;
+            viewModel.RequestedUnits = requestedUnits;
+            viewModel.RequestedDropout = requestedDropout;
+            viewModel.RequestedLayers = requestedLayers;
+            viewModel.RequestedLearningRate = requestedLearningRate;
+            viewModel.RequestedEpochs = requestedEpochs;
+            viewModel.RequestedBatchSize = requestedBatchSize;
+            viewModel.RequestedFolds = requestedFolds;
 
             bool hasRequestedHyperparameters =
-                request.RequestedUnits.HasValue ||
-                request.RequestedDropout.HasValue ||
-                request.RequestedLayers.HasValue ||
-                request.RequestedLearningRate.HasValue ||
-                request.RequestedEpochs.HasValue ||
-                request.RequestedBatchSize.HasValue ||
-                request.RequestedFolds.HasValue;
+                requestedUnits.HasValue ||
+                requestedDropout.HasValue ||
+                requestedLayers.HasValue ||
+                requestedLearningRate.HasValue ||
+                requestedEpochs.HasValue ||
+                requestedBatchSize.HasValue ||
+                requestedFolds.HasValue;
 
             var savedParameter = _repository.GetMostRecentMLParameter();
             if (savedParameter is null && !hasRequestedHyperparameters)
@@ -384,38 +487,38 @@ namespace HorseRacingML.Controllers
                 return 1;
             }
 
-            var units = request.RequestedUnits.HasValue && HasValidUnits(request.RequestedUnits.Value)
-                ? request.RequestedUnits.Value
+            var units = requestedUnits.HasValue && HasValidUnits(requestedUnits.Value)
+                ? requestedUnits.Value
                 : HasValidUnits(savedParameter.Units)
                     ? savedParameter.Units
                     : ResolveUnitsFallback();
-            var dropout = request.RequestedDropout.HasValue && HasValidDropout(request.RequestedDropout.Value)
-                ? request.RequestedDropout.Value
+            var dropout = requestedDropout.HasValue && HasValidDropout(requestedDropout.Value)
+                ? requestedDropout.Value
                 : HasValidDropout(savedParameter.Dropout)
                     ? savedParameter.Dropout
                     : ResolveDropoutFallback();
-            var layers = request.RequestedLayers.HasValue && HasValidLayers(request.RequestedLayers.Value)
-                ? request.RequestedLayers.Value
+            var layers = requestedLayers.HasValue && HasValidLayers(requestedLayers.Value)
+                ? requestedLayers.Value
                 : HasValidLayers(savedParameter.Layers)
                     ? savedParameter.Layers
                     : ResolveLayersFallback();
-            var learningRate = request.RequestedLearningRate.HasValue && HasValidLearningRate(request.RequestedLearningRate.Value)
-                ? request.RequestedLearningRate.Value
+            var learningRate = requestedLearningRate.HasValue && HasValidLearningRate(requestedLearningRate.Value)
+                ? requestedLearningRate.Value
                 : HasValidLearningRate(savedParameter.LearningRate)
                     ? savedParameter.LearningRate
                     : ResolveLearningRateFallback();
-            var epochs = request.RequestedEpochs.HasValue && HasValidPositive(request.RequestedEpochs.Value)
-                ? request.RequestedEpochs.Value
+            var epochs = requestedEpochs.HasValue && HasValidPositive(requestedEpochs.Value)
+                ? requestedEpochs.Value
                 : HasValidPositive(savedParameter.Epochs)
                     ? savedParameter.Epochs
                     : ResolveEpochsFallback();
-            var batchSize = request.RequestedBatchSize.HasValue && HasValidPositive(request.RequestedBatchSize.Value)
-                ? request.RequestedBatchSize.Value
+            var batchSize = requestedBatchSize.HasValue && HasValidPositive(requestedBatchSize.Value)
+                ? requestedBatchSize.Value
                 : HasValidPositive(savedParameter.BatchSize)
                     ? savedParameter.BatchSize
                     : ResolveBatchSizeFallback();
-            var folds = request.RequestedFolds.HasValue && HasValidPositive(request.RequestedFolds.Value)
-                ? request.RequestedFolds.Value
+            var folds = requestedFolds.HasValue && HasValidPositive(requestedFolds.Value)
+                ? requestedFolds.Value
                 : HasValidPositive(savedParameter.Folds)
                     ? savedParameter.Folds
                     : ResolveFoldsFallback();
@@ -442,7 +545,18 @@ namespace HorseRacingML.Controllers
             savedParameter.BatchSize = parameter.BatchSize;
             savedParameter.Folds = parameter.Folds;
             savedParameter.Fold = parameter.Fold;
-            viewModel.ParameterUsed = savedParameter;
+            viewModel.ParameterUsed = new MLParameter
+            {
+                RunDate = parameter.RunDate,
+                Units = parameter.Units,
+                Dropout = parameter.Dropout,
+                Layers = parameter.Layers,
+                LearningRate = parameter.LearningRate,
+                Epochs = parameter.Epochs,
+                BatchSize = parameter.BatchSize,
+                Folds = parameter.Folds,
+                Fold = parameter.Fold
+            };
             viewModel.TrainAccuracy = result.TrainAccuracy;
             viewModel.TrainLoss = result.TrainLoss;
             viewModel.TrainBrier = result.TrainBrier;
@@ -458,7 +572,6 @@ namespace HorseRacingML.Controllers
 
             return View(viewModel);
         }
-
         private ValidationSimulationResult RunValidationSimulation(
             HyperparameterTrainer.TrainingResult result,
             IDictionary<int, RaceSummary> raceSummaries,
