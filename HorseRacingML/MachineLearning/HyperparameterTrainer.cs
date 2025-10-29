@@ -631,6 +631,38 @@ namespace HorseRacingML.ML
 
             return BuildTrainingDataset(trainingPrepared, validationPrepared);
         }
+        public HyperparameterSummary? LoadPersistedHyperparameters()
+        {
+            var weightDirectory = Path.Combine(AppContext.BaseDirectory, "weights");
+            var weightPath = Path.Combine(weightDirectory, "aiweights.json");
+            if (!File.Exists(weightPath))
+            {
+                weightPath = Path.Combine(AppContext.BaseDirectory, "aiweights.json");
+                if (!File.Exists(weightPath))
+                {
+                    return null;
+                }
+            }
+
+            try
+            {
+                var json = File.ReadAllText(weightPath);
+                var model = JsonSerializer.Deserialize<TrainedModel>(json);
+                return model?.Hyperparameters;
+            }
+            catch (IOException)
+            {
+                return null;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return null;
+            }
+            catch (JsonException)
+            {
+                return null;
+            }
+        }
         private static void HyperparameterStarted(MLParameter param, int trainExampleCount, int validationExampleCount, int featureCount)
         {
             Console.WriteLine(

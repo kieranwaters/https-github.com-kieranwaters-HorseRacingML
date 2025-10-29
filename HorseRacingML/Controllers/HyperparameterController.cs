@@ -269,14 +269,37 @@ namespace HorseRacingML.Controllers
                 return View(viewModel);
             }
 
+            var units = MLParameterValidator.EnsureUnits(savedParameter.Units, savedParameter.Units > 0 ? savedParameter.Units : 1);
+            var dropout = MLParameterValidator.EnsureDropout(savedParameter.Dropout, savedParameter.Dropout >= 0d && savedParameter.Dropout < 1d ? savedParameter.Dropout : 0.1d);
+            var layers = MLParameterValidator.EnsureLayers(savedParameter.Layers, savedParameter.Layers > 0 ? savedParameter.Layers : 1);
+            var learningRate = MLParameterValidator.EnsureLearningRate(savedParameter.LearningRate, savedParameter.LearningRate > 0d ? savedParameter.LearningRate : 0.005d);
+            var epochs = MLParameterValidator.EnsurePositive(savedParameter.Epochs, savedParameter.Epochs > 0 ? savedParameter.Epochs : 1);
+            var batchSize = MLParameterValidator.EnsurePositive(savedParameter.BatchSize, savedParameter.BatchSize > 0 ? savedParameter.BatchSize : 1);
+            var folds = MLParameterValidator.EnsurePositive(savedParameter.Folds, savedParameter.Folds > 0 ? savedParameter.Folds : 1);
+
+            var persistedHyperparameters = _trainer.LoadPersistedHyperparameters();
+            if (persistedHyperparameters != null)
+            {
+                units = MLParameterValidator.EnsureUnits(persistedHyperparameters.Units, units);
+                dropout = MLParameterValidator.EnsureDropout(persistedHyperparameters.Dropout, dropout);
+                layers = MLParameterValidator.EnsureLayers(persistedHyperparameters.Layers, layers);
+                learningRate = MLParameterValidator.EnsureLearningRate(persistedHyperparameters.LearningRate, learningRate);
+                epochs = MLParameterValidator.EnsurePositive(persistedHyperparameters.Epochs, epochs);
+                batchSize = MLParameterValidator.EnsurePositive(persistedHyperparameters.BatchSize, batchSize);
+                folds = MLParameterValidator.EnsurePositive(persistedHyperparameters.Folds, folds);
+            }
+
             var parameter = new MLParameter
             {
-                Units = MLParameterValidator.EnsureUnits(savedParameter.Units, Math.Clamp(savedParameter.Units, 1, 4096)),
-                Dropout = MLParameterValidator.EnsureDropout(savedParameter.Dropout, Math.Clamp(savedParameter.Dropout, 0d, 0.99d)),
-                Layers = MLParameterValidator.EnsureLayers(savedParameter.Layers, Math.Clamp(savedParameter.Layers, 1, 12)),
-                LearningRate = MLParameterValidator.EnsureLearningRate(savedParameter.LearningRate, savedParameter.LearningRate > 0d ? savedParameter.LearningRate : 0.005d),
-                Epochs = MLParameterValidator.EnsurePositive(savedParameter.Epochs, savedParameter.Epochs > 0 ? savedParameter.Epochs : 1),
-                BatchSize = MLParameterValidator.EnsurePositive(savedParameter.BatchSize, savedParameter.BatchSize > 0 ? savedParameter.BatchSize : 1),
+                Units = units,
+                Dropout = dropout,
+                Layers = layers,
+                LearningRate = learningRate,
+                Epochs = epochs,
+                BatchSize = batchSize,
+                Folds = folds,
+                Fold = null,
+                RunDate = savedParameter.RunDate
             };
 
             var result = await Task.Run(() => _trainer.Train(parameter, 0, 1, dataset, persistWeights: false));
@@ -287,6 +310,8 @@ namespace HorseRacingML.Controllers
             savedParameter.LearningRate = parameter.LearningRate;
             savedParameter.Epochs = parameter.Epochs;
             savedParameter.BatchSize = parameter.BatchSize;
+            savedParameter.Folds = parameter.Folds;
+            savedParameter.Fold = parameter.Fold;
             viewModel.ParameterUsed = savedParameter;
             viewModel.TrainAccuracy = result.TrainAccuracy;
             viewModel.TrainLoss = result.TrainLoss;
