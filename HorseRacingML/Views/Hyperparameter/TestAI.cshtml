@@ -13,6 +13,34 @@
 <form asp-action="TestAI" method="post">
     @Html.AntiForgeryToken()
     <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+    @if (Model.RequestedUnits.HasValue)
+    {
+        <input type="hidden" name="RequestedUnits" value="@Model.RequestedUnits.Value" />
+    }
+    @if (Model.RequestedDropout.HasValue)
+    {
+        <input type="hidden" name="RequestedDropout" value="@FormattableString.Invariant($"{Model.RequestedDropout.Value}")" />
+    }
+    @if (Model.RequestedLayers.HasValue)
+    {
+        <input type="hidden" name="RequestedLayers" value="@Model.RequestedLayers.Value" />
+    }
+    @if (Model.RequestedLearningRate.HasValue)
+    {
+        <input type="hidden" name="RequestedLearningRate" value="@FormattableString.Invariant($"{Model.RequestedLearningRate.Value}")" />
+    }
+    @if (Model.RequestedEpochs.HasValue)
+    {
+        <input type="hidden" name="RequestedEpochs" value="@Model.RequestedEpochs.Value" />
+    }
+    @if (Model.RequestedBatchSize.HasValue)
+    {
+        <input type="hidden" name="RequestedBatchSize" value="@Model.RequestedBatchSize.Value" />
+    }
+    @if (Model.RequestedFolds.HasValue)
+    {
+        <input type="hidden" name="RequestedFolds" value="@Model.RequestedFolds.Value" />
+    }
     <div class="row g-3 mb-3">
         <div class="col-md-4">
             <label asp-for="SelectedValidationMonths" class="form-label">Validation window</label>

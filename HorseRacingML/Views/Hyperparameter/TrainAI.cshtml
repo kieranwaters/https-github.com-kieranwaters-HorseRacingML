@@ -1,6 +1,10 @@
-﻿@model HorseRacingML.Models.MLParameterBatch
+﻿﻿@using System.Linq
+@model HorseRacingML.Models.MLParameterBatch
 @{
     ViewData["Title"] = "Train AI";
+    var firstParameter = Model?.Parameters?.FirstOrDefault();
+    string? dropoutRoute = firstParameter is null ? null : FormattableString.Invariant($"{firstParameter.Dropout}");
+    string? learningRateRoute = firstParameter is null ? null : FormattableString.Invariant($"{firstParameter.LearningRate}");
 }
 
 <h1>Train AI</h1>
@@ -40,7 +44,15 @@
     </table>
     <button type="button" class="btn btn-secondary" onclick="addRow()">Add Row</button>
     <button type="submit" class="btn btn-primary">Run</button>
-    <a asp-action="TestAI" class="btn btn-info ms-2">Test AI</a>
+    <a asp-action="TestAI"
+       asp-route-units="@firstParameter?.Units"
+       asp-route-dropout="@dropoutRoute"
+       asp-route-layers="@firstParameter?.Layers"
+       asp-route-learningRate="@learningRateRoute"
+       asp-route-epochs="@firstParameter?.Epochs"
+       asp-route-batchSize="@firstParameter?.BatchSize"
+       asp-route-folds="@firstParameter?.Folds"
+       class="btn btn-info ms-2">Test AI</a>
 </form>
 
 @section Scripts {

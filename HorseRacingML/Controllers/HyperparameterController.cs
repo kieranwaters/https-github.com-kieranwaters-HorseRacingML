@@ -203,14 +203,28 @@ namespace HorseRacingML.Controllers
         }
 
         [HttpGet]
-        public IActionResult TestAI()
+        public IActionResult TestAI(
+            int? units,
+            double? dropout,
+            int? layers,
+            double? learningRate,
+            int? epochs,
+            int? batchSize,
+            int? folds)
         {
             return View(new AITestResultViewModel
             {
                 ValidationStart = DateTime.Today.AddMonths(-1),
                 ValidationEnd = DateTime.Today,
                 SelectedValidationMonths = 1,
-                StartingBankroll = 100m
+                StartingBankroll = 100m,
+                RequestedUnits = units,
+                RequestedDropout = dropout,
+                RequestedLayers = layers,
+                RequestedLearningRate = learningRate,
+                RequestedEpochs = epochs,
+                RequestedBatchSize = batchSize,
+                RequestedFolds = folds
             });
         }
 
@@ -241,11 +255,36 @@ namespace HorseRacingML.Controllers
                 StartingBankroll = startingBankroll
             };
 
+            viewModel.RequestedUnits = request.RequestedUnits;
+            viewModel.RequestedDropout = request.RequestedDropout;
+            viewModel.RequestedLayers = request.RequestedLayers;
+            viewModel.RequestedLearningRate = request.RequestedLearningRate;
+            viewModel.RequestedEpochs = request.RequestedEpochs;
+            viewModel.RequestedBatchSize = request.RequestedBatchSize;
+            viewModel.RequestedFolds = request.RequestedFolds;
+
+            bool hasRequestedHyperparameters =
+                request.RequestedUnits.HasValue ||
+                request.RequestedDropout.HasValue ||
+                request.RequestedLayers.HasValue ||
+                request.RequestedLearningRate.HasValue ||
+                request.RequestedEpochs.HasValue ||
+                request.RequestedBatchSize.HasValue ||
+                request.RequestedFolds.HasValue;
+
             var savedParameter = _repository.GetMostRecentMLParameter();
-            if (savedParameter is null)
+            if (savedParameter is null && !hasRequestedHyperparameters)
             {
                 viewModel.Message = "No saved AI parameters were found. Please train the AI before running a test.";
                 return View(viewModel);
+            }
+
+            if (savedParameter is null)
+            {
+                savedParameter = new MLParameter
+                {
+                    RunDate = DateTime.UtcNow
+                };
             }
 
             var validationRaceIds = _repository.GetRaceIdsBetweenDates(validationStart, validationEnd);
@@ -261,7 +300,6 @@ namespace HorseRacingML.Controllers
                 viewModel.Message = "No training data is available outside the validation window.";
                 return View(viewModel);
             }
-
             var dataset = _trainer.LoadTrainingDataset(new HashSet<int>(trainingRaceIds), new HashSet<int>(validationRaceIds), includeIdentifiers: true);
             if (dataset.TrainingRaces.Count == 0)
             {
@@ -346,27 +384,41 @@ namespace HorseRacingML.Controllers
                 return 1;
             }
 
-            var units = HasValidUnits(savedParameter.Units)
-                ? savedParameter.Units
-                : ResolveUnitsFallback();
-            var dropout = HasValidDropout(savedParameter.Dropout)
-                ? savedParameter.Dropout
-                : ResolveDropoutFallback();
-            var layers = HasValidLayers(savedParameter.Layers)
-                ? savedParameter.Layers
-                : ResolveLayersFallback();
-            var learningRate = HasValidLearningRate(savedParameter.LearningRate)
-                ? savedParameter.LearningRate
-                : ResolveLearningRateFallback();
-            var epochs = HasValidPositive(savedParameter.Epochs)
-                ? savedParameter.Epochs
-                : ResolveEpochsFallback();
-            var batchSize = HasValidPositive(savedParameter.BatchSize)
-                ? savedParameter.BatchSize
-                : ResolveBatchSizeFallback();
-            var folds = HasValidPositive(savedParameter.Folds)
-                ? savedParameter.Folds
-                : ResolveFoldsFallback();
+            var units = request.RequestedUnits.HasValue && HasValidUnits(request.RequestedUnits.Value)
+                ? request.RequestedUnits.Value
+                : HasValidUnits(savedParameter.Units)
+                    ? savedParameter.Units
+                    : ResolveUnitsFallback();
+            var dropout = request.RequestedDropout.HasValue && HasValidDropout(request.RequestedDropout.Value)
+                ? request.RequestedDropout.Value
+                : HasValidDropout(savedParameter.Dropout)
+                    ? savedParameter.Dropout
+                    : ResolveDropoutFallback();
+            var layers = request.RequestedLayers.HasValue && HasValidLayers(request.RequestedLayers.Value)
+                ? request.RequestedLayers.Value
+                : HasValidLayers(savedParameter.Layers)
+                    ? savedParameter.Layers
+                    : ResolveLayersFallback();
+            var learningRate = request.RequestedLearningRate.HasValue && HasValidLearningRate(request.RequestedLearningRate.Value)
+                ? request.RequestedLearningRate.Value
+                : HasValidLearningRate(savedParameter.LearningRate)
+                    ? savedParameter.LearningRate
+                    : ResolveLearningRateFallback();
+            var epochs = request.RequestedEpochs.HasValue && HasValidPositive(request.RequestedEpochs.Value)
+                ? request.RequestedEpochs.Value
+                : HasValidPositive(savedParameter.Epochs)
+                    ? savedParameter.Epochs
+                    : ResolveEpochsFallback();
+            var batchSize = request.RequestedBatchSize.HasValue && HasValidPositive(request.RequestedBatchSize.Value)
+                ? request.RequestedBatchSize.Value
+                : HasValidPositive(savedParameter.BatchSize)
+                    ? savedParameter.BatchSize
+                    : ResolveBatchSizeFallback();
+            var folds = request.RequestedFolds.HasValue && HasValidPositive(request.RequestedFolds.Value)
+                ? request.RequestedFolds.Value
+                : HasValidPositive(savedParameter.Folds)
+                    ? savedParameter.Folds
+                    : ResolveFoldsFallback();
             var parameter = new MLParameter
             {
                 Units = units,
