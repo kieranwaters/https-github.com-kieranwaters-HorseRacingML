@@ -371,8 +371,11 @@ namespace HorseRacingML.Controllers
             static bool HasValidLearningRate(double learningRate) => !double.IsNaN(MLParameterValidator.EnsureLearningRate(learningRate, double.NaN));
             static bool HasValidPositive(int value) => MLParameterValidator.EnsurePositive(value, int.MinValue) == value;
 
+            bool unitsValid = !requestedUnits.HasValue || HasValidUnits(requestedUnits.Value);
+            bool layersValid = !requestedLayers.HasValue || HasValidLayers(requestedLayers.Value);
+
             var invalidHyperparameters = new List<string>();
-            if (requestedUnits.HasValue && !HasValidUnits(requestedUnits.Value))
+            if (!unitsValid)
             {
                 invalidHyperparameters.Add("Units per layer");
             }
@@ -382,9 +385,15 @@ namespace HorseRacingML.Controllers
                 invalidHyperparameters.Add("Dropout");
             }
 
-            if (requestedLayers.HasValue && !HasValidLayers(requestedLayers.Value))
+            if (!layersValid)
             {
                 invalidHyperparameters.Add("Layers");
+            }
+
+            if (layersValid && requestedLayers.GetValueOrDefault() > 0 && (!requestedUnits.HasValue || requestedUnits.Value <= 0))
+            {
+                invalidHyperparameters.Add("Units per layer (must be positive when Layers > 0)");
+                unitsValid = false;
             }
 
             if (requestedLearningRate.HasValue && !HasValidLearningRate(requestedLearningRate.Value))
@@ -460,7 +469,11 @@ namespace HorseRacingML.Controllers
                 viewModel.Message = "One or more hyperparameter values are invalid. Please correct them and try again.";
                 return View(viewModel);
             }
-
+            if (requestedLayers.Value > 0 && requestedUnits.Value <= 0)
+            {
+                viewModel.Message = "Units per layer must be positive when more than zero layers are requested.";
+                return View(viewModel);
+            }
             var units = requestedUnits.Value;
             var dropout = requestedDropout.Value;
             var layers = requestedLayers.Value;

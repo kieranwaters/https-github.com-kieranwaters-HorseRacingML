@@ -12,7 +12,7 @@ namespace HorseRacingML.Models
             if (units.HasValue)
             {
                 var value = units.Value;
-                if (value > 0 && value <= MaxUnits)
+                if (value >= 0 && value <= MaxUnits)
                 {
                     return value;
                 }
@@ -26,7 +26,7 @@ namespace HorseRacingML.Models
             if (layers.HasValue)
             {
                 var value = layers.Value;
-                if (value > 0 && value <= MaxLayers)
+                if (value >= 0 && value <= MaxLayers)
                 {
                     return value;
                 }
