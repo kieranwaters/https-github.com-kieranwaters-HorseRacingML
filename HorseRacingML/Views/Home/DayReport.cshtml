@@ -492,6 +492,9 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                 <th scope="col">Horse</th>
                                 <th scope="col">Jockey</th>
                                 <th scope="col" class="text-end">Hist. Races</th>
+                                <th scope="col" class="text-end">Top 3 %</th>
+                                <th scope="col" class="text-end">Top 5 %</th>
+                                <th scope="col" class="text-end">Finish Vol.</th>
                                 <th scope="col" class="text-end">Market Odds</th>
                                 <th scope="col" class="text-end">Lay Odds</th>
                                 <th scope="col" class="text-end">AI Win %</th>
@@ -525,7 +528,32 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                     .ToList();
                                     historicalRacesJson = JsonSerializer.Serialize(orderedHistorical, historicalRaceSerializerOptions);
                                 }
+            var top3RateText = "-";
+            string? top3RateTitle = null;
+            if (runner.Top3FinishRate.HasValue)
+            {
+                var rate = runner.Top3FinishRate.Value * 100d;
+                top3RateText = rate.ToString("0.##", CultureInfo.CurrentCulture) + "%";
+                top3RateTitle = $"{rate.ToString("0.###", CultureInfo.CurrentCulture)}% of historical runs finished in the top 3";
+            }
 
+            var top5RateText = "-";
+            string? top5RateTitle = null;
+            if (runner.Top5FinishRate.HasValue)
+            {
+                var rate = runner.Top5FinishRate.Value * 100d;
+                top5RateText = rate.ToString("0.##", CultureInfo.CurrentCulture) + "%";
+                top5RateTitle = $"{rate.ToString("0.###", CultureInfo.CurrentCulture)}% of historical runs finished in the top 5";
+            }
+
+            var volatilityText = "-";
+            string? volatilityTitle = null;
+            if (runner.FinishPositionVolatility.HasValue)
+            {
+                var volatilityPercent = runner.FinishPositionVolatility.Value * 100d;
+                volatilityText = volatilityPercent.ToString("0.##", CultureInfo.CurrentCulture) + "%";
+                volatilityTitle = "Standard deviation of normalized finishing positions across historical runs";
+            }
 
                                 var marketOdds = runner.MarketDecimalOdds.HasValue
                                     ? runner.MarketDecimalOdds.Value.ToString("0.00", CultureInfo.CurrentCulture)
@@ -973,6 +1001,36 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                             @historyCountText
                                         }
                                     </td>
+                                            <td class="text-end">
+                                                @if (!string.IsNullOrEmpty(top3RateTitle))
+                                                {
+                                                    <span title="@top3RateTitle">@top3RateText</span>
+                                                }
+                                                else
+                                                {
+                                                    @top3RateText
+                                                }
+                                            </td>
+                                            <td class="text-end">
+                                                @if (!string.IsNullOrEmpty(top5RateTitle))
+                                                {
+                                                    <span title="@top5RateTitle">@top5RateText</span>
+                                                }
+                                                else
+                                                {
+                                                    @top5RateText
+                                                }
+                                            </td>
+                                            <td class="text-end">
+                                                @if (!string.IsNullOrEmpty(volatilityTitle))
+                                                {
+                                                    <span title="@volatilityTitle">@volatilityText</span>
+                                                }
+                                                else
+                                                {
+                                                    @volatilityText
+                                                }
+                                            </td>
                                     <td class="text-end">@marketOdds</td>
                                     <td class="text-end">@layOdds</td>
                                     <td class="text-end">

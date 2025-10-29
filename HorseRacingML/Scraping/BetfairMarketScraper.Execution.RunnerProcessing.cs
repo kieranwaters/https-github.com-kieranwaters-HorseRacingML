@@ -15,6 +15,7 @@ namespace HorseRacingML.Scraping
     public partial class BetfairMarketScraper
     {
         private const string FeatureFallbackPrefix = "\t[FeatureFallback]";
+        private const int HistoricalRaceSummaryLimit = 20;
 
         private static readonly string[] RunnerClothSelectors =
         {
@@ -775,7 +776,9 @@ namespace HorseRacingML.Scraping
                     var historicalRaces = ResolveRunnerHistory(flow);
                     if (historicalRaces.Count > 0)
                     {
-                        runner.HistoricalRaces = historicalRaces.ToList();
+                        var historicalList = historicalRaces.ToList();
+                        runner.HistoricalRaces = historicalList;
+                        PopulateHistoricalPerformanceMetrics(runner, historicalList);
                     }
                 }
             }
@@ -810,7 +813,7 @@ namespace HorseRacingML.Scraping
                 IReadOnlyList<HorseHistoricalRaceSummary> resolved;
                 try
                 {
-                    resolved = _repo.GetRecentHorseResults(flow.HorseName, horseId, maxCount: 5);
+                    resolved = _repo.GetRecentHorseResults(flow.HorseName, horseId, maxCount: HistoricalRaceSummaryLimit);
                 }
                 catch (Exception ex)
                 {
@@ -826,6 +829,111 @@ namespace HorseRacingML.Scraping
             }
 
             return cached;
+        }
+        private static void PopulateHistoricalPerformanceMetrics(
+            RunnerDayReport runner,
+            IReadOnlyList<HorseHistoricalRaceSummary> historicalRaces)
+        {
+            if (runner == null)
+            {
+                throw new ArgumentNullException(nameof(runner));
+            }
+
+            if (historicalRaces == null || historicalRaces.Count == 0)
+            {
+                runner.Top3FinishRate = null;
+                runner.Top5FinishRate = null;
+                runner.FinishPositionVolatility = null;
+                return;
+            }
+
+            var numericResults = historicalRaces
+                .Where(r => r?.FinishPosition.HasValue == true && r.FinishPosition!.Value > 0)
+                .ToList();
+
+            if (numericResults.Count == 0)
+            {
+                runner.Top3FinishRate = null;
+                runner.Top5FinishRate = null;
+                runner.FinishPositionVolatility = null;
+                return;
+            }
+
+            int meaningfulCount = numericResults.Count;
+            int top3Finishes = numericResults.Count(r => r.FinishPosition!.Value <= 3);
+            int top5Finishes = numericResults.Count(r => r.FinishPosition!.Value <= 5);
+
+            runner.Top3FinishRate = meaningfulCount > 0
+                ? (double)top3Finishes / meaningfulCount
+                : (double?)null;
+            runner.Top5FinishRate = meaningfulCount > 0
+                ? (double)top5Finishes / meaningfulCount
+                : (double?)null;
+
+            var normalizedFinishes = new List<double>();
+            foreach (var race in numericResults)
+            {
+                if (race.RunnerCount.HasValue && race.RunnerCount.Value > 1)
+                {
+                    var finish = race.FinishPosition!.Value;
+                    var runners = race.RunnerCount.Value;
+                    if (finish <= runners)
+                    {
+                        var normalized = (runners - finish) / (double)(runners - 1);
+                        normalizedFinishes.Add(normalized);
+                    }
+                }
+            }
+
+            if (normalizedFinishes.Count >= 2)
+            {
+                runner.FinishPositionVolatility = ComputeStandardDeviation(normalizedFinishes);
+                return;
+            }
+
+            if (normalizedFinishes.Count == 1)
+            {
+                runner.FinishPositionVolatility = 0d;
+                return;
+            }
+
+            var fallbackFinishes = numericResults
+                .Select(r => (double)r.FinishPosition!.Value)
+                .ToList();
+
+            if (fallbackFinishes.Count >= 2)
+            {
+                double maxFinish = fallbackFinishes.Max();
+                if (maxFinish > 1d)
+                {
+                    var approxNormalized = fallbackFinishes
+                        .Select(f => 1d - (f - 1d) / (maxFinish - 1d))
+                        .ToList();
+                    runner.FinishPositionVolatility = ComputeStandardDeviation(approxNormalized);
+                    return;
+                }
+            }
+
+            runner.FinishPositionVolatility = null;
+        }
+
+        private static double ComputeStandardDeviation(IReadOnlyList<double> values)
+        {
+            if (values == null || values.Count == 0)
+            {
+                return 0d;
+            }
+
+            double mean = values.Average();
+            double variance = 0d;
+            foreach (var value in values)
+            {
+                var diff = value - mean;
+                variance += diff * diff;
+            }
+
+            variance /= values.Count;
+            return Math.Sqrt(variance);
         }
         private static void LogFeatureFallback(string featureName, string message, string? runnerIdentifier = null)
         {

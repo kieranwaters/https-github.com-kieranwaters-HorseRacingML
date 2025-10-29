@@ -70,5 +70,8 @@ namespace HorseRacingML.Models
         public bool AiTrainedModelApplied { get; set; }
         public bool AiUsedLegacyModel { get; set; }
         public List<HorseHistoricalRaceSummary> HistoricalRaces { get; set; } = new();
+        public double? Top3FinishRate { get; set; }
+        public double? Top5FinishRate { get; set; }
+        public double? FinishPositionVolatility { get; set; }
     }
 }

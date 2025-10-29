@@ -123,6 +123,23 @@ namespace HorseRacingML.ML
                 _trainer = trainer ?? throw new ArgumentNullException(nameof(trainer));
                 _identifierKeys = identifierKeys;
             }
+            private static float ComputeStandardDeviation(IReadOnlyList<float> values)
+            {
+                if (values == null || values.Count == 0)
+                {
+                    return 0f;
+                }
+
+                float mean = values.Average();
+                float variance = 0f;
+                foreach (var value in values)
+                {
+                    float diff = value - mean;
+                    variance += diff * diff;
+                }
+
+                return (float)Math.Sqrt(variance / values.Count);
+            }
             private static bool IsNullOrWhiteSpace(object? value)
             {
                 if (value == null)
@@ -609,6 +626,18 @@ namespace HorseRacingML.ML
                             int careerWins = history.Count(h => h.Won);
                             row["CareerStarts"] = careerStarts;
                             row["LifetimeWinRate"] = _trainer.SmoothedWinRate(careerWins, careerStarts);
+                            int lifetimeTop3 = history.Count(h => h.Finish.HasValue && h.Finish.Value > 0 && h.Finish.Value <= 3);
+                            int lifetimeTop5 = history.Count(h => h.Finish.HasValue && h.Finish.Value > 0 && h.Finish.Value <= 5);
+                            int lifetimeMeasuredStarts = history.Count;
+                            row["Top3RateLifetime"] = _trainer.SmoothedWinRate(lifetimeTop3, lifetimeMeasuredStarts);
+                            row["Top5RateLifetime"] = _trainer.SmoothedWinRate(lifetimeTop5, lifetimeMeasuredStarts);
+                            var lifetimeNorms = history
+                                .Where(h => h.Finish.HasValue && h.Finish.Value > 0)
+                                .Select(h => h.NormFinish)
+                                .ToList();
+                            row["NormFinishStdDevLifetime"] = lifetimeNorms.Count >= 2
+                                ? ComputeStandardDeviation(lifetimeNorms)
+                                : 0f;
                             foreach (var window in PerformanceWindows)
                             {
                                 int count = Math.Min(window, history.Count);
@@ -625,6 +654,17 @@ namespace HorseRacingML.ML
                                     row[$"AvgRatingLast{window}"] = recent.Sum(h => h.Rating) / count;
 
                                 }
+                                int recentTop3 = recent.Count(h => h.Finish.HasValue && h.Finish.Value > 0 && h.Finish.Value <= 3);
+                                int recentTop5 = recent.Count(h => h.Finish.HasValue && h.Finish.Value > 0 && h.Finish.Value <= 5);
+                                row[$"Top3RateLast{window}"] = _trainer.SmoothedWinRate(recentTop3, count);
+                                row[$"Top5RateLast{window}"] = _trainer.SmoothedWinRate(recentTop5, count);
+                                var recentNorms = recent
+                                    .Where(h => h.Finish.HasValue && h.Finish.Value > 0)
+                                    .Select(h => h.NormFinish)
+                                    .ToList();
+                                row[$"NormFinishStdDevLast{window}"] = recentNorms.Count >= 2
+                                    ? ComputeStandardDeviation(recentNorms)
+                                    : 0f;
                                 else
                                 {
                                     recent = new();
