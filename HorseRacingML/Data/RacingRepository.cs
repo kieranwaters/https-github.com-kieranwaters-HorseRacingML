@@ -2350,7 +2350,7 @@ ORDER BY r.RaceDate DESC, rr.RunnerResultId DESC;";
 
             return starts > 0 ? (wins, starts) : null;
         }
-        public MLParameter? GetBestMLParameter()
+        public MLParameter? GetMostRecentMLParameter()
         {
             const string sql = @"SELECT TOP (1)
     Id,
@@ -2375,7 +2375,7 @@ WHERE Units > 0
   AND Epochs > 0
   AND BatchSize > 0
   AND LearningRate > 0
-ORDER BY ISNULL(ValidationAccuracy, 0) DESC, RunDate DESC";
+ORDER BY RunDate DESC, Id DESC";
 
             using var conn = OpenConnection();
             return conn.QueryFirstOrDefault<MLParameter>(sql);

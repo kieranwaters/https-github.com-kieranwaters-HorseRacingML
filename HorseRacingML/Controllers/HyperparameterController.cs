@@ -241,7 +241,7 @@ namespace HorseRacingML.Controllers
                 StartingBankroll = startingBankroll
             };
 
-            var savedParameter = _repository.GetBestMLParameter();
+            var savedParameter = _repository.GetMostRecentMLParameter();
             if (savedParameter is null)
             {
                 viewModel.Message = "No saved AI parameters were found. Please train the AI before running a test.";
