@@ -2375,6 +2375,8 @@ WHERE Units > 0
   AND Epochs > 0
   AND BatchSize > 0
   AND LearningRate > 0
+AND Fold IS NULL
+  AND (Folds IS NULL OR Folds <= 1)
 ORDER BY RunDate DESC, Id DESC";
 
             using var conn = OpenConnection();

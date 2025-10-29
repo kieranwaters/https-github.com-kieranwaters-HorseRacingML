@@ -271,16 +271,22 @@ namespace HorseRacingML.Controllers
 
             var parameter = new MLParameter
             {
-                Units = MLParameterValidator.EnsureUnits(savedParameter.Units, 0),
-                Dropout = MLParameterValidator.EnsureDropout(savedParameter.Dropout, 0),
-                Layers = MLParameterValidator.EnsureLayers(savedParameter.Layers, 0),
-                LearningRate = MLParameterValidator.EnsureLearningRate(savedParameter.LearningRate, 0.005),
-                Epochs = MLParameterValidator.EnsurePositive(savedParameter.Epochs, 12),
-                BatchSize = MLParameterValidator.EnsurePositive(savedParameter.BatchSize, 500),
+                Units = MLParameterValidator.EnsureUnits(savedParameter.Units, Math.Clamp(savedParameter.Units, 1, 4096)),
+                Dropout = MLParameterValidator.EnsureDropout(savedParameter.Dropout, Math.Clamp(savedParameter.Dropout, 0d, 0.99d)),
+                Layers = MLParameterValidator.EnsureLayers(savedParameter.Layers, Math.Clamp(savedParameter.Layers, 1, 12)),
+                LearningRate = MLParameterValidator.EnsureLearningRate(savedParameter.LearningRate, savedParameter.LearningRate > 0d ? savedParameter.LearningRate : 0.005d),
+                Epochs = MLParameterValidator.EnsurePositive(savedParameter.Epochs, savedParameter.Epochs > 0 ? savedParameter.Epochs : 1),
+                BatchSize = MLParameterValidator.EnsurePositive(savedParameter.BatchSize, savedParameter.BatchSize > 0 ? savedParameter.BatchSize : 1),
             };
 
             var result = await Task.Run(() => _trainer.Train(parameter, 0, 1, dataset, persistWeights: false));
 
+            savedParameter.Units = parameter.Units;
+            savedParameter.Dropout = parameter.Dropout;
+            savedParameter.Layers = parameter.Layers;
+            savedParameter.LearningRate = parameter.LearningRate;
+            savedParameter.Epochs = parameter.Epochs;
+            savedParameter.BatchSize = parameter.BatchSize;
             viewModel.ParameterUsed = savedParameter;
             viewModel.TrainAccuracy = result.TrainAccuracy;
             viewModel.TrainLoss = result.TrainLoss;
