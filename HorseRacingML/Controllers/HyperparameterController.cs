@@ -269,72 +269,104 @@ namespace HorseRacingML.Controllers
                 return View(viewModel);
             }
 
+            var persistedHyperparameters = _trainer.LoadPersistedHyperparameters();
             static bool HasValidUnits(int units) => MLParameterValidator.EnsureUnits(units, int.MinValue) == units;
             static bool HasValidDropout(double dropout) => !double.IsNaN(MLParameterValidator.EnsureDropout(dropout, double.NaN));
             static bool HasValidLayers(int layers) => MLParameterValidator.EnsureLayers(layers, int.MinValue) == layers;
             static bool HasValidLearningRate(double learningRate) => !double.IsNaN(MLParameterValidator.EnsureLearningRate(learningRate, double.NaN));
             static bool HasValidPositive(int value) => MLParameterValidator.EnsurePositive(value, int.MinValue) == value;
 
+            int ResolveUnitsFallback()
+            {
+                if (persistedHyperparameters != null && HasValidUnits(persistedHyperparameters.Units))
+                {
+                    return persistedHyperparameters.Units;
+                }
+
+                return 1;
+            }
+
+            double ResolveDropoutFallback()
+            {
+                if (persistedHyperparameters != null && HasValidDropout(persistedHyperparameters.Dropout))
+                {
+                    return persistedHyperparameters.Dropout;
+                }
+
+                return 0.1d;
+            }
+
+            int ResolveLayersFallback()
+            {
+                if (persistedHyperparameters != null && HasValidLayers(persistedHyperparameters.Layers))
+                {
+                    return persistedHyperparameters.Layers;
+                }
+
+                return 1;
+            }
+
+            double ResolveLearningRateFallback()
+            {
+                if (persistedHyperparameters != null && HasValidLearningRate(persistedHyperparameters.LearningRate))
+                {
+                    return persistedHyperparameters.LearningRate;
+                }
+
+                return 0.005d;
+            }
+
+            int ResolveEpochsFallback()
+            {
+                if (persistedHyperparameters != null && HasValidPositive(persistedHyperparameters.Epochs))
+                {
+                    return persistedHyperparameters.Epochs;
+                }
+
+                return 1;
+            }
+
+            int ResolveBatchSizeFallback()
+            {
+                if (persistedHyperparameters != null && HasValidPositive(persistedHyperparameters.BatchSize))
+                {
+                    return persistedHyperparameters.BatchSize;
+                }
+
+                return 1;
+            }
+
+            int ResolveFoldsFallback()
+            {
+                if (persistedHyperparameters != null && HasValidPositive(persistedHyperparameters.Folds))
+                {
+                    return persistedHyperparameters.Folds;
+                }
+
+                return 1;
+            }
+
             var units = HasValidUnits(savedParameter.Units)
                 ? savedParameter.Units
-                : MLParameterValidator.EnsureUnits(savedParameter.Units, 1);
+                : ResolveUnitsFallback();
             var dropout = HasValidDropout(savedParameter.Dropout)
                 ? savedParameter.Dropout
-                : MLParameterValidator.EnsureDropout(savedParameter.Dropout, 0.1d);
+                : ResolveDropoutFallback();
             var layers = HasValidLayers(savedParameter.Layers)
                 ? savedParameter.Layers
-                : MLParameterValidator.EnsureLayers(savedParameter.Layers, 1);
+                : ResolveLayersFallback();
             var learningRate = HasValidLearningRate(savedParameter.LearningRate)
                 ? savedParameter.LearningRate
-                : MLParameterValidator.EnsureLearningRate(savedParameter.LearningRate, 0.005d);
+                : ResolveLearningRateFallback();
             var epochs = HasValidPositive(savedParameter.Epochs)
                 ? savedParameter.Epochs
-                : MLParameterValidator.EnsurePositive(savedParameter.Epochs, 1);
+                : ResolveEpochsFallback();
             var batchSize = HasValidPositive(savedParameter.BatchSize)
                 ? savedParameter.BatchSize
-                : MLParameterValidator.EnsurePositive(savedParameter.BatchSize, 1);
+                : ResolveBatchSizeFallback();
             var folds = HasValidPositive(savedParameter.Folds)
                 ? savedParameter.Folds
-                : MLParameterValidator.EnsurePositive(savedParameter.Folds, 1);
-
-            var persistedHyperparameters = _trainer.LoadPersistedHyperparameters();
-            if (persistedHyperparameters != null)
-            {
-                if (!HasValidUnits(savedParameter.Units))
-                {
-                    units = MLParameterValidator.EnsureUnits(persistedHyperparameters.Units, units);
-                }
-
-                if (!HasValidDropout(savedParameter.Dropout))
-                {
-                    dropout = MLParameterValidator.EnsureDropout(persistedHyperparameters.Dropout, dropout);
-                }
-
-                if (!HasValidLayers(savedParameter.Layers))
-                {
-                    layers = MLParameterValidator.EnsureLayers(persistedHyperparameters.Layers, layers);
-                }
-
-                if (!HasValidLearningRate(savedParameter.LearningRate))
-                {
-                    learningRate = MLParameterValidator.EnsureLearningRate(persistedHyperparameters.LearningRate, learningRate);
-                }
-
-                if (!HasValidPositive(savedParameter.Epochs))
-                {
-                    epochs = MLParameterValidator.EnsurePositive(persistedHyperparameters.Epochs, epochs);
-                }
-
-                if (!HasValidPositive(savedParameter.BatchSize))
-                {
-                    batchSize = MLParameterValidator.EnsurePositive(persistedHyperparameters.BatchSize, batchSize);
-                }
-
-                if (!HasValidPositive(savedParameter.Folds))
-                {
-                    folds = MLParameterValidator.EnsurePositive(persistedHyperparameters.Folds, folds);
-                }
-            }
+                : ResolveFoldsFallback();
             var parameter = new MLParameter
             {
                 Units = units,
