@@ -259,42 +259,46 @@
 {
     <div class="alert alert-secondary">@filterSummary</div>
 }
-@if (Model.Races != null && Model.Races.Count > 0)
-{
-    <input type="hidden" id="dayReportInitialRegion" value="@initialRegionSelection" />
-    <div class="card mb-4">
-        <div class="card-body">
-            <div class="row g-3 align-items-end">
-                <div class="col-sm-6 col-md-4 col-lg-3">
-                    <label for="dayReportRegionSelect" class="form-label mb-1">Region</label>
-                    <select id="dayReportRegionSelect" class="form-select form-select-sm">
-                        <option value="GB &amp; IRE" selected='@(initialRegionSelection == "GB & IRE" ? "selected" : null)'>GB &amp; IRE</option>
-                        <option value="USA" selected='@(initialRegionSelection == "USA" ? "selected" : null)'>USA</option>
-                        <option value="RSA" selected='@(initialRegionSelection == "RSA" ? "selected" : null)'>RSA</option>
-                        <option value="FRA" selected='@(initialRegionSelection == "FRA" ? "selected" : null)'>FRA</option>
-                         <option value="AUS" selected='@(initialRegionSelection == "AUS" ? "selected" : null)'>AUS</option>
-                        <option value="All" selected='@(initialRegionSelection == "All" ? "selected" : null)'>All</option>
-                    </select>
-                    <div class="form-text">Use the selector to focus on specific race regions.</div>
-                </div>
-                <div class="col-12">
-                    <div class="d-flex flex-wrap gap-2" id="dayReportRegionButtons">
-                        @foreach (var summary in regionSummaries)
-                        {
-                            var trackLabel = summary.TrackCount == 1 ? "track" : "tracks";
-                            var raceLabel = summary.RaceCount == 1 ? "race" : "races";
-                            <button type="button"
-                                    class="btn btn-outline-secondary btn-sm region-filter-btn"
-                                    data-region="@summary.Region">
-                                @summary.Region (@summary.TrackCount @trackLabel / @summary.RaceCount @raceLabel)
-                            </button>
-                        }
+    {
+    <div class="alert alert-secondary">@filterSummary</div>
+    }
+
+    @if (Model.Races != null && Model.Races.Count > 0)
+    {
+        <input type="hidden" id="dayReportInitialRegion" value="@initialRegionSelection" />
+        <div class="card mb-4">
+            <div class="card-body">
+                <div class="row g-3 align-items-end">
+                    <div class="col-sm-6 col-md-4 col-lg-3">
+                        <label for="dayReportRegionSelect" class="form-label mb-1">Region</label>
+                        <select id="dayReportRegionSelect" class="form-select form-select-sm">
+                            <option value="GB &amp; IRE" selected='@(initialRegionSelection == "GB & IRE" ? "selected" : null)'>GB &amp; IRE</option>
+                            <option value="USA" selected='@(initialRegionSelection == "USA" ? "selected" : null)'>USA</option>
+                            <option value="RSA" selected='@(initialRegionSelection == "RSA" ? "selected" : null)'>RSA</option>
+                            <option value="FRA" selected='@(initialRegionSelection == "FRA" ? "selected" : null)'>FRA</option>
+                            <option value="AUS" selected='@(initialRegionSelection == "AUS" ? "selected" : null)'>AUS</option>
+                            <option value="All" selected='@(initialRegionSelection == "All" ? "selected" : null)'>All</option>
+                        </select>
+                        <div class="form-text">Use the selector to focus on specific race regions.</div>
+                    </div>
+                    <div class="col-12">
+                        <div class="d-flex flex-wrap gap-2" id="dayReportRegionButtons">
+                            @foreach (var summary in regionSummaries)
+                            {
+                                var trackLabel = summary.TrackCount == 1 ? "track" : "tracks";
+                                var raceLabel = summary.RaceCount == 1 ? "race" : "races";
+                                <button type="button"
+                                        class="btn btn-outline-secondary btn-sm region-filter-btn"
+                                        data-region="@summary.Region">
+                                    @summary.Region (@summary.TrackCount @trackLabel / @summary.RaceCount @raceLabel)
+                                </button>
+                            }
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
-    </div>
-}
+    }
    
 </div>
 <div class="card mb-4">
@@ -812,6 +816,7 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                                             </div>
                                                         }
                                                     </div>
+                                                    }
                                                 <dl class="row mb-0">
                                                     @if (hasFeatureValues)
                                                     {
@@ -860,10 +865,14 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                                                                 <th scope="col" class="text-end">Weight</th>
                                                                             }
                                                                             <th scope="col" class="text-end">Value</th>
-                                                                                @if (showContribution)
-                                                                                {
-                                                                                    <th scope="col" class="text-end">Contribution</th>
-                                                                                }
+                                                                            @if (showNormalized)
+                                                                            {
+                                                                                <th scope="col" class="text-end">Normalized</th>
+                                                                            }
+                                                                            @if (showWeight)
+                                                                            {
+                                                                                <th scope="col" class="text-end">Weight</th>
+                                                                            }
                                                                             <th scope="col" class="text-center">State</th>
                                                                         </tr>
                                                                     </thead>
@@ -912,6 +921,72 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                                         }
                                                     </div>
                                                 }
+                                                if (hasEncodedValues)
+                                                {
+                                                <div class="mt-2">
+                                                    <div class="text-muted small">
+                                                        Encoded dimensions (@encodedActiveFromValues active / @encodedValues.Count total)
+                                                    </div>
+                                                    <div class="table-responsive">
+                                                        <table class="table table-sm table-borderless align-middle mb-0">
+                                                            <thead class="text-muted text-uppercase small">
+                                                                <tr>
+                                                                    <th scope="col">Idx</th>
+                                                                    <th scope="col">Label</th>
+                                                                    @if (showNormalized)
+                                                                    {
+                                                                        <th scope="col" class="text-end">Normalized</th>
+                                                                    }
+                                                                    @if (showWeight)
+                                                                    {
+                                                                        <th scope="col" class="text-end">Weight</th>
+                                                                    }
+                                                                    <th scope="col" class="text-end">Value</th>
+                                                                    @if (showContribution)
+                                                                    {
+                                                                        <th scope="col" class="text-end">Contribution</th>
+                                                                    }
+                                                                    <th scope="col" class="text-center">State</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                                @foreach (var encoded in encodedValues)
+                                                                {
+                                                                    var encodedRowClass = encoded.Active ? string.Empty : "text-muted";
+                                                                    var encodedValueText = encoded.Value.ToString("0.######", CultureInfo.CurrentCulture);
+                                                                    var normalizedText = showNormalized && encoded.NormalizedValue.HasValue
+                                                                    ? encoded.NormalizedValue.Value.ToString("0.######", CultureInfo.CurrentCulture)
+                                                                    : "-";
+                                                                    var weightText = showWeight && encoded.Weight.HasValue
+                                                                    ? encoded.Weight.Value.ToString("0.######", CultureInfo.CurrentCulture)
+                                                                    : "-";
+                                                                    var contributionText = showContribution && encoded.Contribution.HasValue
+                                                                    ? encoded.Contribution.Value.ToString("+0.######;-0.######", CultureInfo.CurrentCulture)
+                                                                    : "-";
+                                                                    <tr class="@encodedRowClass">
+                                                                        <td>@encoded.Index</td>
+                                                                        <td title="@encoded.FeatureKey">@encoded.Label</td>
+                                                                        @if (showNormalized)
+                                                                        {
+                                                                            <td class="text-end">@normalizedText</td>
+                                                                        }
+                                                                        @if (showWeight)
+                                                                        {
+                                                                            <td class="text-end">@weightText</td>
+                                                                        }
+                                                                        <td class="text-end">@encodedValueText</td>
+                                                                        @if (showContribution)
+                                                                        {
+                                                                            <td class="text-end">@contributionText</td>
+                                                                        }
+                                                                        <td class="text-center">@(encoded.Active ? "Active" : "Suppressed")</td>
+                                                                    </tr>
+                                                                }
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                </div>
+                                            </details>
                                                 
                                         }
                                     </td>

@@ -665,6 +665,7 @@ namespace HorseRacingML.ML
                                 row[$"NormFinishStdDevLast{window}"] = recentNorms.Count >= 2
                                     ? ComputeStandardDeviation(recentNorms)
                                     : 0f;
+
                                 else
                                 {
                                     recent = new();
