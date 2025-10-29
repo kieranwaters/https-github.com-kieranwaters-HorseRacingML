@@ -644,9 +644,6 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                         : string.Empty;
 
                                 var horseNameAttr = runner.HorseName?.Trim() ?? string.Empty;
-                                var aiProbabilityAttr = aiProbabilityAttrValue.HasValue
-                                ? aiProbabilityAttrValue.Value.ToString("0.################", CultureInfo.InvariantCulture)
-                                    : string.Empty;
                                 var marketProbabilityAttr = runner.MarketProbability.HasValue
                                     ? runner.MarketProbability.Value.ToString("0.################", CultureInfo.InvariantCulture)
                                     : string.Empty;
