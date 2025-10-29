@@ -3119,16 +3119,24 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
                         Console.WriteLine($"\t\tApplied probability smoothing with blend={blendWeight.ToString("0.####E+0", CultureInfo.InvariantCulture)} to enforce minimum normalized probability {targetFloor.ToString("0.####", CultureInfo.InvariantCulture)}.");
                     }
                     }
-
-                    if (ApplyMarketFallbackForExtremelySmallProbabilities(flows, valid))
+                bool softmaxApplied = valid.Any(f => f.AiProbabilitySoftmaxApplied);
+                if (!softmaxApplied)
                 {
-                    valid = flows
-                        .Where(f => f.AiOdds.HasValue && double.IsFinite(f.AiOdds.Value) && f.AiOdds.Value >= 0)
-                        .ToList();
+                    if (ApplyMarketFallbackForExtremelySmallProbabilities(flows, valid))
+                    {
+                        valid = flows
+                            .Where(f => f.AiOdds.HasValue && double.IsFinite(f.AiOdds.Value) && f.AiOdds.Value >= 0)
+                            .ToList();
+                    }
+                }
+                else
+                {
+                    Console.WriteLine("\t\tSkipping market probability fallback due to softmax-based degeneracy resolution.");
                 }
                 var normalizedSum = valid.Sum(f => f.AiOdds!.Value);
                 Console.WriteLine($"\t\tNormalized probability sum: {normalizedSum.ToString("0.####", CultureInfo.InvariantCulture)}.");
-            } }
+            }
+        }
         private static bool ApplyMarketFallbackForExtremelySmallProbabilities(ICollection<RunnerFlow> flows, IList<RunnerFlow> normalized)
         {
             if (flows == null || normalized == null || normalized.Count == 0)

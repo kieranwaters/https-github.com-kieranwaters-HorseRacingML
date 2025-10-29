@@ -829,6 +829,60 @@ namespace HorseRacingML.Tests
             Assert.True(fallbackOne.AiOdds!.Value > fallbackTwo.AiOdds!.Value);
         }
         [Fact]
+        public void NormalizeAiOdds_SoftmaxDegeneracySkipsMarketFallback()
+        {
+            var flows = new List<RunnerFlow>
+            {
+                new RunnerFlow
+                {
+                    HorseName = "Runaway Winner",
+                    AiOdds = 1d,
+                    AiProbabilityMarketDerived = false,
+                    AiLogit = 250d,
+                    BackPrice1 = 3m
+                },
+                new RunnerFlow
+                {
+                    HorseName = "Challenger",
+                    AiOdds = 0d,
+                    AiProbabilityMarketDerived = false,
+                    AiLogit = -80d,
+                    BackPrice1 = 6m
+                },
+                new RunnerFlow
+                {
+                    HorseName = "Longshot",
+                    AiOdds = 0d,
+                    AiProbabilityMarketDerived = false,
+                    AiLogit = -120d,
+                    BackPrice1 = 26m
+                }
+            };
+
+            var method = typeof(BetfairMarketScraper).GetMethod(
+                "NormalizeAiOdds",
+                BindingFlags.NonPublic | BindingFlags.Static);
+
+            Assert.NotNull(method);
+
+            method!.Invoke(null, new object?[] { flows, false });
+
+            Assert.All(flows, flow =>
+            {
+                Assert.True(flow.AiProbabilitySoftmaxApplied);
+                Assert.True(flow.AiOdds.HasValue);
+                Assert.False(flow.AiProbabilityMarketDerived);
+                Assert.False(flow.AiProbabilityClampedToMarket);
+                Assert.Null(flow.AiProbabilityFallbackReason);
+            });
+
+            var sum = flows.Sum(f => f.AiOdds!.Value);
+            Assert.InRange(sum, 0.999999, 1.000001);
+
+            var longshot = flows.Single(f => f.HorseName == "Longshot");
+            Assert.InRange(longshot.AiOdds!.Value, 5e-7, 5e-5);
+        }
+        [Fact]
         public void NormalizeAiOdds_ResolvesDegenerateZeroOneDistribution()
         {
             var flows = new List<RunnerFlow>();
