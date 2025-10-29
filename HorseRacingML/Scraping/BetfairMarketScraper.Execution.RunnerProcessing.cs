@@ -620,12 +620,15 @@ namespace HorseRacingML.Scraping
             var identifier = DescribeRunner(flow);
             if (flow.FeatureValues != null)
             {
+                EnsureDisplayTrainerClassFallbacks(flow.FeatureValues, identifier);
                 EnsureDisplayJockeyClassFallbacks(flow.FeatureValues, identifier);
             }
             var displayFeatureValues = CreateFeatureDictionary(flow.FeatureValues);
             if (displayFeatureValues != null && displayFeatureValues.Count > 0)
             {
+                EnsureDisplayTrainerClassFallbacks(displayFeatureValues, identifier);
                 EnsureDisplayJockeyClassFallbacks(displayFeatureValues, identifier);
+                LogDisplayTrainerClassFeatureOutcomes(displayFeatureValues, identifier);
                 LogDisplayJockeyClassFeatureOutcomes(displayFeatureValues, identifier);
             }
             var runner = new RunnerDayReport
@@ -961,6 +964,44 @@ namespace HorseRacingML.Scraping
                 message,
                 formatted);
         }
+        private static void EnsureDisplayTrainerClassFallbacks(
+            Dictionary<string, object?> featureValues,
+            string? runnerIdentifier = null)
+        {
+            var trainerClassWinRate = ResolveTrainerClassWinRate(featureValues, runnerIdentifier);
+            var trainerClassAvgNorm = ResolveTrainerClassAvgNorm(featureValues, trainerClassWinRate, runnerIdentifier);
+            var lastTrainerClass = ResolveLastTrainerClassNorm(featureValues, trainerClassAvgNorm, runnerIdentifier);
+
+            FillIfMissing(featureValues, "TrainerClassWinRate", trainerClassWinRate);
+            FillIfMissing(featureValues, "TrainerClassAvgNorm", trainerClassAvgNorm);
+            FillIfMissing(featureValues, "LastTrainerClassNormPos", lastTrainerClass);
+        }
+
+        private static void LogDisplayTrainerClassFeatureOutcomes(
+            Dictionary<string, object?>? featureValues,
+            string? runnerIdentifier)
+        {
+            if (featureValues == null || featureValues.Count == 0)
+            {
+                return;
+            }
+
+            LogFeatureFallback(
+                "TrainerClassWinRate",
+                BuildDisplayFeatureValueMessage(featureValues, "TrainerClassWinRate"),
+                runnerIdentifier);
+
+            LogFeatureFallback(
+                "TrainerClassAvgNorm",
+                BuildDisplayFeatureValueMessage(featureValues, "TrainerClassAvgNorm"),
+                runnerIdentifier);
+
+            LogFeatureFallback(
+                "LastTrainerClassNormPos",
+                BuildDisplayFeatureValueMessage(featureValues, "LastTrainerClassNormPos"),
+                runnerIdentifier);
+        }
+
         private static void EnsureDisplayJockeyClassFallbacks(
             Dictionary<string, object?> featureValues,
             string? runnerIdentifier = null)
@@ -1026,6 +1067,248 @@ namespace HorseRacingML.Scraping
                 "final day report value {0}{1}",
                 formatted,
                 fallbackSuffix);
+        }
+        private static float? ResolveTrainerClassWinRate(
+           Dictionary<string, object?> featureValues,
+           string? runnerIdentifier = null)
+        {
+            if (featureValues == null)
+            {
+                LogFeatureFallback(
+                    "TrainerClassWinRate",
+                    "feature collection unavailable; unable to resolve win rate",
+                    runnerIdentifier);
+                return null;
+            }
+
+            var primaryWinRate = ResolveFeatureValue(featureValues, "TrainerWinRate")
+                ?? ResolveFeatureValue(featureValues, "TrainerWinRateRecentDays")
+                ?? ResolveFeatureValue(featureValues, "TrainerWinRateLast50");
+
+            if (primaryWinRate.HasValue)
+            {
+                LogFeatureFallback(
+                    "TrainerClassWinRate",
+                    AppendResolvedValue(
+                        "resolved from trainer-level win rate metrics (TrainerWinRate/TrainerWinRateRecentDays/TrainerWinRateLast50)",
+                        primaryWinRate),
+                    runnerIdentifier);
+                return primaryWinRate;
+            }
+
+            var blendedWinRate = CombineAverages(
+                ResolveFeatureValue(featureValues, "TrainerGoingWinRate"),
+                ResolveFeatureValue(featureValues, "TrainerDistanceBucketWinRate"))
+                ?? CombineAverages(
+                    ResolveFeatureValue(featureValues, "TrainerSurfaceWinRate"),
+                    ResolveFeatureValue(featureValues, "TrainerCourseWinRate"));
+
+            if (blendedWinRate.HasValue)
+            {
+                LogFeatureFallback(
+                    "TrainerClassWinRate",
+                    "resolved by blending surface/going/distance/course win rates",
+                    runnerIdentifier);
+                return blendedWinRate;
+            }
+
+            var fallbackWinRate = ResolveNonNeutralFeatureValue(featureValues, "ClassWinRate")
+                ?? ResolveNonNeutralFeatureValue(featureValues, "JockeyClassWinRate")
+                ?? ResolveNonNeutralFeatureValue(featureValues, "JockeyWinRate");
+
+            if (fallbackWinRate.HasValue)
+            {
+                LogFeatureFallback(
+                    "TrainerClassWinRate",
+                    AppendResolvedValue(
+                        "resolved from class/jockey win rate fallbacks",
+                        fallbackWinRate),
+                    runnerIdentifier);
+                return fallbackWinRate;
+            }
+
+            var generalWinRate = ResolveGeneralWinRateFallback(featureValues);
+            if (generalWinRate.HasValue)
+            {
+                LogFeatureFallback(
+                    "TrainerClassWinRate",
+                    AppendResolvedValue(
+                        "resolved from general performance win rate metrics (WinRateLast*/LifetimeWinRate)",
+                        generalWinRate),
+                    runnerIdentifier);
+                return generalWinRate;
+            }
+
+            LogFeatureFallback(
+                "TrainerClassWinRate",
+                AppendResolvedValue(
+                    "no trainer, jockey, or class win rate statistics available; using neutral default",
+                    0f),
+                runnerIdentifier);
+            return null;
+        }
+
+        private static float? ResolveTrainerClassAvgNorm(
+            Dictionary<string, object?> featureValues,
+            float? trainerClassWinRate,
+            string? runnerIdentifier = null)
+        {
+            if (featureValues == null)
+            {
+                LogFeatureFallback(
+                    "TrainerClassAvgNorm",
+                    "feature collection unavailable; unable to resolve average normalized finish",
+                    runnerIdentifier);
+                return null;
+            }
+
+            var surfaceAvg = ResolveNonNeutralFeatureValue(featureValues, "TrainerSurfaceAvgNorm");
+            var goingAvg = ResolveNonNeutralFeatureValue(featureValues, "TrainerGoingAvgNorm");
+            var distanceAvg = ResolveNonNeutralFeatureValue(featureValues, "TrainerDistanceBucketAvgNorm");
+
+            var blendedAvg = CombineAverages(surfaceAvg, goingAvg)
+                ?? CombineAverages(surfaceAvg, distanceAvg)
+                ?? CombineAverages(goingAvg, distanceAvg);
+
+            var resolvedAvg = blendedAvg
+                ?? surfaceAvg
+                ?? goingAvg
+                ?? distanceAvg;
+
+            var resolutionLogged = false;
+
+            if (!resolvedAvg.HasValue && trainerClassWinRate.HasValue)
+            {
+                var derived = ClampNormalizedPosition(1f - trainerClassWinRate.Value);
+                LogFeatureFallback(
+                    "TrainerClassAvgNorm",
+                    AppendResolvedValue(
+                        "derived from resolved trainer class win rate because no normalized finish history was available",
+                        derived),
+                    runnerIdentifier);
+                resolvedAvg = derived;
+                resolutionLogged = true;
+            }
+
+            if (!resolvedAvg.HasValue)
+            {
+                resolvedAvg = ResolveNonNeutralFeatureValue(featureValues, "ClassAvgNorm")
+                    ?? ResolveNonNeutralFeatureValue(featureValues, "JockeyClassAvgNorm");
+            }
+
+            if (resolvedAvg.HasValue)
+            {
+                if (!resolutionLogged)
+                {
+                    if (resolvedAvg == blendedAvg)
+                    {
+                        LogFeatureFallback(
+                            "TrainerClassAvgNorm",
+                            AppendResolvedValue(
+                                "resolved by blending available normalized finish metrics",
+                                resolvedAvg),
+                            runnerIdentifier);
+                    }
+                    else if (resolvedAvg == surfaceAvg || resolvedAvg == goingAvg || resolvedAvg == distanceAvg)
+                    {
+                        LogFeatureFallback(
+                            "TrainerClassAvgNorm",
+                            AppendResolvedValue(
+                                "resolved from a single trainer normalized finish metric (surface/going/distance)",
+                                resolvedAvg),
+                            runnerIdentifier);
+                    }
+                    else
+                    {
+                        LogFeatureFallback(
+                            "TrainerClassAvgNorm",
+                            AppendResolvedValue(
+                                "resolved from class/jockey normalized finish fallbacks",
+                                resolvedAvg),
+                            runnerIdentifier);
+                    }
+                }
+
+                return resolvedAvg;
+            }
+
+            var generalAvgNorm = ResolveGeneralNormalizedFinishFallback(featureValues, trainerClassWinRate);
+            if (generalAvgNorm.HasValue)
+            {
+                LogFeatureFallback(
+                    "TrainerClassAvgNorm",
+                    AppendResolvedValue(
+                        "resolved from general performance normalized finish metrics (AvgNormPosLast*/WinRateLast*)",
+                        generalAvgNorm),
+                    runnerIdentifier);
+                return generalAvgNorm;
+            }
+
+            LogFeatureFallback(
+                "TrainerClassAvgNorm",
+                AppendResolvedValue(
+                    "no trainer, jockey, or class normalized finish statistics available; using neutral default",
+                    0f),
+                runnerIdentifier);
+            return null;
+        }
+
+        private static float? ResolveLastTrainerClassNorm(
+            Dictionary<string, object?> featureValues,
+            float? trainerClassAvgNorm,
+            string? runnerIdentifier = null)
+        {
+            if (featureValues == null)
+            {
+                return null;
+            }
+
+            var lastSurface = ResolveNonNeutralFeatureValue(featureValues, "LastTrainerSurfaceNormPos");
+            var lastGoing = ResolveNonNeutralFeatureValue(featureValues, "LastTrainerGoingNormPos");
+
+            var resolved = lastSurface
+                ?? lastGoing
+                ?? CombineAverages(lastSurface, lastGoing);
+
+            if (!resolved.HasValue && trainerClassAvgNorm.HasValue)
+            {
+                var derived = ClampNormalizedPosition(trainerClassAvgNorm.Value);
+                LogFeatureFallback(
+                    "LastTrainerClassNormPos",
+                    AppendResolvedValue(
+                        "derived from resolved trainer class average because no last-position history was available",
+                        derived),
+                    runnerIdentifier);
+                resolved = derived;
+            }
+
+            if (resolved.HasValue)
+            {
+                return resolved;
+            }
+
+            var lastClassNorm = ResolveNonNeutralFeatureValue(featureValues, "LastClassNormPos")
+                ?? ResolveNonNeutralFeatureValue(featureValues, "LastJockeyClassNormPos");
+
+            if (lastClassNorm.HasValue)
+            {
+                LogFeatureFallback(
+                    "LastTrainerClassNormPos",
+                    AppendResolvedValue(
+                        "resolved from class/jockey last normalized finish fallbacks",
+                        lastClassNorm),
+                    runnerIdentifier);
+                return lastClassNorm;
+            }
+
+            LogFeatureFallback(
+                "LastTrainerClassNormPos",
+                AppendResolvedValue(
+                    "no trainer, jockey, or class last-position statistics available; using neutral default",
+                    0f),
+                runnerIdentifier);
+
+            return null;
         }
         private static float? ResolveJockeyClassWinRate(
             Dictionary<string, object?> featureValues,
@@ -2710,9 +2993,8 @@ namespace HorseRacingML.Scraping
             var lastTrainerSurface = ResolveFeatureValue(featureValues, "LastTrainerSurfaceNormPos");
             var lastTrainerGoing = ResolveFeatureValue(featureValues, "LastTrainerGoingNormPos");
             var lastTrainerNorm = lastTrainerSurface ?? lastTrainerGoing ?? trainerAvgNorm;
-            ApplyFeatureValueOrFallback(featureValues, "TrainerClassWinRate", trainerWinRate); 
-            featureValues.Remove("TrainerClassWinRate");
-            
+            ApplyFeatureValueOrFallback(featureValues, "TrainerClassWinRate", trainerWinRate);
+
 
             float? trainerClassNorm = null;
             if (trainerAvgNorm.HasValue)

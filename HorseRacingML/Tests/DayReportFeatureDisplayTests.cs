@@ -98,6 +98,52 @@ namespace HorseRacingML.Tests
             Assert.Equal(0f, Assert.IsType<float>(runner.FeatureValues["LastJockeyClassNormPos"]));
         }
         [Fact]
+        public void CreateRunnerReport_PopulatesTrainerClassFallbacksForDisplay()
+        {
+            var repo = new StubRepository();
+            var trainer = new StubTrainer();
+            var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
+            var scraper = new BetfairMarketScraper(repo, trainer, bankroll: 10m, settings);
+
+            var flows = new List<RunnerFlow>
+            {
+                new RunnerFlow
+                {
+                    HorseName = "Runner One",
+                    JockeyName = "Sample Jockey",
+                    ClothNumber = 1,
+                    FeatureValues = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        ["TrainerWinRate"] = 0.27f,
+                        ["TrainerSurfaceAvgNorm"] = 0.22f,
+                        ["LastTrainerSurfaceNormPos"] = 0.18f
+                    },
+                    HasPreparedFeatures = true
+                }
+            };
+
+            var report = scraper.TestBuildRaceReport(
+                marketId: "1.234",
+                raceTitle: "Sample Race",
+                venueName: "Sample Venue",
+                venueCountry: "GB",
+                raceDate: new DateTime(2024, 1, 1),
+                offTime: new TimeSpan(12, 0, 0),
+                raceDetails: null,
+                going: "Good",
+                backBookPercentage: 100m,
+                layBookPercentage: 101m,
+                raceUrl: null,
+                flows: flows);
+
+            var runner = Assert.Single(report.Runners);
+            Assert.True(runner.FeatureValues.TryGetValue("TrainerClassWinRate", out var winRateObj));
+            Assert.Equal(0.27f, Assert.IsType<float>(winRateObj));
+            Assert.Equal(0.22f, Assert.IsType<float>(runner.FeatureValues["TrainerClassAvgNorm"]));
+            Assert.Equal(0.18f, Assert.IsType<float>(runner.FeatureValues["LastTrainerClassNormPos"]));
+        }
+
+        [Fact]
         public void CreateRunnerReport_UsesGeneralClassMetricsWhenJockeyClassUnavailable()
         {
             var repo = new StubRepository();
@@ -140,6 +186,45 @@ namespace HorseRacingML.Tests
             Assert.Equal(0.44f, Assert.IsType<float>(runner.FeatureValues["JockeyClassWinRate"]));
             Assert.Equal(0.31f, Assert.IsType<float>(runner.FeatureValues["JockeyClassAvgNorm"]));
             Assert.Equal(0.27f, Assert.IsType<float>(runner.FeatureValues["LastJockeyClassNormPos"]));
+        }
+        [Fact]
+        public void CreateRunnerReport_PopulatesTrainerClassFallbacksWhenSourceMissing()
+        {
+            var repo = new StubRepository();
+            var trainer = new StubTrainer();
+            var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
+            var scraper = new BetfairMarketScraper(repo, trainer, bankroll: 10m, settings);
+
+            var flows = new List<RunnerFlow>
+            {
+                new RunnerFlow
+                {
+                    HorseName = "Runner One",
+                    JockeyName = "Sample Jockey",
+                    ClothNumber = 1,
+                    FeatureValues = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase),
+                    HasPreparedFeatures = true
+                }
+            };
+
+            var report = scraper.TestBuildRaceReport(
+                marketId: "1.234",
+                raceTitle: "Sample Race",
+                venueName: "Sample Venue",
+                venueCountry: "GB",
+                raceDate: new DateTime(2024, 1, 1),
+                offTime: new TimeSpan(12, 0, 0),
+                raceDetails: null,
+                going: "Good",
+                backBookPercentage: 100m,
+                layBookPercentage: 101m,
+                raceUrl: null,
+                flows: flows);
+
+            var runner = Assert.Single(report.Runners);
+            Assert.Equal(0f, Assert.IsType<float>(runner.FeatureValues["TrainerClassWinRate"]));
+            Assert.Equal(0f, Assert.IsType<float>(runner.FeatureValues["TrainerClassAvgNorm"]));
+            Assert.Equal(0f, Assert.IsType<float>(runner.FeatureValues["LastTrainerClassNormPos"]));
         }
         [Fact]
         public void CreateRunnerReport_IgnoresNeutralTrainerJockeyWinRateFallback()
