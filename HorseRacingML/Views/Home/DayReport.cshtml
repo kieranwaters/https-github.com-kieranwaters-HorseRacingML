@@ -503,6 +503,7 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                 <th scope="col" class="text-end">Lay Odds</th>
                                 <th scope="col" class="text-end">AI Win %</th>
                                 <th scope="col" class="text-end">AI Odds</th>
+                                <th scope="col" class="text-end">Use Market</th>
                                 <th scope="col" class="text-end">Market Win %</th>
                                 <th scope="col" class="text-end">Edge</th>
                                 <th scope="col" class="text-end">Kelly %</th>
@@ -676,10 +677,19 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                 var stakeData = displayedStakeValue.HasValue && displayedStakeValue.Value > 0
                                 ? displayedStakeValue.Value.ToString("0.00", CultureInfo.InvariantCulture)
                                 : string.Empty;
+                                var aiProbabilityAttr = aiProbabilityAttrValue.HasValue
+                                ? aiProbabilityAttrValue.Value.ToString("0.################", CultureInfo.InvariantCulture)
+                                : string.Empty;
+                                var marketOddsAttr = runner.MarketDecimalOdds.HasValue
+                                ? runner.MarketDecimalOdds.Value.ToString("0.########", CultureInfo.InvariantCulture)
+                                : string.Empty;
+                                var aiProbabilitySourceAttr = displayAiFromMarket ? "market" : "model";
                                 <tr class="@rowClass"
                                     data-horse-name="@horseNameAttr"
                                     data-ai-probability="@aiProbabilityAttr"
-                                    data-market-probability="@marketProbabilityAttr">
+                                    data-market-probability="@marketProbabilityAttr"
+                                    data-market-odds="@marketOddsAttr"
+                                    data-ai-probability-source="@aiProbabilitySourceAttr">
                                     <td>@cloth</td>
                                     <td>@draw</td>
                                     <td>
@@ -1037,28 +1047,32 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                                     @volatilityText
                                                 }
                                             </td>
-                                    <td class="text-end">@marketOdds</td>
-                                    <td class="text-end">@layOdds</td>
-                                    <td class="text-end">
+                                    <td class="text-end market-odds-cell">@marketOdds</td>
+                                    <td class="text-end lay-odds-cell">@layOdds</td>
+                                    <td class="text-end ai-win-cell">
                                         @if (!string.IsNullOrEmpty(aiWinTitle))
                                         {
-                                            <span title="@aiWinTitle">@aiWinPrimary</span>
+                                            <span class="ai-win-primary" title="@aiWinTitle">@aiWinPrimary</span>
                                         }
                                         else
                                         {
-                                            @aiWinPrimary
+                                            <span class="ai-win-primary">@aiWinPrimary</span>
                                         }
 
                                         @if (!string.IsNullOrEmpty(aiWinSecondary))
                                         {
-                                            <div class="text-muted small">@aiWinSecondary</div>
+                                            <div class="text-muted small ai-win-secondary">@aiWinSecondary</div>
+                                        }
+                                        @if (displayAiFromMarket)
+                                        {
+                                            <div class="text-warning small ai-market-indicator">Market probability applied</div>
                                         }
                                         @if (runner.AiTrainedModelApplied)
                                         {
-                                            <div class="text-success small">Trained neural model applied</div>
+                                            <div class="text-success small ai-win-note">Trained neural model applied</div>
                                             if (!string.IsNullOrWhiteSpace(runner.AiProbabilityFallbackReason))
                                             {
-                                                <div class="text-muted small">@runner.AiProbabilityFallbackReason</div>
+                                                <div class="text-muted small ai-win-note">@runner.AiProbabilityFallbackReason</div>
                                             }
                                         }
                                         else if (runner.AiUsedLegacyModel)
@@ -1066,24 +1080,40 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                             var fallbackText = string.IsNullOrWhiteSpace(runner.AiProbabilityFallbackReason)
                                             ? "Legacy logistic regression fallback"
                                             : $"Legacy logistic regression fallback: {runner.AiProbabilityFallbackReason}";
-                                            <div class="text-warning small">@fallbackText</div>
+                                            <div class="text-warning small ai-win-note">@fallbackText</div>
                                         }
                                         else if (runner.AiProbabilityMarketDerived)
                                         {
                                             var fallbackText = string.IsNullOrWhiteSpace(runner.AiProbabilityFallbackReason)
                                             ? "Market-derived fallback"
                                             : $"Market-derived fallback: {runner.AiProbabilityFallbackReason}";
-                                            <div class="text-warning small">@fallbackText</div>
+                                            <div class="text-warning small ai-win-note">@fallbackText</div>
                                         }
                                         else if (!string.IsNullOrWhiteSpace(runner.AiProbabilityFallbackReason))
                                         {
-                                            <div class="text-muted small">@runner.AiProbabilityFallbackReason</div>
+                                            <div class="text-muted small ai-win-note">@runner.AiProbabilityFallbackReason</div>
                                         }
                                     </td>
-                                    <td class="text-end">@aiOdds</td>
-                                    <td class="text-end">@marketProb</td>
-                                    <td class="text-end">@diff</td>
-                                    <td class="text-end">@displayedKelly</td>
+                                    <td class="text-end ai-odds-cell">@aiOdds</td>
+                                    @{
+                                        var applyButtonDisabled = true;
+                                        if (!string.IsNullOrEmpty(marketProbabilityAttr)
+                                        && double.TryParse(marketProbabilityAttr, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedMarketProbability))
+                                        {
+                                            applyButtonDisabled = parsedMarketProbability <= 0d;
+                                        }
+                                    }
+                                    <td class="text-end apply-market-cell">
+                                        <button type="button"
+                                                class="btn btn-sm btn-outline-primary apply-market-btn"
+                                                @(applyButtonDisabled ? "disabled" : string.Empty)
+                                                data-runner-name="@runner.HorseName">
+                                            Use market
+                                        </button>
+                                    </td>
+                                    <td class="text-end market-win-cell">@marketProb</td>
+                                    <td class="text-end edge-cell">@diff</td>
+                                    <td class="text-end kelly-cell">@displayedKelly</td>
                                     <td class="text-end">
                                         <span class="stake-value"
                                               data-default-stake="@stakeData"
@@ -1817,7 +1847,273 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                     layOddsData: ''
                 };
             };
+            const clampProbability = (value) => {
+                if (typeof value !== 'number' || !Number.isFinite(value)) {
+                    return 0;
+                }
 
+                if (value < 0) {
+                    return 0;
+                }
+
+                if (value > 1) {
+                    return 1;
+                }
+
+                return value;
+            };
+
+            const parseProbabilityAttribute = (value) => {
+                if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+                    return clampProbability(value);
+                }
+
+                if (typeof value === 'string') {
+                    const parsed = Number.parseFloat(value);
+                    if (Number.isFinite(parsed) && parsed > 0) {
+                        return clampProbability(parsed);
+                    }
+                }
+
+                return 0;
+            };
+
+            const setRowAiProbability = (row, probability, options = {}) => {
+                if (!row) {
+                    return;
+                }
+
+                const safeProbability = clampProbability(typeof probability === 'number' ? probability : 0);
+                const fromMarket = options.fromMarket === true;
+                const preserveSource = options.preserveSource === true;
+                const marketOddsValue = typeof options.marketOdds === 'number' && Number.isFinite(options.marketOdds) && options.marketOdds > 1
+                    ? options.marketOdds
+                    : null;
+
+                row.dataset.aiProbability = safeProbability > 0 ? safeProbability.toString() : '0';
+                if (!preserveSource) {
+                    row.dataset.aiProbabilitySource = fromMarket ? 'market' : 'model';
+                }
+
+                const aiWinCell = row.querySelector('.ai-win-cell');
+                if (aiWinCell) {
+                    let primary = aiWinCell.querySelector('.ai-win-primary');
+                    if (!primary) {
+                        primary = document.createElement('span');
+                        primary.className = 'ai-win-primary';
+                        aiWinCell.insertBefore(primary, aiWinCell.firstChild);
+                    }
+
+                    const displayText = formatProbabilityPercent(safeProbability);
+                    primary.textContent = displayText;
+                    const tooltip = buildProbabilityTooltip(safeProbability);
+                    if (tooltip) {
+                        primary.title = tooltip;
+                    } else {
+                        primary.removeAttribute('title');
+                    }
+
+                    let secondary = aiWinCell.querySelector('.ai-win-secondary');
+                    if (!secondary) {
+                        secondary = document.createElement('div');
+                        secondary.className = 'text-muted small ai-win-secondary';
+                        const insertBefore = aiWinCell.querySelector('.ai-win-note');
+                        if (insertBefore) {
+                            aiWinCell.insertBefore(secondary, insertBefore);
+                        } else {
+                            aiWinCell.appendChild(secondary);
+                        }
+                    }
+
+                    let oddsText = '-';
+                    if (fromMarket && marketOddsValue) {
+                        oddsText = formatDecimal(marketOddsValue);
+                    } else if (safeProbability > 0) {
+                        oddsText = formatDecimal(1 / safeProbability);
+                    }
+
+                    if (oddsText && oddsText !== '-') {
+                        secondary.textContent = oddsText;
+                        secondary.classList.remove('d-none');
+                    } else {
+                        secondary.textContent = '-';
+                        secondary.classList.add('d-none');
+                    }
+
+                    let indicator = aiWinCell.querySelector('.ai-market-indicator');
+                    if (fromMarket) {
+                        if (!indicator) {
+                            indicator = document.createElement('div');
+                            indicator.className = 'text-warning small ai-market-indicator';
+                            indicator.textContent = 'Market probability applied';
+                            const insertBefore = aiWinCell.querySelector('.ai-win-note');
+                            if (insertBefore) {
+                                aiWinCell.insertBefore(indicator, insertBefore);
+                            } else {
+                                aiWinCell.appendChild(indicator);
+                            }
+                        }
+                    } else if (indicator) {
+                        indicator.remove();
+                    }
+                }
+
+                const aiOddsCell = row.querySelector('.ai-odds-cell');
+                if (aiOddsCell) {
+                    let aiOddsText = '-';
+                    if (fromMarket && marketOddsValue) {
+                        aiOddsText = formatDecimal(marketOddsValue);
+                    } else if (safeProbability > 0) {
+                        aiOddsText = formatDecimal(1 / safeProbability);
+                    }
+
+                    aiOddsCell.textContent = aiOddsText ?? '-';
+                }
+
+                const marketProbability = parseProbabilityAttribute(row.dataset.marketProbability);
+                if (marketProbability > 0) {
+                    const differential = safeProbability - marketProbability;
+                    row.dataset.displayedDifferential = differential.toString();
+                } else {
+                    delete row.dataset.displayedDifferential;
+                }
+
+                const edgeCell = row.querySelector('.edge-cell');
+                if (edgeCell) {
+                    if (marketProbability > 0) {
+                        const diffPercent = (safeProbability - marketProbability) * 100;
+                        const diffText = formatPercentage(diffPercent);
+                        edgeCell.textContent = diffText ?? '-';
+                    } else {
+                        edgeCell.textContent = '-';
+                    }
+                }
+            };
+
+            const refreshRowAiProbabilityDisplay = (row) => {
+                if (!row) {
+                    return;
+                }
+
+                const probability = parseProbabilityAttribute(row.dataset.aiProbability);
+                const source = (row.dataset.aiProbabilitySource ?? '').toLowerCase();
+                const parsedMarketOdds = Number.parseFloat(row.dataset.marketOdds ?? '');
+                const marketOdds = Number.isFinite(parsedMarketOdds) ? parsedMarketOdds : null;
+                setRowAiProbability(row, probability, {
+                    fromMarket: source === 'market',
+                    marketOdds: source === 'market' ? marketOdds : null,
+                    preserveSource: true
+                });
+            };
+
+            const applyMarketProbabilityToRow = (targetRow) => {
+                if (!targetRow) {
+                    return;
+                }
+
+                const tbody = targetRow.closest('tbody');
+                if (!tbody) {
+                    return;
+                }
+
+                const targetMarketProbability = parseProbabilityAttribute(targetRow.dataset.marketProbability);
+                if (!(targetMarketProbability > 0)) {
+                    alert('Market probability is not available for this runner.');
+                    return;
+                }
+
+                const rows = Array.from(tbody.querySelectorAll('tr'));
+                if (rows.length === 0) {
+                    return;
+                }
+
+                const normalizedTarget = clampProbability(targetMarketProbability);
+                const others = rows.filter(row => row !== targetRow);
+                const otherTotal = others.reduce((sum, row) => sum + parseProbabilityAttribute(row.dataset.aiProbability), 0);
+                const remaining = clampProbability(1 - normalizedTarget);
+
+                const allocation = new Map();
+                if (others.length > 0) {
+                    if (otherTotal > 0) {
+                        const scale = remaining / otherTotal;
+                        others.forEach(row => {
+                            const base = parseProbabilityAttribute(row.dataset.aiProbability);
+                            allocation.set(row, clampProbability(base * scale));
+                        });
+                    } else if (remaining > 0) {
+                        const share = remaining / others.length;
+                        others.forEach(row => allocation.set(row, clampProbability(share)));
+                    } else {
+                        others.forEach(row => allocation.set(row, 0));
+                    }
+                }
+
+                allocation.set(targetRow, normalizedTarget);
+
+                let total = 0;
+                allocation.forEach(value => {
+                    total += value;
+                });
+                const diff = 1 - total;
+                if (Math.abs(diff) > 1e-9) {
+                    const adjustmentRow = diff > 0
+                        ? targetRow
+                        : (others.find(row => (allocation.get(row) ?? 0) > 0) ?? targetRow);
+                    if (adjustmentRow) {
+                        const current = allocation.get(adjustmentRow) ?? 0;
+                        allocation.set(adjustmentRow, clampProbability(current + diff));
+                    }
+                }
+
+                rows.forEach(row => {
+                    const probability = allocation.get(row) ?? 0;
+                    const parsedMarketOdds = Number.parseFloat(row.dataset.marketOdds ?? '');
+                    const marketOdds = Number.isFinite(parsedMarketOdds) ? parsedMarketOdds : null;
+                    const fromMarket = row === targetRow;
+                    setRowAiProbability(row, probability, {
+                        fromMarket,
+                        marketOdds: fromMarket ? marketOdds : null,
+                        preserveSource: false
+                    });
+                });
+            };
+
+            const bindApplyMarketButtons = (root) => {
+                if (!root) {
+                    return;
+                }
+
+                const buttons = root.querySelectorAll('.apply-market-btn');
+                buttons.forEach(button => {
+                    const row = button.closest('tr');
+                    if (row) {
+                        const marketProbability = parseProbabilityAttribute(row.dataset.marketProbability);
+                        button.disabled = !(marketProbability > 0);
+                    } else {
+                        button.disabled = true;
+                    }
+
+                    if (button.dataset.marketHandlerAttached === 'true') {
+                        return;
+                    }
+
+                    button.dataset.marketHandlerAttached = 'true';
+                    button.addEventListener('click', () => {
+                        const targetRow = button.closest('tr');
+                        if (!targetRow) {
+                            return;
+                        }
+
+                        const marketProbability = parseProbabilityAttribute(targetRow.dataset.marketProbability);
+                        if (!(marketProbability > 0)) {
+                            alert('Market probability is not available for this runner.');
+                            return;
+                        }
+
+                        applyMarketProbabilityToRow(targetRow);
+                    });
+                });
+            };
             let customKellyBankroll = null;
             let customStakeAmount = null;
             let stakeDampener = 1;
@@ -2164,16 +2460,21 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                     }
 
                     let aiProbability = null;
+                    let aiProbabilitySource = 'model';
                     if (typeof runner?.displayedAiProbability === 'number' && Number.isFinite(runner.displayedAiProbability) && runner.displayedAiProbability >= 0) {
                         aiProbability = runner.displayedAiProbability;
+                        aiProbabilitySource = runner?.displayedAiProbabilityMarketDerived ? 'market' : 'model';
                     } else if (typeof runner?.aiProbability === 'number' && Number.isFinite(runner.aiProbability) && runner.aiProbability >= 0) {
                         aiProbability = runner.aiProbability;
+                        aiProbabilitySource = runner?.aiProbabilityMarketDerived ? 'market' : 'model';
                     }
 
                     if (Number.isFinite(aiProbability) && aiProbability >= 0) {
                         row.dataset.aiProbability = aiProbability.toString();
+                        row.dataset.aiProbabilitySource = aiProbabilitySource;
                     } else {
-                        delete row.dataset.aiProbability;
+                        row.dataset.aiProbability = '0';
+                        row.dataset.aiProbabilitySource = 'model';
                         aiProbability = null;
                     }
 
@@ -2183,13 +2484,24 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                         delete row.dataset.marketProbability;
                     }
 
+                    if (typeof runner?.marketDecimalOdds === 'number' && Number.isFinite(runner.marketDecimalOdds) && runner.marketDecimalOdds > 1) {
+                        row.dataset.marketOdds = runner.marketDecimalOdds.toString();
+                    } else {
+                        delete row.dataset.marketOdds;
+                    }
 
                     const appendCell = (text, className) => {
                         const cell = document.createElement('td');
                         if (className) {
                             cell.className = className;
                         }
-                        cell.textContent = text;
+                        if (typeof text === 'string') {
+                            cell.textContent = text;
+                        } else if (text !== null && typeof text !== 'undefined') {
+                            cell.textContent = String(text);
+                        } else {
+                            cell.textContent = '-';
+                        }
                         row.appendChild(cell);
                         return cell;
                     };
@@ -2285,61 +2597,40 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
 
                     appendCell(typeof runner?.marketDecimalOdds === 'number'
                         ? formatDecimal(runner.marketDecimalOdds)
-                        : '-', 'text-end');
+                        : '-', 'text-end market-odds-cell');
 
                     appendCell(typeof runner?.layDecimalOdds === 'number'
                         ? formatDecimal(runner.layDecimalOdds)
-                        : '-', 'text-end');
+                        : '-', 'text-end lay-odds-cell');
 
-                    const aiProbCell = appendCell('-', 'text-end');
-                    if (Number.isFinite(aiProbability) && aiProbability >= 0) {
-                        const display = formatProbabilityPercent(aiProbability);
-                        if (display !== '-') {
-                            const span = document.createElement('span');
-                            span.textContent = display;
-                            const tooltip = buildProbabilityTooltip(aiProbability);
-                            if (tooltip) {
-                                span.title = tooltip;
-                            }
-                            aiProbCell.textContent = '';
-                            aiProbCell.appendChild(span);
-                        } else {
-                            aiProbCell.textContent = display;
-                        }
-                    }
+                    appendCell('-', 'text-end ai-win-cell');
 
-                    appendCell(typeof runner?.aiDecimalOdds === 'number'
-                        ? formatDecimal(runner.aiDecimalOdds)
-                        : '-', 'text-end');
+                    appendCell('-', 'text-end ai-odds-cell');
+
+                    const applyCell = document.createElement('td');
+                    applyCell.className = 'text-end apply-market-cell';
+                    const applyButton = document.createElement('button');
+                    applyButton.type = 'button';
+                    applyButton.className = 'btn btn-sm btn-outline-primary apply-market-btn';
+                    applyButton.textContent = 'Use market';
+                    const marketProbabilityValue = parseProbabilityAttribute(row.dataset.marketProbability);
+                    applyButton.disabled = !(marketProbabilityValue > 0);
+                    applyCell.appendChild(applyButton);
+                    row.appendChild(applyCell);
 
                     const marketPercent = typeof runner?.marketProbability === 'number'
                         ? formatPercentage(runner.marketProbability * 100)
                         : null;
-                    appendCell(marketPercent ?? '-', 'text-end');
+                    appendCell(marketPercent ?? '-', 'text-end market-win-cell');
 
-                    let displayedDifferential = null;
-                    if (typeof runner?.displayedDifferential === 'number' && Number.isFinite(runner.displayedDifferential)) {
-                        displayedDifferential = runner.displayedDifferential;
-                    } else if (typeof runner?.differential === 'number' && Number.isFinite(runner.differential)) {
-                        displayedDifferential = runner.differential;
-                    } else if (Number.isFinite(aiProbability)) {
-                        const marketProbability = Number.parseFloat(row.dataset.marketProbability ?? '');
-                        if (Number.isFinite(marketProbability)) {
-                            displayedDifferential = aiProbability - marketProbability;
-                        }
-                    }
-
-                    const diffPercent = Number.isFinite(displayedDifferential)
-                        ? formatPercentage(displayedDifferential * 100)
-                        : null;
-                    appendCell(diffPercent ?? '-', 'text-end');
+                    appendCell('-', 'text-end edge-cell');
 
                     const betting = resolveBettingRecommendation(runner);
                     if (betting.rowClass) {
                         row.classList.add(betting.rowClass);
                     }
 
-                    appendCell(betting.kellyText, 'text-end');
+                    appendCell(betting.kellyText, 'text-end kelly-cell');
                     const stakeCell = document.createElement('td');
                     stakeCell.className = 'text-end';
                     const stakeSpan = document.createElement('span');
@@ -2353,9 +2644,20 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                     stakeCell.appendChild(stakeSpan);
                     row.appendChild(stakeCell);
 
+                    const initialProbability = Number.isFinite(aiProbability) && aiProbability >= 0 ? aiProbability : 0;
+                    const fromMarket = (row.dataset.aiProbabilitySource ?? '').toLowerCase() === 'market';
+                    const parsedMarketOdds = Number.parseFloat(row.dataset.marketOdds ?? '');
+                    const effectiveMarketOdds = Number.isFinite(parsedMarketOdds) ? parsedMarketOdds : null;
+                    setRowAiProbability(row, initialProbability, {
+                        fromMarket,
+                        marketOdds: fromMarket ? effectiveMarketOdds : null,
+                        preserveSource: true
+                    });
+
                     tbody.appendChild(row);
                 });
                 bindHistoricalRaceButtons(tbody);
+                bindApplyMarketButtons(tbody);
                 updateStakeDisplays();
             };
 
@@ -2493,12 +2795,13 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                         delete targetRow.dataset.marketProbability;
                     }
 
-                    const cells = targetRow.querySelectorAll('td');
-                    if (cells.length < 10) {
-                        return;
+                    if (typeof runner.marketDecimalOdds === 'number' && Number.isFinite(runner.marketDecimalOdds) && runner.marketDecimalOdds > 1) {
+                        targetRow.dataset.marketOdds = runner.marketDecimalOdds.toString();
+                    } else {
+                        delete targetRow.dataset.marketOdds;
                     }
 
-                    const marketOddsCell = cells[5];
+                    const marketOddsCell = targetRow.querySelector('.market-odds-cell');
                     if (marketOddsCell) {
                         if (typeof runner.marketDecimalOdds === 'number' && Number.isFinite(runner.marketDecimalOdds) && runner.marketDecimalOdds > 1) {
                             marketOddsCell.textContent = formatDecimal(runner.marketDecimalOdds);
@@ -2507,7 +2810,7 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                         }
                     }
 
-                    const layOddsCell = cells[6];
+                    const layOddsCell = targetRow.querySelector('.lay-odds-cell');
                     if (layOddsCell) {
                         if (typeof runner.layDecimalOdds === 'number' && Number.isFinite(runner.layDecimalOdds) && runner.layDecimalOdds > 1) {
                             layOddsCell.textContent = formatDecimal(runner.layDecimalOdds);
@@ -2516,7 +2819,7 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                         }
                     }
 
-                    const marketWinCell = cells[9];
+                    const marketWinCell = targetRow.querySelector('.market-win-cell');
                     if (marketWinCell) {
                         if (Number.isFinite(marketProbability) && marketProbability > 0) {
                             const percentText = formatPercentage(marketProbability * 100);
@@ -2526,16 +2829,9 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                         }
                     }
 
-                    const diffCell = cells[10];
-                    if (diffCell) {
-                        const aiProbability = Number.parseFloat(targetRow.dataset.aiProbability ?? '');
-                        if (Number.isFinite(aiProbability) && Number.isFinite(marketProbability) && marketProbability > 0) {
-                            const diffPercent = (aiProbability - marketProbability) * 100;
-                            const diffText = formatPercentage(diffPercent);
-                            diffCell.textContent = diffText ?? '-';
-                        } else {
-                            diffCell.textContent = '-';
-                        }
+                    const applyButton = targetRow.querySelector('.apply-market-btn');
+                    if (applyButton) {
+                        applyButton.disabled = !(Number.isFinite(marketProbability) && marketProbability > 0);
                     }
 
                     const stakeSpan = targetRow.querySelector('.stake-value');
@@ -2546,8 +2842,22 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                             delete stakeSpan.dataset.layOdds;
                         }
                     }
+
+                    const source = (targetRow.dataset.aiProbabilitySource ?? '').toLowerCase();
+                    if (source === 'market' && Number.isFinite(marketProbability) && marketProbability > 0) {
+                        const parsedMarketOdds = Number.parseFloat(targetRow.dataset.marketOdds ?? '');
+                        const effectiveMarketOdds = Number.isFinite(parsedMarketOdds) ? parsedMarketOdds : null;
+                        setRowAiProbability(targetRow, marketProbability, {
+                            fromMarket: true,
+                            marketOdds: effectiveMarketOdds,
+                            preserveSource: true
+                        });
+                    } else {
+                        refreshRowAiProbabilityDisplay(targetRow);
+                    }
                 });
 
+                bindApplyMarketButtons(card);
                 updateStakeDisplays();
             };
 
@@ -2743,6 +3053,7 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                 });
             }
             bindHistoricalRaceButtons(document);
+            bindApplyMarketButtons(document);
             updateStakeDisplays();
         })();
     </script>
