@@ -759,23 +759,8 @@ namespace HorseRacingML.Scraping
                 runner.HistoricalRaceCount = historyCount;
                 flow.HistoricalRaceCount = historyCount;
                 EnsureCareerStartsFeature(historyCount.Value);
-                if (historyCount.Value <= 0)
+                if (historyCount.Value >1)
                 {
-                    Console.WriteLine(
-                        string.Format(
-                            CultureInfo.InvariantCulture,
-                            "\t[FeaturePopulation] Warning: non-positive historical race count {0} captured for {1}.",
-                            historyCount.Value,
-                            identifier));
-                }
-                else
-                {
-                    Console.WriteLine(
-                        string.Format(
-                            CultureInfo.InvariantCulture,
-                            "\t[FeaturePopulation] Using historical race count {0} for {1}; CareerStarts feature updated.",
-                            historyCount.Value,
-                            identifier));
                     var historicalRaces = ResolveRunnerHistory(flow);
                     if (historicalRaces.Count > 0)
                     {
@@ -938,20 +923,6 @@ namespace HorseRacingML.Scraping
             variance /= values.Count;
             return Math.Sqrt(variance);
         }
-        private static void LogFeatureFallback(string featureName, string message, string? runnerIdentifier = null)
-        {
-            var context = string.IsNullOrWhiteSpace(runnerIdentifier)
-                ? string.Empty
-                : $" ({runnerIdentifier})";
-            Console.WriteLine(
-                string.Format(
-                    CultureInfo.InvariantCulture,
-                    "{0} {1}{2}: {3}",
-                    FeatureFallbackPrefix,
-                    featureName,
-                    context,
-                    message));
-        }
         private static string AppendResolvedValue(string message, float? value)
         {
             var formatted = value.HasValue
@@ -985,21 +956,6 @@ namespace HorseRacingML.Scraping
             {
                 return;
             }
-
-            LogFeatureFallback(
-                "TrainerClassWinRate",
-                BuildDisplayFeatureValueMessage(featureValues, "TrainerClassWinRate"),
-                runnerIdentifier);
-
-            LogFeatureFallback(
-                "TrainerClassAvgNorm",
-                BuildDisplayFeatureValueMessage(featureValues, "TrainerClassAvgNorm"),
-                runnerIdentifier);
-
-            LogFeatureFallback(
-                "LastTrainerClassNormPos",
-                BuildDisplayFeatureValueMessage(featureValues, "LastTrainerClassNormPos"),
-                runnerIdentifier);
         }
 
         private static void EnsureDisplayJockeyClassFallbacks(
@@ -1022,21 +978,6 @@ namespace HorseRacingML.Scraping
             {
                 return;
             }
-
-            LogFeatureFallback(
-                "JockeyClassWinRate",
-                BuildDisplayFeatureValueMessage(featureValues, "JockeyClassWinRate"),
-                runnerIdentifier);
-
-            LogFeatureFallback(
-                "JockeyClassAvgNorm",
-                BuildDisplayFeatureValueMessage(featureValues, "JockeyClassAvgNorm"),
-                runnerIdentifier);
-
-            LogFeatureFallback(
-                "LastJockeyClassNormPos",
-                BuildDisplayFeatureValueMessage(featureValues, "LastJockeyClassNormPos"),
-                runnerIdentifier);
         }
 
         private static string BuildDisplayFeatureValueMessage(
@@ -1074,10 +1015,6 @@ namespace HorseRacingML.Scraping
         {
             if (featureValues == null)
             {
-                LogFeatureFallback(
-                    "TrainerClassWinRate",
-                    "feature collection unavailable; unable to resolve win rate",
-                    runnerIdentifier);
                 return null;
             }
 
@@ -1087,12 +1024,6 @@ namespace HorseRacingML.Scraping
 
             if (primaryWinRate.HasValue)
             {
-                LogFeatureFallback(
-                    "TrainerClassWinRate",
-                    AppendResolvedValue(
-                        "resolved from trainer-level win rate metrics (TrainerWinRate/TrainerWinRateRecentDays/TrainerWinRateLast50)",
-                        primaryWinRate),
-                    runnerIdentifier);
                 return primaryWinRate;
             }
 
@@ -1105,10 +1036,6 @@ namespace HorseRacingML.Scraping
 
             if (blendedWinRate.HasValue)
             {
-                LogFeatureFallback(
-                    "TrainerClassWinRate",
-                    "resolved by blending surface/going/distance/course win rates",
-                    runnerIdentifier);
                 return blendedWinRate;
             }
 
@@ -1118,33 +1045,14 @@ namespace HorseRacingML.Scraping
 
             if (fallbackWinRate.HasValue)
             {
-                LogFeatureFallback(
-                    "TrainerClassWinRate",
-                    AppendResolvedValue(
-                        "resolved from class/jockey win rate fallbacks",
-                        fallbackWinRate),
-                    runnerIdentifier);
                 return fallbackWinRate;
             }
 
             var generalWinRate = ResolveGeneralWinRateFallback(featureValues);
             if (generalWinRate.HasValue)
             {
-                LogFeatureFallback(
-                    "TrainerClassWinRate",
-                    AppendResolvedValue(
-                        "resolved from general performance win rate metrics (WinRateLast*/LifetimeWinRate)",
-                        generalWinRate),
-                    runnerIdentifier);
                 return generalWinRate;
             }
-
-            LogFeatureFallback(
-                "TrainerClassWinRate",
-                AppendResolvedValue(
-                    "no trainer, jockey, or class win rate statistics available; using neutral default",
-                    0f),
-                runnerIdentifier);
             return null;
         }
 
@@ -1155,10 +1063,6 @@ namespace HorseRacingML.Scraping
         {
             if (featureValues == null)
             {
-                LogFeatureFallback(
-                    "TrainerClassAvgNorm",
-                    "feature collection unavailable; unable to resolve average normalized finish",
-                    runnerIdentifier);
                 return null;
             }
 
@@ -1180,12 +1084,6 @@ namespace HorseRacingML.Scraping
             if (!resolvedAvg.HasValue && trainerClassWinRate.HasValue)
             {
                 var derived = ClampNormalizedPosition(1f - trainerClassWinRate.Value);
-                LogFeatureFallback(
-                    "TrainerClassAvgNorm",
-                    AppendResolvedValue(
-                        "derived from resolved trainer class win rate because no normalized finish history was available",
-                        derived),
-                    runnerIdentifier);
                 resolvedAvg = derived;
                 resolutionLogged = true;
             }
@@ -1198,58 +1096,15 @@ namespace HorseRacingML.Scraping
 
             if (resolvedAvg.HasValue)
             {
-                if (!resolutionLogged)
-                {
-                    if (resolvedAvg == blendedAvg)
-                    {
-                        LogFeatureFallback(
-                            "TrainerClassAvgNorm",
-                            AppendResolvedValue(
-                                "resolved by blending available normalized finish metrics",
-                                resolvedAvg),
-                            runnerIdentifier);
-                    }
-                    else if (resolvedAvg == surfaceAvg || resolvedAvg == goingAvg || resolvedAvg == distanceAvg)
-                    {
-                        LogFeatureFallback(
-                            "TrainerClassAvgNorm",
-                            AppendResolvedValue(
-                                "resolved from a single trainer normalized finish metric (surface/going/distance)",
-                                resolvedAvg),
-                            runnerIdentifier);
-                    }
-                    else
-                    {
-                        LogFeatureFallback(
-                            "TrainerClassAvgNorm",
-                            AppendResolvedValue(
-                                "resolved from class/jockey normalized finish fallbacks",
-                                resolvedAvg),
-                            runnerIdentifier);
-                    }
-                }
-
+               
                 return resolvedAvg;
             }
 
             var generalAvgNorm = ResolveGeneralNormalizedFinishFallback(featureValues, trainerClassWinRate);
             if (generalAvgNorm.HasValue)
             {
-                LogFeatureFallback(
-                    "TrainerClassAvgNorm",
-                    AppendResolvedValue(
-                        "resolved from general performance normalized finish metrics (AvgNormPosLast*/WinRateLast*)",
-                        generalAvgNorm),
-                    runnerIdentifier);
                 return generalAvgNorm;
             }
-
-            LogFeatureFallback(
-                "TrainerClassAvgNorm",
-                AppendResolvedValue(
-                    "no trainer, jockey, or class normalized finish statistics available; using neutral default",
-                    0f),
-                runnerIdentifier);
             return null;
         }
 
@@ -1273,12 +1128,6 @@ namespace HorseRacingML.Scraping
             if (!resolved.HasValue && trainerClassAvgNorm.HasValue)
             {
                 var derived = ClampNormalizedPosition(trainerClassAvgNorm.Value);
-                LogFeatureFallback(
-                    "LastTrainerClassNormPos",
-                    AppendResolvedValue(
-                        "derived from resolved trainer class average because no last-position history was available",
-                        derived),
-                    runnerIdentifier);
                 resolved = derived;
             }
 
@@ -1292,21 +1141,8 @@ namespace HorseRacingML.Scraping
 
             if (lastClassNorm.HasValue)
             {
-                LogFeatureFallback(
-                    "LastTrainerClassNormPos",
-                    AppendResolvedValue(
-                        "resolved from class/jockey last normalized finish fallbacks",
-                        lastClassNorm),
-                    runnerIdentifier);
                 return lastClassNorm;
             }
-
-            LogFeatureFallback(
-                "LastTrainerClassNormPos",
-                AppendResolvedValue(
-                    "no trainer, jockey, or class last-position statistics available; using neutral default",
-                    0f),
-                runnerIdentifier);
 
             return null;
         }
@@ -1316,10 +1152,6 @@ namespace HorseRacingML.Scraping
         {
             if (featureValues == null)
             {
-                LogFeatureFallback(
-                    "JockeyClassWinRate",
-                    "feature collection unavailable; unable to resolve win rate",
-                    runnerIdentifier);
                 return null;
             }
 
@@ -1329,12 +1161,6 @@ namespace HorseRacingML.Scraping
 
             if (primaryWinRate.HasValue)
             {
-                LogFeatureFallback(
-                    "JockeyClassWinRate",
-                    AppendResolvedValue(
-                        "resolved from jockey-level win rate metrics (JockeyWinRate/JockeyWinRateRecentDays/JockeyWinRateLast50)",
-                        primaryWinRate),
-                    runnerIdentifier);
                 return primaryWinRate;
             }
 
@@ -1347,22 +1173,12 @@ namespace HorseRacingML.Scraping
 
             if (blendedWinRate.HasValue)
             {
-                LogFeatureFallback(
-                    "JockeyClassWinRate",
-                    "resolved by blending going/surface/distance win rates",
-                    runnerIdentifier);
                 return blendedWinRate;
             }
 
             var trainerJockeyWinRate = ResolveNonNeutralFeatureValue(featureValues, "TrainerJockeyWinRate");
             if (trainerJockeyWinRate.HasValue)
             {
-                LogFeatureFallback(
-                    "JockeyClassWinRate",
-                    AppendResolvedValue(
-                        "resolved from trainer-jockey combination win rate",
-                        trainerJockeyWinRate),
-                    runnerIdentifier);
                 return trainerJockeyWinRate;
             }
 
@@ -1372,31 +1188,13 @@ namespace HorseRacingML.Scraping
 
             if (fallbackWinRate.HasValue)
             {
-                LogFeatureFallback(
-                    "JockeyClassWinRate",
-                    AppendResolvedValue(
-                        "resolved from class/trainer win rate fallbacks",
-                        fallbackWinRate),
-                    runnerIdentifier);
                 return fallbackWinRate;
             }
             var generalWinRate = ResolveGeneralWinRateFallback(featureValues);
             if (generalWinRate.HasValue)
             {
-                LogFeatureFallback(
-                    "JockeyClassWinRate",
-                    AppendResolvedValue(
-                        "resolved from general performance win rate metrics (WinRateLast*/LifetimeWinRate)",
-                        generalWinRate),
-                    runnerIdentifier);
                 return generalWinRate;
             }
-            LogFeatureFallback(
-                "JockeyClassWinRate",
-                AppendResolvedValue(
-                    "no jockey, trainer, or class win rate statistics available; using neutral default",
-                    0f),
-                runnerIdentifier);
             return null;
         }
 
@@ -1407,10 +1205,6 @@ namespace HorseRacingML.Scraping
         {
             if (featureValues == null)
             {
-                LogFeatureFallback(
-                    "JockeyClassAvgNorm",
-                    "feature collection unavailable; unable to resolve average normalized finish",
-                    runnerIdentifier);
                 return null;
             }
 
@@ -1433,12 +1227,6 @@ namespace HorseRacingML.Scraping
             if (!resolvedAvg.HasValue && jockeyClassWinRate.HasValue)
             {
                 var derived = ClampNormalizedPosition(1f - jockeyClassWinRate.Value);
-                LogFeatureFallback(
-                    "JockeyClassAvgNorm",
-                    AppendResolvedValue(
-                        "derived from resolved jockey class win rate because no normalized finish history was available",
-                        derived),
-                    runnerIdentifier);
                 resolvedAvg = derived;
                 resolutionLogged = true;
             }
@@ -1451,56 +1239,14 @@ namespace HorseRacingML.Scraping
 
             if (resolvedAvg.HasValue)
             {
-                if (!resolutionLogged)
-                {
-                    if (resolvedAvg == blendedAvg)
-                    {
-                        LogFeatureFallback(
-                            "JockeyClassAvgNorm",
-                            AppendResolvedValue(
-                                "resolved by blending available normalized finish metrics",
-                                resolvedAvg),
-                            runnerIdentifier);
-                    }
-                    else if (resolvedAvg == surfaceAvg || resolvedAvg == goingAvg || resolvedAvg == distanceAvg || resolvedAvg == goingDistanceAvg)
-                    {
-                        LogFeatureFallback(
-                            "JockeyClassAvgNorm",
-                            AppendResolvedValue(
-                                "resolved from a single jockey normalized finish metric (surface/going/distance)",
-                                resolvedAvg),
-                            runnerIdentifier);
-                    }
-                    else
-                    {
-                        LogFeatureFallback(
-                            "JockeyClassAvgNorm",
-                            AppendResolvedValue(
-                                "resolved from class/trainer normalized finish fallbacks",
-                                resolvedAvg),
-                            runnerIdentifier);
-                    }
-                }
 
                 return resolvedAvg;
             }
             var generalAvgNorm = ResolveGeneralNormalizedFinishFallback(featureValues, jockeyClassWinRate);
             if (generalAvgNorm.HasValue)
             {
-                LogFeatureFallback(
-                    "JockeyClassAvgNorm",
-                    AppendResolvedValue(
-                        "resolved from general performance normalized finish metrics (AvgNormPosLast*/WinRateLast*)",
-                        generalAvgNorm),
-                    runnerIdentifier);
                 return generalAvgNorm;
             }
-            LogFeatureFallback(
-                "JockeyClassAvgNorm",
-                AppendResolvedValue(
-                    "no jockey, trainer, or class normalized finish statistics available; using neutral default",
-                    0f),
-                runnerIdentifier);
             return null;
         }
         private static float? ResolveLastJockeyClassNorm(
@@ -1527,12 +1273,6 @@ namespace HorseRacingML.Scraping
             if (!resolved.HasValue && jockeyClassAvgNorm.HasValue)
             {
                 var derived = ClampNormalizedPosition(jockeyClassAvgNorm.Value);
-                LogFeatureFallback(
-                    "LastJockeyClassNormPos",
-                    AppendResolvedValue(
-                        "derived from resolved jockey class average because no last-position history was available",
-                        derived),
-                    runnerIdentifier);
                 resolved = derived;
             }
 
@@ -1544,28 +1284,11 @@ namespace HorseRacingML.Scraping
             var lastClassNorm = ResolveNonNeutralFeatureValue(featureValues, "LastClassNormPos")
                 ?? ResolveNonNeutralFeatureValue(featureValues, "LastTrainerClassNormPos");
 
-            if (lastClassNorm.HasValue)
-            {
-                LogFeatureFallback(
-                    "LastJockeyClassNormPos",
-                    AppendResolvedValue(
-                        "resolved from class/trainer last normalized finish fallbacks",
-                        lastClassNorm),
-                    runnerIdentifier);
-            }
 
             if (lastClassNorm.HasValue)
             {
                 return lastClassNorm;
             }
-
-            LogFeatureFallback(
-                "LastJockeyClassNormPos",
-                AppendResolvedValue(
-                    "no jockey, trainer, or class last-position statistics available; using neutral default",
-                    0f),
-                runnerIdentifier);
-
             return null;
         }
         private void PopulateRunnerPricing(RunnerFlow flow, RunnerDayReport runner)
@@ -1861,13 +1584,6 @@ namespace HorseRacingML.Scraping
                 {
                     featureVector["CareerStarts"] = resolvedCareerStarts.Value;
                 }
-
-                Console.WriteLine(
-                    string.Format(
-                        CultureInfo.InvariantCulture,
-                        "\t\t[FeaturePopulation] Resolved career starts for {0}: {1} (source: existing flow value).",
-                        identifier,
-                        resolvedCareerStarts.Value));
                 if (!resolvedLifetimeWinRate.HasValue)
                 {
                     resolvedLifetimeWinRate = _trainer.ComputeSmoothedWinRate(0, resolvedCareerStarts.Value);
@@ -1875,13 +1591,6 @@ namespace HorseRacingML.Scraping
                 }
 
                 AssignLifetimeWinRate(featureVector, flow, resolvedLifetimeWinRate.Value);
-                Console.WriteLine(
-                    string.Format(
-                        CultureInfo.InvariantCulture,
-                        "\t\t[FeaturePopulation] Resolved lifetime win rate for {0}: {1:F4} (source: {2}).",
-                        identifier,
-                        resolvedLifetimeWinRate.Value,
-                        lifetimeSource ?? "existing flow value"));
                 return;
             }
 
@@ -2446,12 +2155,6 @@ namespace HorseRacingML.Scraping
                     flow.MatchedDatabaseRecord = matchedLookupRow || usedTrainerFallback;
                     flow.AiProbabilityFallbackReason = BuildMissingHistoricalFeatureReason();
                     continue;
-                }
-                if (missingHistoricalKeys.Count == 0 &&
-                    AreAlwaysRequiredHistoricalFeaturesSatisfied(featureVector))
-                {
-                    Console.WriteLine(
-                        $"\t\t[FeaturePopulation] HistoricalFeaturesAlwaysRequired satisfied for {identifier}.");
                 }
                 EnsureDistanceBeatenFromNumeric(featureVector, flow);
                 EnsureWinningTimeFromRace(featureVector, flow);
