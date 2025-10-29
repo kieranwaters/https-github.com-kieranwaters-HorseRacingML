@@ -1,10 +1,8 @@
-﻿﻿@using System.Linq
+﻿﻿﻿@using System.Linq
 @model HorseRacingML.Models.MLParameterBatch
 @{
     ViewData["Title"] = "Train AI";
-    var firstParameter = Model?.Parameters?.FirstOrDefault();
-    string? dropoutRoute = firstParameter is null ? null : FormattableString.Invariant($"{firstParameter.Dropout}");
-    string? learningRateRoute = firstParameter is null ? null : FormattableString.Invariant($"{firstParameter.LearningRate}");
+    var testAiUrl = Url.Action("TestAI");
 }
 
 <h1>Train AI</h1>
@@ -44,14 +42,9 @@
     </table>
     <button type="button" class="btn btn-secondary" onclick="addRow()">Add Row</button>
     <button type="submit" class="btn btn-primary">Run</button>
-    <a asp-action="TestAI"
-       asp-route-units="@firstParameter?.Units"
-       asp-route-dropout="@dropoutRoute"
-       asp-route-layers="@firstParameter?.Layers"
-       asp-route-learningRate="@learningRateRoute"
-       asp-route-epochs="@firstParameter?.Epochs"
-       asp-route-batchSize="@firstParameter?.BatchSize"
-       asp-route-folds="@firstParameter?.Folds"
+    <a id="testAiLink"
+       href="@testAiUrl"
+       data-base-url="@testAiUrl"
        class="btn btn-info ms-2">Test AI</a>
 </form>
 
@@ -96,5 +89,45 @@
                 });
             });
         }
+        document.getElementById('testAiLink')?.addEventListener('click', function (event) {
+            const link = this;
+            const baseUrl = link.getAttribute('data-base-url');
+            if (!baseUrl) {
+                return;
+            }
+
+            const firstRow = document.querySelector('#parameterRows tr');
+            if (!firstRow) {
+                return;
+            }
+
+            event.preventDefault();
+
+            const params = new URLSearchParams();
+            const setters = [
+                { name: 'units', selector: 'input[name$=".Units"]' },
+                { name: 'dropout', selector: 'input[name$=".Dropout"]' },
+                { name: 'layers', selector: 'input[name$=".Layers"]' },
+                { name: 'learningRate', selector: 'input[name$=".LearningRate"]' },
+                { name: 'epochs', selector: 'input[name$=".Epochs"]' },
+                { name: 'batchSize', selector: 'input[name$=".BatchSize"]' },
+                { name: 'folds', selector: 'input[name$=".Folds"]' }
+            ];
+
+            setters.forEach(({ name, selector }) => {
+                const input = firstRow.querySelector(selector);
+                if (input && input.value.trim() !== '') {
+                    params.set(name, input.value.trim());
+                }
+            });
+
+            const targetUrl = new URL(baseUrl, window.location.origin);
+            const query = params.toString();
+            if (query) {
+                targetUrl.search = query;
+            }
+
+            window.location.href = targetUrl.toString();
+        });
     </script>
 }
