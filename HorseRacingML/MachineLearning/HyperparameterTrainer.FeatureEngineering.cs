@@ -1600,7 +1600,7 @@ namespace HorseRacingML.ML
                        float MinSaddlecloth,
                        float MaxSaddlecloth,
                        bool HasWeightStats);
-        }
+        
 
         private static float? ParseDistanceBeaten(string text)
         {
