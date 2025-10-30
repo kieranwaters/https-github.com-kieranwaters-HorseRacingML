@@ -471,6 +471,8 @@ namespace HorseRacingML.ML
                             (int trainerId, int classVal) trainerClassKey = default;
                             (int starts, int wins, float sumNorm, float lastNorm) trainerClassStat = default;
                             bool hasTrainerClass = trainerId.HasValue && !classMissing;
+                            float globalDefaultWinRate = _trainer.SmoothedWinRate(0, 0);
+                            float trainerDefaultWinRate = globalDefaultWinRate;
                             if (hasTrainerClass)
                             {
                                 trainerClassKey = (trainerId.Value, classVal);
@@ -913,10 +915,10 @@ namespace HorseRacingML.ML
                                 double pref = winDist.count > 0 ? winDist.sum / winDist.count : (allDist.count > 0 ? allDist.sum / allDist.count : distanceYards);
                                 row["DistanceFromPreferred"] = (float)Math.Abs(distanceYards - pref);
 
-                                var globalDefaultWinRate = _trainer.SmoothedWinRate(0, 0);
+                                globalDefaultWinRate = _trainer.SmoothedWinRate(0, 0);
                                 RollingStat trainerStat = default;
                                 bool hasTrainerStat = false;
-                                float trainerDefaultWinRate = globalDefaultWinRate;
+                                trainerDefaultWinRate = globalDefaultWinRate;
 
                                 // Trainer statistics
                                 if (trainerId.HasValue)
