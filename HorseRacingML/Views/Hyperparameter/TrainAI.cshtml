@@ -55,7 +55,6 @@
         runNumber++;
         var sorted = result.FeatureCorrelations
             .OrderByDescending(c => Math.Abs(c.Correlation))
-            .Take(50)
             .ToList();
 
         <div class="card mb-4">
