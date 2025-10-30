@@ -259,7 +259,7 @@ namespace HorseRacingML.ML
                     result = 0;
                     return false;
                 }
-                private static bool TryGetValueWithAliases(
+                public static bool TryGetValueWithAliases(
                     Dictionary<string, object?> row,
                     string key,
                     out object? value,
