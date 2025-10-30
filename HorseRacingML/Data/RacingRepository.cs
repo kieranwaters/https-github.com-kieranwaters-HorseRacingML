@@ -31,6 +31,7 @@ namespace HorseRacingML.Data
         private static bool _runnerFlowTableEnsured;
         private static bool _upcomingRaceTableEnsured;
         private readonly AsyncLocal<DayReportScopeState?> _dayReportScope = new();
+        private static bool _runnerResultUniquenessEnsured;
         private IDbConnection OpenConnection()
         {
             const int maxAttempts = 3;
@@ -194,9 +195,15 @@ namespace HorseRacingML.Data
                 return;
             }
 
+            var normalizedMarketIds = flowList
+                .Select(flow => flow?.MarketId?.Trim())
+                .Where(marketId => !string.IsNullOrEmpty(marketId))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
             const string header = @"INSERT INTO RunnerFlow(MarketId, UpcomingRaceId, RaceDate, ScheduledOff, VenueName, VenueCountry, RaceTitle, RaceDetails, RaceType, Surface, Going, DistanceYards, DistanceText, RunnerCount, BackBookPercentage, LayBookPercentage, ClothNumber, Draw, HorseName, JockeyName, BackPrice1, BackPrice2, BackPrice3, LayPrice1, LayPrice2, LayPrice3, AiOdds, Age, WeightLbs, WeightText, TrainerName)
 VALUES";
-      
+
 
             var sqlBuilder = new StringBuilder(header.Length + flowList.Count * 128);
             sqlBuilder.Append(header);
@@ -207,6 +214,7 @@ VALUES";
             {
                 var flow = flowList[i];
                 var suffix = i.ToString(CultureInfo.InvariantCulture);
+                var marketId = flow.MarketId?.Trim();
 
                 sqlBuilder.Append("(@MarketId").Append(suffix)
                     .Append(", @UpcomingRaceId").Append(suffix)
@@ -246,7 +254,7 @@ VALUES";
                     sqlBuilder.Append(", ");
                 }
 
-                parameters.Add($"MarketId{suffix}", flow.MarketId);
+                parameters.Add($"MarketId{suffix}", marketId);
                 parameters.Add($"UpcomingRaceId{suffix}", flow.UpcomingRaceId);
                 parameters.Add($"RaceDate{suffix}", flow.RaceDate);
                 parameters.Add($"ScheduledOff{suffix}", flow.ScheduledOff);
@@ -285,6 +293,16 @@ VALUES";
             {
                 EnsureRunnerFlowTable(connection, scope);
                 transaction = connection.BeginTransaction();
+
+                if (normalizedMarketIds.Count > 0)
+                {
+                    const string deleteSql = "DELETE FROM RunnerFlow WHERE MarketId = @MarketId;";
+                    foreach (var marketId in normalizedMarketIds)
+                    {
+                        connection.Execute(deleteSql, new { MarketId = marketId }, transaction);
+                    }
+                }
+
                 connection.Execute(sqlBuilder.ToString(), parameters, transaction);
                 transaction.Commit();
             }
@@ -478,124 +496,149 @@ END;";
                 _upcomingRaceTableEnsured = true;
             }
         }
-        public int InsertRace(Race race)
-        {
-            StripBracketedText(race);
-            race.Going = NormalizeGoing(race.Going);
-            const string sql = @"
-DECLARE @NormalizedTitle NVARCHAR(512) = LTRIM(RTRIM(ISNULL(@Title,'')));
-DECLARE @ExistingId INT;
-
-SELECT TOP 1 @ExistingId = RaceId
-FROM Race
-WHERE CourseId=@CourseId
-  AND RaceDate=@RaceDate
-  AND ScheduledOff=@ScheduledOff
-  AND (
-        @NormalizedTitle = ''
-        OR LTRIM(RTRIM(ISNULL(Title,''))) = @NormalizedTitle
-        OR LTRIM(RTRIM(ISNULL(Title,''))) = ''
-      )
-ORDER BY RaceId;
-
-IF @ExistingId IS NOT NULL
-BEGIN
-    UPDATE Race
-    SET Title = CASE WHEN LEN(LTRIM(RTRIM(ISNULL(Title,'')))) = 0 AND LEN(@NormalizedTitle) > 0 THEN @Title ELSE Title END,
-        RaceType = CASE WHEN LEN(LTRIM(RTRIM(ISNULL(RaceType,'')))) = 0 AND LEN(LTRIM(RTRIM(ISNULL(@RaceType,'')))) > 0 THEN @RaceType ELSE RaceType END,
-        Class = COALESCE(Class, @Class),
-        AgeRestriction = CASE WHEN LEN(LTRIM(RTRIM(ISNULL(AgeRestriction,'')))) = 0 AND LEN(LTRIM(RTRIM(ISNULL(@AgeRestriction,'')))) > 0 THEN @AgeRestriction ELSE AgeRestriction END,
-        Surface = CASE WHEN LEN(LTRIM(RTRIM(ISNULL(Surface,'')))) = 0 AND LEN(LTRIM(RTRIM(ISNULL(@Surface,'')))) > 0 THEN @Surface ELSE Surface END,
-        Going = CASE WHEN LEN(LTRIM(RTRIM(ISNULL(Going,'')))) = 0 AND LEN(LTRIM(RTRIM(ISNULL(@Going,'')))) > 0 THEN @Going ELSE Going END,
-        DistanceYards = CASE WHEN ISNULL(DistanceYards, 0) = 0 AND @DistanceYards > 0 THEN @DistanceYards ELSE DistanceYards END,
-        DistanceText = CASE WHEN LEN(LTRIM(RTRIM(ISNULL(DistanceText,'')))) = 0 AND LEN(LTRIM(RTRIM(ISNULL(@DistanceText,'')))) > 0 THEN @DistanceText ELSE DistanceText END,
-        RunnerCount = CASE WHEN RunnerCount IS NULL AND @RunnerCount IS NOT NULL THEN @RunnerCount ELSE RunnerCount END,
-        Status = CASE WHEN LEN(LTRIM(RTRIM(ISNULL(Status,'')))) = 0 AND LEN(LTRIM(RTRIM(ISNULL(@Status,'')))) > 0 THEN @Status ELSE Status END,
-        WinningTimeMs = COALESCE(WinningTimeMs, @WinningTimeMs),
-        WinningTimeText = CASE WHEN LEN(LTRIM(RTRIM(ISNULL(WinningTimeText,'')))) = 0 AND LEN(LTRIM(RTRIM(ISNULL(@WinningTimeText,'')))) > 0 THEN @WinningTimeText ELSE WinningTimeText END,
-        ActualOff = COALESCE(ActualOff, @ActualOff)
-    WHERE RaceId=@ExistingId;
-
-    SELECT @ExistingId;
-END
-ELSE
-BEGIN
-    INSERT INTO Race(CourseId, RaceDate, ScheduledOff, ActualOff, Title, RaceType, Class, AgeRestriction, Surface, Going, DistanceYards, DistanceText, RunnerCount, Status, WinningTimeMs, WinningTimeText)
-    VALUES(@CourseId, @RaceDate, @ScheduledOff, @ActualOff, @Title, @RaceType, @Class, @AgeRestriction, @Surface, @Going, @DistanceYards, @DistanceText, @RunnerCount, @Status, @WinningTimeMs, @WinningTimeText);
-    SELECT CAST(SCOPE_IDENTITY() as int);
-END";
-            using var conn = OpenConnection();
-            return conn.QuerySingle<int>(sql, race);
-        }
-
         public void BulkInsertRunnerResults(IEnumerable<RunnerResult> results)
         {
             var list = results?.ToList();
-            if (list == null || list.Count == 0) return;
-
-            var table = new DataTable();
-            table.Columns.Add("RaceId", typeof(int));
-            table.Columns.Add("HorseId", typeof(int));
-            table.Columns.Add("TrainerId", typeof(short));
-            table.Columns.Add("JockeyId", typeof(short));
-            table.Columns.Add("SaddleclothNumber", typeof(byte));
-            table.Columns.Add("Draw", typeof(byte));
-            table.Columns.Add("Age", typeof(byte));
-            table.Columns.Add("WeightLbs", typeof(byte));
-            table.Columns.Add("WeightText", typeof(string));
-            table.Columns.Add("FinishPos", typeof(short));
-            table.Columns.Add("OutcomeCode", typeof(string));
-            table.Columns.Add("DistanceBeatenText", typeof(string));
-            table.Columns.Add("DistanceBeatenLengths", typeof(decimal));
-            table.Columns.Add("SP_Fraction", typeof(string));
-            table.Columns.Add("SP_Decimal", typeof(decimal));
-            table.Columns.Add("FavTag", typeof(string));
-            table.Columns.Add("OpeningFraction", typeof(string));
-            table.Columns.Add("TouchedHighFraction", typeof(string));
-            table.Columns.Add("TouchedLowFraction", typeof(string));
-            table.Columns.Add("Comment", typeof(string));
-
-            foreach (var r in list)
+            if (list == null || list.Count == 0)
             {
-                StripBracketedText(r);
-                table.Rows.Add(
-                    r.RaceId,
-                    r.HorseId,
-                    r.TrainerId ?? (object)DBNull.Value,
-                    r.JockeyId ?? (object)DBNull.Value,
-                    r.SaddleclothNumber ?? (object)DBNull.Value,
-                    r.Draw ?? (object)DBNull.Value,
-                    r.Age ?? (object)DBNull.Value,
-                    r.WeightLbs ?? (object)DBNull.Value,
-                    r.WeightText ?? (object)DBNull.Value,
-                    r.FinishPos ?? (object)DBNull.Value,
-                    r.OutcomeCode ?? (object)DBNull.Value,
-                    r.DistanceBeatenText ?? (object)DBNull.Value,
-                    r.DistanceBeatenLengths ?? (object)DBNull.Value,
-                    r.SP_Fraction ?? (object)DBNull.Value,
-                    r.SP_Decimal ?? (object)DBNull.Value,
-                    r.FavTag ?? (object)DBNull.Value,
-                    r.OpeningFraction ?? (object)DBNull.Value,
-                    r.TouchedHighFraction ?? (object)DBNull.Value,
-                    r.TouchedLowFraction ?? (object)DBNull.Value,
-                    r.Comment ?? (object)DBNull.Value
-                );
+                return;
             }
 
-            using var conn = new SqlConnection(_connectionString);
-            conn.Open();
-            using var bulk = new SqlBulkCopy(conn)
+            var deduped = new Dictionary<(int RaceId, int HorseId), RunnerResult>();
+            foreach (var result in list)
             {
-                DestinationTableName = "RunnerResult"
-            };
+                if (result == null)
+                {
+                    continue;
+                }
 
-            foreach (DataColumn col in table.Columns)
-            {
-                bulk.ColumnMappings.Add(col.ColumnName, col.ColumnName);
+                StripBracketedText(result);
+                deduped[(result.RaceId, result.HorseId)] = result;
             }
 
-            bulk.WriteToServer(table);
+            if (deduped.Count == 0)
+            {
+                return;
+            }
+
+            const string mergeSql = @"
+MERGE INTO dbo.RunnerResult AS target
+USING (VALUES (
+    @RaceId,
+    @HorseId,
+    @TrainerId,
+    @JockeyId,
+    @SaddleclothNumber,
+    @Draw,
+    @Age,
+    @WeightLbs,
+    @WeightText,
+    @FinishPos,
+    @OutcomeCode,
+    @DistanceBeatenText,
+    @DistanceBeatenLengths,
+    @SP_Fraction,
+    @SP_Decimal,
+    @FavTag,
+    @OpeningFraction,
+    @TouchedHighFraction,
+    @TouchedLowFraction,
+    @Comment
+)) AS source (
+    RaceId,
+    HorseId,
+    TrainerId,
+    JockeyId,
+    SaddleclothNumber,
+    Draw,
+    Age,
+    WeightLbs,
+    WeightText,
+    FinishPos,
+    OutcomeCode,
+    DistanceBeatenText,
+    DistanceBeatenLengths,
+    SP_Fraction,
+    SP_Decimal,
+    FavTag,
+    OpeningFraction,
+    TouchedHighFraction,
+    TouchedLowFraction,
+    Comment
+)
+ON target.RaceId = source.RaceId AND target.HorseId = source.HorseId
+WHEN MATCHED THEN
+    UPDATE SET
+        TrainerId = source.TrainerId,
+        JockeyId = source.JockeyId,
+        SaddleclothNumber = source.SaddleclothNumber,
+        Draw = source.Draw,
+        Age = source.Age,
+        WeightLbs = source.WeightLbs,
+        WeightText = source.WeightText,
+        FinishPos = source.FinishPos,
+        OutcomeCode = source.OutcomeCode,
+        DistanceBeatenText = source.DistanceBeatenText,
+        DistanceBeatenLengths = source.DistanceBeatenLengths,
+        SP_Fraction = source.SP_Fraction,
+        SP_Decimal = source.SP_Decimal,
+        FavTag = source.FavTag,
+        OpeningFraction = source.OpeningFraction,
+        TouchedHighFraction = source.TouchedHighFraction,
+        TouchedLowFraction = source.TouchedLowFraction,
+        Comment = source.Comment
+WHEN NOT MATCHED BY TARGET THEN
+    INSERT (
+        RaceId,
+        HorseId,
+        TrainerId,
+        JockeyId,
+        SaddleclothNumber,
+        Draw,
+        Age,
+        WeightLbs,
+        WeightText,
+        FinishPos,
+        OutcomeCode,
+        DistanceBeatenText,
+        DistanceBeatenLengths,
+        SP_Fraction,
+        SP_Decimal,
+        FavTag,
+        OpeningFraction,
+        TouchedHighFraction,
+        TouchedLowFraction,
+        Comment
+    )
+    VALUES (
+        source.RaceId,
+        source.HorseId,
+        source.TrainerId,
+        source.JockeyId,
+        source.SaddleclothNumber,
+        source.Draw,
+        source.Age,
+        source.WeightLbs,
+        source.WeightText,
+        source.FinishPos,
+        source.OutcomeCode,
+        source.DistanceBeatenText,
+        source.DistanceBeatenLengths,
+        source.SP_Fraction,
+        source.SP_Decimal,
+        source.FavTag,
+        source.OpeningFraction,
+        source.TouchedHighFraction,
+        source.TouchedLowFraction,
+        source.Comment
+    );";
+
+            using var conn = OpenConnection();
+            EnsureRunnerResultUniqueness(conn);
+            conn.Execute(mergeSql, deduped.Values.ToList());
         }
+
+        
         public int? GetHistoricalRaceCountByHorseName(string? horseName)
         {
             var candidates = BuildHistoricalNameCandidates(horseName);
@@ -1130,14 +1173,49 @@ WHERE h.Name IN @Names;";
             }
 
             screen.Going = NormalizeGoing(screen.Going);
-            const string sql = @"
-INSERT INTO RaceScreen(MarketId, RaceDate, OffTime, Title, VenueName, VenueCountry, EventDateText, RaceDetails, RaceType, Going, BackBookPercentage, LayBookPercentage, RaceUrl)
-VALUES(@MarketId, @RaceDate, @OffTime, @Title, @VenueName, @VenueCountry, @EventDateText, @RaceDetails, @RaceType, @Going, @BackBookPercentage, @LayBookPercentage, @RaceUrl);";
+
+            const string upsertSql = @"
+IF @MarketId IS NULL
+BEGIN
+    INSERT INTO RaceScreen(MarketId, RaceDate, OffTime, Title, VenueName, VenueCountry, EventDateText, RaceDetails, RaceType, Going, BackBookPercentage, LayBookPercentage, RaceUrl)
+    VALUES(@MarketId, @RaceDate, @OffTime, @Title, @VenueName, @VenueCountry, @EventDateText, @RaceDetails, @RaceType, @Going, @BackBookPercentage, @LayBookPercentage, @RaceUrl);
+END
+ELSE
+BEGIN
+    DECLARE @ExistingId BIGINT;
+    SELECT TOP 1 @ExistingId = RaceScreenId
+    FROM RaceScreen
+    WHERE MarketId = @MarketId;
+
+    IF @ExistingId IS NULL
+    BEGIN
+        INSERT INTO RaceScreen(MarketId, RaceDate, OffTime, Title, VenueName, VenueCountry, EventDateText, RaceDetails, RaceType, Going, BackBookPercentage, LayBookPercentage, RaceUrl)
+        VALUES(@MarketId, @RaceDate, @OffTime, @Title, @VenueName, @VenueCountry, @EventDateText, @RaceDetails, @RaceType, @Going, @BackBookPercentage, @LayBookPercentage, @RaceUrl);
+    END
+    ELSE
+    BEGIN
+        UPDATE RaceScreen
+        SET RaceDate = @RaceDate,
+            OffTime = @OffTime,
+            Title = @Title,
+            VenueName = @VenueName,
+            VenueCountry = @VenueCountry,
+            EventDateText = @EventDateText,
+            RaceDetails = @RaceDetails,
+            RaceType = @RaceType,
+            Going = @Going,
+            BackBookPercentage = @BackBookPercentage,
+            LayBookPercentage = @LayBookPercentage,
+            RaceUrl = @RaceUrl
+        WHERE RaceScreenId = @ExistingId;
+    END
+END";
+
             var (connection, scope, ownsConnection) = GetScopedConnection();
             try
             {
                 EnsureRaceScreenTable(connection, scope);
-                connection.Execute(sql, screen);
+                connection.Execute(upsertSql, screen);
             }
             finally
             {
@@ -1288,6 +1366,29 @@ BEGIN
 END";
 
                 conn.Execute(addGoingSql);
+                const string dedupeSql = @"
+WITH Ranked AS (
+    SELECT RaceScreenId,
+           ROW_NUMBER() OVER (PARTITION BY MarketId ORDER BY RaceScreenId DESC) AS RowNum
+    FROM dbo.RaceScreen
+    WHERE MarketId IS NOT NULL
+)
+DELETE FROM dbo.RaceScreen
+WHERE RaceScreenId IN (
+    SELECT RaceScreenId
+    FROM Ranked
+    WHERE RowNum > 1
+);";
+
+                conn.Execute(dedupeSql);
+
+                const string addMarketIdIndexSql = @"
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_RaceScreen_MarketId' AND object_id = OBJECT_ID(N'dbo.RaceScreen'))
+BEGIN
+    CREATE UNIQUE INDEX IX_RaceScreen_MarketId ON dbo.RaceScreen(MarketId) WHERE MarketId IS NOT NULL;
+END";
+
+                conn.Execute(addMarketIdIndexSql);
                 _raceScreenTableEnsured = true;
             }
         }
@@ -1458,6 +1559,45 @@ END";
 
                 conn.Execute(sql);
                 _runnerFlowTableEnsured = true;
+            }
+        }
+        private static void EnsureRunnerResultUniqueness(IDbConnection conn)
+        {
+            if (_runnerResultUniquenessEnsured) return;
+
+            lock (SchemaLock)
+            {
+                if (_runnerResultUniquenessEnsured) return;
+
+                const string dedupeSql = @"
+IF OBJECT_ID(N'dbo.RunnerResult', 'U') IS NOT NULL
+BEGIN
+    WITH Ranked AS (
+        SELECT RunnerResultId,
+               ROW_NUMBER() OVER (PARTITION BY RaceId, HorseId ORDER BY RunnerResultId DESC) AS RowNum
+        FROM dbo.RunnerResult
+    )
+    DELETE FROM dbo.RunnerResult
+    WHERE RunnerResultId IN (
+        SELECT RunnerResultId
+        FROM Ranked
+        WHERE RowNum > 1
+    );
+END";
+
+                conn.Execute(dedupeSql);
+
+                const string indexSql = @"
+IF OBJECT_ID(N'dbo.RunnerResult', 'U') IS NOT NULL
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_RunnerResult_RaceId_HorseId' AND object_id = OBJECT_ID(N'dbo.RunnerResult'))
+    BEGIN
+        CREATE UNIQUE INDEX IX_RunnerResult_RaceId_HorseId ON dbo.RunnerResult(RaceId, HorseId);
+    END
+END";
+
+                conn.Execute(indexSql);
+                _runnerResultUniquenessEnsured = true;
             }
         }
 
