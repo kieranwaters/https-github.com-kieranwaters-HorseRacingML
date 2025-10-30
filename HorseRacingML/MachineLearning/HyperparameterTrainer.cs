@@ -492,7 +492,7 @@ namespace HorseRacingML.ML
                 valAcc = valPreds.Length > 0 ? ComputeWinnerAccuracy(valRaceIds, valPreds, valLabels) : 0;
                 featureCorrelations = ComputeFeatureCorrelations(
                     trainFeatures,
-                    trainPreds,
+                    trainLabels,
                     dataset.FeatureKeys,
                     dataset.FeatureDimensions,
                     dataset.StringMaps);
@@ -630,15 +630,15 @@ namespace HorseRacingML.ML
         }
         private static List<FeatureCorrelation> ComputeFeatureCorrelations(
             IList<float[]> normalizedFeatures,
-            IReadOnlyList<float> predictions,
+            IReadOnlyList<float> targetValues,
             IList<string> featureKeys,
             IDictionary<string, int> featureDimensions,
             IDictionary<string, Dictionary<string, int>> stringMaps)
         {
             if (normalizedFeatures is null)
                 throw new ArgumentNullException(nameof(normalizedFeatures));
-            if (predictions is null)
-                throw new ArgumentNullException(nameof(predictions));
+            if (targetValues is null)
+                throw new ArgumentNullException(nameof(targetValues));
             if (featureKeys is null)
                 throw new ArgumentNullException(nameof(featureKeys));
             if (featureDimensions is null)
@@ -646,7 +646,7 @@ namespace HorseRacingML.ML
             if (stringMaps is null)
                 throw new ArgumentNullException(nameof(stringMaps));
 
-            int exampleCount = Math.Min(normalizedFeatures.Count, predictions.Count);
+            int exampleCount = Math.Min(normalizedFeatures.Count, targetValues.Count);
             if (exampleCount == 0)
             {
                 return new List<FeatureCorrelation>();
@@ -656,7 +656,7 @@ namespace HorseRacingML.ML
             double sumY2 = 0;
             for (int i = 0; i < exampleCount; i++)
             {
-                double y = predictions[i];
+                double y = targetValues[i];
                 sumY += y;
                 sumY2 += y * y;
             }
