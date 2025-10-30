@@ -756,6 +756,25 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                             : null;
 
                                             var trainerStats = new List<(string Label, string Value, string? Tooltip)>();
+                                            if (runner.TrainerHistoricalRaceCount.HasValue && runner.TrainerHistoricalRaceCount.Value > 0)
+                                            {
+                                                trainerStats.Add(("Sample size", runner.TrainerHistoricalRaceCount.Value.ToString("N0", CultureInfo.CurrentCulture)));
+                                            }
+                                            if (runner.TrainerTop3FinishRate.HasValue)
+                                            {
+                                                var percent = runner.TrainerTop3FinishRate.Value * 100d;
+                                                trainerStats.Add(("Top 3 finish %", percent.ToString("0.##", CultureInfo.CurrentCulture) + "%"));
+                                            }
+                                            if (runner.TrainerTop5FinishRate.HasValue)
+                                            {
+                                                var percent = runner.TrainerTop5FinishRate.Value * 100d;
+                                                trainerStats.Add(("Top 5 finish %", percent.ToString("0.##", CultureInfo.CurrentCulture) + "%"));
+                                            }
+                                            if (runner.TrainerFinishPositionVolatility.HasValue)
+                                            {
+                                                var percent = runner.TrainerFinishPositionVolatility.Value * 100d;
+                                                trainerStats.Add(("Finish volatility", percent.ToString("0.##", CultureInfo.CurrentCulture) + "%"));
+                                            }
                                             if (featureValues != null)
                                             {
                                                 var trainerLifetime = FormatWinRatePercentage(ExtractFeatureMetric(featureValues, "TrainerWinRate"), CultureInfo.CurrentCulture);
@@ -777,6 +796,25 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                             }
 
                                             var jockeyStats = new List<(string Label, string Value, string? Tooltip)>();
+                                            if (runner.JockeyHistoricalRaceCount.HasValue && runner.JockeyHistoricalRaceCount.Value > 0)
+                                            {
+                                                jockeyStats.Add(("Sample size", runner.JockeyHistoricalRaceCount.Value.ToString("N0", CultureInfo.CurrentCulture)));
+                                            }
+                                            if (runner.JockeyTop3FinishRate.HasValue)
+                                            {
+                                                var percent = runner.JockeyTop3FinishRate.Value * 100d;
+                                                jockeyStats.Add(("Top 3 finish %", percent.ToString("0.##", CultureInfo.CurrentCulture) + "%"));
+                                            }
+                                            if (runner.JockeyTop5FinishRate.HasValue)
+                                            {
+                                                var percent = runner.JockeyTop5FinishRate.Value * 100d;
+                                                jockeyStats.Add(("Top 5 finish %", percent.ToString("0.##", CultureInfo.CurrentCulture) + "%"));
+                                            }
+                                            if (runner.JockeyFinishPositionVolatility.HasValue)
+                                            {
+                                                var percent = runner.JockeyFinishPositionVolatility.Value * 100d;
+                                                jockeyStats.Add(("Finish volatility", percent.ToString("0.##", CultureInfo.CurrentCulture) + "%"));
+                                            }
                                             if (featureValues != null)
                                             {
                                                 var jockeyLifetime = FormatWinRatePercentage(ExtractFeatureMetric(featureValues, "JockeyWinRate"), CultureInfo.CurrentCulture);
@@ -830,7 +868,7 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                                         var headingClass = sectionIndex > 0 ? "mt-3" : string.Empty;
                                                         if (!string.IsNullOrEmpty(section.Title))
                                                         {
-                                                            <div class="text-muted text-uppercase small fw-semibold @headingClass">@section.Title</div>
+                                                            <div class="text-muted text-uppercase small fw-semibold @headingClass">@(section.Title)</div>
                                                             headingClass = "mt-1";
                                                         }
 
@@ -2799,7 +2837,29 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                         historyEntries.push({ label: 'Finish volatility', text: volatilityMetric.text, title: volatilityMetric.title });
                     }
 
+                    const formatRateStat = (value) => {
+                        if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+                            return formatPercentage(value * 100);
+                        }
+                        return null;
+                    };
+
                     const trainerStats = [];
+                    if (Number.isFinite(runner?.trainerHistoricalRaceCount) && runner.trainerHistoricalRaceCount > 0) {
+                        trainerStats.push({ label: 'Sample size', text: runner.trainerHistoricalRaceCount.toLocaleString() });
+                    }
+                    const trainerTop3 = formatRateStat(runner?.trainerTop3FinishRate);
+                    if (trainerTop3) {
+                        trainerStats.push({ label: 'Top 3 finish %', text: trainerTop3 });
+                    }
+                    const trainerTop5 = formatRateStat(runner?.trainerTop5FinishRate);
+                    if (trainerTop5) {
+                        trainerStats.push({ label: 'Top 5 finish %', text: trainerTop5 });
+                    }
+                    const trainerVolatility = formatRateStat(runner?.trainerFinishPositionVolatility);
+                    if (trainerVolatility) {
+                        trainerStats.push({ label: 'Finish volatility', text: trainerVolatility });
+                    }
                     const trainerLifetime = formatWinRatePercent(resolveFeatureMetric(runner?.featureValues, 'TrainerWinRate'));
                     const trainerRecentStarts = formatWinRatePercent(resolveFeatureMetric(runner?.featureValues, 'TrainerWinRateLast50'));
                     const trainerRecentDays = formatWinRatePercent(resolveFeatureMetric(runner?.featureValues, 'TrainerWinRateRecentDays'));
@@ -2814,6 +2874,21 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                     }
 
                     const jockeyStats = [];
+                    if (Number.isFinite(runner?.jockeyHistoricalRaceCount) && runner.jockeyHistoricalRaceCount > 0) {
+                        jockeyStats.push({ label: 'Sample size', text: runner.jockeyHistoricalRaceCount.toLocaleString() });
+                    }
+                    const jockeyTop3 = formatRateStat(runner?.jockeyTop3FinishRate);
+                    if (jockeyTop3) {
+                        jockeyStats.push({ label: 'Top 3 finish %', text: jockeyTop3 });
+                    }
+                    const jockeyTop5 = formatRateStat(runner?.jockeyTop5FinishRate);
+                    if (jockeyTop5) {
+                        jockeyStats.push({ label: 'Top 5 finish %', text: jockeyTop5 });
+                    }
+                    const jockeyVolatility = formatRateStat(runner?.jockeyFinishPositionVolatility);
+                    if (jockeyVolatility) {
+                        jockeyStats.push({ label: 'Finish volatility', text: jockeyVolatility });
+                    }
                     const jockeyLifetime = formatWinRatePercent(resolveFeatureMetric(runner?.featureValues, 'JockeyWinRate'));
                     const jockeyRecentStarts = formatWinRatePercent(resolveFeatureMetric(runner?.featureValues, 'JockeyWinRateLast50'));
                     const jockeyRecentDays = formatWinRatePercent(resolveFeatureMetric(runner?.featureValues, 'JockeyWinRateRecentDays'));

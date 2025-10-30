@@ -73,5 +73,13 @@ namespace HorseRacingML.Models
         public double? Top3FinishRate { get; set; }
         public double? Top5FinishRate { get; set; }
         public double? FinishPositionVolatility { get; set; }
+        public int? TrainerHistoricalRaceCount { get; set; }
+        public double? TrainerTop3FinishRate { get; set; }
+        public double? TrainerTop5FinishRate { get; set; }
+        public double? TrainerFinishPositionVolatility { get; set; }
+        public int? JockeyHistoricalRaceCount { get; set; }
+        public double? JockeyTop3FinishRate { get; set; }
+        public double? JockeyTop5FinishRate { get; set; }
+        public double? JockeyFinishPositionVolatility { get; set; }
     }
 }

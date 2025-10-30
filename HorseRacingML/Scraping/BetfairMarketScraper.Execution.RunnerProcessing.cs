@@ -778,8 +778,38 @@ namespace HorseRacingML.Scraping
                         "\t[FeaturePopulation] Historical race count unavailable for {0}; CareerStarts feature not populated.",
                         identifier));
             }
+            PopulateTrainerPerformanceMetrics(runner, flow);
+            PopulateJockeyPerformanceMetrics(runner, flow);
             return runner;
         }
+        private readonly struct HistoricalResultSample
+        {
+            public HistoricalResultSample(short? finishPosition, byte? runnerCount)
+            {
+                FinishPosition = finishPosition;
+                RunnerCount = runnerCount;
+            }
+
+            public short? FinishPosition { get; }
+            public byte? RunnerCount { get; }
+        }
+
+        private readonly struct HistoricalPerformanceMetrics
+        {
+            public HistoricalPerformanceMetrics(int meaningfulCount, double? top3FinishRate, double? top5FinishRate, double? finishPositionVolatility)
+            {
+                MeaningfulCount = meaningfulCount;
+                Top3FinishRate = top3FinishRate;
+                Top5FinishRate = top5FinishRate;
+                FinishPositionVolatility = finishPositionVolatility;
+            }
+
+            public int MeaningfulCount { get; }
+            public double? Top3FinishRate { get; }
+            public double? Top5FinishRate { get; }
+            public double? FinishPositionVolatility { get; }
+        }
+
         private IReadOnlyList<HorseHistoricalRaceSummary> ResolveRunnerHistory(RunnerFlow? flow)
         {
             if (flow == null)
@@ -827,7 +857,12 @@ namespace HorseRacingML.Scraping
                 throw new ArgumentNullException(nameof(runner));
             }
 
-            if (historicalRaces == null || historicalRaces.Count == 0)
+            var samples = historicalRaces?
+                .Where(r => r != null)
+                .Select(r => new HistoricalResultSample(r!.FinishPosition, r.RunnerCount))
+                .ToList();
+
+            if (samples == null || samples.Count == 0)
             {
                 runner.Top3FinishRate = null;
                 runner.Top5FinishRate = null;
@@ -835,29 +870,33 @@ namespace HorseRacingML.Scraping
                 return;
             }
 
-            var numericResults = historicalRaces
-                .Where(r => r?.FinishPosition.HasValue == true && r.FinishPosition!.Value > 0)
+            var metrics = ComputeHistoricalPerformanceMetrics(samples);
+            runner.Top3FinishRate = metrics.Top3FinishRate;
+            runner.Top5FinishRate = metrics.Top5FinishRate;
+            runner.FinishPositionVolatility = metrics.FinishPositionVolatility;
+        }
+
+        private static HistoricalPerformanceMetrics ComputeHistoricalPerformanceMetrics(IReadOnlyList<HistoricalResultSample> samples)
+        {
+            if (samples == null || samples.Count == 0)
+            {
+                return new HistoricalPerformanceMetrics(0, null, null, null);
+            }
+
+            var numericResults = samples
+                .Where(sample => sample.FinishPosition.HasValue && sample.FinishPosition.Value > 0)
                 .ToList();
 
             if (numericResults.Count == 0)
             {
-                runner.Top3FinishRate = null;
-                runner.Top5FinishRate = null;
-                runner.FinishPositionVolatility = null;
-                return;
+                return new HistoricalPerformanceMetrics(0, null, null, null);
             }
 
             int meaningfulCount = numericResults.Count;
             int top3Finishes = numericResults.Count(r => r.FinishPosition!.Value <= 3);
             int top5Finishes = numericResults.Count(r => r.FinishPosition!.Value <= 5);
 
-            runner.Top3FinishRate = meaningfulCount > 0
-                ? (double)top3Finishes / meaningfulCount
-                : (double?)null;
-            runner.Top5FinishRate = meaningfulCount > 0
-                ? (double)top5Finishes / meaningfulCount
-                : (double?)null;
-
+            double? volatility = null;
             var normalizedFinishes = new List<double>();
             foreach (var race in numericResults)
             {
@@ -875,36 +914,206 @@ namespace HorseRacingML.Scraping
 
             if (normalizedFinishes.Count >= 2)
             {
-                runner.FinishPositionVolatility = ComputeStandardDeviation(normalizedFinishes);
-                return;
+                volatility = ComputeStandardDeviation(normalizedFinishes);
             }
-
-            if (normalizedFinishes.Count == 1)
+            else if (normalizedFinishes.Count == 1)
             {
-                runner.FinishPositionVolatility = 0d;
-                return;
+                volatility = 0d;
             }
-
-            var fallbackFinishes = numericResults
-                .Select(r => (double)r.FinishPosition!.Value)
-                .ToList();
-
-            if (fallbackFinishes.Count >= 2)
+            else
             {
-                double maxFinish = fallbackFinishes.Max();
-                if (maxFinish > 1d)
+                var fallbackFinishes = numericResults
+                    .Select(r => (double)r.FinishPosition!.Value)
+                    .ToList();
+
+                if (fallbackFinishes.Count >= 2)
                 {
-                    var approxNormalized = fallbackFinishes
-                        .Select(f => 1d - (f - 1d) / (maxFinish - 1d))
-                        .ToList();
-                    runner.FinishPositionVolatility = ComputeStandardDeviation(approxNormalized);
-                    return;
+                    double maxFinish = fallbackFinishes.Max();
+                    if (maxFinish > 1d)
+                    {
+                        var approxNormalized = fallbackFinishes
+                            .Select(f => 1d - (f - 1d) / (maxFinish - 1d))
+                            .ToList();
+                        volatility = ComputeStandardDeviation(approxNormalized);
+                    }
                 }
             }
 
-            runner.FinishPositionVolatility = null;
-        }
+            double? top3Rate = meaningfulCount > 0
+                ? (double)top3Finishes / meaningfulCount
+                : (double?)null;
+            double? top5Rate = meaningfulCount > 0
+                ? (double)top5Finishes / meaningfulCount
+                : (double?)null;
 
+            return new HistoricalPerformanceMetrics(meaningfulCount, top3Rate, top5Rate, volatility);
+        }
+        private void PopulateTrainerPerformanceMetrics(RunnerDayReport runner, RunnerFlow flow)
+        {
+            PopulateParticipantPerformanceMetrics(
+                runner,
+                flow,
+                ResolveTrainerHistory,
+                value => runner.TrainerHistoricalRaceCount = value,
+                value => runner.TrainerTop3FinishRate = value,
+                value => runner.TrainerTop5FinishRate = value,
+                value => runner.TrainerFinishPositionVolatility = value);
+        }
+        private void PopulateJockeyPerformanceMetrics(RunnerDayReport runner, RunnerFlow flow)
+        {
+            PopulateParticipantPerformanceMetrics(
+                runner,
+                flow,
+                ResolveJockeyHistory,
+                value => runner.JockeyHistoricalRaceCount = value,
+                value => runner.JockeyTop3FinishRate = value,
+                value => runner.JockeyTop5FinishRate = value,
+                value => runner.JockeyFinishPositionVolatility = value);
+        }
+        private void PopulateParticipantPerformanceMetrics(
+            RunnerDayReport runner,
+            RunnerFlow flow,
+            Func<RunnerFlow?, IReadOnlyList<ParticipantHistoricalRaceSummary>> historyResolver,
+            Action<int?> assignCount,
+            Action<double?> assignTop3,
+            Action<double?> assignTop5,
+            Action<double?> assignVolatility)
+        {
+            if (runner == null)
+            {
+                throw new ArgumentNullException(nameof(runner));
+            }
+
+            if (historyResolver == null)
+            {
+                throw new ArgumentNullException(nameof(historyResolver));
+            }
+
+            var history = historyResolver(flow);
+            if (history == null || history.Count == 0)
+            {
+                assignCount?.Invoke(null);
+                assignTop3?.Invoke(null);
+                assignTop5?.Invoke(null);
+                assignVolatility?.Invoke(null);
+                return;
+            }
+
+            var samples = history
+                .Where(entry => entry != null)
+                .Select(entry => new HistoricalResultSample(entry!.FinishPosition, entry.RunnerCount))
+                .ToList();
+
+            if (samples.Count == 0)
+            {
+                assignCount?.Invoke(null);
+                assignTop3?.Invoke(null);
+                assignTop5?.Invoke(null);
+                assignVolatility?.Invoke(null);
+                return;
+            }
+
+            var metrics = ComputeHistoricalPerformanceMetrics(samples);
+            assignCount?.Invoke(metrics.MeaningfulCount > 0 ? metrics.MeaningfulCount : (int?)null);
+            assignTop3?.Invoke(metrics.Top3FinishRate);
+            assignTop5?.Invoke(metrics.Top5FinishRate);
+            assignVolatility?.Invoke(metrics.FinishPositionVolatility);
+        }
+        private IReadOnlyList<ParticipantHistoricalRaceSummary> ResolveTrainerHistory(RunnerFlow? flow)
+        {
+            if (flow == null)
+            {
+                return Array.Empty<ParticipantHistoricalRaceSummary>();
+            }
+
+            int? trainerId = null;
+            if (flow.FeatureValues != null && flow.FeatureValues.TryGetValue("TrainerId", out var trainerObj))
+            {
+                trainerId = TryConvertToInt32(trainerObj);
+            }
+
+            trainerId = NormalizeParticipantIdentifier(trainerId);
+
+            var normalizedName = NormalizeTrainerName(flow.TrainerName) ?? flow.TrainerName;
+            var cacheKey = (trainerId, NormalizeHorseNameKeyForCache(normalizedName));
+
+            if (!_trainerHistoryCache.TryGetValue(cacheKey, out var cached))
+            {
+                IReadOnlyList<ParticipantHistoricalRaceSummary> resolved;
+                try
+                {
+                    resolved = _repo.GetRecentTrainerResults(normalizedName, trainerId, HistoricalRaceSummaryLimit);
+                }
+                catch (Exception ex)
+                {
+                    var identifier = !string.IsNullOrWhiteSpace(flow.TrainerName)
+                        ? flow.TrainerName
+                        : DescribeRunner(flow) ?? "unknown trainer";
+                    Console.Error.WriteLine($"\tFailed to resolve trainer race summaries for {identifier}: {ex.Message}");
+                    resolved = Array.Empty<ParticipantHistoricalRaceSummary>();
+                }
+
+                cached = resolved ?? Array.Empty<ParticipantHistoricalRaceSummary>();
+                _trainerHistoryCache[cacheKey] = cached;
+            }
+
+            return cached;
+        }
+        private IReadOnlyList<ParticipantHistoricalRaceSummary> ResolveJockeyHistory(RunnerFlow? flow)
+        {
+            if (flow == null)
+            {
+                return Array.Empty<ParticipantHistoricalRaceSummary>();
+            }
+
+            int? jockeyId = null;
+            if (flow.FeatureValues != null && flow.FeatureValues.TryGetValue("JockeyId", out var jockeyObj))
+            {
+                jockeyId = TryConvertToInt32(jockeyObj);
+            }
+
+            jockeyId = NormalizeParticipantIdentifier(jockeyId);
+
+            var normalizedName = flow.JockeyName;
+            if (!string.IsNullOrWhiteSpace(normalizedName))
+            {
+                normalizedName = normalizedName!.Trim();
+            }
+
+            var cacheKey = (jockeyId, NormalizeHorseNameKeyForCache(normalizedName));
+
+            if (!_jockeyHistoryCache.TryGetValue(cacheKey, out var cached))
+            {
+                IReadOnlyList<ParticipantHistoricalRaceSummary> resolved;
+                try
+                {
+                    resolved = _repo.GetRecentJockeyResults(normalizedName, jockeyId, HistoricalRaceSummaryLimit);
+                }
+                catch (Exception ex)
+                {
+                    var identifier = !string.IsNullOrWhiteSpace(flow.JockeyName)
+                        ? flow.JockeyName
+                        : DescribeRunner(flow) ?? "unknown jockey";
+                    Console.Error.WriteLine($"\tFailed to resolve jockey race summaries for {identifier}: {ex.Message}");
+                    resolved = Array.Empty<ParticipantHistoricalRaceSummary>();
+                }
+
+                cached = resolved ?? Array.Empty<ParticipantHistoricalRaceSummary>();
+                _jockeyHistoryCache[cacheKey] = cached;
+            }
+
+            return cached;
+        }
+        private static int? NormalizeParticipantIdentifier(int? identifier)
+        {
+            if (!identifier.HasValue)
+            {
+                return null;
+            }
+
+            var value = identifier.Value;
+            return value > 0 ? value : (int?)null;
+        }
         private static double ComputeStandardDeviation(IReadOnlyList<double> values)
         {
             if (values == null || values.Count == 0)

@@ -33,6 +33,8 @@ namespace HorseRacingML.Scraping
         private readonly Dictionary<string, UpcomingRace?> _upcomingByMarketIdCache = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<UpcomingRaceLookupKey, UpcomingRace?> _upcomingByMetadataCache = new();
         private readonly Dictionary<(int? HorseId, string NameKey), IReadOnlyList<HorseHistoricalRaceSummary>> _runnerHistoryCache = new();
+        private readonly Dictionary<(int? ParticipantId, string NameKey), IReadOnlyList<ParticipantHistoricalRaceSummary>> _trainerHistoryCache = new();
+        private readonly Dictionary<(int? ParticipantId, string NameKey), IReadOnlyList<ParticipantHistoricalRaceSummary>> _jockeyHistoryCache = new();
         private readonly object _upcomingCacheLock = new();
         private decimal _availableBankroll;
         private int _betSlipSelectionsFilled;

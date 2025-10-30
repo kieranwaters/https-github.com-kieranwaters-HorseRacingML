@@ -4,6 +4,7 @@ using HorseRacingML.Models;
 using HorseRacingML.Scraping;
 using HorseRacingML.Services;
 using Microsoft.Extensions.Configuration;
+using System.Linq;
 using System;
 using System.Collections.Generic;
 using Xunit;
@@ -227,6 +228,75 @@ namespace HorseRacingML.Tests
             Assert.Equal(0f, Assert.IsType<float>(runner.FeatureValues["LastTrainerClassNormPos"]));
         }
         [Fact]
+        public void CreateRunnerReport_PopulatesTrainerAndJockeyPerformanceSummaries()
+        {
+            var repo = new StubRepository();
+            var trainer = new StubTrainer();
+            var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
+            var scraper = new BetfairMarketScraper(repo, trainer, bankroll: 10m, settings);
+
+            var trainerSamples = new List<ParticipantHistoricalRaceSummary>
+            {
+                new ParticipantHistoricalRaceSummary { FinishPosition = 1, RunnerCount = 5 },
+                new ParticipantHistoricalRaceSummary { FinishPosition = 2, RunnerCount = 5 },
+                new ParticipantHistoricalRaceSummary { FinishPosition = 5, RunnerCount = 5 }
+            };
+            var jockeySamples = new List<ParticipantHistoricalRaceSummary>
+            {
+                new ParticipantHistoricalRaceSummary { FinishPosition = 3, RunnerCount = 10 },
+                new ParticipantHistoricalRaceSummary { FinishPosition = 1, RunnerCount = 10 },
+                new ParticipantHistoricalRaceSummary { FinishPosition = 9, RunnerCount = 10 }
+            };
+
+            repo.SetRecentTrainerResults(7, "Trainer Example", trainerSamples);
+            repo.SetRecentJockeyResults(11, "Jockey Example", jockeySamples);
+
+            var flows = new List<RunnerFlow>
+            {
+                new RunnerFlow
+                {
+                    HorseName = "Runner One",
+                    TrainerName = "Trainer Example",
+                    JockeyName = "Jockey Example",
+                    ClothNumber = 1,
+                    FeatureValues = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        ["TrainerId"] = 7,
+                        ["JockeyId"] = 11
+                    },
+                    HasPreparedFeatures = true
+                }
+            };
+
+            var report = scraper.TestBuildRaceReport(
+                marketId: "1.234",
+                raceTitle: "Sample Race",
+                venueName: "Sample Venue",
+                venueCountry: "GB",
+                raceDate: new DateTime(2024, 1, 1),
+                offTime: new TimeSpan(12, 0, 0),
+                raceDetails: null,
+                going: "Good",
+                backBookPercentage: 100m,
+                layBookPercentage: 101m,
+                raceUrl: null,
+                flows: flows);
+
+            var runner = Assert.Single(report.Runners);
+
+            var expectedTrainerMetrics = ComputeExpectedMetrics((1, 5), (2, 5), (5, 5));
+            Assert.Equal(expectedTrainerMetrics.Count, runner.TrainerHistoricalRaceCount);
+            Assert.Equal(expectedTrainerMetrics.Top3, runner.TrainerTop3FinishRate, 6);
+            Assert.Equal(expectedTrainerMetrics.Top5, runner.TrainerTop5FinishRate, 6);
+            Assert.Equal(expectedTrainerMetrics.Volatility, runner.TrainerFinishPositionVolatility, 6);
+
+            var expectedJockeyMetrics = ComputeExpectedMetrics((3, 10), (1, 10), (9, 10));
+            Assert.Equal(expectedJockeyMetrics.Count, runner.JockeyHistoricalRaceCount);
+            Assert.Equal(expectedJockeyMetrics.Top3, runner.JockeyTop3FinishRate, 6);
+            Assert.Equal(expectedJockeyMetrics.Top5, runner.JockeyTop5FinishRate, 6);
+            Assert.Equal(expectedJockeyMetrics.Volatility, runner.JockeyFinishPositionVolatility, 6);
+        }
+        [Fact]
         public void CreateRunnerReport_IgnoresNeutralTrainerJockeyWinRateFallback()
         {
             var repo = new StubRepository();
@@ -408,6 +478,74 @@ namespace HorseRacingML.Tests
             Assert.Equal(0.36f, Assert.IsType<float>(runner.FeatureValues["JockeyClassAvgNorm"]));
             Assert.Equal(0.36f, Assert.IsType<float>(runner.FeatureValues["LastJockeyClassNormPos"]));
         }
+        private static (int Count, double? Top3, double? Top5, double? Volatility) ComputeExpectedMetrics(params (int Finish, int Runners)[] results)
+        {
+            var numeric = results
+                .Where(result => result.Finish > 0)
+                .ToList();
+
+            if (numeric.Count == 0)
+            {
+                return (0, null, null, null);
+            }
+
+            int count = numeric.Count;
+            double? top3 = count > 0 ? numeric.Count(r => r.Finish <= 3) / (double)count : (double?)null;
+            double? top5 = count > 0 ? numeric.Count(r => r.Finish <= 5) / (double)count : (double?)null;
+
+            var normalized = new List<double>();
+            foreach (var sample in numeric)
+            {
+                if (sample.Runners > 1 && sample.Finish <= sample.Runners)
+                {
+                    normalized.Add((sample.Runners - sample.Finish) / (double)(sample.Runners - 1));
+                }
+            }
+
+            double? volatility = null;
+            if (normalized.Count >= 2)
+            {
+                volatility = ComputeStandardDeviation(normalized);
+            }
+            else if (normalized.Count == 1)
+            {
+                volatility = 0d;
+            }
+            else
+            {
+                var fallback = numeric.Select(r => (double)r.Finish).ToList();
+                if (fallback.Count >= 2)
+                {
+                    double maxFinish = fallback.Max();
+                    if (maxFinish > 1d)
+                    {
+                        var approx = fallback
+                            .Select(f => 1d - (f - 1d) / (maxFinish - 1d))
+                            .ToList();
+                        volatility = ComputeStandardDeviation(approx);
+                    }
+                }
+            }
+
+            return (count, top3, top5, volatility);
+        }
+
+        private static double ComputeStandardDeviation(IReadOnlyList<double> values)
+        {
+            if (values == null || values.Count == 0)
+            {
+                return 0d;
+            }
+
+            var mean = values.Average();
+            var variance = values.Sum(value =>
+            {
+                var diff = value - mean;
+                return diff * diff;
+            }) / values.Count;
+
+            return Math.Sqrt(variance);
+        }
         private sealed class StubRepository : IRacingRepository
         {
             public void ClearDayReportTables()
@@ -548,13 +686,59 @@ namespace HorseRacingML.Tests
 
                 return Array.Empty<HorseHistoricalRaceSummary>();
             }
-
+            public IReadOnlyList<ParticipantHistoricalRaceSummary> GetRecentTrainerResults(string? trainerName, int? trainerId, int maxCount)
+            {
+                return GetParticipantResults(trainerName, trainerId, maxCount, _trainerHistoryCache);
+            }
+            public IReadOnlyList<ParticipantHistoricalRaceSummary> GetRecentJockeyResults(string? jockeyName, int? jockeyId, int maxCount)
+            {
+                return GetParticipantResults(jockeyName, jockeyId, maxCount, _jockeyHistoryCache);
+            }
             public void SetRecentHorseResults(int? horseId, string? horseName, IReadOnlyList<HorseHistoricalRaceSummary> results)
             {
                 var key = (horseId, NormalizeHorseNameKey(horseName));
                 _runnerHistoryCache[key] = results ?? Array.Empty<HorseHistoricalRaceSummary>();
             }
+            public void SetRecentTrainerResults(int? trainerId, string? trainerName, IReadOnlyList<ParticipantHistoricalRaceSummary> results)
+            {
+                var key = (NormalizeParticipantId(trainerId), NormalizeHorseNameKey(trainerName));
+                _trainerHistoryCache[key] = results ?? Array.Empty<ParticipantHistoricalRaceSummary>();
+            }
+            public void SetRecentJockeyResults(int? jockeyId, string? jockeyName, IReadOnlyList<ParticipantHistoricalRaceSummary> results)
+            {
+                var key = (NormalizeParticipantId(jockeyId), NormalizeHorseNameKey(jockeyName));
+                _jockeyHistoryCache[key] = results ?? Array.Empty<ParticipantHistoricalRaceSummary>();
+            }
+            private static IReadOnlyList<ParticipantHistoricalRaceSummary> GetParticipantResults(
+                string? name,
+                int? id,
+                int maxCount,
+                Dictionary<(int? Id, string NameKey), IReadOnlyList<ParticipantHistoricalRaceSummary>> cache)
+            {
+                if (maxCount <= 0)
+                {
+                    return Array.Empty<ParticipantHistoricalRaceSummary>();
+                }
 
+                var key = (NormalizeParticipantId(id), NormalizeHorseNameKey(name));
+                if (cache.TryGetValue(key, out var cached))
+                {
+                    if (cached.Count <= maxCount)
+                    {
+                        return cached;
+                    }
+
+                    var limited = new List<ParticipantHistoricalRaceSummary>(maxCount);
+                    for (var i = 0; i < maxCount; i++)
+                    {
+                        limited.Add(cached[i]);
+                    }
+
+                    return limited;
+                }
+
+                return Array.Empty<ParticipantHistoricalRaceSummary>();
+            }
             private static string NormalizeHorseNameKey(string? horseName)
             {
                 return string.IsNullOrWhiteSpace(horseName)
@@ -562,7 +746,11 @@ namespace HorseRacingML.Tests
                     : horseName.Trim().ToUpperInvariant();
             }
 
+            private static int? NormalizeParticipantId(int? id) => id.HasValue && id.Value > 0 ? id : null;
+
             private readonly Dictionary<(int? HorseId, string NameKey), IReadOnlyList<HorseHistoricalRaceSummary>> _runnerHistoryCache = new();
+            private readonly Dictionary<(int? Id, string NameKey), IReadOnlyList<ParticipantHistoricalRaceSummary>> _trainerHistoryCache = new();
+            private readonly Dictionary<(int? Id, string NameKey), IReadOnlyList<ParticipantHistoricalRaceSummary>> _jockeyHistoryCache = new();
         }
 
         private sealed class StubTrainer : HyperparameterTrainer
