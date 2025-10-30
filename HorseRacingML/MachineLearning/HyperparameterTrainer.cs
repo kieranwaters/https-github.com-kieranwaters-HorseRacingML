@@ -491,7 +491,8 @@ namespace HorseRacingML.ML
                 trainAcc = trainPreds.Length > 0 ? ComputeWinnerAccuracy(trainRaceIds, trainPreds, trainLabels) : 0;
                 valAcc = valPreds.Length > 0 ? ComputeWinnerAccuracy(valRaceIds, valPreds, valLabels) : 0;
                 featureCorrelations = ComputeFeatureCorrelations(
-                    trainFeatures,
+                   trainFeatures,
+                    trainPreds,
                     trainLabels,
                     dataset.FeatureKeys,
                     dataset.FeatureDimensions,
@@ -630,15 +631,16 @@ namespace HorseRacingML.ML
         }
         private static List<FeatureCorrelation> ComputeFeatureCorrelations(
             IList<float[]> normalizedFeatures,
-            IReadOnlyList<float> targetValues,
+            IReadOnlyList<float> predictions,
+            IReadOnlyList<float>? labelValues,
             IList<string> featureKeys,
             IDictionary<string, int> featureDimensions,
             IDictionary<string, Dictionary<string, int>> stringMaps)
         {
             if (normalizedFeatures is null)
                 throw new ArgumentNullException(nameof(normalizedFeatures));
-            if (targetValues is null)
-                throw new ArgumentNullException(nameof(targetValues));
+            if (predictions is null)
+                throw new ArgumentNullException(nameof(predictions));
             if (featureKeys is null)
                 throw new ArgumentNullException(nameof(featureKeys));
             if (featureDimensions is null)
@@ -646,7 +648,15 @@ namespace HorseRacingML.ML
             if (stringMaps is null)
                 throw new ArgumentNullException(nameof(stringMaps));
 
-            int exampleCount = Math.Min(normalizedFeatures.Count, targetValues.Count);
+            int exampleCount = Math.Min(normalizedFeatures.Count, predictions.Count);
+            var targets = (IReadOnlyList<float>)predictions;
+
+            if (labelValues is { Count: > 0 })
+            {
+                exampleCount = Math.Min(exampleCount, labelValues.Count);
+                targets = labelValues;
+            }
+
             if (exampleCount == 0)
             {
                 return new List<FeatureCorrelation>();
@@ -656,7 +666,7 @@ namespace HorseRacingML.ML
             double sumY2 = 0;
             for (int i = 0; i < exampleCount; i++)
             {
-                double y = targetValues[i];
+                double y = targets[i];
                 sumY += y;
                 sumY2 += y * y;
             }
