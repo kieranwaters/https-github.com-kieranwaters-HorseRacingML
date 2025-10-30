@@ -302,8 +302,7 @@ namespace HorseRacingML.ML
                     runnerRow["DistanceBeatenLengths"] = beatenLengths;
 
                 }
-
-                var raceStat = ComputeRaceStats(rows);
+                var raceStat = _trainer.ComputeRaceStats(rows);
 
                 foreach (var row in rows)
                 {
