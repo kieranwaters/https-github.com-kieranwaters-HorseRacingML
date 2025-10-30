@@ -52,7 +52,7 @@ namespace HorseRacingML.Controllers
                 var parameters = batch.Parameters ?? new List<MLParameter>();
                 Console.WriteLine($"[Hyperparameter] Starting custom run for {parameters.Count} parameter set(s).");
 
-                var dataset = _trainer.PrepareDataset();
+                var dataset = _trainer.PrepareDataset(includeIdentifiers: true);
                 Console.WriteLine($"[Hyperparameter] Dataset prepared with {dataset.Races.Count} races and {dataset.RowCount} runner rows.");
 
                 int modelIndex = 0;
@@ -183,7 +183,7 @@ namespace HorseRacingML.Controllers
                 var parameters = batch.Parameters;
                 Console.WriteLine($"[TrainAI] Starting training run for {parameters.Count} parameter set(s).");
 
-                var dataset = _trainer.LoadTrainingDataset();
+                var dataset = _trainer.LoadTrainingDataset(includeIdentifiers: true);
                 Console.WriteLine($"[TrainAI] Dataset loaded with {dataset.TrainingRaces.Count} races covering {dataset.TrainingRaces.Sum(r => r.Runners.Count)} runner rows.");
 
                 int modelIndex = 0;

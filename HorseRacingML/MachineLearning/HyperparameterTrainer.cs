@@ -77,7 +77,7 @@ namespace HorseRacingML.ML
 
         public TrainingResult Train(MLParameter param, int foldIndex, int foldCount, bool persistWeights = true)
         {
-            var dataset = LoadTrainingDataset();
+            var dataset = LoadTrainingDataset(includeIdentifiers: true);
             return Train(param, foldIndex, foldCount, dataset, persistWeights);
         }
         private static double ComputeWinnerAccuracy(IReadOnlyList<int> raceIds,
