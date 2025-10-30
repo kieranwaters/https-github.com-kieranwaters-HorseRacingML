@@ -1889,8 +1889,6 @@ namespace HorseRacingML.Scraping
                     " (source: {0})",
                     resolutionSource);
 
-            Console.WriteLine(
-                $"\t\t[FeaturePopulation] Resolved career starts for {identifier}: {resolvedCareerStarts.Value}{sourceSuffix}.");
             if (!resolvedLifetimeWinRate.HasValue)
             {
                 if (resolvedCareerWins.HasValue)
@@ -1908,13 +1906,7 @@ namespace HorseRacingML.Scraping
             }
 
             AssignLifetimeWinRate(featureVector, flow, resolvedLifetimeWinRate.Value);
-            Console.WriteLine(
-                string.Format(
-                    CultureInfo.InvariantCulture,
-                    "\t\t[FeaturePopulation] Resolved lifetime win rate for {0}: {1:F4} (source: {2}).",
-                    identifier,
-                    resolvedLifetimeWinRate.Value,
-                    lifetimeSource ?? resolutionSource ?? "default smoothing"));
+           
         }
 
         private static void AssignLifetimeWinRate(

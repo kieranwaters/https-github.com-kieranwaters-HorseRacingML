@@ -1,8 +1,8 @@
-﻿﻿﻿@using System.Linq
-@model HorseRacingML.Models.MLParameterBatch
+﻿@using System
+@using System.Linq
+@model HorseRacingML.Models.TrainAIViewModel
 @{
     ViewData["Title"] = "Train AI";
-    var testAiUrl = Url.Action("TestAI");
 }
 
 <h1>Train AI</h1>
@@ -17,25 +17,25 @@
                 <th>Learning Rate</th>
                 <th>Epochs</th>
                 <th>Batch Size</th>
-                      <th>Folds</th>
+                <th>Folds</th>
                 <th></th>
             </tr>
         </thead>
         <tbody id="parameterRows">
-            @for (int i = 0; i < Model.Parameters.Count; i++)
+            @for (int i = 0; i < Model.Batch.Parameters.Count; i++)
             {
                 <tr>
-                    <td><input asp-for="Parameters[i].Units" class="form-control" /></td>
-                    <td><input asp-for="Parameters[i].Dropout" class="form-control" /></td>
-                    <td><input asp-for="Parameters[i].Layers" class="form-control" /></td>
-                    <td><input asp-for="Parameters[i].LearningRate" class="form-control" /></td>
-                    <td><input asp-for="Parameters[i].Epochs" class="form-control" /></td>
-                    <td><input asp-for="Parameters[i].BatchSize" class="form-control" /></td>
-                    <td><input asp-for="Parameters[i].Folds" class="form-control" /></td>
+                    <td><input asp-for="Batch.Parameters[i].Units" class="form-control" /></td>
+                    <td><input asp-for="Batch.Parameters[i].Dropout" class="form-control" /></td>
+                    <td><input asp-for="Batch.Parameters[i].Layers" class="form-control" /></td>
+                    <td><input asp-for="Batch.Parameters[i].LearningRate" class="form-control" /></td>
+                    <td><input asp-for="Batch.Parameters[i].Epochs" class="form-control" /></td>
+                    <td><input asp-for="Batch.Parameters[i].BatchSize" class="form-control" /></td>
+                    <td><input asp-for="Batch.Parameters[i].Folds" class="form-control" /></td>
                     <td>
                         <button type="button" class="btn btn-danger" onclick="removeRow(this)">Delete</button>
                     </td>
-                    <input type="hidden" asp-for="Parameters[i].RunDate" />
+                    <input type="hidden" asp-for="Batch.Parameters[i].RunDate" />
                 </tr>
             }
         </tbody>
@@ -44,6 +44,96 @@
     <button type="submit" class="btn btn-primary">Run</button>
     <button type="button" class="btn btn-info ms-2" onclick="redirectToTestAI()">Test AI</button>
 </form>
+
+@if (Model.Results?.Any() == true)
+{
+    <h2 class="mt-4">Feature correlations</h2>
+
+    var runNumber = 0;
+    foreach (var result in Model.Results)
+    {
+        runNumber++;
+        var sorted = result.FeatureCorrelations
+            .OrderByDescending(c => Math.Abs(c.Correlation))
+            .Take(50)
+            .ToList();
+
+        <div class="card mb-4">
+            <div class="card-header">
+                <div class="d-flex flex-column flex-lg-row justify-content-between">
+                    <span>Run @runNumber correlations</span>
+                    <span class="text-muted small">
+                        Units: @result.Parameters.Units · Layers: @result.Parameters.Layers · Dropout: @result.Parameters.Dropout.ToString("0.###") · Learning Rate: @result.Parameters.LearningRate.ToString("0.#####")
+                    </span>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="row mb-3 gy-2">
+                    <div class="col-6 col-lg-2">
+                        <div class="fw-semibold">Train Accuracy</div>
+                        <div>@(result.Parameters.TrainAccuracy.HasValue? result.Parameters.TrainAccuracy.Value.ToString("P2") : "n/a")</div>
+                    </div>
+                    <div class="col-6 col-lg-2">
+                        <div class="fw-semibold">Train Loss</div>
+                        <div>@(result.Parameters.TrainLoss.HasValue? result.Parameters.TrainLoss.Value.ToString("F4") : "n/a")</div>
+                    </div>
+                    <div class="col-6 col-lg-2">
+                        <div class="fw-semibold">Train Brier</div>
+                        <div>@(result.Parameters.TrainBrier.HasValue? result.Parameters.TrainBrier.Value.ToString("F4") : "n/a")</div>
+                    </div>
+                    <div class="col-6 col-lg-2">
+                        <div class="fw-semibold">Validation Accuracy</div>
+                        <div>@(result.Parameters.ValidationAccuracy.HasValue? result.Parameters.ValidationAccuracy.Value.ToString("P2") : "n/a")</div>
+                    </div>
+                    <div class="col-6 col-lg-2">
+                        <div class="fw-semibold">Validation Loss</div>
+                        <div>@(result.Parameters.ValidationLoss.HasValue? result.Parameters.ValidationLoss.Value.ToString("F4") : "n/a")</div>
+                    </div>
+                    <div class="col-6 col-lg-2">
+                        <div class="fw-semibold">Validation Brier</div>
+                        <div>@(result.Parameters.ValidationBrier.HasValue? result.Parameters.ValidationBrier.Value.ToString("F4") : "n/a")</div>
+                    </div>
+                </div>
+
+                @if (sorted.Count == 0)
+                {
+                    <p class="text-muted mb-0">No correlations were produced for this run.</p>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-sm table-striped align-middle">
+                            <thead>
+                                <tr>
+                                    <th scope="col">#</th>
+                                    <th scope="col">Feature</th>
+                                    <th scope="col">Dimension</th>
+                                    <th scope="col" class="text-end">Correlation</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @{
+                                    var rank = 0;
+                                }
+                                @foreach (var item in sorted)
+                                {
+                                    rank++;
+                                    <tr>
+                                        <th scope="row">@rank</th>
+                                        <td>@item.FeatureKey</td>
+                                        <td>@(string.IsNullOrEmpty(item.Dimension) ? "—" : item.Dimension)</td>
+                                        <td class="text-end">@item.Correlation.ToString("+0.0000;-0.0000;0.0000")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                        <p class="text-muted small mb-0">Showing top @sorted.Count feature dimensions by absolute correlation.</p>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+}
 
 @section Scripts {
     @{
@@ -55,15 +145,15 @@
             const index = rows.length;
             const template = `
                 <tr>
-                    <td><input name="Parameters[${index}].Units" class="form-control" /></td>
-                    <td><input name="Parameters[${index}].Dropout" class="form-control" /></td>
-                    <td><input name="Parameters[${index}].Layers" class="form-control" /></td>
-                    <td><input name="Parameters[${index}].LearningRate" class="form-control" /></td>
-                    <td><input name="Parameters[${index}].Epochs" class="form-control" /></td>
-                    <td><input name="Parameters[${index}].BatchSize" class="form-control" /></td>
-                    <td><input name="Parameters[${index}].Folds" class="form-control" /></td>
+                    <td><input name="Batch.Parameters[${index}].Units" class="form-control" /></td>
+                    <td><input name="Batch.Parameters[${index}].Dropout" class="form-control" /></td>
+                    <td><input name="Batch.Parameters[${index}].Layers" class="form-control" /></td>
+                    <td><input name="Batch.Parameters[${index}].LearningRate" class="form-control" /></td>
+                    <td><input name="Batch.Parameters[${index}].Epochs" class="form-control" /></td>
+                    <td><input name="Batch.Parameters[${index}].BatchSize" class="form-control" /></td>
+                    <td><input name="Batch.Parameters[${index}].Folds" class="form-control" /></td>
                     <td><button type="button" class="btn btn-danger" onclick="removeRow(this)">Delete</button></td>
-                    <input type="hidden" name="Parameters[${index}].RunDate" value="${new Date().toISOString()}" />
+                    <input type="hidden" name="Batch.Parameters[${index}].RunDate" value="${new Date().toISOString()}" />
                 </tr>`;
             document.getElementById('parameterRows').insertAdjacentHTML('beforeend', template);
         }
@@ -86,7 +176,6 @@
                 });
             });
         }
-
         function redirectToTestAI() {
             const firstRow = document.querySelector('#parameterRows tr');
             const testAiUrl = '@Url.Action("TestAI", "Hyperparameter")';

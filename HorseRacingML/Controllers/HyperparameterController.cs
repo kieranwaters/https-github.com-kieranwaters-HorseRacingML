@@ -143,31 +143,44 @@ namespace HorseRacingML.Controllers
 
             return RedirectToAction("Index", "Home");
         }
-
         [HttpGet]
         public IActionResult TrainAI()
         {
-            return View(new MLParameterBatch
+            return View(new TrainAIViewModel
             {
-                Parameters = new List<MLParameter>
+                Batch = new MLParameterBatch
                 {
-                    new MLParameter { RunDate = DateTime.UtcNow }
+                    Parameters = new List<MLParameter>
+                    {
+                        new MLParameter { RunDate = DateTime.UtcNow }
+                    }
                 }
             });
         }
 
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public async Task<IActionResult> TrainAI(MLParameterBatch batch)
+        public async Task<IActionResult> TrainAI(TrainAIViewModel viewModel)
         {
+            if (viewModel is null)
+            {
+                throw new ArgumentNullException(nameof(viewModel));
+            }
+
+            viewModel.Batch ??= new MLParameterBatch();
+            var batch = viewModel.Batch;
+            batch.Parameters ??= new List<MLParameter>();
+
             if (!ModelState.IsValid)
             {
-                return View(batch);
+                return View(viewModel);
             }
+
+            var results = new List<TrainAIViewModel.TrainAIModelResult>();
 
             await Task.Run(() =>
             {
-                var parameters = batch.Parameters ?? new List<MLParameter>();
+                var parameters = batch.Parameters;
                 Console.WriteLine($"[TrainAI] Starting training run for {parameters.Count} parameter set(s).");
 
                 var dataset = _trainer.LoadTrainingDataset();
@@ -194,82 +207,31 @@ namespace HorseRacingML.Controllers
 
                     _repository.InsertMLParameter(model);
 
+                    var correlationInfos = (result.FeatureCorrelations ?? Array.Empty<HyperparameterTrainer.FeatureCorrelation>())
+                        .Select(c => new TrainAIViewModel.FeatureCorrelationInfo
+                        {
+                            FeatureKey = c.FeatureKey,
+                            Dimension = c.Dimension,
+                            Correlation = c.Correlation
+                        })
+                        .ToList();
+
+                    results.Add(new TrainAIViewModel.TrainAIModelResult
+                    {
+                        Parameters = model,
+                        FeatureCorrelations = correlationInfos
+                    });
+
                     Console.WriteLine($"[TrainAI] Completed model {modelIndex}/{parameters.Count}. Train acc: {result.TrainAccuracy:F4}, train loss: {result.TrainLoss:F4}.");
                 }
 
                 Console.WriteLine("[TrainAI] Training run finished.");
             });
 
-            return RedirectToAction("Index", "Home");
+            viewModel.Results = results;
+
+            return View(viewModel);
         }
-
-        [HttpGet]
-        public IActionResult TestAI(
-           string? units,
-           string? dropout,
-           string? layers,
-           string? learningRate,
-           string? epochs,
-           string? batchSize,
-           string? folds)
-        {
-            static int? ParseNullableInt(string? value)
-            {
-                if (string.IsNullOrWhiteSpace(value))
-                {
-                    return null;
-                }
-
-                if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
-                {
-                    return parsed;
-                }
-
-                if (int.TryParse(value, NumberStyles.Integer, CultureInfo.CurrentCulture, out parsed))
-                {
-                    return parsed;
-                }
-
-                return null;
-            }
-
-            static double? ParseNullableDouble(string? value)
-            {
-                if (string.IsNullOrWhiteSpace(value))
-                {
-                    return null;
-                }
-
-                const NumberStyles style = NumberStyles.Float | NumberStyles.AllowThousands;
-                if (double.TryParse(value, style, CultureInfo.InvariantCulture, out var parsed))
-                {
-                    return parsed;
-                }
-
-                if (double.TryParse(value, style, CultureInfo.CurrentCulture, out parsed))
-                {
-                    return parsed;
-                }
-
-                return null;
-            }
-
-            return View(new AITestResultViewModel
-            {
-                ValidationStart = DateTime.Today.AddMonths(-1),
-                ValidationEnd = DateTime.Today,
-                SelectedValidationMonths = 1,
-                StartingBankroll = 100m,
-                RequestedUnits = ParseNullableInt(units),
-                RequestedDropout = ParseNullableDouble(dropout),
-                RequestedLayers = ParseNullableInt(layers),
-                RequestedLearningRate = ParseNullableDouble(learningRate),
-                RequestedEpochs = ParseNullableInt(epochs),
-                RequestedBatchSize = ParseNullableInt(batchSize),
-                RequestedFolds = ParseNullableInt(folds)
-            });
-        }
-
         [HttpPost]
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> TestAI(AITestResultViewModel request)

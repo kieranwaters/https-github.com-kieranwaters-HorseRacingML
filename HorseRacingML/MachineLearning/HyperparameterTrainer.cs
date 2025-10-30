@@ -55,6 +55,14 @@ namespace HorseRacingML.ML
             public IReadOnlyList<float> ValidationPredictions { get; init; } = Array.Empty<float>();
             public IReadOnlyList<float> ValidationLabels { get; init; } = Array.Empty<float>();
             public IReadOnlyList<int> ValidationRaceIds { get; init; } = Array.Empty<int>();
+            public IReadOnlyList<FeatureCorrelation> FeatureCorrelations { get; init; } = Array.Empty<FeatureCorrelation>();
+        }
+
+        public sealed class FeatureCorrelation
+        {
+            public string FeatureKey { get; init; } = string.Empty;
+            public string? Dimension { get; init; }
+            public double Correlation { get; init; }
             public IReadOnlyList<RunnerExample> ValidationExamples { get; init; } = Array.Empty<RunnerExample>();
         }
 
@@ -421,6 +429,7 @@ namespace HorseRacingML.ML
             double valBrier = 0;
             double trainAcc = 0;
             double valAcc = 0;
+            List<FeatureCorrelation> featureCorrelations = new();
             HyperparameterStarted(param, trainLabels.Length, valLabels.Length, featureCount);
 
             try
@@ -480,6 +489,12 @@ namespace HorseRacingML.ML
 
                 trainAcc = trainPreds.Length > 0 ? ComputeWinnerAccuracy(trainRaceIds, trainPreds, trainLabels) : 0;
                 valAcc = valPreds.Length > 0 ? ComputeWinnerAccuracy(valRaceIds, valPreds, valLabels) : 0;
+                featureCorrelations = ComputeFeatureCorrelations(
+                    trainFeatures,
+                    trainPreds,
+                    dataset.FeatureKeys,
+                    dataset.FeatureDimensions,
+                    dataset.StringMaps);
             }
             catch (Exception ex)
             {
@@ -590,7 +605,8 @@ namespace HorseRacingML.ML
                 ValidationPredictions = Array.AsReadOnly(valPreds),
                 ValidationLabels = Array.AsReadOnly(valLabels),
                 ValidationRaceIds = Array.AsReadOnly(valRaceIds),
-                ValidationExamples = new ReadOnlyCollection<RunnerExample>(valExamples)
+                ValidationExamples = new ReadOnlyCollection<RunnerExample>(valExamples),
+                FeatureCorrelations = new ReadOnlyCollection<FeatureCorrelation>(featureCorrelations)
             };
             static float[][] ToJagged2D(NDArray array)
             {
@@ -610,6 +626,130 @@ namespace HorseRacingML.ML
                 }
                 return result;
             }
+        }
+        private static List<FeatureCorrelation> ComputeFeatureCorrelations(
+            IList<float[]> normalizedFeatures,
+            IReadOnlyList<float> predictions,
+            IList<string> featureKeys,
+            IDictionary<string, int> featureDimensions,
+            IDictionary<string, Dictionary<string, int>> stringMaps)
+        {
+            if (normalizedFeatures is null)
+                throw new ArgumentNullException(nameof(normalizedFeatures));
+            if (predictions is null)
+                throw new ArgumentNullException(nameof(predictions));
+            if (featureKeys is null)
+                throw new ArgumentNullException(nameof(featureKeys));
+            if (featureDimensions is null)
+                throw new ArgumentNullException(nameof(featureDimensions));
+            if (stringMaps is null)
+                throw new ArgumentNullException(nameof(stringMaps));
+
+            int exampleCount = Math.Min(normalizedFeatures.Count, predictions.Count);
+            if (exampleCount == 0)
+            {
+                return new List<FeatureCorrelation>();
+            }
+
+            double sumY = 0;
+            double sumY2 = 0;
+            for (int i = 0; i < exampleCount; i++)
+            {
+                double y = predictions[i];
+                sumY += y;
+                sumY2 += y * y;
+            }
+
+            var correlations = new List<FeatureCorrelation>();
+            int offset = 0;
+
+            foreach (var featureKey in featureKeys)
+            {
+                if (!featureDimensions.TryGetValue(featureKey, out var dim) || dim <= 0)
+                {
+                    continue;
+                }
+
+                string[]? categories = null;
+                if (stringMaps.TryGetValue(featureKey, out var map) && map.Count > 0)
+                {
+                    categories = new string[map.Count];
+                    foreach (var kvp in map)
+                    {
+                        var label = kvp.Key;
+                        if (string.Equals(label, "__unknown__", StringComparison.Ordinal))
+                        {
+                            label = "Unknown";
+                        }
+
+                        if (kvp.Value >= 0 && kvp.Value < categories.Length)
+                        {
+                            categories[kvp.Value] = label;
+                        }
+                    }
+                }
+
+                int baseDim = categories?.Length ?? 1;
+                bool hasMissingIndicator = dim > baseDim;
+
+                for (int d = 0; d < dim; d++)
+                {
+                    double sumX = 0;
+                    double sumX2 = 0;
+                    double sumXY = 0;
+
+                    for (int row = 0; row < exampleCount; row++)
+                    {
+                        var featureRow = normalizedFeatures[row];
+                        if (featureRow.Length <= offset + d)
+                        {
+                            continue;
+                        }
+
+                        double x = featureRow[offset + d];
+                        double y = predictions[row];
+                        sumX += x;
+                        sumX2 += x * x;
+                        sumXY += x * y;
+                    }
+
+                    double numerator = exampleCount * sumXY - sumX * sumY;
+                    double denomLeft = exampleCount * sumX2 - sumX * sumX;
+                    double denomRight = exampleCount * sumY2 - sumY * sumY;
+                    double denom = Math.Sqrt(Math.Max(denomLeft, 0) * Math.Max(denomRight, 0));
+                    double corr = denom > 0 ? numerator / denom : 0;
+
+                    string? dimensionLabel = null;
+                    if (categories != null && d < categories.Length)
+                    {
+                        dimensionLabel = categories[d];
+                    }
+                    else if (categories != null && hasMissingIndicator && d == categories.Length)
+                    {
+                        dimensionLabel = "Missing";
+                    }
+                    else if (categories is null)
+                    {
+                        dimensionLabel = d == 0 ? "Value" : "Missing";
+                    }
+
+                    if (string.IsNullOrEmpty(dimensionLabel))
+                    {
+                        dimensionLabel = $"Dim {d + 1}";
+                    }
+
+                    correlations.Add(new FeatureCorrelation
+                    {
+                        FeatureKey = featureKey,
+                        Dimension = dimensionLabel,
+                        Correlation = corr
+                    });
+                }
+
+                offset += dim;
+            }
+
+            return correlations;
         }
         public TrainingDataset LoadTrainingDataset(ISet<int> trainingRaceIds, ISet<int> validationRaceIds, bool includeIdentifiers = false)
         {
