@@ -2817,9 +2817,38 @@ namespace HorseRacingML.ML
             }
 
             var resolved = ResolveHorseIdsByName(conn, unresolvedNames);
-            if (resolved.Count == 0)
+            if (resolved.Count > 0)
             {
-                return;
+                foreach (var row in rows)
+                {
+                    if (row == null)
+                    {
+                        continue;
+                    }
+
+                    if (row.TryGetValue("HorseId", out var horseIdValue) &&
+                        PreparedDataset.TryConvertToInt32(horseIdValue, out var existingId) &&
+                        existingId > 0)
+                    {
+                        continue;
+                    }
+
+                    if (!row.TryGetValue("HorseName", out var horseNameObj) || horseNameObj == null)
+                    {
+                        continue;
+                    }
+
+                    var horseName = horseNameObj as string ?? horseNameObj.ToString();
+                    if (string.IsNullOrWhiteSpace(horseName))
+                    {
+                        continue;
+                    }
+
+                    if (resolved.TryGetValue(horseName, out var horseId) && horseId > 0)
+                    {
+                        row["HorseId"] = horseId;
+                    }
+                }
             }
 
             foreach (var row in rows)
@@ -2847,10 +2876,7 @@ namespace HorseRacingML.ML
                     continue;
                 }
 
-                if (resolved.TryGetValue(horseName, out var horseId) && horseId > 0)
-                {
-                    row["HorseId"] = horseId;
-                }
+                row["HorseId"] = GenerateSyntheticId("horse:" + horseName);
             }
         }
 
