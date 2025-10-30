@@ -1253,8 +1253,20 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                             @volatilityText
                                         }
                                     </td>
-                                    <td class="text-end market-odds-cell">@marketOdds</td>
-                                    <td class="text-end lay-odds-cell">@layOdds</td>
+                                    <td class="text-end market-odds-cell">
+                                        <input type="text"
+                                               class="form-control form-control-sm text-end market-odds-input"
+                                               inputmode="decimal"
+                                               placeholder="-"
+                                               value="@(marketOdds == "-" ? string.Empty : marketOdds)" />
+                                    </td>
+                                    <td class="text-end lay-odds-cell">
+                                        <input type="text"
+                                               class="form-control form-control-sm text-end lay-odds-input"
+                                               inputmode="decimal"
+                                               placeholder="-"
+                                               value="@(layOdds == "-" ? string.Empty : layOdds)" />
+                                    </td>
                                     <td class="text-end ai-win-cell">
                                         @if (!string.IsNullOrEmpty(aiWinTitle))
                                         {
@@ -2182,7 +2194,221 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
 
                 return 0;
             };
+            const parseOddsInputValue = (raw) => {
+                if (typeof raw !== 'string') {
+                    return NaN;
+                }
 
+                const trimmed = raw.trim();
+                if (trimmed.length === 0) {
+                    return NaN;
+                }
+
+                const sanitized = trimmed.replace(/[^0-9.,]/g, '');
+                if (sanitized.length === 0) {
+                    return NaN;
+                }
+
+                const lastComma = sanitized.lastIndexOf(',');
+                const lastDot = sanitized.lastIndexOf('.');
+                const decimalIndex = Math.max(lastComma, lastDot);
+
+                if (decimalIndex === -1) {
+                    const integerPart = sanitized.replace(/[^0-9]/g, '');
+                    if (integerPart.length === 0) {
+                        return NaN;
+                    }
+
+                    const parsed = Number.parseFloat(integerPart);
+                    return Number.isFinite(parsed) ? parsed : NaN;
+                }
+
+                const integerPart = sanitized.slice(0, decimalIndex).replace(/[^0-9]/g, '');
+                const fractionalPart = sanitized.slice(decimalIndex + 1).replace(/[^0-9]/g, '');
+                if (integerPart.length === 0 && fractionalPart.length === 0) {
+                    return NaN;
+                }
+
+                const normalized = `${integerPart.length > 0 ? integerPart : '0'}.${fractionalPart}`;
+                const parsed = Number.parseFloat(normalized);
+                return Number.isFinite(parsed) ? parsed : NaN;
+            };
+
+            const updateMarketOddsFromInput = (input, options = {}) => {
+                if (!input) {
+                    return;
+                }
+
+                const row = input.closest('tr');
+                if (!row) {
+                    return;
+                }
+
+                const raw = typeof input.value === 'string' ? input.value : '';
+                const trimmed = raw.trim();
+                if (trimmed.length === 0) {
+                    input.classList.remove('is-invalid');
+                    delete row.dataset.marketOdds;
+                    delete row.dataset.marketProbability;
+
+                    const marketWinCell = row.querySelector('.market-win-cell');
+                    if (marketWinCell) {
+                        marketWinCell.textContent = '-';
+                    }
+
+                    const applyButton = row.querySelector('.apply-market-btn');
+                    if (applyButton) {
+                        applyButton.disabled = true;
+                    }
+
+                    refreshRowAiProbabilityDisplay(row);
+                    return;
+                }
+
+                const parsed = parseOddsInputValue(trimmed);
+                if (!Number.isFinite(parsed) || parsed <= 1) {
+                    input.classList.add('is-invalid');
+                    return;
+                }
+
+                input.classList.remove('is-invalid');
+                row.dataset.marketOdds = parsed.toString();
+
+                const probability = clampProbability(1 / parsed);
+                if (probability > 0) {
+                    row.dataset.marketProbability = probability.toString();
+                } else {
+                    delete row.dataset.marketProbability;
+                }
+
+                const marketWinCell = row.querySelector('.market-win-cell');
+                if (marketWinCell) {
+                    if (probability > 0) {
+                        const percentText = formatPercentage(probability * 100);
+                        marketWinCell.textContent = percentText ?? '-';
+                    } else {
+                        marketWinCell.textContent = '-';
+                    }
+                }
+
+                const applyButton = row.querySelector('.apply-market-btn');
+                if (applyButton) {
+                    applyButton.disabled = !(probability > 0);
+                }
+
+                refreshRowAiProbabilityDisplay(row);
+
+                if (options.formatValue) {
+                    input.value = formatDecimal(parsed);
+                }
+            };
+
+            const updateLayOddsFromInput = (input, options = {}) => {
+                if (!input) {
+                    return;
+                }
+
+                const row = input.closest('tr');
+                if (!row) {
+                    return;
+                }
+
+                const stakeSpan = row.querySelector('.stake-value');
+                if (!stakeSpan) {
+                    return;
+                }
+
+                const raw = typeof input.value === 'string' ? input.value : '';
+                const trimmed = raw.trim();
+                if (trimmed.length === 0) {
+                    input.classList.remove('is-invalid');
+                    delete stakeSpan.dataset.layOdds;
+                    updateStakeDisplays();
+                    return;
+                }
+
+                const parsed = parseOddsInputValue(trimmed);
+                if (!Number.isFinite(parsed) || parsed <= 1) {
+                    input.classList.add('is-invalid');
+                    return;
+                }
+
+                input.classList.remove('is-invalid');
+                stakeSpan.dataset.layOdds = parsed.toString();
+                if (options.formatValue) {
+                    input.value = formatDecimal(parsed);
+                }
+
+                updateStakeDisplays();
+            };
+
+            const bindMarketOddsInputs = (root) => {
+                if (!root) {
+                    return;
+                }
+
+                const inputs = root.querySelectorAll('.market-odds-input');
+                inputs.forEach(input => {
+                    if (!input || input.dataset.marketHandlerAttached === 'true') {
+                        return;
+                    }
+
+                    input.dataset.marketHandlerAttached = 'true';
+                    const row = input.closest('tr');
+                    if (row) {
+                        const datasetOdds = Number.parseFloat(row.dataset.marketOdds ?? '');
+                        if (Number.isFinite(datasetOdds) && datasetOdds > 1) {
+                            input.value = formatDecimal(datasetOdds);
+                            input.classList.remove('is-invalid');
+                        } else if ((input.value ?? '').trim() === '-') {
+                            input.value = '';
+                        }
+                    }
+
+                    input.addEventListener('input', () => updateMarketOddsFromInput(input));
+                    const formatHandler = () => updateMarketOddsFromInput(input, { formatValue: true });
+                    input.addEventListener('change', formatHandler);
+                    input.addEventListener('blur', formatHandler);
+                });
+            };
+
+            const bindLayOddsInputs = (root) => {
+                if (!root) {
+                    return;
+                }
+
+                const inputs = root.querySelectorAll('.lay-odds-input');
+                inputs.forEach(input => {
+                    if (!input || input.dataset.layHandlerAttached === 'true') {
+                        return;
+                    }
+
+                    input.dataset.layHandlerAttached = 'true';
+                    const row = input.closest('tr');
+                    if (row) {
+                        const stakeSpan = row.querySelector('.stake-value');
+                        if (stakeSpan) {
+                            const datasetOdds = Number.parseFloat(stakeSpan.dataset.layOdds ?? '');
+                            if (Number.isFinite(datasetOdds) && datasetOdds > 1) {
+                                input.value = formatDecimal(datasetOdds);
+                                input.classList.remove('is-invalid');
+                            } else if ((input.value ?? '').trim() === '-') {
+                                input.value = '';
+                            }
+                        }
+                    }
+
+                    input.addEventListener('input', () => updateLayOddsFromInput(input));
+                    const formatHandler = () => updateLayOddsFromInput(input, { formatValue: true });
+                    input.addEventListener('change', formatHandler);
+                    input.addEventListener('blur', formatHandler);
+                });
+            };
+
+            const bindOddsInputs = (root) => {
+                bindMarketOddsInputs(root);
+                bindLayOddsInputs(root);
+            };
             const setRowAiProbability = (row, probability, options = {}) => {
                 if (!row) {
                     return;
@@ -3069,13 +3295,31 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                     finishVolCell.className = 'text-end finish-vol-cell';
                     setMetricCellContent(finishVolCell, volatilityMetric.text, volatilityMetric.title);
                     row.appendChild(finishVolCell);
-                    appendCell(typeof runner?.marketDecimalOdds === 'number'
-                        ? formatDecimal(runner.marketDecimalOdds)
-                        : '-', 'text-end market-odds-cell');
+        const marketOddsCell = document.createElement('td');
+                         marketOddsCell.className = 'text-end market-odds-cell';
+                         const marketOddsInput = document.createElement('input');
+                         marketOddsInput.type = 'text';
+                         marketOddsInput.className = 'form-control form-control-sm text-end market-odds-input';
+                         marketOddsInput.inputMode = 'decimal';
+                         marketOddsInput.placeholder = '-';
+                         if (typeof runner?.marketDecimalOdds === 'number' && Number.isFinite(runner.marketDecimalOdds) && runner.marketDecimalOdds > 1) {
+                             marketOddsInput.value = formatDecimal(runner.marketDecimalOdds);
+                         }
+                         marketOddsCell.appendChild(marketOddsInput);
+                         row.appendChild(marketOddsCell);
 
-                    appendCell(typeof runner?.layDecimalOdds === 'number'
-                        ? formatDecimal(runner.layDecimalOdds)
-                        : '-', 'text-end lay-odds-cell');
+                         const layOddsCell = document.createElement('td');
+                         layOddsCell.className = 'text-end lay-odds-cell';
+                         const layOddsInput = document.createElement('input');
+                         layOddsInput.type = 'text';
+                         layOddsInput.className = 'form-control form-control-sm text-end lay-odds-input';
+                         layOddsInput.inputMode = 'decimal';
+                         layOddsInput.placeholder = '-';
+                         if (typeof runner?.layDecimalOdds === 'number' && Number.isFinite(runner.layDecimalOdds) && runner.layDecimalOdds > 1) {
+                             layOddsInput.value = formatDecimal(runner.layDecimalOdds);
+                         }
+                         layOddsCell.appendChild(layOddsInput);
+                         row.appendChild(layOddsCell);
 
                     appendCell('-', 'text-end ai-win-cell');
 
@@ -3130,6 +3374,7 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
 
                     tbody.appendChild(row);
                 });
+                bindOddsInputs(tbody);
                 bindHistoricalRaceButtons(tbody);
                 bindApplyMarketButtons(tbody);
                 updateStakeDisplays();
@@ -3295,19 +3540,28 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
 
                     const marketOddsCell = targetRow.querySelector('.market-odds-cell');
                     if (marketOddsCell) {
-                        if (typeof runner.marketDecimalOdds === 'number' && Number.isFinite(runner.marketDecimalOdds) && runner.marketDecimalOdds > 1) {
-                            marketOddsCell.textContent = formatDecimal(runner.marketDecimalOdds);
-                        } else {
-                            marketOddsCell.textContent = '-';
-                        }
+                        const marketInput = marketOddsCell.querySelector('.market-odds-input');
+                        if (marketInput) {
+                            if (typeof runner.marketDecimalOdds === 'number' && Number.isFinite(runner.marketDecimalOdds) && runner.marketDecimalOdds > 1) {
+                                marketInput.value = formatDecimal(runner.marketDecimalOdds);
+                                marketInput.classList.remove('is-invalid');
+                            } else {
+                                marketInput.value = '';
+                                marketInput.classList.remove('is-invalid');
+                            }
                     }
 
                     const layOddsCell = targetRow.querySelector('.lay-odds-cell');
                     if (layOddsCell) {
-                        if (typeof runner.layDecimalOdds === 'number' && Number.isFinite(runner.layDecimalOdds) && runner.layDecimalOdds > 1) {
-                            layOddsCell.textContent = formatDecimal(runner.layDecimalOdds);
-                        } else {
-                            layOddsCell.textContent = '-';
+                        const layInput = layOddsCell.querySelector('.lay-odds-input');
+                        if (layInput) {
+                            if (typeof runner.layDecimalOdds === 'number' && Number.isFinite(runner.layDecimalOdds) && runner.layDecimalOdds > 1) {
+                                layInput.value = formatDecimal(runner.layDecimalOdds);
+                                layInput.classList.remove('is-invalid');
+                            } else {
+                                layInput.value = '';
+                                layInput.classList.remove('is-invalid');
+                            }
                         }
                     }
 
@@ -3350,6 +3604,7 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                 });
 
                 bindApplyMarketButtons(card);
+                bindOddsInputs(card);
                 updateStakeDisplays();
             };
 
@@ -3544,6 +3799,7 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                     });
                 });
             }
+            bindOddsInputs(document);
             bindHistoricalRaceButtons(document);
             bindApplyMarketButtons(document);
             updateStakeDisplays();
