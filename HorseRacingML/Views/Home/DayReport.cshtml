@@ -758,22 +758,22 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                             var trainerStats = new List<(string Label, string Value, string? Tooltip)>();
                                             if (runner.TrainerHistoricalRaceCount.HasValue && runner.TrainerHistoricalRaceCount.Value > 0)
                                             {
-                                                trainerStats.Add(("Sample size", runner.TrainerHistoricalRaceCount.Value.ToString("N0", CultureInfo.CurrentCulture)));
+                                                trainerStats.Add(("Sample size", runner.TrainerHistoricalRaceCount.Value.ToString("N0", CultureInfo.CurrentCulture), null));
                                             }
                                             if (runner.TrainerTop3FinishRate.HasValue)
                                             {
                                                 var percent = runner.TrainerTop3FinishRate.Value * 100d;
-                                                trainerStats.Add(("Top 3 finish %", percent.ToString("0.##", CultureInfo.CurrentCulture) + "%"));
+                                                trainerStats.Add(("Sample size", runner.TrainerHistoricalRaceCount.Value.ToString("N0", CultureInfo.CurrentCulture), null));
                                             }
                                             if (runner.TrainerTop5FinishRate.HasValue)
                                             {
                                                 var percent = runner.TrainerTop5FinishRate.Value * 100d;
-                                                trainerStats.Add(("Top 5 finish %", percent.ToString("0.##", CultureInfo.CurrentCulture) + "%"));
+                                                trainerStats.Add(("Top 5 finish %", percent.ToString("0.##", CultureInfo.CurrentCulture) + "%", null));
                                             }
                                             if (runner.TrainerFinishPositionVolatility.HasValue)
                                             {
                                                 var percent = runner.TrainerFinishPositionVolatility.Value * 100d;
-                                                trainerStats.Add(("Finish volatility", percent.ToString("0.##", CultureInfo.CurrentCulture) + "%"));
+                                                trainerStats.Add(("Top 5 finish %", percent.ToString("0.##", CultureInfo.CurrentCulture) + "%", null));
                                             }
                                             if (featureValues != null)
                                             {
@@ -798,22 +798,22 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                             var jockeyStats = new List<(string Label, string Value, string? Tooltip)>();
                                             if (runner.JockeyHistoricalRaceCount.HasValue && runner.JockeyHistoricalRaceCount.Value > 0)
                                             {
-                                                jockeyStats.Add(("Sample size", runner.JockeyHistoricalRaceCount.Value.ToString("N0", CultureInfo.CurrentCulture)));
+                                                jockeyStats.Add(("Sample size", runner.JockeyHistoricalRaceCount.Value.ToString("N0", CultureInfo.CurrentCulture), null));
                                             }
                                             if (runner.JockeyTop3FinishRate.HasValue)
                                             {
                                                 var percent = runner.JockeyTop3FinishRate.Value * 100d;
-                                                jockeyStats.Add(("Top 3 finish %", percent.ToString("0.##", CultureInfo.CurrentCulture) + "%"));
+                                                jockeyStats.Add(("Top 3 finish %", percent.ToString("0.##", CultureInfo.CurrentCulture) + "%", null));
                                             }
                                             if (runner.JockeyTop5FinishRate.HasValue)
                                             {
                                                 var percent = runner.JockeyTop5FinishRate.Value * 100d;
-                                                jockeyStats.Add(("Top 5 finish %", percent.ToString("0.##", CultureInfo.CurrentCulture) + "%"));
+                                                jockeyStats.Add(("Top 5 finish %", percent.ToString("0.##", CultureInfo.CurrentCulture) + "%", null));
                                             }
                                             if (runner.JockeyFinishPositionVolatility.HasValue)
                                             {
                                                 var percent = runner.JockeyFinishPositionVolatility.Value * 100d;
-                                                jockeyStats.Add(("Finish volatility", percent.ToString("0.##", CultureInfo.CurrentCulture) + "%"));
+                                                jockeyStats.Add(("Finish volatility", percent.ToString("0.##", CultureInfo.CurrentCulture) + "%", null));
                                             }
                                             if (featureValues != null)
                                             {
