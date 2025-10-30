@@ -286,15 +286,39 @@ namespace HorseRacingML.Tests
 
             var expectedTrainerMetrics = ComputeExpectedMetrics((1, 5), (2, 5), (5, 5));
             Assert.Equal(expectedTrainerMetrics.Count, runner.TrainerHistoricalRaceCount);
-            Assert.Equal(expectedTrainerMetrics.Top3, runner.TrainerTop3FinishRate, 6);
-            Assert.Equal(expectedTrainerMetrics.Top5, runner.TrainerTop5FinishRate, 6);
-            Assert.Equal(expectedTrainerMetrics.Volatility, runner.TrainerFinishPositionVolatility, 6);
+            AssertApproximatelyEqual(
+                expectedTrainerMetrics.Top3,
+                runner.TrainerTop3FinishRate,
+                6,
+                "Trainer top 3 finish rate");
+            AssertApproximatelyEqual(
+                expectedTrainerMetrics.Top5,
+                runner.TrainerTop5FinishRate,
+                6,
+                "Trainer top 5 finish rate");
+            AssertApproximatelyEqual(
+                expectedTrainerMetrics.Volatility,
+                runner.TrainerFinishPositionVolatility,
+                6,
+                "Trainer finish volatility");
 
             var expectedJockeyMetrics = ComputeExpectedMetrics((3, 10), (1, 10), (9, 10));
             Assert.Equal(expectedJockeyMetrics.Count, runner.JockeyHistoricalRaceCount);
-            Assert.Equal(expectedJockeyMetrics.Top3, runner.JockeyTop3FinishRate, 6);
-            Assert.Equal(expectedJockeyMetrics.Top5, runner.JockeyTop5FinishRate, 6);
-            Assert.Equal(expectedJockeyMetrics.Volatility, runner.JockeyFinishPositionVolatility, 6);
+            AssertApproximatelyEqual(
+                expectedJockeyMetrics.Top3,
+                runner.JockeyTop3FinishRate,
+                6,
+                "Jockey top 3 finish rate");
+            AssertApproximatelyEqual(
+                expectedJockeyMetrics.Top5,
+                runner.JockeyTop5FinishRate,
+                6,
+                "Jockey top 5 finish rate");
+            AssertApproximatelyEqual(
+                expectedJockeyMetrics.Volatility,
+                runner.JockeyFinishPositionVolatility,
+                6,
+                "Jockey finish volatility");
         }
         [Fact]
         public void CreateRunnerReport_IgnoresNeutralTrainerJockeyWinRateFallback()
@@ -545,6 +569,18 @@ namespace HorseRacingML.Tests
             }) / values.Count;
 
             return Math.Sqrt(variance);
+        }
+        private static void AssertApproximatelyEqual(double? expected, double? actual, int precision, string context)
+        {
+            if (expected.HasValue)
+            {
+                Assert.True(actual.HasValue, $"{context} should be populated.");
+                Assert.Equal(expected.Value, actual.Value, precision);
+            }
+            else
+            {
+                Assert.Null(actual);
+            }
         }
         private sealed class StubRepository : IRacingRepository
         {
