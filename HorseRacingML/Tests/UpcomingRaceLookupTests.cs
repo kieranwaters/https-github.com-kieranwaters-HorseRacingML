@@ -1573,6 +1573,12 @@ new RunnerFlow { HorseName = "Alpha Runner" },
             private int _nextId = 1;
 
             public bool FindUpcomingRaceCalled { get; private set; }
+            public Dictionary<int, IReadOnlyList<ParticipantHistoricalRaceSummary>> RecentTrainerResultsById { get; } = new();
+            public Dictionary<string, IReadOnlyList<ParticipantHistoricalRaceSummary>> RecentTrainerResultsByName { get; } = new(StringComparer.OrdinalIgnoreCase);
+            public Dictionary<int, IReadOnlyList<ParticipantHistoricalRaceSummary>> RecentJockeyResultsById { get; } = new();
+            public Dictionary<string, IReadOnlyList<ParticipantHistoricalRaceSummary>> RecentJockeyResultsByName { get; } = new(StringComparer.OrdinalIgnoreCase);
+            public IReadOnlyList<ParticipantHistoricalRaceSummary>? RecentTrainerResultsDefault { get; set; }
+            public IReadOnlyList<ParticipantHistoricalRaceSummary>? RecentJockeyResultsDefault { get; set; }
             public void ClearDayReportTables()
             {
                 _upcomingByMarket.Clear();
@@ -1776,6 +1782,35 @@ new RunnerFlow { HorseName = "Alpha Runner" },
             {
                 return Array.Empty<HorseHistoricalRaceSummary>();
             }
+
+            public IReadOnlyList<ParticipantHistoricalRaceSummary> GetRecentTrainerResults(string? trainerName, int? trainerId, int maxCount)
+            {
+                if (trainerId.HasValue && RecentTrainerResultsById.TryGetValue(trainerId.Value, out var byId))
+                {
+                    return LimitParticipantResults(byId, maxCount);
+                }
+
+                if (!string.IsNullOrWhiteSpace(trainerName) && RecentTrainerResultsByName.TryGetValue(trainerName, out var byName))
+                {
+                    return LimitParticipantResults(byName, maxCount);
+                }
+
+                return LimitParticipantResults(RecentTrainerResultsDefault, maxCount);
+            }
+            public IReadOnlyList<ParticipantHistoricalRaceSummary> GetRecentJockeyResults(string? jockeyName, int? jockeyId, int maxCount)
+            {
+                if (jockeyId.HasValue && RecentJockeyResultsById.TryGetValue(jockeyId.Value, out var byId))
+                {
+                    return LimitParticipantResults(byId, maxCount);
+                }
+
+                if (!string.IsNullOrWhiteSpace(jockeyName) && RecentJockeyResultsByName.TryGetValue(jockeyName, out var byName))
+                {
+                    return LimitParticipantResults(byName, maxCount);
+                }
+
+                return LimitParticipantResults(RecentJockeyResultsDefault, maxCount);
+            }
             public UpcomingRace? GetUpcomingRaceByMarketId(string? marketId)
             {
                 if (string.IsNullOrWhiteSpace(marketId))
@@ -1863,6 +1898,28 @@ new RunnerFlow { HorseName = "Alpha Runner" },
                     BackBookPercentage = race.BackBookPercentage,
                     LayBookPercentage = race.LayBookPercentage
                 };
+            }
+            private static IReadOnlyList<ParticipantHistoricalRaceSummary> LimitParticipantResults(
+                IReadOnlyList<ParticipantHistoricalRaceSummary>? results,
+                int maxCount)
+            {
+                if (results is null || results.Count == 0 || maxCount <= 0)
+                {
+                    return Array.Empty<ParticipantHistoricalRaceSummary>();
+                }
+
+                if (results.Count <= maxCount)
+                {
+                    return results;
+                }
+
+                var limited = new List<ParticipantHistoricalRaceSummary>(maxCount);
+                for (int i = 0; i < maxCount; i++)
+                {
+                    limited.Add(results[i]);
+                }
+
+                return limited;
             }
         }
 
@@ -2049,6 +2106,12 @@ new RunnerFlow { HorseName = "Alpha Runner" },
             public (string? HorseName, int? HorseId, DateTime? BeforeDate, int WindowSize)? LastRecentSpeedRequest { get; private set; }
             public Dictionary<string, IReadOnlyList<HorseSpeedEntry>> RecentSpeedEntriesByHorse { get; } = new(StringComparer.OrdinalIgnoreCase);
             public IReadOnlyList<HorseSpeedEntry>? RecentSpeedEntriesResult { get; set; }
+            public Dictionary<string, IReadOnlyList<ParticipantHistoricalRaceSummary>> RecentTrainerResultsByName { get; } = new(StringComparer.OrdinalIgnoreCase);
+            public Dictionary<int, IReadOnlyList<ParticipantHistoricalRaceSummary>> RecentTrainerResultsById { get; } = new();
+            public IReadOnlyList<ParticipantHistoricalRaceSummary>? RecentTrainerResultsDefault { get; set; }
+            public Dictionary<string, IReadOnlyList<ParticipantHistoricalRaceSummary>> RecentJockeyResultsByName { get; } = new(StringComparer.OrdinalIgnoreCase);
+            public Dictionary<int, IReadOnlyList<ParticipantHistoricalRaceSummary>> RecentJockeyResultsById { get; } = new();
+            public IReadOnlyList<ParticipantHistoricalRaceSummary>? RecentJockeyResultsDefault { get; set; }
             public void ClearDayReportTables()
             {
             }
@@ -2100,6 +2163,20 @@ new RunnerFlow { HorseName = "Alpha Runner" },
             {
                 return Array.Empty<HorseHistoricalRaceSummary>();
             }
+            public IReadOnlyList<ParticipantHistoricalRaceSummary> GetRecentTrainerResults(string? trainerName, int? trainerId, int maxCount)
+            {
+                if (trainerId.HasValue && RecentTrainerResultsById.TryGetValue(trainerId.Value, out var byId))
+                {
+                    return LimitParticipantResults(byId, maxCount);
+                }
+
+                if (!string.IsNullOrWhiteSpace(trainerName) && RecentTrainerResultsByName.TryGetValue(trainerName, out var byName))
+                {
+                    return LimitParticipantResults(byName, maxCount);
+                }
+
+                return LimitParticipantResults(RecentTrainerResultsDefault, maxCount);
+            }
             public IReadOnlyList<HorseSpeedEntry> GetRecentHorseSpeedEntries(string? horseName, int? horseId, DateTime? beforeDate, int windowSize)
             {
                 LastRecentSpeedRequest = (horseName, horseId, beforeDate, windowSize);
@@ -2111,7 +2188,20 @@ new RunnerFlow { HorseName = "Alpha Runner" },
 
                 return RecentSpeedEntriesResult ?? Array.Empty<HorseSpeedEntry>();
             }
+            public IReadOnlyList<ParticipantHistoricalRaceSummary> GetRecentJockeyResults(string? jockeyName, int? jockeyId, int maxCount)
+            {
+                if (jockeyId.HasValue && RecentJockeyResultsById.TryGetValue(jockeyId.Value, out var byId))
+                {
+                    return LimitParticipantResults(byId, maxCount);
+                }
 
+                if (!string.IsNullOrWhiteSpace(jockeyName) && RecentJockeyResultsByName.TryGetValue(jockeyName, out var byName))
+                {
+                    return LimitParticipantResults(byName, maxCount);
+                }
+
+                return LimitParticipantResults(RecentJockeyResultsDefault, maxCount);
+            }
             public void InsertRaceScreen(RaceScreen screen)
             {
             }
@@ -2160,6 +2250,28 @@ new RunnerFlow { HorseName = "Alpha Runner" },
                 int? jockeyId) => null;
             public IReadOnlyList<RaceClassRating> GetHistoricalRaceClassRatings(string? horseName, int? horseId, int maxCount)
                 => Array.Empty<RaceClassRating>();
+            private static IReadOnlyList<ParticipantHistoricalRaceSummary> LimitParticipantResults(
+                IReadOnlyList<ParticipantHistoricalRaceSummary>? results,
+                int maxCount)
+            {
+                if (results is null || results.Count == 0 || maxCount <= 0)
+                {
+                    return Array.Empty<ParticipantHistoricalRaceSummary>();
+                }
+
+                if (results.Count <= maxCount)
+                {
+                    return results;
+                }
+
+                var limited = new List<ParticipantHistoricalRaceSummary>(maxCount);
+                for (int i = 0; i < maxCount; i++)
+                {
+                    limited.Add(results[i]);
+                }
+
+                return limited;
+            }
         }
             private sealed class FallbackTrainer : HorseRacingML.ML.HyperparameterTrainer
         {

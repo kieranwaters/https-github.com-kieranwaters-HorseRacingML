@@ -203,6 +203,14 @@ namespace HorseRacingML.Tests
             {
                 return Array.Empty<HorseHistoricalRaceSummary>();
             }
+            public IReadOnlyList<ParticipantHistoricalRaceSummary> GetRecentTrainerResults(string? trainerName, int? trainerId, int maxCount)
+            {
+                return Array.Empty<ParticipantHistoricalRaceSummary>();
+            }
+            public IReadOnlyList<ParticipantHistoricalRaceSummary> GetRecentJockeyResults(string? jockeyName, int? jockeyId, int maxCount)
+            {
+                return Array.Empty<ParticipantHistoricalRaceSummary>();
+            }
             public UpcomingRace? GetUpcomingRaceByMarketId(string? marketId)
             {
                 return null;
