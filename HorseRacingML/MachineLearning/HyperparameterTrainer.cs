@@ -8,6 +8,8 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
+using HorseRacingML.Data;
+using HorseRacingML.Models;
 using System.Text.Json;
 using Tensorflow;
 using Tensorflow.NumPy;
@@ -29,6 +31,7 @@ namespace HorseRacingML.ML
         private readonly string _connectionString;
         private readonly float _winRateAlpha;
         private readonly float _winRateBeta;
+        private readonly IRacingRepository _racingRepository;
 
         public HyperparameterTrainer(IConfiguration configuration)
         {
@@ -36,10 +39,11 @@ namespace HorseRacingML.ML
                 ?? throw new InvalidOperationException("Connection string 'HorseRacingDb' not found.");
             _winRateAlpha = configuration.GetValue<float>("WinRateAlpha", 1f);
             _winRateBeta = configuration.GetValue<float>("WinRateBeta", 2f);
+
         }
 
 
-
+    
 
         public class TrainingResult
         {
