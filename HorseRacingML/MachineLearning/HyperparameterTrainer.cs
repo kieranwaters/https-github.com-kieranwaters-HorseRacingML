@@ -55,6 +55,7 @@ namespace HorseRacingML.ML
             public IReadOnlyList<float> ValidationPredictions { get; init; } = Array.Empty<float>();
             public IReadOnlyList<float> ValidationLabels { get; init; } = Array.Empty<float>();
             public IReadOnlyList<int> ValidationRaceIds { get; init; } = Array.Empty<int>();
+            public IReadOnlyList<RunnerExample> ValidationExamples { get; init; } = Array.Empty<RunnerExample>();
             public IReadOnlyList<FeatureCorrelation> FeatureCorrelations { get; init; } = Array.Empty<FeatureCorrelation>();
         }
 
