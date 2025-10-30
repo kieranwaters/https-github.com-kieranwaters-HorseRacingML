@@ -301,12 +301,13 @@ namespace HorseRacingML.ML
                     runnerRow["DistanceBeatenKnown"] = distanceKnown;
                     runnerRow["DistanceBeatenLengths"] = beatenLengths;
 
+                }
 
-                    var raceStat = ComputeRaceStats(rows);
+                var raceStat = ComputeRaceStats(rows);
 
-                    foreach (var row in rows)
-                    {
-                        int horseId = PreparedDataset.GetRequiredInt32(row, "HorseId");
+                foreach (var row in rows)
+                {
+                    int horseId = PreparedDataset.GetRequiredInt32(row, "HorseId");
                         DateTime date = (DateTime)row["RaceDate"];
                         if (TryGetTimeOfDay(row, out var timeOfDay))
                         {
