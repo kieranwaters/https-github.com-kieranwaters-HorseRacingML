@@ -122,7 +122,52 @@
     var filterEndRouteValue = Model.FilterEndTime.HasValue
         ? Model.FilterEndTime.Value.ToString(@"hh\:mm", CultureInfo.InvariantCulture)
         : null;
-        var initialRegionSelection = string.IsNullOrWhiteSpace(Model?.InitialRegion)
+    double? ExtractFeatureMetric(IReadOnlyDictionary<string, object?>? features, string key)
+    {
+        if (features == null || string.IsNullOrEmpty(key) || !features.TryGetValue(key, out var raw) || raw == null)
+        {
+            return null;
+        }
+
+        switch (raw)
+        {
+            case double doubleValue when double.IsFinite(doubleValue):
+                return doubleValue;
+            case float floatValue when float.IsFinite(floatValue):
+                return floatValue;
+            case decimal decimalValue:
+                return (double)decimalValue;
+            case int intValue:
+                return intValue;
+            case long longValue:
+                return longValue;
+            case string stringValue when double.TryParse(stringValue, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed):
+                return parsed;
+            default:
+                var converted = Convert.ToString(raw, CultureInfo.InvariantCulture);
+                if (!string.IsNullOrWhiteSpace(converted) &&
+                    double.TryParse(converted, NumberStyles.Float, CultureInfo.InvariantCulture, out var fallbackParsed))
+                {
+                    return fallbackParsed;
+                }
+
+                return null;
+        }
+    }
+
+    string? FormatWinRatePercentage(double? value, CultureInfo culture)
+    {
+        if (!value.HasValue || double.IsNaN(value.Value) || double.IsInfinity(value.Value) || value.Value < 0d)
+        {
+            return null;
+        }
+
+        var percent = value.Value * 100d;
+        var format = percent >= 1d ? "0.0#" : "0.##";
+        return percent.ToString(format, culture) + "%";
+    }
+
+    var initialRegionSelection = string.IsNullOrWhiteSpace(Model?.InitialRegion)
         ? DayReportFilterViewModel.DefaultRegion
         : Model.InitialRegion!;
         string DetermineRaceRegion(string? country)
@@ -692,6 +737,121 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                     <td>
                                         <div class="fw-semibold">@runner.HorseName</div>
                                         @{
+                                            var historyEntries = new List<(string Label, string Value, string? Tooltip)>();
+                                            if (!string.IsNullOrWhiteSpace(top3RateTitle) && top3RateText != "-")
+                                            {
+                                                historyEntries.Add(("Top 3 finish rate", top3RateText, top3RateTitle));
+                                            }
+                                            if (!string.IsNullOrWhiteSpace(top5RateTitle) && top5RateText != "-")
+                                            {
+                                                historyEntries.Add(("Top 5 finish rate", top5RateText, top5RateTitle));
+                                            }
+                                            if (runner.FinishPositionVolatility.HasValue && volatilityText != "-")
+                                            {
+                                                historyEntries.Add(("Finish volatility", volatilityText, volatilityTitle));
+                                            }
+
+                                            var featureValues = runner.FeatureValues?.Count > 0
+                                            ? runner.FeatureValues
+                                            : null;
+
+                                            var trainerStats = new List<(string Label, string Value)>();
+                                            if (featureValues != null)
+                                            {
+                                                var trainerLifetime = FormatWinRatePercentage(ExtractFeatureMetric(featureValues, "TrainerWinRate"), CultureInfo.CurrentCulture);
+                                                var trainerRecentStarts = FormatWinRatePercentage(ExtractFeatureMetric(featureValues, "TrainerWinRateLast50"), CultureInfo.CurrentCulture);
+                                                var trainerRecentDays = FormatWinRatePercentage(ExtractFeatureMetric(featureValues, "TrainerWinRateRecentDays"), CultureInfo.CurrentCulture);
+
+                                                if (!string.IsNullOrWhiteSpace(trainerLifetime))
+                                                {
+                                                    trainerStats.Add(("Lifetime win %", trainerLifetime));
+                                                }
+                                                if (!string.IsNullOrWhiteSpace(trainerRecentStarts))
+                                                {
+                                                    trainerStats.Add(("Last 50 win %", trainerRecentStarts));
+                                                }
+                                                if (!string.IsNullOrWhiteSpace(trainerRecentDays))
+                                                {
+                                                    trainerStats.Add(("Recent days win %", trainerRecentDays));
+                                                }
+                                            }
+
+                                            var jockeyStats = new List<(string Label, string Value)>();
+                                            if (featureValues != null)
+                                            {
+                                                var jockeyLifetime = FormatWinRatePercentage(ExtractFeatureMetric(featureValues, "JockeyWinRate"), CultureInfo.CurrentCulture);
+                                                var jockeyRecentStarts = FormatWinRatePercentage(ExtractFeatureMetric(featureValues, "JockeyWinRateLast50"), CultureInfo.CurrentCulture);
+                                                var jockeyRecentDays = FormatWinRatePercentage(ExtractFeatureMetric(featureValues, "JockeyWinRateRecentDays"), CultureInfo.CurrentCulture);
+
+                                                if (!string.IsNullOrWhiteSpace(jockeyLifetime))
+                                                {
+                                                    jockeyStats.Add(("Lifetime win %", jockeyLifetime));
+                                                }
+                                                if (!string.IsNullOrWhiteSpace(jockeyRecentStarts))
+                                                {
+                                                    jockeyStats.Add(("Last 50 win %", jockeyRecentStarts));
+                                                }
+                                                if (!string.IsNullOrWhiteSpace(jockeyRecentDays))
+                                                {
+                                                    jockeyStats.Add(("Recent days win %", jockeyRecentDays));
+                                                }
+                                            }
+
+                                            var hasHistorySummary = historyEntries.Count > 0 || trainerStats.Count > 0 || jockeyStats.Count > 0;
+                                        }
+
+                                        @if (hasHistorySummary)
+                                        {
+                                            <details class="small runner-history-details mt-1">
+                                                <summary class="text-muted">Form snapshot</summary>
+                                                <div class="runner-history-body mt-2">
+                                                    @if (historyEntries.Count > 0)
+                                                    {
+                                                        <dl class="row small mb-0">
+                                                            @foreach (var entry in historyEntries)
+                                                            {
+                                                                <dt class="col-sm-6">@entry.Label</dt>
+                                                                <dd class="col-sm-6">
+                                                                    @if (!string.IsNullOrEmpty(entry.Tooltip))
+                                                                    {
+                                                                        <span title="@entry.Tooltip">@entry.Value</span>
+                                                                    }
+                                                                    else
+                                                                    {
+                                                                        @entry.Value
+                                                                    }
+                                                                </dd>
+                                                            }
+                                                        </dl>
+                                                    }
+
+                                                    @if (trainerStats.Count > 0)
+                                                    {
+                                                        <div class="text-muted text-uppercase small fw-semibold mt-3">Trainer historical</div>
+                                                        <dl class="row small mb-0">
+                                                            @foreach (var stat in trainerStats)
+                                                            {
+                                                                <dt class="col-sm-6">@stat.Label</dt>
+                                                                <dd class="col-sm-6">@stat.Value</dd>
+                                                            }
+                                                        </dl>
+                                                    }
+
+                                                    @if (jockeyStats.Count > 0)
+                                                    {
+                                                        <div class="text-muted text-uppercase small fw-semibold mt-3">Jockey historical</div>
+                                                        <dl class="row small mb-0">
+                                                            @foreach (var stat in jockeyStats)
+                                                            {
+                                                                <dt class="col-sm-6">@stat.Label</dt>
+                                                                <dd class="col-sm-6">@stat.Value</dd>
+                                                            }
+                                                        </dl>
+                                                    }
+                                                </div>
+                                            </details>
+                                        }
+                                        @{
                                             var featurePopulation = runner.FeaturePopulation;
                                             var hasPopulationData = featurePopulation != null && featurePopulation.HasData;
                                             HashSet<string>? appliedFeatureKeys = null;
@@ -1014,29 +1174,10 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                             @historyCountText
                                         }
                                     </td>
-                                            <td class="text-end">
-                                                @if (!string.IsNullOrEmpty(top3RateTitle))
-                                                {
-                                                    <span title="@top3RateTitle">@top3RateText</span>
-                                                }
-                                                else
-                                                {
-                                                    @top3RateText
-                                                }
-                                            </td>
-                                            <td class="text-end">
-                                                @if (!string.IsNullOrEmpty(top5RateTitle))
-                                                {
-                                                    <span title="@top5RateTitle">@top5RateText</span>
-                                                }
-                                                else
-                                                {
-                                                    @top5RateText
-                                                }
-                                            </td>
-                                            <td class="text-end">
-                                                @if (!string.IsNullOrEmpty(volatilityTitle))
-                                                {
+                                    <td class="text-end">
+                                        @if (!string.IsNullOrEmpty(volatilityTitle))
+                                        {
+
                                                     <span title="@volatilityTitle">@volatilityText</span>
                                                 }
                                                 else
@@ -1435,7 +1576,40 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
 
                 return value.toLocaleString(undefined, { maximumFractionDigits: 2 }) + '%';
             };
+            const resolveFeatureMetric = (features, key) => {
+                if (!features || typeof features !== 'object' || !key) {
+                    return null;
+                }
 
+                const raw = features[key];
+                if (typeof raw === 'number' && isFinite(raw)) {
+                    return raw;
+                }
+
+                if (typeof raw === 'string' || typeof raw === 'bigint') {
+                    const parsed = Number(raw);
+                    return Number.isFinite(parsed) ? parsed : null;
+                }
+
+                if (raw !== null && typeof raw !== 'undefined') {
+                    const parsed = Number(raw);
+                    return Number.isFinite(parsed) ? parsed : null;
+                }
+
+                return null;
+            };
+
+            const formatWinRatePercent = (value) => {
+                if (typeof value !== 'number' || !isFinite(value) || value < 0) {
+                    return null;
+                }
+
+                const percent = value * 100;
+                const options = percent >= 1
+                    ? { minimumFractionDigits: 1, maximumFractionDigits: 2 }
+                    : { maximumFractionDigits: 2 };
+                return percent.toLocaleString(undefined, options) + '%';
+            };
             const formatDecimal = (value, fractionDigits = 2) => {
                 if (typeof value !== 'number' || !isFinite(value)) {
                     return '-';
@@ -2512,6 +2686,159 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                     horseName.textContent = runner?.horseName ?? '';
                     horseCell.appendChild(horseName);
 
+                    const historyEntries = [];
+                    if (typeof runner?.top3FinishRate === 'number' && Number.isFinite(runner.top3FinishRate) && runner.top3FinishRate >= 0) {
+                        const percent = runner.top3FinishRate * 100;
+                        const text = formatPercentage(percent);
+                        if (text) {
+                            historyEntries.push({
+                                label: 'Top 3 finish rate',
+                                text,
+                                title: `${percent.toLocaleString(undefined, { maximumFractionDigits: 3 })}% of historical runs finished in the top 3`
+                            });
+                        }
+                    }
+
+                    if (typeof runner?.top5FinishRate === 'number' && Number.isFinite(runner.top5FinishRate) && runner.top5FinishRate >= 0) {
+                        const percent = runner.top5FinishRate * 100;
+                        const text = formatPercentage(percent);
+                        if (text) {
+                            historyEntries.push({
+                                label: 'Top 5 finish rate',
+                                text,
+                                title: `${percent.toLocaleString(undefined, { maximumFractionDigits: 3 })}% of historical runs finished in the top 5`
+                            });
+                        }
+                    }
+
+                    if (typeof runner?.finishPositionVolatility === 'number'
+                        && Number.isFinite(runner.finishPositionVolatility)
+                        && runner.finishPositionVolatility >= 0) {
+                        const percent = runner.finishPositionVolatility * 100;
+                        const text = formatPercentage(percent);
+                        if (text) {
+                            historyEntries.push({
+                                label: 'Finish volatility',
+                                text,
+                                title: 'Standard deviation of normalized finishing positions across historical runs'
+                            });
+                        }
+                    }
+
+                    const trainerStats = [];
+                    const trainerLifetime = formatWinRatePercent(resolveFeatureMetric(runner?.featureValues, 'TrainerWinRate'));
+                    const trainerRecentStarts = formatWinRatePercent(resolveFeatureMetric(runner?.featureValues, 'TrainerWinRateLast50'));
+                    const trainerRecentDays = formatWinRatePercent(resolveFeatureMetric(runner?.featureValues, 'TrainerWinRateRecentDays'));
+                    if (trainerLifetime) {
+                        trainerStats.push({ label: 'Lifetime win %', text: trainerLifetime });
+                    }
+                    if (trainerRecentStarts) {
+                        trainerStats.push({ label: 'Last 50 win %', text: trainerRecentStarts });
+                    }
+                    if (trainerRecentDays) {
+                        trainerStats.push({ label: 'Recent days win %', text: trainerRecentDays });
+                    }
+
+                    const jockeyStats = [];
+                    const jockeyLifetime = formatWinRatePercent(resolveFeatureMetric(runner?.featureValues, 'JockeyWinRate'));
+                    const jockeyRecentStarts = formatWinRatePercent(resolveFeatureMetric(runner?.featureValues, 'JockeyWinRateLast50'));
+                    const jockeyRecentDays = formatWinRatePercent(resolveFeatureMetric(runner?.featureValues, 'JockeyWinRateRecentDays'));
+                    if (jockeyLifetime) {
+                        jockeyStats.push({ label: 'Lifetime win %', text: jockeyLifetime });
+                    }
+                    if (jockeyRecentStarts) {
+                        jockeyStats.push({ label: 'Last 50 win %', text: jockeyRecentStarts });
+                    }
+                    if (jockeyRecentDays) {
+                        jockeyStats.push({ label: 'Recent days win %', text: jockeyRecentDays });
+                    }
+
+                    if (historyEntries.length > 0 || trainerStats.length > 0 || jockeyStats.length > 0) {
+                        const details = document.createElement('details');
+                        details.className = 'small runner-history-details mt-1';
+
+                        const summary = document.createElement('summary');
+                        summary.className = 'text-muted';
+                        summary.textContent = 'Form snapshot';
+                        details.appendChild(summary);
+
+                        const body = document.createElement('div');
+                        body.className = 'runner-history-body mt-2';
+
+                        if (historyEntries.length > 0) {
+                            const dl = document.createElement('dl');
+                            dl.className = 'row small mb-0';
+                            historyEntries.forEach(entry => {
+                                const dt = document.createElement('dt');
+                                dt.className = 'col-sm-6';
+                                dt.textContent = entry.label;
+
+                                const dd = document.createElement('dd');
+                                dd.className = 'col-sm-6';
+                                if (entry.title) {
+                                    const span = document.createElement('span');
+                                    span.title = entry.title;
+                                    span.textContent = entry.text;
+                                    dd.appendChild(span);
+                                } else {
+                                    dd.textContent = entry.text;
+                                }
+
+                                dl.appendChild(dt);
+                                dl.appendChild(dd);
+                            });
+                            body.appendChild(dl);
+                        }
+
+                        if (trainerStats.length > 0) {
+                            const heading = document.createElement('div');
+                            heading.className = 'text-muted text-uppercase small fw-semibold mt-3';
+                            heading.textContent = 'Trainer historical';
+                            body.appendChild(heading);
+
+                            const dl = document.createElement('dl');
+                            dl.className = 'row small mb-0';
+                            trainerStats.forEach(stat => {
+                                const dt = document.createElement('dt');
+                                dt.className = 'col-sm-6';
+                                dt.textContent = stat.label;
+
+                                const dd = document.createElement('dd');
+                                dd.className = 'col-sm-6';
+                                dd.textContent = stat.text;
+
+                                dl.appendChild(dt);
+                                dl.appendChild(dd);
+                            });
+                            body.appendChild(dl);
+                        }
+
+                        if (jockeyStats.length > 0) {
+                            const heading = document.createElement('div');
+                            heading.className = 'text-muted text-uppercase small fw-semibold mt-3';
+                            heading.textContent = 'Jockey historical';
+                            body.appendChild(heading);
+
+                            const dl = document.createElement('dl');
+                            dl.className = 'row small mb-0';
+                            jockeyStats.forEach(stat => {
+                                const dt = document.createElement('dt');
+                                dt.className = 'col-sm-6';
+                                dt.textContent = stat.label;
+
+                                const dd = document.createElement('dd');
+                                dd.className = 'col-sm-6';
+                                dd.textContent = stat.text;
+
+                                dl.appendChild(dt);
+                                dl.appendChild(dd);
+                            });
+                            body.appendChild(dl);
+                        }
+
+                        details.appendChild(body);
+                        horseCell.appendChild(details);
+                    }
                     if (runner?.featureValues && typeof runner.featureValues === 'object' && Object.keys(runner.featureValues).length > 0) {
                         const details = document.createElement('details');
                         details.className = 'small mt-1';

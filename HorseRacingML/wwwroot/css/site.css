@@ -28,3 +28,11 @@ body {
 .table tr.runner-edge-lay > * {
     background-color: #f9e2e4;
 }
+
+.runner-history-details summary {
+    cursor: pointer;
+}
+
+.runner-history-body dl + dl {
+    margin-top: 0.5rem;
+}
