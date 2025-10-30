@@ -328,6 +328,60 @@ VALUES";
                 }
             }
         }
+        public int InsertRace(Race race)
+        {
+            if (race is null)
+            {
+                throw new ArgumentNullException(nameof(race));
+            }
+
+            StripBracketedText(race);
+            race.Going = NormalizeGoing(race.Going);
+            race.DistanceText ??= string.Empty;
+
+            const string sql = @"SET NOCOUNT ON;
+
+DECLARE @ExistingId INT;
+
+SELECT TOP (1) @ExistingId = RaceId
+FROM Race
+WHERE CourseId = @CourseId
+  AND RaceDate = @RaceDate
+  AND ISNULL(ScheduledOff, '00:00:00') = ISNULL(@ScheduledOff, '00:00:00')
+  AND ISNULL(LTRIM(RTRIM(Title)), '') = ISNULL(LTRIM(RTRIM(@Title)), '');
+
+IF @ExistingId IS NULL
+BEGIN
+    INSERT INTO Race
+        (CourseId, RaceDate, ScheduledOff, ActualOff, Title, RaceType, Class, AgeRestriction, Surface, Going, DistanceYards, DistanceText, RunnerCount, Status, WinningTimeMs, WinningTimeText)
+    VALUES
+        (@CourseId, @RaceDate, @ScheduledOff, @ActualOff, @Title, @RaceType, @Class, @AgeRestriction, @Surface, @Going, @DistanceYards, @DistanceText, @RunnerCount, @Status, @WinningTimeMs, @WinningTimeText);
+
+    SELECT CAST(SCOPE_IDENTITY() as int);
+END
+ELSE
+BEGIN
+    UPDATE Race
+    SET ActualOff = @ActualOff,
+        RaceType = @RaceType,
+        Class = @Class,
+        AgeRestriction = @AgeRestriction,
+        Surface = @Surface,
+        Going = @Going,
+        DistanceYards = @DistanceYards,
+        DistanceText = @DistanceText,
+        RunnerCount = @RunnerCount,
+        Status = @Status,
+        WinningTimeMs = @WinningTimeMs,
+        WinningTimeText = @WinningTimeText
+    WHERE RaceId = @ExistingId;
+
+    SELECT @ExistingId;
+END;";
+
+            using var conn = OpenConnection();
+            return conn.QuerySingle<int>(sql, race);
+        }
         public int UpsertUpcomingRace(UpcomingRace race)
         {
             if (race is null)

@@ -735,7 +735,7 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                     <td>@cloth</td>
                                     <td>@draw</td>
                                     <td>
-                                        <div class="fw-semibold">@runner.HorseName</div>
+                                       <div class="fw-semibold">@runner.HorseName</div>
                                         @{
                                             var historyEntries = new List<(string Label, string Value, string? Tooltip)>();
                                             if (!string.IsNullOrWhiteSpace(top3RateTitle) && top3RateText != "-")
@@ -755,7 +755,7 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                             ? runner.FeatureValues
                                             : null;
 
-                                            var trainerStats = new List<(string Label, string Value)>();
+                                            var trainerStats = new List<(string Label, string Value, string? Tooltip)>();
                                             if (featureValues != null)
                                             {
                                                 var trainerLifetime = FormatWinRatePercentage(ExtractFeatureMetric(featureValues, "TrainerWinRate"), CultureInfo.CurrentCulture);
@@ -764,19 +764,19 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
 
                                                 if (!string.IsNullOrWhiteSpace(trainerLifetime))
                                                 {
-                                                    trainerStats.Add(("Lifetime win %", trainerLifetime));
+                                                    trainerStats.Add(("Lifetime win %", trainerLifetime, null));
                                                 }
                                                 if (!string.IsNullOrWhiteSpace(trainerRecentStarts))
                                                 {
-                                                    trainerStats.Add(("Last 50 win %", trainerRecentStarts));
+                                                    trainerStats.Add(("Last 50 win %", trainerRecentStarts, null));
                                                 }
                                                 if (!string.IsNullOrWhiteSpace(trainerRecentDays))
                                                 {
-                                                    trainerStats.Add(("Recent days win %", trainerRecentDays));
+                                                    trainerStats.Add(("Recent days win %", trainerRecentDays, null));
                                                 }
                                             }
 
-                                            var jockeyStats = new List<(string Label, string Value)>();
+                                            var jockeyStats = new List<(string Label, string Value, string? Tooltip)>();
                                             if (featureValues != null)
                                             {
                                                 var jockeyLifetime = FormatWinRatePercentage(ExtractFeatureMetric(featureValues, "JockeyWinRate"), CultureInfo.CurrentCulture);
@@ -785,19 +785,38 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
 
                                                 if (!string.IsNullOrWhiteSpace(jockeyLifetime))
                                                 {
-                                                    jockeyStats.Add(("Lifetime win %", jockeyLifetime));
+                                                    jockeyStats.Add(("Lifetime win %", jockeyLifetime, null));
                                                 }
                                                 if (!string.IsNullOrWhiteSpace(jockeyRecentStarts))
                                                 {
-                                                    jockeyStats.Add(("Last 50 win %", jockeyRecentStarts));
+                                                    jockeyStats.Add(("Last 50 win %", jockeyRecentStarts, null));
                                                 }
                                                 if (!string.IsNullOrWhiteSpace(jockeyRecentDays))
                                                 {
-                                                    jockeyStats.Add(("Recent days win %", jockeyRecentDays));
+                                                    jockeyStats.Add(("Recent days win %", jockeyRecentDays, null));
                                                 }
                                             }
+                                            var snapshotSections = new List<(string? Title, List<(string Label, string Value, string? Tooltip)> Entries)>();
 
-                                            var hasHistorySummary = historyEntries.Count > 0 || trainerStats.Count > 0 || jockeyStats.Count > 0;
+                                            if (historyEntries.Count > 0)
+                                            {
+                                                var horseTitle = trainerStats.Count > 0 || jockeyStats.Count > 0
+                                                    ? "Horse historical"
+                                                    : null;
+                                                snapshotSections.Add((horseTitle, historyEntries));
+                                            }
+
+                                            if (trainerStats.Count > 0)
+                                            {
+                                                snapshotSections.Add(("Trainer historical", trainerStats));
+                                            }
+
+                                            if (jockeyStats.Count > 0)
+                                            {
+                                                snapshotSections.Add(("Jockey historical", jockeyStats));
+                                            }
+
+                                            var hasHistorySummary = snapshotSections.Count > 0;
                                         }
 
                                         @if (hasHistorySummary)
@@ -805,10 +824,24 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                             <details class="small runner-history-details mt-1">
                                                 <summary class="text-muted">Form snapshot</summary>
                                                 <div class="runner-history-body mt-2">
-                                                    @if (historyEntries.Count > 0)
+                                                    @{ var sectionIndex = 0; }
+                                                    @foreach (var section in snapshotSections)
                                                     {
-                                                        <dl class="row small mb-0">
-                                                            @foreach (var entry in historyEntries)
+                                                        var headingClass = sectionIndex > 0 ? "mt-3" : string.Empty;
+                                                        if (!string.IsNullOrEmpty(section.Title))
+                                                        {
+                                                            <div class="text-muted text-uppercase small fw-semibold @headingClass">@section.Title</div>
+                                                            headingClass = "mt-1";
+                                                        }
+
+                                                        var listClass = section.Title != null
+                                                            ? $"row small mb-0 {headingClass}".Trim()
+                                                            : sectionIndex > 0
+                                                                ? "row small mb-0 mt-3"
+                                                                : "row small mb-0";
+
+                                                        <dl class="@listClass">
+                                                            @foreach (var entry in section.Entries)
                                                             {
                                                                 <dt class="col-sm-6">@entry.Label</dt>
                                                                 <dd class="col-sm-6">
@@ -823,30 +856,8 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                                                 </dd>
                                                             }
                                                         </dl>
-                                                    }
 
-                                                    @if (trainerStats.Count > 0)
-                                                    {
-                                                        <div class="text-muted text-uppercase small fw-semibold mt-3">Trainer historical</div>
-                                                        <dl class="row small mb-0">
-                                                            @foreach (var stat in trainerStats)
-                                                            {
-                                                                <dt class="col-sm-6">@stat.Label</dt>
-                                                                <dd class="col-sm-6">@stat.Value</dd>
-                                                            }
-                                                        </dl>
-                                                    }
-
-                                                    @if (jockeyStats.Count > 0)
-                                                    {
-                                                        <div class="text-muted text-uppercase small fw-semibold mt-3">Jockey historical</div>
-                                                        <dl class="row small mb-0">
-                                                            @foreach (var stat in jockeyStats)
-                                                            {
-                                                                <dt class="col-sm-6">@stat.Label</dt>
-                                                                <dd class="col-sm-6">@stat.Value</dd>
-                                                            }
-                                                        </dl>
+                                                        sectionIndex++;
                                                     }
                                                 </div>
                                             </details>
@@ -1174,17 +1185,36 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                             @historyCountText
                                         }
                                     </td>
-                                    <td class="text-end">
-                                        @if (!string.IsNullOrEmpty(volatilityTitle))
+                                    <td class="text-end top3-cell">
+                                        @if (!string.IsNullOrEmpty(top3RateTitle) && top3RateText != "-")
                                         {
-
-                                                    <span title="@volatilityTitle">@volatilityText</span>
-                                                }
-                                                else
-                                                {
-                                                    @volatilityText
-                                                }
-                                            </td>
+                                            <span title="@top3RateTitle">@top3RateText</span>
+                                        }
+                                        else
+                                        {
+                                            @top3RateText
+                                        }
+                                    </td>
+                                    <td class="text-end top5-cell">
+                                        @if (!string.IsNullOrEmpty(top5RateTitle) && top5RateText != "-")
+                                        {
+                                            <span title="@top5RateTitle">@top5RateText</span>
+                                        }
+                                        else
+                                        {
+                                            @top5RateText
+                                        }
+                                    </td>
+                                    <td class="text-end finish-vol-cell">
+                                        @if (!string.IsNullOrEmpty(volatilityTitle) && volatilityText != "-")
+                                        {
+                                            <span title="@volatilityTitle">@volatilityText</span>
+                                        }
+                                        else
+                                        {
+                                            @volatilityText
+                                        }
+                                    </td>
                                     <td class="text-end market-odds-cell">@marketOdds</td>
                                     <td class="text-end lay-odds-cell">@layOdds</td>
                                     <td class="text-end ai-win-cell">
@@ -1609,6 +1639,72 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                     ? { minimumFractionDigits: 1, maximumFractionDigits: 2 }
                     : { maximumFractionDigits: 2 };
                 return percent.toLocaleString(undefined, options) + '%';
+            };
+            const toFiniteNumber = (value) => {
+                if (typeof value === 'number' && Number.isFinite(value)) {
+                    return value;
+                }
+
+                if (typeof value === 'string') {
+                    const parsed = Number.parseFloat(value);
+                    return Number.isFinite(parsed) ? parsed : null;
+                }
+
+                return null;
+            };
+
+            const formatFinishRateMetric = (value, description) => {
+                const numeric = toFiniteNumber(value);
+                if (numeric === null || !Number.isFinite(numeric) || numeric < 0) {
+                    return { text: '-', title: null };
+                }
+
+                const percent = numeric * 100;
+                const text = formatPercentage(percent);
+                if (!text) {
+                    return { text: '-', title: null };
+                }
+
+                const title = description
+                    ? `${percent.toLocaleString(undefined, { maximumFractionDigits: 3 })}% ${description}`
+                    : null;
+
+                return { text, title };
+            };
+
+            const formatVolatilityMetric = (value) => {
+                const numeric = toFiniteNumber(value);
+                if (numeric === null || !Number.isFinite(numeric) || numeric < 0) {
+                    return { text: '-', title: null };
+                }
+
+                const percent = numeric * 100;
+                const text = formatPercentage(percent);
+                if (!text) {
+                    return { text: '-', title: null };
+                }
+
+                return {
+                    text,
+                    title: 'Standard deviation of normalized finishing positions across historical runs'
+                };
+            };
+
+            const setMetricCellContent = (cell, text, title) => {
+                if (!cell) {
+                    return;
+                }
+
+                cell.innerHTML = '';
+                const displayText = (typeof text === 'string' && text.length > 0) ? text : '-';
+                if (title) {
+                    const span = document.createElement('span');
+                    span.textContent = displayText;
+                    span.title = title;
+                    cell.appendChild(span);
+                } else {
+                    cell.textContent = displayText;
+                }
             };
             const formatDecimal = (value, fractionDigits = 2) => {
                 if (typeof value !== 'number' || !isFinite(value)) {
@@ -2686,43 +2782,21 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                     horseName.textContent = runner?.horseName ?? '';
                     horseCell.appendChild(horseName);
 
+                    const top3Metric = formatFinishRateMetric(runner?.top3FinishRate, 'of historical runs finished in the top 3');
+                    const top5Metric = formatFinishRateMetric(runner?.top5FinishRate, 'of historical runs finished in the top 5');
+                    const volatilityMetric = formatVolatilityMetric(runner?.finishPositionVolatility);
+
                     const historyEntries = [];
-                    if (typeof runner?.top3FinishRate === 'number' && Number.isFinite(runner.top3FinishRate) && runner.top3FinishRate >= 0) {
-                        const percent = runner.top3FinishRate * 100;
-                        const text = formatPercentage(percent);
-                        if (text) {
-                            historyEntries.push({
-                                label: 'Top 3 finish rate',
-                                text,
-                                title: `${percent.toLocaleString(undefined, { maximumFractionDigits: 3 })}% of historical runs finished in the top 3`
-                            });
-                        }
+                    if (top3Metric.text !== '-') {
+                        historyEntries.push({ label: 'Top 3 finish rate', text: top3Metric.text, title: top3Metric.title });
                     }
 
-                    if (typeof runner?.top5FinishRate === 'number' && Number.isFinite(runner.top5FinishRate) && runner.top5FinishRate >= 0) {
-                        const percent = runner.top5FinishRate * 100;
-                        const text = formatPercentage(percent);
-                        if (text) {
-                            historyEntries.push({
-                                label: 'Top 5 finish rate',
-                                text,
-                                title: `${percent.toLocaleString(undefined, { maximumFractionDigits: 3 })}% of historical runs finished in the top 5`
-                            });
-                        }
+                    if (top5Metric.text !== '-') {
+                        historyEntries.push({ label: 'Top 5 finish rate', text: top5Metric.text, title: top5Metric.title });
                     }
 
-                    if (typeof runner?.finishPositionVolatility === 'number'
-                        && Number.isFinite(runner.finishPositionVolatility)
-                        && runner.finishPositionVolatility >= 0) {
-                        const percent = runner.finishPositionVolatility * 100;
-                        const text = formatPercentage(percent);
-                        if (text) {
-                            historyEntries.push({
-                                label: 'Finish volatility',
-                                text,
-                                title: 'Standard deviation of normalized finishing positions across historical runs'
-                            });
-                        }
+                    if (volatilityMetric.text !== '-') {
+                        historyEntries.push({ label: 'Finish volatility', text: volatilityMetric.text, title: volatilityMetric.title });
                     }
 
                     const trainerStats = [];
@@ -2730,13 +2804,13 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                     const trainerRecentStarts = formatWinRatePercent(resolveFeatureMetric(runner?.featureValues, 'TrainerWinRateLast50'));
                     const trainerRecentDays = formatWinRatePercent(resolveFeatureMetric(runner?.featureValues, 'TrainerWinRateRecentDays'));
                     if (trainerLifetime) {
-                        trainerStats.push({ label: 'Lifetime win %', text: trainerLifetime });
+                        trainerStats.push({ label: 'Lifetime win %', text: trainerLifetime, title: null });
                     }
                     if (trainerRecentStarts) {
-                        trainerStats.push({ label: 'Last 50 win %', text: trainerRecentStarts });
+                        trainerStats.push({ label: 'Last 50 win %', text: trainerRecentStarts, title: null });
                     }
                     if (trainerRecentDays) {
-                        trainerStats.push({ label: 'Recent days win %', text: trainerRecentDays });
+                        trainerStats.push({ label: 'Recent days win %', text: trainerRecentDays, title: null });
                     }
 
                     const jockeyStats = [];
@@ -2744,16 +2818,32 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                     const jockeyRecentStarts = formatWinRatePercent(resolveFeatureMetric(runner?.featureValues, 'JockeyWinRateLast50'));
                     const jockeyRecentDays = formatWinRatePercent(resolveFeatureMetric(runner?.featureValues, 'JockeyWinRateRecentDays'));
                     if (jockeyLifetime) {
-                        jockeyStats.push({ label: 'Lifetime win %', text: jockeyLifetime });
+                        jockeyStats.push({ label: 'Lifetime win %', text: jockeyLifetime, title: null });
                     }
                     if (jockeyRecentStarts) {
-                        jockeyStats.push({ label: 'Last 50 win %', text: jockeyRecentStarts });
+                        jockeyStats.push({ label: 'Last 50 win %', text: jockeyRecentStarts, title: null });
                     }
                     if (jockeyRecentDays) {
-                        jockeyStats.push({ label: 'Recent days win %', text: jockeyRecentDays });
+                        jockeyStats.push({ label: 'Recent days win %', text: jockeyRecentDays, title: null });
                     }
 
-                    if (historyEntries.length > 0 || trainerStats.length > 0 || jockeyStats.length > 0) {
+                    const snapshotSections = [];
+                    if (historyEntries.length > 0) {
+                        snapshotSections.push({
+                            title: (trainerStats.length > 0 || jockeyStats.length > 0) ? 'Horse historical' : null,
+                            entries: historyEntries
+                        });
+                    }
+
+                    if (trainerStats.length > 0) {
+                        snapshotSections.push({ title: 'Trainer historical', entries: trainerStats });
+                    }
+
+                    if (jockeyStats.length > 0) {
+                        snapshotSections.push({ title: 'Jockey historical', entries: jockeyStats });
+                    }
+
+                    if (snapshotSections.length > 0) {
                         const details = document.createElement('details');
                         details.className = 'small runner-history-details mt-1';
 
@@ -2765,10 +2855,27 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                         const body = document.createElement('div');
                         body.className = 'runner-history-body mt-2';
 
-                        if (historyEntries.length > 0) {
+                        snapshotSections.forEach((section, index) => {
+                            const hasTitle = typeof section.title === 'string' && section.title.trim().length > 0;
+                            const spacingClass = index > 0 ? 'mt-3' : '';
+
+                            if (hasTitle) {
+                                const heading = document.createElement('div');
+                                heading.className = ['text-muted text-uppercase small fw-semibold', spacingClass].filter(Boolean).join(' ');
+                                heading.textContent = section.title;
+                                body.appendChild(heading);
+                            }
+
                             const dl = document.createElement('dl');
-                            dl.className = 'row small mb-0';
-                            historyEntries.forEach(entry => {
+                            const listClasses = ['row', 'small', 'mb-0'];
+                            if (hasTitle) {
+                                listClasses.push('mt-1');
+                            } else if (spacingClass) {
+                                listClasses.push(spacingClass);
+                            }
+                            dl.className = listClasses.join(' ');
+
+                            section.entries.forEach(entry => {
                                 const dt = document.createElement('dt');
                                 dt.className = 'col-sm-6';
                                 dt.textContent = entry.label;
@@ -2787,54 +2894,9 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                 dl.appendChild(dt);
                                 dl.appendChild(dd);
                             });
+
                             body.appendChild(dl);
-                        }
-
-                        if (trainerStats.length > 0) {
-                            const heading = document.createElement('div');
-                            heading.className = 'text-muted text-uppercase small fw-semibold mt-3';
-                            heading.textContent = 'Trainer historical';
-                            body.appendChild(heading);
-
-                            const dl = document.createElement('dl');
-                            dl.className = 'row small mb-0';
-                            trainerStats.forEach(stat => {
-                                const dt = document.createElement('dt');
-                                dt.className = 'col-sm-6';
-                                dt.textContent = stat.label;
-
-                                const dd = document.createElement('dd');
-                                dd.className = 'col-sm-6';
-                                dd.textContent = stat.text;
-
-                                dl.appendChild(dt);
-                                dl.appendChild(dd);
-                            });
-                            body.appendChild(dl);
-                        }
-
-                        if (jockeyStats.length > 0) {
-                            const heading = document.createElement('div');
-                            heading.className = 'text-muted text-uppercase small fw-semibold mt-3';
-                            heading.textContent = 'Jockey historical';
-                            body.appendChild(heading);
-
-                            const dl = document.createElement('dl');
-                            dl.className = 'row small mb-0';
-                            jockeyStats.forEach(stat => {
-                                const dt = document.createElement('dt');
-                                dt.className = 'col-sm-6';
-                                dt.textContent = stat.label;
-
-                                const dd = document.createElement('dd');
-                                dd.className = 'col-sm-6';
-                                dd.textContent = stat.text;
-
-                                dl.appendChild(dt);
-                                dl.appendChild(dd);
-                            });
-                            body.appendChild(dl);
-                        }
+                        });
 
                         details.appendChild(body);
                         horseCell.appendChild(details);
@@ -2918,7 +2980,20 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                     }
 
                     row.appendChild(historyCell);
+                    const top3Cell = document.createElement('td');
+                    top3Cell.className = 'text-end top3-cell';
+                    setMetricCellContent(top3Cell, top3Metric.text, top3Metric.title);
+                    row.appendChild(top3Cell);
 
+                    const top5Cell = document.createElement('td');
+                    top5Cell.className = 'text-end top5-cell';
+                    setMetricCellContent(top5Cell, top5Metric.text, top5Metric.title);
+                    row.appendChild(top5Cell);
+
+                    const finishVolCell = document.createElement('td');
+                    finishVolCell.className = 'text-end finish-vol-cell';
+                    setMetricCellContent(finishVolCell, volatilityMetric.text, volatilityMetric.title);
+                    row.appendChild(finishVolCell);
                     appendCell(typeof runner?.marketDecimalOdds === 'number'
                         ? formatDecimal(runner.marketDecimalOdds)
                         : '-', 'text-end market-odds-cell');
@@ -3123,6 +3198,24 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                         targetRow.dataset.marketOdds = runner.marketDecimalOdds.toString();
                     } else {
                         delete targetRow.dataset.marketOdds;
+                    }
+                    const top3Metric = formatFinishRateMetric(runner?.top3FinishRate, 'of historical runs finished in the top 3');
+                    const top5Metric = formatFinishRateMetric(runner?.top5FinishRate, 'of historical runs finished in the top 5');
+                    const volatilityMetric = formatVolatilityMetric(runner?.finishPositionVolatility);
+
+                    const top3Cell = targetRow.querySelector('.top3-cell');
+                    if (top3Cell) {
+                        setMetricCellContent(top3Cell, top3Metric.text, top3Metric.title);
+                    }
+
+                    const top5Cell = targetRow.querySelector('.top5-cell');
+                    if (top5Cell) {
+                        setMetricCellContent(top5Cell, top5Metric.text, top5Metric.title);
+                    }
+
+                    const finishVolCell = targetRow.querySelector('.finish-vol-cell');
+                    if (finishVolCell) {
+                        setMetricCellContent(finishVolCell, volatilityMetric.text, volatilityMetric.title);
                     }
 
                     const marketOddsCell = targetRow.querySelector('.market-odds-cell');
