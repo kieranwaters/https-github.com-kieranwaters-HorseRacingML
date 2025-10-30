@@ -54,13 +54,23 @@ namespace HorseRacingML.ML
                 public List<PreparedRace> Races { get; }
                 public IEnumerable<Dictionary<string, object?>> Rows => Races.SelectMany(r => r.Rows);
                 public int RowCount => Races.Sum(r => r.Rows.Count);
-
+                private static readonly Dictionary<string, string[]> ColumnAliases = new(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["HorseId"] = new[] { "HorseID", "Horse_Id", "HorseIdentifier", "RunnerHorseId", "RunnerHorseID", "Id" },
+                    ["RaceId"] = new[] { "RaceID" },
+                };
                 internal static bool TryGetRequiredInt32(Dictionary<string, object?> row, string key, out int result)
                 {
-                    if (row.TryGetValue(key, out var value) &&
+                    if (row is null)
+                    {
+                        throw new ArgumentNullException(nameof(row));
+                    }
+
+                    if (TryGetValueWithAliases(row, key, out var value) &&
                         value is not null &&
                         TryConvertToInt32(value, out result))
                     {
+                        row[key] = result;
                         return true;
                     }
 
@@ -86,24 +96,42 @@ namespace HorseRacingML.ML
 
                 internal static int GetRequiredInt32(Dictionary<string, object?> row, string key)
                 {
-                    if (!row.TryGetValue(key, out var value) || value is null)
-                    {
-                        throw new InvalidOperationException($"Missing required column '{key}'.");
-                    }
-
-                    if (TryConvertToInt32(value, out var result))
+                    if (TryGetRequiredInt32(row, key, out var result))
                     {
                         return result;
                     }
 
-                    string typeName = value.GetType().FullName ?? value.GetType().Name;
-                    string displayValue = value switch
+                    if (TryGetValueWithAliases(row, key, out var rawValue, requireNonNull: false))
                     {
-                        byte[] bytes => $"0x{BitConverter.ToString(bytes).Replace("-", string.Empty)}",
-                        _ => value.ToString() ?? string.Empty
-                    };
+                        if (rawValue is null)
+                        {
+                            throw new InvalidOperationException($"Missing required column '{key}'.");
+                        }
 
-                    throw new FormatException($"Column '{key}' with value '{displayValue}' of type '{typeName}' could not be converted to Int32.");
+                        if (TryConvertToInt32(rawValue, out result))
+                        {
+                            row[key] = result;
+                            return result;
+                        }
+
+                        string typeName = rawValue.GetType().FullName ?? rawValue.GetType().Name;
+                        string displayValue = rawValue switch
+                        {
+                            byte[] bytes => $"0x{BitConverter.ToString(bytes).Replace("-", string.Empty)}",
+                            _ => rawValue.ToString() ?? string.Empty
+                        };
+
+                        throw new FormatException($"Column '{key}' with value '{displayValue}' of type '{typeName}' could not be converted to Int32.");
+                    }
+
+                    string message = $"Missing required column '{key}'.";
+                    if (row is not null && row.Count > 0)
+                    {
+                        var available = string.Join(", ", row.Keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase));
+                        message = string.Concat(message, " Available columns: ", available, ".");
+                    }
+
+                    throw new InvalidOperationException(message);
                 }
 
                 internal static bool TryConvertToInt32(object? value, out int result)
@@ -231,7 +259,36 @@ namespace HorseRacingML.ML
                     result = 0;
                     return false;
                 }
+                private static bool TryGetValueWithAliases(
+                    Dictionary<string, object?> row,
+                    string key,
+                    out object? value,
+                    bool requireNonNull = true)
+                {
+                    if (row.TryGetValue(key, out value) && (!requireNonNull || value is not null))
+                    {
+                        return true;
+                    }
 
+                    if (ColumnAliases.TryGetValue(key, out var aliases))
+                    {
+                        foreach (var alias in aliases)
+                        {
+                            if (row.TryGetValue(alias, out var aliasValue) && (!requireNonNull || aliasValue is not null))
+                            {
+                                value = aliasValue;
+                                if (aliasValue is not null)
+                                {
+                                    row[key] = aliasValue;
+                                }
+                                return true;
+                            }
+                        }
+                    }
+
+                    value = null;
+                    return false;
+                }
                 private static bool TryConvertFromBytes(byte[]? bytes, out int value)
                 {
                     if (bytes is null)
