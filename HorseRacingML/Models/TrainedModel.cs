@@ -2,7 +2,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace HorseRacingML.ML
+namespace HorseRacingML.Models
 {
     public class LayerWeights
     {

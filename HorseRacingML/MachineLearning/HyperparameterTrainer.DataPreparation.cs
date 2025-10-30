@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Data.SqlTypes;
 using System.Globalization;
+using HorseRacingML.Models;
 using System.Linq;
 using System.Text;
 using static HorseRacingML.ML.HyperparameterTrainer.TrainingDataset;

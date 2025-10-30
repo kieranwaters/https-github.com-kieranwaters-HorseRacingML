@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace HorseRacingML.ML
+namespace HorseRacingML.Models
 {
     /// <summary>
     /// Parameters used for feature normalization.
