@@ -1213,7 +1213,7 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                                     class="btn btn-link p-0 historical-races-btn"
                                                     data-runner-name="@(runner.HorseName ?? string.Empty)"
                                                     data-history-count="@(runner.HistoricalRaceCount?.ToString(CultureInfo.InvariantCulture) ?? string.Empty)"
-                                                    data-historical-races='@Html.Raw(historicalRacesJson)'>
+                                                    data-historical-races="@historicalRacesJson">
                                                 @historyCountText
                                             </button>
                                         }

@@ -494,10 +494,15 @@ namespace HorseRacingML.ML
 
                 trainAcc = trainPreds.Length > 0 ? ComputeWinnerAccuracy(trainRaceIds, trainPreds, trainLabels) : 0;
                 valAcc = valPreds.Length > 0 ? ComputeWinnerAccuracy(valRaceIds, valPreds, valLabels) : 0;
+                bool useValidationCorrelations = valFeatures.Count > 0 && valPreds.Length > 0;
+                var correlationFeatures = useValidationCorrelations ? valFeatures : trainFeatures;
+                var correlationPreds = useValidationCorrelations ? valPreds : trainPreds;
+                var correlationLabels = useValidationCorrelations ? valLabels : trainLabels;
+
                 featureCorrelations = ComputeFeatureCorrelations(
-                   trainFeatures,
-                    trainPreds,
-                    trainLabels,
+                    correlationFeatures,
+                    correlationPreds,
+                    correlationLabels,
                     dataset.FeatureKeys,
                     dataset.FeatureDimensions,
                     dataset.StringMaps);
@@ -653,19 +658,11 @@ namespace HorseRacingML.ML
                 throw new ArgumentNullException(nameof(stringMaps));
 
             int exampleCount = Math.Min(normalizedFeatures.Count, predictions.Count);
-            var targets = (IReadOnlyList<float>)predictions;
-
-            if (labelValues is { Count: > 0 })
-            {
-                exampleCount = Math.Min(exampleCount, labelValues.Count);
-                targets = labelValues;
-            }
-
             if (exampleCount == 0)
             {
                 return new List<FeatureCorrelation>();
             }
-
+            var targets = (IReadOnlyList<float>)predictions;
             double sumY = 0;
             double sumY2 = 0;
             for (int i = 0; i < exampleCount; i++)
@@ -673,6 +670,35 @@ namespace HorseRacingML.ML
                 double y = targets[i];
                 sumY += y;
                 sumY2 += y * y;
+            }
+            static bool HasVariance(int count, double sum, double sumSquares)
+            {
+                if (count == 0)
+                {
+                    return false;
+                }
+
+                double varianceComponent = count * sumSquares - sum * sum;
+                return varianceComponent > 0;
+            }
+
+            if (!HasVariance(exampleCount, sumY, sumY2) && labelValues is { Count: > 0 })
+            {
+                exampleCount = Math.Min(exampleCount, labelValues.Count);
+                if (exampleCount == 0)
+                {
+                    return new List<FeatureCorrelation>();
+                }
+
+                targets = labelValues;
+                sumY = 0;
+                sumY2 = 0;
+                for (int i = 0; i < exampleCount; i++)
+                {
+                    double y = targets[i];
+                    sumY += y;
+                    sumY2 += y * y;
+                }
             }
 
             var correlations = new List<FeatureCorrelation>();
@@ -722,7 +748,7 @@ namespace HorseRacingML.ML
                         }
 
                         double x = featureRow[offset + d];
-                        double y = predictions[row];
+                        double y = targets[row];
                         sumX += x;
                         sumX2 += x * x;
                         sumXY += x * y;
