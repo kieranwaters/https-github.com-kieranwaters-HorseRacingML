@@ -1928,7 +1928,6 @@ namespace HorseRacingML.ML
             const int backfillProgressInterval = 25;
             const int backfillThreadCount = 8;
             int processed = 0;
-            Half for 
             var totalRaces = races.Count;
             var stopwatch = Stopwatch.StartNew();
             var parallelOptions = new ParallelOptions
