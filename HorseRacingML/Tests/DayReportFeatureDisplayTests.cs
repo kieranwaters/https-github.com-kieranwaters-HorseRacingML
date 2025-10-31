@@ -741,6 +741,10 @@ namespace HorseRacingML.Tests
             {
                 return GetParticipantResults(jockeyName, jockeyId, maxCount, _jockeyHistoryCache);
             }
+            public IDictionary<int, RaceFeatureBackfill> GetRaceFeatureBackfills(IEnumerable<int> raceIds)
+            {
+                return new Dictionary<int, RaceFeatureBackfill>();
+            }
             public void SetRecentHorseResults(int? horseId, string? horseName, IReadOnlyList<HorseHistoricalRaceSummary> results)
             {
                 var key = (horseId, NormalizeHorseNameKey(horseName));

@@ -1827,6 +1827,10 @@ new RunnerFlow { HorseName = "Alpha Runner" },
             {
                 return new Dictionary<HorseMetricRequest, int?>();
             }
+            public IDictionary<int, RaceFeatureBackfill> GetRaceFeatureBackfills(IEnumerable<int> raceIds)
+            {
+                return new Dictionary<int, RaceFeatureBackfill>();
+            }
             public UpcomingRace? GetUpcomingRaceByMarketId(string? marketId)
             {
                 if (string.IsNullOrWhiteSpace(marketId))
@@ -2314,6 +2318,8 @@ new RunnerFlow { HorseName = "Alpha Runner" },
                 int? jockeyId) => null;
             public IReadOnlyList<RaceClassRating> GetHistoricalRaceClassRatings(string? horseName, int? horseId, int maxCount)
                 => Array.Empty<RaceClassRating>();
+            public IDictionary<int, RaceFeatureBackfill> GetRaceFeatureBackfills(IEnumerable<int> raceIds)
+                => new Dictionary<int, RaceFeatureBackfill>();
             private static IReadOnlyList<ParticipantHistoricalRaceSummary> LimitParticipantResults(
                 IReadOnlyList<ParticipantHistoricalRaceSummary>? results,
                 int maxCount)

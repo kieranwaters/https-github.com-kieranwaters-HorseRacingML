@@ -256,6 +256,8 @@ namespace HorseRacingML.Tests
                 int? jockeyId) => null;
             public IReadOnlyList<RaceClassRating> GetHistoricalRaceClassRatings(string? horseName, int? horseId, int maxCount)
                 => Array.Empty<RaceClassRating>();
+            public IDictionary<int, RaceFeatureBackfill> GetRaceFeatureBackfills(IEnumerable<int> raceIds)
+                => new Dictionary<int, RaceFeatureBackfill>();
         }
 
         private sealed class StubTrainer : HorseRacingML.ML.HyperparameterTrainer

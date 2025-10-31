@@ -1362,6 +1362,8 @@ namespace HorseRacingML.Tests
                     .Take(maxCount)
                     .ToList();
             }
+            public IDictionary<int, RaceFeatureBackfill> GetRaceFeatureBackfills(IEnumerable<int> raceIds)
+                => new Dictionary<int, RaceFeatureBackfill>();
         }
 
         private sealed class StubTrainer : HorseRacingML.ML.HyperparameterTrainer
