@@ -9,6 +9,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using System.Text;
+using System.Data.SqlTypes;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -1672,7 +1673,66 @@ namespace HorseRacingML.ML
 
         private static object? NormalizeDbValue(object? value)
         {
-            return value == null || value is DBNull ? null : value;
+            if (value is null || value is DBNull)
+            {
+                return null;
+            }
+
+            switch (value)
+            {
+                case string s:
+                    {
+                        var trimmed = s.Trim();
+                        return trimmed.Length == 0 ? null : trimmed;
+                    }
+                case char[] chars:
+                    {
+                        if (chars.Length == 0)
+                        {
+                            return null;
+                        }
+
+                        var text = new string(chars).Trim();
+                        return text.Length == 0 ? null : text;
+                    }
+                case ReadOnlyMemory<char> memory:
+                    {
+                        var text = memory.ToString().Trim();
+                        return text.Length == 0 ? null : text;
+                    }
+                case SqlString sqlString when !sqlString.IsNull:
+                    {
+                        var text = sqlString.Value?.Trim();
+                        return string.IsNullOrEmpty(text) ? null : text;
+                    }
+                case SqlChars sqlChars when !sqlChars.IsNull:
+                    {
+                        var text = new string(sqlChars.Value ?? Array.Empty<char>()).Trim();
+                        return text.Length == 0 ? null : text;
+                    }
+                case SqlBoolean sqlBool when !sqlBool.IsNull:
+                    return sqlBool.Value;
+                case SqlByte sqlByte when !sqlByte.IsNull:
+                    return sqlByte.Value;
+                case SqlInt16 sqlInt16 when !sqlInt16.IsNull:
+                    return sqlInt16.Value;
+                case SqlInt32 sqlInt32 when !sqlInt32.IsNull:
+                    return sqlInt32.Value;
+                case SqlInt64 sqlInt64 when !sqlInt64.IsNull:
+                    return sqlInt64.Value;
+                case SqlSingle sqlSingle when !sqlSingle.IsNull:
+                    return sqlSingle.Value;
+                case SqlDouble sqlDouble when !sqlDouble.IsNull:
+                    return sqlDouble.Value;
+                case SqlDecimal sqlDecimal when !sqlDecimal.IsNull:
+                    return sqlDecimal.Value;
+                case SqlMoney sqlMoney when !sqlMoney.IsNull:
+                    return sqlMoney.Value;
+                case SqlDateTime sqlDate when !sqlDate.IsNull:
+                    return sqlDate.Value;
+            }
+
+            return value;
         }
 
         private static void Shuffle<T>(IList<T> list, Random random)
