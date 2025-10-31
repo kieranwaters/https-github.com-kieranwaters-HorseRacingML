@@ -2389,7 +2389,7 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
                     var connection = new SqlConnection(_connectionString);
                     connection.Open();
                     return connection;
-                });
+                }, trackAllValues: true);
 
                 try
                 {
