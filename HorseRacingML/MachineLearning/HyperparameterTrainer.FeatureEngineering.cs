@@ -2,12 +2,15 @@
 using HorseRacingML.Models;
 using Microsoft.Data.SqlClient;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using HorseRacingML.Data;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
 using Xunit;
 using PreparedDataset = HorseRacingML.ML.HyperparameterTrainer.TrainingDataset.PreparedDataset;
 using PreparedRace = HorseRacingML.ML.HyperparameterTrainer.TrainingDataset.PreparedDataset.PreparedRace;
@@ -1857,12 +1860,6 @@ namespace HorseRacingML.ML
                     includedRaceCount++;
                     includedRunnerRows += rows.Count;
                 }
-
-                if (processedRaceCount % raceProgressInterval == 0)
-                {
-                    Console.WriteLine(
-                        $"[TrainAI] Feature engineering progress: {processedRaceCount} races processed ({includedRaceCount} included, {includedRunnerRows:N0} runner rows retained, {totalRunnerRows:N0} runner rows scanned). Last race ID: {raceId}.");
-                }
             }
             foreach (var record in conn.Query(sql, commandTimeout: 6000, buffered: false))
             {
@@ -1885,7 +1882,7 @@ namespace HorseRacingML.ML
                 }
 
                 currentRows.Add(row);
-                FinalizeRace(currentRows, currentRaceId.Value);
+                //FinalizeRace(currentRows, currentRaceId.Value);
                 currentRaceId = raceId;
             }
 
@@ -1923,25 +1920,30 @@ namespace HorseRacingML.ML
             {
                 Console.WriteLine($"[TrainAI] Prefetched historical performance for {prefetchedHistoryByHorseId.Count} horses.");
             }
-            var winRateCache = new Dictionary<HorseCacheKey, (float WinRate, int Wins, int Starts)?>(HorseCacheKeyComparer.Instance);
-            var speedCache = new Dictionary<HorseCacheKey, float?>(HorseCacheKeyComparer.Instance);
-            var distanceCache = new Dictionary<HorseCacheKey, int?>(HorseCacheKeyComparer.Instance);
+            var winRateCache = new ConcurrentDictionary<HorseCacheKey, (float WinRate, int Wins, int Starts)?>(HorseCacheKeyComparer.Instance);
+            var speedCache = new ConcurrentDictionary<HorseCacheKey, float?>(HorseCacheKeyComparer.Instance);
+            var distanceCache = new ConcurrentDictionary<HorseCacheKey, int?>(HorseCacheKeyComparer.Instance);
 
             const int backfillProgressInterval = 25;
             int processed = 0;
 
-            foreach (var race in races)
+            var totalRaces = races.Count;
+            var parallelOptions = new ParallelOptions
             {
-                processed++;
+                MaxDegreeOfParallelism = Math.Min(Environment.ProcessorCount, Math.Max(1, totalRaces))
+            };
 
+            Parallel.ForEach(races, parallelOptions, race =>
+            {
                 if (race?.Rows == null || race.Rows.Count == 0)
                 {
-                    if (processed % backfillProgressInterval == 0 || processed == races.Count)
+                    var skippedCount = Interlocked.Increment(ref processed);
+                    if (skippedCount % backfillProgressInterval == 0 || skippedCount == totalRaces)
                     {
-                        Console.WriteLine($"[TrainAI] Backfill progress: {processed}/{races.Count} races enriched.");
+                        Console.WriteLine($"[TrainAI] Backfill progress: {skippedCount}/{totalRaces} races enriched.");
                     }
 
-                    continue;
+                    return;
                 }
                 double winRateSum = 0d;
                 int winRateCount = 0;
@@ -2048,11 +2050,12 @@ namespace HorseRacingML.ML
                         row["RaceAvgWinRateLast5"] = valueToAssign;
                     }
                 }
-                if (processed % backfillProgressInterval == 0 || processed == races.Count)
+                var current = Interlocked.Increment(ref processed);
+                if (current % backfillProgressInterval == 0 || current == totalRaces)
                 {
-                    Console.WriteLine($"[TrainAI] Backfill progress: {processed}/{races.Count} races enriched.");
+                    Console.WriteLine($"[TrainAI] Backfill progress: {current}/{totalRaces} races enriched.");
                 }
-            }
+            });
 
             Console.WriteLine("[TrainAI] Repository backfills complete.");
         }
@@ -2279,7 +2282,7 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
             float? AverageSpeed,
             int? LastDistanceYards);
 
-        private float? ResolveWinRateLast5(Dictionary<string, object?> row, Dictionary<HorseCacheKey, (float WinRate, int Wins, int Starts)?> cache)
+        private float? ResolveWinRateLast5(Dictionary<string, object?> row, ConcurrentDictionary<HorseCacheKey, (float WinRate, int Wins, int Starts)?> cache)
         {
             if (row is null)
             {
@@ -2343,7 +2346,7 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
             return null;
         }
 
-        private float? ResolveAvgSpeedLast5(Dictionary<string, object?> row, Dictionary<HorseCacheKey, float?> cache)
+        private float? ResolveAvgSpeedLast5(Dictionary<string, object?> row, ConcurrentDictionary<HorseCacheKey, float?> cache)
         {
             if (row is null)
             {
@@ -2436,7 +2439,7 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
             return null;
         }
 
-        private void ResolveDistanceChangeFromLast(Dictionary<string, object?> row, Dictionary<HorseCacheKey, int?> cache)
+        private void ResolveDistanceChangeFromLast(Dictionary<string, object?> row, ConcurrentDictionary<HorseCacheKey, int?> cache)
         {
             if (row is null)
             {
