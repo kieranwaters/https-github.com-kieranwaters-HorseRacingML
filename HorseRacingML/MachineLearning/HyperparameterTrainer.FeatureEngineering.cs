@@ -1824,7 +1824,46 @@ namespace HorseRacingML.ML
             int? currentRaceId = null;
             bool ShouldInclude(int raceId) => includeRaceIds is null || includeRaceIds.Contains(raceId);
             bool ShouldUpdate(int raceId) => stateRaceWhitelist is null || stateRaceWhitelist.Contains(raceId);
+            const int raceProgressInterval = 25;
+            long totalRunnerRows = 0;
+            long includedRunnerRows = 0;
+            int processedRaceCount = 0;
+            int includedRaceCount = 0;
 
+            Console.WriteLine("[TrainAI] Loading races and runner rows from the database...");
+
+            void FinalizeRace(List<Dictionary<string, object?>> rows, int raceId)
+            {
+                if (rows is null || rows.Count == 0)
+                {
+                    return;
+                }
+
+                Shuffle(rows, rnd);
+                bool include = ShouldInclude(raceId);
+                bool update = ShouldUpdate(raceId);
+                if (!include && !update)
+                {
+                    return;
+                }
+
+                ResolveHorseIdentifiers(conn, rows);
+                featureState.ProcessRace(rows, include, update);
+
+                processedRaceCount++;
+                if (include)
+                {
+                    races.Add(new PreparedRace(raceId, rows));
+                    includedRaceCount++;
+                    includedRunnerRows += rows.Count;
+                }
+
+                if (processedRaceCount % raceProgressInterval == 0)
+                {
+                    Console.WriteLine(
+                        $"[TrainAI] Feature engineering progress: {processedRaceCount} races processed ({includedRaceCount} included, {includedRunnerRows:N0} runner rows retained, {totalRunnerRows:N0} runner rows scanned). Last race ID: {raceId}.");
+                }
+            }
             foreach (var record in conn.Query(sql, commandTimeout: 6000, buffered: false))
             {
                 var source = (IDictionary<string, object?>)record;
@@ -1841,68 +1880,65 @@ namespace HorseRacingML.ML
 
                 if (currentRaceId.HasValue && raceId != currentRaceId.Value)
                 {
-                    Shuffle(currentRows, rnd);
-                    int previousRaceId = currentRaceId.Value;
-                    bool include = ShouldInclude(previousRaceId);
-                    bool update = ShouldUpdate(previousRaceId);
-                    if (include || update)
-                    {
-                        ResolveHorseIdentifiers(conn, currentRows);
-                        featureState.ProcessRace(currentRows, include, update);
-                        if (include)
-                        {
-                            races.Add(new PreparedRace(previousRaceId, currentRows));
-                        }
-                    }
+                    FinalizeRace(currentRows, currentRaceId.Value);
                     currentRows = new List<Dictionary<string, object?>>();
                 }
 
                 currentRows.Add(row);
+                FinalizeRace(currentRows, currentRaceId.Value);
                 currentRaceId = raceId;
             }
 
             if (currentRaceId.HasValue && currentRows.Count > 0)
             {
-                Shuffle(currentRows, rnd);
-                int finalRaceId = currentRaceId.Value;
-                bool include = ShouldInclude(finalRaceId);
-                bool update = ShouldUpdate(finalRaceId);
-                if (include || update)
-                {
-                    ResolveHorseIdentifiers(conn, currentRows);
-                    featureState.ProcessRace(currentRows, include, update);
-                    if (include)
-                    {
-                        races.Add(new PreparedRace(finalRaceId, currentRows));
-                    }
-                }
+                FinalizeRace(currentRows, currentRaceId.Value);
             }
+            Console.WriteLine(
+                $"[TrainAI] Raw data streaming complete. Feature engineering ran for {processedRaceCount} races ({includedRaceCount} included) across {totalRunnerRows:N0} runner rows.");
+
             ApplyRepositoryBackfills(races);
+
+            Console.WriteLine(
+                $"[TrainAI] Dataset preparation finished. {races.Count} races ready ({includedRunnerRows:N0} runner rows retained).");
             return new PreparedDataset(races);
         }
         private void ApplyRepositoryBackfills(List<PreparedRace> races)
         {
             if (races is null || races.Count == 0)
             {
+                Console.WriteLine("[TrainAI] No races supplied for repository backfills.");
                 return;
             }
 
-            if (EnsureRacingRepository() is null)
+            var repository = EnsureRacingRepository();
+            if (repository is null)
             {
+                Console.WriteLine("[TrainAI] Skipping repository backfills because the racing repository is unavailable.");
                 return;
             }
+
+            Console.WriteLine($"[TrainAI] Applying repository backfills for {races.Count} races.");
 
             var winRateCache = new Dictionary<HorseCacheKey, (float WinRate, int Wins, int Starts)?>(HorseCacheKeyComparer.Instance);
             var speedCache = new Dictionary<HorseCacheKey, float?>(HorseCacheKeyComparer.Instance);
             var distanceCache = new Dictionary<HorseCacheKey, int?>(HorseCacheKeyComparer.Instance);
 
+            const int backfillProgressInterval = 25;
+            int processed = 0;
+
             foreach (var race in races)
             {
+                processed++;
+
                 if (race?.Rows == null || race.Rows.Count == 0)
                 {
+                    if (processed % backfillProgressInterval == 0 || processed == races.Count)
+                    {
+                        Console.WriteLine($"[TrainAI] Backfill progress: {processed}/{races.Count} races enriched.");
+                    }
+
                     continue;
                 }
-
                 double winRateSum = 0d;
                 int winRateCount = 0;
                 var perRunnerWinRate = new Dictionary<Dictionary<string, object?>, float>();
@@ -1956,7 +1992,13 @@ namespace HorseRacingML.ML
                         row["RaceAvgWinRateLast5"] = valueToAssign;
                     }
                 }
+                if (processed % backfillProgressInterval == 0 || processed == races.Count)
+                {
+                    Console.WriteLine($"[TrainAI] Backfill progress: {processed}/{races.Count} races enriched.");
+                }
             }
+
+            Console.WriteLine("[TrainAI] Repository backfills complete.");
         }
 
         private float? ResolveWinRateLast5(Dictionary<string, object?> row, Dictionary<HorseCacheKey, (float WinRate, int Wins, int Starts)?> cache)

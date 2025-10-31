@@ -1,17 +1,19 @@
-﻿using HorseRacingML.Models;
+﻿using HorseRacingML.Data;
+using HorseRacingML.Models;
+using HorseRacingML.Models;
 using Microsoft.Data.SqlClient;
+using OpenQA.Selenium.BiDi.Script;
+using System.Collections.ObjectModel;
 using System.Linq;
 using System.Text;
-using HorseRacingML.Data;
-using HorseRacingML.Models;
 using System.Text.Json;
 using Tensorflow;
 using Tensorflow.NumPy;
+using static Tensorflow.Binding;
+using static Tensorflow.TensorShapeProto.Types;
 using PreparedDataset = HorseRacingML.ML.HyperparameterTrainer.TrainingDataset.PreparedDataset;
 using PreparedRace = HorseRacingML.ML.HyperparameterTrainer.TrainingDataset.PreparedDataset.PreparedRace;
-using static Tensorflow.Binding;
 using TensorShape = Tensorflow.Shape;
-using System.Collections.ObjectModel;
 
 namespace HorseRacingML.ML
 {
@@ -685,6 +687,7 @@ namespace HorseRacingML.ML
             int exampleCount = Math.Min(normalizedFeatures.Count, predictions.Count);
             if (exampleCount == 0)
             {
+                Console.WriteLine("[TrainAI] Skipping feature correlation computation because no examples were provided.");
                 return new List<FeatureCorrelation>();
             }
             var targets = (IReadOnlyList<float>)predictions;
@@ -712,6 +715,7 @@ namespace HorseRacingML.ML
                 exampleCount = Math.Min(exampleCount, labelValues.Count);
                 if (exampleCount == 0)
                 {
+                    Console.WriteLine("[TrainAI] Skipping feature correlation computation because neither predictions nor labels provided variance.");
                     return new List<FeatureCorrelation>();
                 }
 
@@ -724,13 +728,45 @@ namespace HorseRacingML.ML
                     sumY += y;
                     sumY2 += y * y;
                 }
+                Console.WriteLine("[TrainAI] Skipping feature correlation computation because neither predictions nor labels provided variance.");
             }
 
             var correlations = new List<FeatureCorrelation>();
             int offset = 0;
 
+            int totalDimensions = 0;
             foreach (var featureKey in featureKeys)
             {
+                if (featureDimensions.TryGetValue(featureKey, out var featureDim) && featureDim > 0)
+                {
+                    totalDimensions += featureDim;
+                }
+            }
+
+            Console.WriteLine($"[TrainAI] Computing feature correlations for {featureKeys.Count} feature keys spanning {totalDimensions} dimensions using {exampleCount} examples.");
+
+            int featureIndex = 0;
+            int processedDimensions = 0;
+            int lastLoggedDimensions = 0;
+            int lastLoggedFeatureIndex = 0;
+            const int dimensionLogInterval = 50;
+            const int featureLogInterval = 10;
+
+            void LogProgress(bool force = false)
+            {
+                if (force ||
+                    processedDimensions - lastLoggedDimensions >= dimensionLogInterval ||
+                    featureIndex - lastLoggedFeatureIndex >= featureLogInterval)
+                {
+                    Console.WriteLine($"[TrainAI] Correlation progress: {featureIndex}/{featureKeys.Count} features, {processedDimensions}/{totalDimensions} dimensions analyzed.");
+                    lastLoggedDimensions = processedDimensions;
+                    lastLoggedFeatureIndex = featureIndex;
+                }
+            }
+
+            foreach (var featureKey in featureKeys)
+            {
+                featureIndex++;
                 if (!featureDimensions.TryGetValue(featureKey, out var dim) || dim <= 0)
                 {
                     continue;
@@ -810,13 +846,19 @@ namespace HorseRacingML.ML
                         Dimension = dimensionLabel,
                         Correlation = corr
                     });
-                }
+                processedDimensions++;
+                        LogProgress();
+                    }
 
                 offset += dim;
-            }
+                    LogProgress();
+                }
 
-            return correlations;
-        }
+                LogProgress(force: true);
+                Console.WriteLine($"[TrainAI] Feature correlation computation complete. Generated {correlations.Count} correlation entries.");
+
+                return correlations;
+            }
         public TrainingDataset LoadTrainingDataset(ISet<int> trainingRaceIds, ISet<int> validationRaceIds, bool includeIdentifiers = false)
         {
             if (trainingRaceIds is null)
