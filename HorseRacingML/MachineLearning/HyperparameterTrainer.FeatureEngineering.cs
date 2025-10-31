@@ -6,6 +6,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using HorseRacingML.Data;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -1925,32 +1926,63 @@ namespace HorseRacingML.ML
             var distanceCache = new ConcurrentDictionary<HorseCacheKey, int?>(HorseCacheKeyComparer.Instance);
 
             const int backfillProgressInterval = 25;
+            const int backfillThreadCount = 8;
             int processed = 0;
-
+            Half for 
             var totalRaces = races.Count;
+            var stopwatch = Stopwatch.StartNew();
             var parallelOptions = new ParallelOptions
             {
-                MaxDegreeOfParallelism = Math.Min(Environment.ProcessorCount, Math.Max(1, totalRaces))
+                MaxDegreeOfParallelism = Math.Min(backfillThreadCount, Math.Max(1, totalRaces))
             };
+
+            void ReportProgress(int currentCount)
+            {
+                if (currentCount <= 0)
+                {
+                    return;
+                }
+
+                if (currentCount % backfillProgressInterval != 0 && currentCount != totalRaces)
+                {
+                    return;
+                }
+
+                var elapsed = stopwatch.Elapsed;
+                if (elapsed.Ticks == 0)
+                {
+                    Console.WriteLine($"[TrainAI] Backfill progress: {currentCount}/{totalRaces} races enriched.");
+                    return;
+                }
+
+                var averagePerRace = TimeSpan.FromTicks(elapsed.Ticks / currentCount);
+                var remainingRaces = Math.Max(0, totalRaces - currentCount);
+                var estimatedRemaining = remainingRaces > 0
+                    ? TimeSpan.FromTicks(averagePerRace.Ticks * remainingRaces)
+                    : TimeSpan.Zero;
+
+                Console.WriteLine(
+                    $"[TrainAI] Backfill progress: {currentCount}/{totalRaces} races enriched. " +
+                    $"Elapsed {FormatDuration(elapsed)}, avg {averagePerRace.TotalSeconds:F2}s/race, ETA {FormatDuration(estimatedRemaining)}.");
+            }
 
             Parallel.ForEach(races, parallelOptions, race =>
             {
-                if (race?.Rows == null || race.Rows.Count == 0)
+                var raceRows = race?.Rows;
+                if (raceRows == null || raceRows.Count == 0)
                 {
                     var skippedCount = Interlocked.Increment(ref processed);
-                    if (skippedCount % backfillProgressInterval == 0 || skippedCount == totalRaces)
-                    {
-                        Console.WriteLine($"[TrainAI] Backfill progress: {skippedCount}/{totalRaces} races enriched.");
-                    }
-
+                    ReportProgress(skippedCount);
                     return;
                 }
                 double winRateSum = 0d;
                 int winRateCount = 0;
-                var perRunnerWinRate = new Dictionary<Dictionary<string, object?>, float>();
+                var rowCount = raceRows.Count;
+                var perRunnerWinRate = new float?[rowCount];
 
-                foreach (var row in race.Rows)
+                for (var rowIndex = 0; rowIndex < rowCount; rowIndex++)
                 {
+                    var row = raceRows[rowIndex];
                     if (row is null)
                     {
                         continue;
@@ -2008,8 +2040,9 @@ namespace HorseRacingML.ML
                     var resolvedWinRate = ResolveWinRateLast5(row, winRateCache);
                     if (resolvedWinRate.HasValue)
                     {
-                        perRunnerWinRate[row] = resolvedWinRate.Value;
-                        winRateSum += resolvedWinRate.Value;
+                        var winRateValue = resolvedWinRate.Value;
+                        perRunnerWinRate[rowIndex] = winRateValue;
+                        winRateSum += winRateValue;
                         winRateCount++;
                     }
 
@@ -2028,19 +2061,21 @@ namespace HorseRacingML.ML
 
                 if (winRateCount > 0)
                 {
-                    foreach (var row in race.Rows)
+                    for (var rowIndex = 0; rowIndex < rowCount; rowIndex++)
                     {
+                        var row = raceRows[rowIndex];
                         if (row is null)
                         {
                             continue;
                         }
 
                         float valueToAssign;
-                        if (perRunnerWinRate.TryGetValue(row, out var runnerWinRate))
+                        var runnerWinRate = perRunnerWinRate[rowIndex];
+                        if (runnerWinRate.HasValue)
                         {
                             valueToAssign = winRateCount > 1
-                                ? (float)((winRateSum - runnerWinRate) / (winRateCount - 1))
-                                : runnerWinRate;
+                                ? (float)((winRateSum - runnerWinRate.Value) / (winRateCount - 1))
+                                : runnerWinRate.Value;
                         }
                         else
                         {
@@ -2051,13 +2086,30 @@ namespace HorseRacingML.ML
                     }
                 }
                 var current = Interlocked.Increment(ref processed);
-                if (current % backfillProgressInterval == 0 || current == totalRaces)
-                {
-                    Console.WriteLine($"[TrainAI] Backfill progress: {current}/{totalRaces} races enriched.");
-                }
+                ReportProgress(current);
             });
 
-            Console.WriteLine("[TrainAI] Repository backfills complete.");
+            stopwatch.Stop();
+            Console.WriteLine($"[TrainAI] Repository backfills complete in {FormatDuration(stopwatch.Elapsed)}.");
+        }
+        private static string FormatDuration(TimeSpan time)
+        {
+            if (time <= TimeSpan.Zero)
+            {
+                return "00:00";
+            }
+
+            if (time.TotalDays >= 1d)
+            {
+                return time.ToString(@"d\.hh\:mm\:ss", CultureInfo.InvariantCulture);
+            }
+
+            if (time.TotalHours >= 1d)
+            {
+                return time.ToString(@"hh\:mm\:ss", CultureInfo.InvariantCulture);
+            }
+
+            return time.ToString(@"mm\:ss", CultureInfo.InvariantCulture);
         }
         private Dictionary<int, List<PrefetchedHorseRace>> PrefetchHorseHistoryByHorseId(List<PreparedRace> races)
         {
