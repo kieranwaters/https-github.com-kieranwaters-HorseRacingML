@@ -1918,7 +1918,11 @@ namespace HorseRacingML.ML
             }
 
             Console.WriteLine($"[TrainAI] Applying repository backfills for {races.Count} races.");
-
+            var prefetchedHistoryByHorseId = PrefetchHorseHistoryByHorseId(races);
+            if (prefetchedHistoryByHorseId.Count > 0)
+            {
+                Console.WriteLine($"[TrainAI] Prefetched historical performance for {prefetchedHistoryByHorseId.Count} horses.");
+            }
             var winRateCache = new Dictionary<HorseCacheKey, (float WinRate, int Wins, int Starts)?>(HorseCacheKeyComparer.Instance);
             var speedCache = new Dictionary<HorseCacheKey, float?>(HorseCacheKeyComparer.Instance);
             var distanceCache = new Dictionary<HorseCacheKey, int?>(HorseCacheKeyComparer.Instance);
@@ -1949,7 +1953,56 @@ namespace HorseRacingML.ML
                     {
                         continue;
                     }
+                    bool distanceBackfilled = false;
 
+                    if (TryGetHorseIdentity(row, out var identity) &&
+                        identity.HorseId.HasValue &&
+                        identity.RaceDate.HasValue &&
+                        prefetchedHistoryByHorseId.TryGetValue(identity.HorseId.Value, out var history) &&
+                        history.Count > 0)
+                    {
+                        var stats = ComputePrefetchedHorseStats(history, identity.RaceDate.Value);
+                        if (stats.HasValue)
+                        {
+                            if (stats.Value.WinRate.HasValue)
+                            {
+                                var sanitized = ClampProbability(stats.Value.WinRate.Value);
+                                if (!TryGetFloat(row, "WinRateLast5", out var existingWinRate) || existingWinRate <= 0f)
+                                {
+                                    row["WinRateLast5"] = sanitized;
+                                }
+                            }
+
+                            if (stats.Value.AverageSpeed.HasValue)
+                            {
+                                if (!TryGetFloat(row, "AvgSpeedLast5", out var existingSpeed) ||
+                                    existingSpeed <= 0f ||
+                                    float.IsNaN(existingSpeed) ||
+                                    float.IsInfinity(existingSpeed))
+                                {
+                                    row["AvgSpeedLast5"] = stats.Value.AverageSpeed.Value;
+                                }
+
+                                if (TryGetFloat(row, "AvgSpeedLast5", out var finalSpeed) &&
+                                    finalSpeed > 0f &&
+                                    !float.IsNaN(finalSpeed) &&
+                                    !float.IsInfinity(finalSpeed))
+                                {
+                                    row["RaceAvgSpeedLast5"] = finalSpeed;
+                                }
+                            }
+
+                            if (stats.Value.LastDistanceYards.HasValue &&
+                                PreparedDataset.TryGetValueWithAliases(row, "DistanceYards", out var distanceObj, requireNonNull: true) &&
+                                distanceObj != null &&
+                                PreparedDataset.TryConvertToInt32(distanceObj, out var currentDistance) &&
+                                currentDistance > 0)
+                            {
+                                row["DistanceChangeFromLast"] = (float)(currentDistance - stats.Value.LastDistanceYards.Value);
+                                distanceBackfilled = true;
+                            }
+                        }
+                    }
                     var resolvedWinRate = ResolveWinRateLast5(row, winRateCache);
                     if (resolvedWinRate.HasValue)
                     {
@@ -1965,7 +2018,10 @@ namespace HorseRacingML.ML
                         row["RaceAvgSpeedLast5"] = resolvedSpeed.Value;
                     }
 
-                    ResolveDistanceChangeFromLast(row, distanceCache);
+                    if (!distanceBackfilled)
+                    {
+                        ResolveDistanceChangeFromLast(row, distanceCache);
+                    }
                 }
 
                 if (winRateCount > 0)
@@ -2000,6 +2056,228 @@ namespace HorseRacingML.ML
 
             Console.WriteLine("[TrainAI] Repository backfills complete.");
         }
+        private Dictionary<int, List<PrefetchedHorseRace>> PrefetchHorseHistoryByHorseId(List<PreparedRace> races)
+        {
+            var result = new Dictionary<int, List<PrefetchedHorseRace>>();
+            if (races is null || races.Count == 0)
+            {
+                return result;
+            }
+
+            var horseIds = new HashSet<int>();
+            DateTime? maxRaceDate = null;
+
+            foreach (var race in races)
+            {
+                if (race?.Rows == null || race.Rows.Count == 0)
+                {
+                    continue;
+                }
+
+                foreach (var row in race.Rows)
+                {
+                    if (row is null)
+                    {
+                        continue;
+                    }
+
+                    if (!TryGetHorseIdentity(row, out var identity) || !identity.HorseId.HasValue)
+                    {
+                        continue;
+                    }
+
+                    horseIds.Add(identity.HorseId.Value);
+                    if (identity.RaceDate.HasValue)
+                    {
+                        var date = identity.RaceDate.Value.Date;
+                        if (!maxRaceDate.HasValue || date > maxRaceDate.Value)
+                        {
+                            maxRaceDate = date;
+                        }
+                    }
+                }
+            }
+
+            if (horseIds.Count == 0)
+            {
+                return result;
+            }
+
+            const string sql = @"SELECT
+    rr.HorseId,
+    r.RaceDate,
+    rr.FinishPos,
+    r.DistanceYards,
+    r.WinningTimeMs AS WinningTimeMilliseconds,
+    rr.DistanceBeatenLengths,
+    rr.RunnerResultId
+FROM RunnerResult rr
+JOIN Race r ON r.RaceId = rr.RaceId
+WHERE rr.HorseId IN @HorseIds
+  AND (@MaxRaceDateExclusive IS NULL OR r.RaceDate < @MaxRaceDateExclusive)
+ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
+
+            var horseIdList = horseIds.ToList();
+            const int batchSize = 1800;
+            DateTime? maxRaceDateExclusive = maxRaceDate?.Date.AddDays(1);
+
+            using var conn = new SqlConnection(_connectionString);
+            conn.Open();
+
+            for (int offset = 0; offset < horseIdList.Count; offset += batchSize)
+            {
+                var count = Math.Min(batchSize, horseIdList.Count - offset);
+                var batch = horseIdList.GetRange(offset, count).ToArray();
+                if (batch.Length == 0)
+                {
+                    continue;
+                }
+
+                var rows = conn.Query<PrefetchedHorseRaceRow>(sql, new
+                {
+                    HorseIds = batch,
+                    MaxRaceDateExclusive = maxRaceDateExclusive
+                });
+
+                foreach (var row in rows)
+                {
+                    if (!result.TryGetValue(row.HorseId, out var list))
+                    {
+                        list = new List<PrefetchedHorseRace>();
+                        result[row.HorseId] = list;
+                    }
+
+                    list.Add(new PrefetchedHorseRace(
+                        row.RaceDate.Date,
+                        row.FinishPos,
+                        row.DistanceYards,
+                        row.WinningTimeMilliseconds,
+                        row.DistanceBeatenLengths,
+                        row.RunnerResultId));
+                }
+            }
+
+            foreach (var list in result.Values)
+            {
+                list.Sort((left, right) =>
+                {
+                    int compare = left.RaceDate.CompareTo(right.RaceDate);
+                    if (compare != 0)
+                    {
+                        return compare;
+                    }
+
+                    return left.RunnerResultId.CompareTo(right.RunnerResultId);
+                });
+            }
+
+            return result;
+        }
+
+        private PrefetchedHorseStats? ComputePrefetchedHorseStats(List<PrefetchedHorseRace> history, DateTime raceDate)
+        {
+            if (history is null || history.Count == 0)
+            {
+                return null;
+            }
+
+            var targetDate = raceDate.Date;
+            int lastIndex = FindLastIndexBefore(history, targetDate);
+            if (lastIndex < 0)
+            {
+                return null;
+            }
+
+            int firstIndex = Math.Max(0, lastIndex - 4);
+            int starts = lastIndex - firstIndex + 1;
+
+            int wins = 0;
+            float speedSum = 0f;
+            int speedCount = 0;
+
+            for (int i = firstIndex; i <= lastIndex; i++)
+            {
+                var entry = history[i];
+                if (entry.FinishPos.HasValue && entry.FinishPos.Value == 1)
+                {
+                    wins++;
+                }
+
+                if (entry.DistanceYards.HasValue && entry.DistanceYards.Value > 0 &&
+                    entry.WinningTimeMilliseconds.HasValue && entry.WinningTimeMilliseconds.Value > 0)
+                {
+                    var runnerTime = (float)entry.WinningTimeMilliseconds.Value;
+                    if (entry.DistanceBeatenLengths.HasValue)
+                    {
+                        runnerTime += (float)entry.DistanceBeatenLengths.Value * MsPerLength;
+                    }
+
+                    if (runnerTime > 0f)
+                    {
+                        var speed = entry.DistanceYards.Value / runnerTime;
+                        if (!float.IsNaN(speed) && !float.IsInfinity(speed) && speed > 0f)
+                        {
+                            speedSum += speed;
+                            speedCount++;
+                        }
+                    }
+                }
+            }
+
+            float? winRate = starts > 0 ? ComputeSmoothedWinRate(wins, starts) : (float?)null;
+            float? averageSpeed = speedCount > 0 ? speedSum / speedCount : (float?)null;
+            int? lastDistance = history[lastIndex].DistanceYards;
+
+            return new PrefetchedHorseStats(winRate, averageSpeed, lastDistance);
+        }
+
+        private static int FindLastIndexBefore(List<PrefetchedHorseRace> history, DateTime targetDate)
+        {
+            int low = 0;
+            int high = history.Count - 1;
+            int result = -1;
+
+            while (low <= high)
+            {
+                int mid = low + ((high - low) / 2);
+                var midDate = history[mid].RaceDate.Date;
+                if (midDate < targetDate)
+                {
+                    result = mid;
+                    low = mid + 1;
+                }
+                else
+                {
+                    high = mid - 1;
+                }
+            }
+
+            return result;
+        }
+
+        private sealed class PrefetchedHorseRaceRow
+        {
+            public int HorseId { get; init; }
+            public DateTime RaceDate { get; init; }
+            public short? FinishPos { get; init; }
+            public int? DistanceYards { get; init; }
+            public int? WinningTimeMilliseconds { get; init; }
+            public decimal? DistanceBeatenLengths { get; init; }
+            public int RunnerResultId { get; init; }
+        }
+
+        private readonly record struct PrefetchedHorseRace(
+            DateTime RaceDate,
+            short? FinishPos,
+            int? DistanceYards,
+            int? WinningTimeMilliseconds,
+            decimal? DistanceBeatenLengths,
+            int RunnerResultId);
+
+        private readonly record struct PrefetchedHorseStats(
+            float? WinRate,
+            float? AverageSpeed,
+            int? LastDistanceYards);
 
         private float? ResolveWinRateLast5(Dictionary<string, object?> row, Dictionary<HorseCacheKey, (float WinRate, int Wins, int Starts)?> cache)
         {
