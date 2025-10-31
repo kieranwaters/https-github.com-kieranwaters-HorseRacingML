@@ -228,7 +228,13 @@ namespace HorseRacingML.Controllers
                 Console.WriteLine("[TrainAI] Training run finished.");
             });
 
-            viewModel.Results = results;
+            viewModel.Results ??= new List<TrainAIViewModel.TrainAIModelResult>();
+            viewModel.Results.Clear();
+            viewModel.Results.AddRange(results);
+
+            // Clear model state so the freshly computed results are rendered instead of
+            // being suppressed by the existing form values submitted with the request.
+            ModelState.Clear();
 
             return View(viewModel);
         }

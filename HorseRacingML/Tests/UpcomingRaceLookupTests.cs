@@ -2116,6 +2116,7 @@ new RunnerFlow { HorseName = "Alpha Runner" },
             public (string? HorseName, int? HorseId, DateTime? BeforeDate, int WindowSize)? LastRecentWinStatsRequest { get; private set; }
             public (int Wins, int Starts)? RecentWinStatsResult { get; set; }
             public Dictionary<string, (int Wins, int Starts)> RecentWinStatsByHorse { get; } = new(StringComparer.OrdinalIgnoreCase);
+            public Dictionary<HorseMetricRequest, (int Wins, int Starts)?> RecentWinStatsBatchResults { get; } = new();
             public int? LastRaceIdByRunnerResultLookup { get; private set; }
             public int? WinningTimeLookupResult { get; set; }
             public int? LastWinningTimeLookupRaceId { get; private set; }
@@ -2175,6 +2176,43 @@ new RunnerFlow { HorseName = "Alpha Runner" },
 
                 return RecentWinStatsResult;
             }
+            public IReadOnlyDictionary<HorseMetricRequest, (int Wins, int Starts)?> GetRecentHorseWinStatsBatch(
+                IEnumerable<HorseMetricRequest> requests,
+                int windowSize)
+            {
+                if (requests is null)
+                {
+                    throw new ArgumentNullException(nameof(requests));
+                }
+
+                var results = new Dictionary<HorseMetricRequest, (int Wins, int Starts)?>();
+                foreach (var request in requests)
+                {
+                    if (RecentWinStatsBatchResults.TryGetValue(request, out var batchResult))
+                    {
+                        results[request] = batchResult;
+                        continue;
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(request.NormalizedHorseName) &&
+                        RecentWinStatsByHorse.TryGetValue(request.NormalizedHorseName, out var normalizedStats))
+                    {
+                        results[request] = normalizedStats;
+                        continue;
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(request.RawHorseName) &&
+                        RecentWinStatsByHorse.TryGetValue(request.RawHorseName, out var rawStats))
+                    {
+                        results[request] = rawStats;
+                        continue;
+                    }
+
+                    results[request] = RecentWinStatsResult;
+                }
+
+                return results;
+            }
             public IReadOnlyList<HorseHistoricalRaceSummary> GetRecentHorseResults(string? horseName, int? horseId, int maxCount)
             {
                 return Array.Empty<HorseHistoricalRaceSummary>();
@@ -2227,10 +2265,6 @@ new RunnerFlow { HorseName = "Alpha Runner" },
                 int windowSize)
             {
                 return new Dictionary<HorseMetricRequest, float?>();
-            }
-            public IReadOnlyDictionary<HorseMetricRequest, int?> GetLastRaceDistancesBatch(IEnumerable<HorseMetricRequest> requests)
-            {
-                return new Dictionary<HorseMetricRequest, int?>();
             }
             public void InsertRaceScreen(RaceScreen screen)
             {

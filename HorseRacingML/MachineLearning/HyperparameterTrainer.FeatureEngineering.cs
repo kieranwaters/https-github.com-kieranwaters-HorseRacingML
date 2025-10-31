@@ -1832,7 +1832,7 @@ namespace HorseRacingML.ML
             int? currentRaceId = null;
             bool ShouldInclude(int raceId) => includeRaceIds is null || includeRaceIds.Contains(raceId);
             bool ShouldUpdate(int raceId) => stateRaceWhitelist is null || stateRaceWhitelist.Contains(raceId);
-            const int raceProgressInterval = 25;
+            const int raceProgressInterval = 250;
             long totalRunnerRows = 0;
             long includedRunnerRows = 0;
             int processedRaceCount = 0;
@@ -1939,7 +1939,7 @@ namespace HorseRacingML.ML
                     speedCache,
                     distanceCache);
             }
-            const int backfillProgressInterval = 25;
+            const int backfillProgressInterval = 250;
             int processed = 0;
             var totalRaces = races.Count;
             var stopwatch = Stopwatch.StartNew();
