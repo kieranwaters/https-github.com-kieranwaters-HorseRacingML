@@ -1882,7 +1882,12 @@ namespace HorseRacingML.ML
         }
         private void ApplyRepositoryBackfills(List<PreparedRace> races)
         {
-            if (races is null || races.Count == 0 || _racingRepository is null)
+            if (races is null || races.Count == 0)
+            {
+                return;
+            }
+
+            if (EnsureRacingRepository() is null)
             {
                 return;
             }
@@ -1979,11 +1984,17 @@ namespace HorseRacingML.ML
             }
 
             var cacheKey = identity.ToCacheKey();
+            var repository = EnsureRacingRepository();
+            if (repository is null)
+            {
+                cache[cacheKey] = null;
+                return null;
+            }
             if (!cache.TryGetValue(cacheKey, out var cached))
             {
                 try
                 {
-                    var stats = _racingRepository.GetRecentHorseWinStats(identity.RawName, identity.HorseId, identity.RaceDate, 5);
+                    var stats = repository.GetRecentHorseWinStats(identity.RawName, identity.HorseId, identity.RaceDate, 5);
                     if (stats.HasValue && stats.Value.Starts > 0)
                     {
                         var winRate = ClampProbability(ComputeSmoothedWinRate(stats.Value.Wins, stats.Value.Starts));
@@ -2031,6 +2042,12 @@ namespace HorseRacingML.ML
             }
 
             var cacheKey = identity.ToCacheKey();
+            var repository = EnsureRacingRepository();
+            if (repository is null)
+            {
+                cache[cacheKey] = null;
+                return null;
+            }
             if (!cache.TryGetValue(cacheKey, out var cached))
             {
                 float? resolved = null;
@@ -2118,11 +2135,17 @@ namespace HorseRacingML.ML
             }
 
             var cacheKey = identity.ToCacheKey();
+            var repository = EnsureRacingRepository();
+            if (repository is null)
+            {
+                cache[cacheKey] = null;
+                return;
+            }
             if (!cache.TryGetValue(cacheKey, out var cached))
             {
                 try
                 {
-                    cached = _racingRepository.GetLastRaceDistance(identity.RawName, identity.HorseId, identity.RaceDate);
+                    cached = repository.GetLastRaceDistance(identity.RawName, identity.HorseId, identity.RaceDate);
                 }
                 catch (Exception ex)
                 {

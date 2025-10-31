@@ -1,11 +1,5 @@
 ﻿using HorseRacingML.Models;
 using Microsoft.Data.SqlClient;
-using Microsoft.Extensions.Configuration;
-using System;
-using System.Collections.Generic;
-using System.Data.SqlTypes;
-using System.Globalization;
-using System.IO;
 using System.Linq;
 using System.Text;
 using HorseRacingML.Data;
@@ -31,20 +25,22 @@ namespace HorseRacingML.ML
         private readonly string _connectionString;
         private readonly float _winRateAlpha;
         private readonly float _winRateBeta;
-        private readonly IRacingRepository _racingRepository;
+        private IRacingRepository? _racingRepository;
 
-        public HyperparameterTrainer(IConfiguration configuration)
+        public HyperparameterTrainer(IConfiguration configuration, IRacingRepository? racingRepository = null)
         {
+            if (configuration is null)
+            {
+                throw new ArgumentNullException(nameof(configuration));
+            }
+
             _connectionString = configuration.GetConnectionString("HorseRacingDb")
                 ?? throw new InvalidOperationException("Connection string 'HorseRacingDb' not found.");
             _winRateAlpha = configuration.GetValue<float>("WinRateAlpha", 1f);
             _winRateBeta = configuration.GetValue<float>("WinRateBeta", 2f);
+            _racingRepository = racingRepository;
 
         }
-
-
-    
-
         public class TrainingResult
         {
             public double TrainAccuracy { get; init; }
@@ -117,6 +113,35 @@ namespace HorseRacingML.ML
             }
 
             return (wins + _winRateAlpha) / (starts + _winRateBeta);
+        }
+        protected void SetRacingRepository(IRacingRepository? repository)
+        {
+            _racingRepository = repository;
+        }
+
+        public IRacingRepository? EnsureRacingRepository()
+        {
+            if (_racingRepository != null)
+            {
+                return _racingRepository;
+            }
+
+            if (string.IsNullOrWhiteSpace(_connectionString))
+            {
+                return null;
+            }
+
+            try
+            {
+                _racingRepository = new RacingRepository(_connectionString);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[AI] Failed to initialize racing repository for historical backfills: {ex.Message}");
+                _racingRepository = null;
+            }
+
+            return _racingRepository;
         }
         private TrainingDataset BuildTrainingDataset(
         PreparedDataset trainingPrepared,
