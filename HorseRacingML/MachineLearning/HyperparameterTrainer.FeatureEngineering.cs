@@ -37,6 +37,7 @@ namespace HorseRacingML.ML
         private static readonly Regex UpcomingClassRegex =
             new("class\\s*(?:[:\\-]?\\s*)?(?<value>[0-9]+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex HorseNameWhitespaceRegex = new Regex("\\s+", RegexOptions.Compiled);
+        private readonly ConcurrentDictionary<int, PrefetchedHorseRace[]> _prefetchedHistoryCache = new();
         private static string SelectColumn(
             HashSet<string> available,
             string tableAlias,
@@ -2343,7 +2344,7 @@ namespace HorseRacingML.ML
 
         private Dictionary<int, List<PrefetchedHorseRace>> PrefetchHorseHistoryByHorseId(HorseIdentitySummary identitySummary)
         {
-            var result = new ConcurrentDictionary<int, List<PrefetchedHorseRace>>();
+            var fetchedResults = new ConcurrentDictionary<int, List<PrefetchedHorseRace>>();
             var horseIds = identitySummary.HorseIds;
             if (horseIds.Count == 0)
             {
@@ -2364,56 +2365,89 @@ WHERE rr.HorseId IN @HorseIds
   AND (@MaxRaceDateExclusive IS NULL OR r.RaceDate < @MaxRaceDateExclusive)
 ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
 
-            var horseIdArray = horseIds.ToArray();
-            const int batchSize = 4000;
+            var cachedResults = new Dictionary<int, List<PrefetchedHorseRace>>();
+            foreach (var horseId in horseIds)
+            {
+                if (_prefetchedHistoryCache.TryGetValue(horseId, out var cachedHistory))
+                {
+                    cachedResults[horseId] = new List<PrefetchedHorseRace>(cachedHistory);
+                }
+            }
+
+            var horseIdArray = horseIds.Where(id => !cachedResults.ContainsKey(id)).ToArray();
+            const int batchSize = 1500;
             DateTime? maxRaceDateExclusive = identitySummary.MaxRaceDate?.Date.AddDays(1);
-            var parallelOptions = new ParallelOptions
+            if (horseIdArray.Length > 0)
             {
-                MaxDegreeOfParallelism = Math.Max(1, Math.Min(Environment.ProcessorCount, horseIdArray.Length))
-            };
-
-            Parallel.ForEach(Partitioner.Create(0, horseIdArray.Length, batchSize), parallelOptions, range =>
-            {
-                var count = range.Item2 - range.Item1;
-                if (count <= 0)
+                var parallelOptions = new ParallelOptions
                 {
-                    return;
-                }
+                    MaxDegreeOfParallelism = Math.Max(1, Math.Min(Math.Min(Environment.ProcessorCount, horseIdArray.Length), 4))
+                };
 
-                var batch = new int[count];
-                Array.Copy(horseIdArray, range.Item1, batch, 0, count);
-                if (batch.Length == 0)
+                using var connectionFactory = new ThreadLocal<SqlConnection>(() =>
                 {
-                    return;
-                }
+                    var connection = new SqlConnection(_connectionString);
+                    connection.Open();
+                    return connection;
+                });
 
-                using var conn = new SqlConnection(_connectionString);
-                conn.Open();
-
-                var rows = conn.Query<PrefetchedHorseRaceRow>(sql, new
+                try
                 {
-                    HorseIds = batch,
-                    MaxRaceDateExclusive = maxRaceDateExclusive
-                }).ToList();
-
-                foreach (var row in rows)
-                {
-                    var list = result.GetOrAdd(row.HorseId, _ => new List<PrefetchedHorseRace>());
-                    lock (list)
+                    Parallel.ForEach(Partitioner.Create(0, horseIdArray.Length, batchSize), parallelOptions, range =>
                     {
-                        list.Add(new PrefetchedHorseRace(
-                            row.RaceDate.Date,
-                            row.FinishPos,
-                            row.DistanceYards,
-                            row.WinningTimeMilliseconds,
-                            row.DistanceBeatenLengths,
-                            row.RunnerResultId));
+                        var count = range.Item2 - range.Item1;
+                        if (count <= 0)
+                        {
+                            return;
+                        }
+
+                        var batch = new int[count];
+                        Array.Copy(horseIdArray, range.Item1, batch, 0, count);
+                        if (batch.Length == 0)
+                        {
+                            return;
+                        }
+
+                        var conn = connectionFactory.Value;
+
+                        var rows = conn.Query<PrefetchedHorseRaceRow>(sql, new
+                        {
+                            HorseIds = batch,
+                            MaxRaceDateExclusive = maxRaceDateExclusive
+                        }).ToList();
+
+                        foreach (var row in rows)
+                        {
+                            var list = fetchedResults.GetOrAdd(row.HorseId, _ => new List<PrefetchedHorseRace>());
+                            lock (list)
+                            {
+                                list.Add(new PrefetchedHorseRace(
+                                    row.RaceDate.Date,
+                                    row.FinishPos,
+                                    row.DistanceYards,
+                                    row.WinningTimeMilliseconds,
+                                    row.DistanceBeatenLengths,
+                                    row.RunnerResultId));
+                            }
+                        }
+                    });
+                }
+                finally
+                {
+                    foreach (var connection in connectionFactory.Values)
+                    {
+                        connection.Dispose();
                     }
                 }
-            });
+            }
 
-            var finalized = new Dictionary<int, List<PrefetchedHorseRace>>(result.Count);
-            foreach (var kvp in result)
+            var finalized = new Dictionary<int, List<PrefetchedHorseRace>>(cachedResults.Count + fetchedResults.Count);
+            foreach (var kvp in cachedResults)
+            {
+                finalized[kvp.Key] = kvp.Value;
+            }
+
+            foreach (var kvp in fetchedResults)
             {
                 var list = kvp.Value;
                 list.Sort((left, right) =>
@@ -2427,14 +2461,12 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
                     return left.RunnerResultId.CompareTo(right.RunnerResultId);
                 });
 
+                _prefetchedHistoryCache[kvp.Key] = list.ToArray();
                 finalized[kvp.Key] = list;
             }
 
             return finalized;
         }
-
-        
-
         private PrefetchedHorseStats? ComputePrefetchedHorseStats(List<PrefetchedHorseRace> history, DateTime raceDate)
         {
             if (history is null || history.Count == 0)
