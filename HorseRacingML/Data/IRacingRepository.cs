@@ -33,8 +33,15 @@ namespace HorseRacingML.Data
             int? jockeyId);
         IReadOnlyList<RaceClassRating> GetHistoricalRaceClassRatings(string? horseName, int? horseId, int maxCount);
         (int Wins, int Starts)? GetRecentHorseWinStats(string? horseName, int? horseId, DateTime? beforeDate, int windowSize);
+        IReadOnlyDictionary<HorseMetricRequest, (int Wins, int Starts)?> GetRecentHorseWinStatsBatch(
+            IEnumerable<HorseMetricRequest> requests,
+            int windowSize);
         IReadOnlyList<HorseSpeedEntry> GetRecentHorseSpeedEntries(string? horseName, int? horseId, DateTime? beforeDate, int windowSize);
+        IReadOnlyDictionary<HorseMetricRequest, float?> GetRecentHorseAverageSpeedsBatch(
+            IEnumerable<HorseMetricRequest> requests,
+            int windowSize);
         IReadOnlyList<HorseHistoricalRaceSummary> GetRecentHorseResults(string? horseName, int? horseId, int maxCount);
+        IReadOnlyDictionary<HorseMetricRequest, int?> GetLastRaceDistancesBatch(IEnumerable<HorseMetricRequest> requests);
         IReadOnlyList<ParticipantHistoricalRaceSummary> GetRecentTrainerResults(string? trainerName, int? trainerId, int maxCount);
         IReadOnlyList<ParticipantHistoricalRaceSummary> GetRecentJockeyResults(string? jockeyName, int? jockeyId, int maxCount);
     }

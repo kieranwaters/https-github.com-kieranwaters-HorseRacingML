@@ -37,6 +37,8 @@ namespace HorseRacingML.ML
         private static readonly Regex UpcomingClassRegex =
             new("class\\s*(?:[:\\-]?\\s*)?(?<value>[0-9]+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex HorseNameWhitespaceRegex = new Regex("\\s+", RegexOptions.Compiled);
+        private static readonly object HorseIndexLock = new();
+        private static bool _horsePerformanceIndexesEnsured;
         private readonly ConcurrentDictionary<int, PrefetchedHorseRace[]> _prefetchedHistoryCache = new();
         private static string SelectColumn(
             HashSet<string> available,
@@ -2228,24 +2230,109 @@ namespace HorseRacingML.ML
                 return;
             }
 
-            var preloadOptions = new ParallelOptions
-            {
-                MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount)
-            };
+            var uniqueRequests = new List<(HorseCacheKey CacheKey, HorseMetricRequest Request)>(horsesToPreload.Count);
+            var seen = new HashSet<HorseCacheKey>(HorseCacheKeyComparer.Instance);
 
-            Parallel.ForEach(horsesToPreload, preloadOptions, identity =>
+            foreach (var identity in horsesToPreload)
             {
                 var cacheKey = identity.ToCacheKey();
+                if (!seen.Add(cacheKey))
+                {
+                    continue;
+                }
 
-                var winRate = LoadWinRateLast5(identity, repository);
-                winRateCache[cacheKey] = winRate;
+                var request = new HorseMetricRequest(
+                    identity.HorseId,
+                    identity.NormalizedName,
+                    identity.RaceDate,
+                    identity.RawName);
+                uniqueRequests.Add((cacheKey, request));
+            }
 
-                var speed = LoadAvgSpeedLast5(identity, repository);
-                speedCache[cacheKey] = speed;
+            if (uniqueRequests.Count == 0)
+            {
+                return;
+            }
 
-                var distance = LoadLastRaceDistance(identity, repository);
-                distanceCache[cacheKey] = distance;
-            });
+            const int windowSize = 5;
+            var requestList = uniqueRequests.Select(entry => entry.Request).ToList();
+
+            var batchedWinRates = repository.GetRecentHorseWinStatsBatch(requestList, windowSize);
+            var batchedSpeeds = repository.GetRecentHorseAverageSpeedsBatch(requestList, windowSize);
+            var batchedDistances = repository.GetLastRaceDistancesBatch(requestList);
+
+            foreach (var (cacheKey, request) in uniqueRequests)
+            {
+                if (batchedWinRates.TryGetValue(request, out var winStats) && winStats.HasValue && winStats.Value.Starts > 0)
+                {
+                    var winRate = ClampProbability(ComputeSmoothedWinRate(winStats.Value.Wins, winStats.Value.Starts));
+                    winRateCache[cacheKey] = (winRate, winStats.Value.Wins, winStats.Value.Starts);
+                }
+                else
+                {
+                    winRateCache[cacheKey] = null;
+                }
+
+                if (batchedSpeeds.TryGetValue(request, out var speedValue) &&
+                    speedValue.HasValue &&
+                    speedValue.Value > 0f &&
+                    !float.IsNaN(speedValue.Value) &&
+                    !float.IsInfinity(speedValue.Value))
+                {
+                    speedCache[cacheKey] = speedValue.Value;
+                }
+                else
+                {
+                    speedCache[cacheKey] = null;
+                }
+
+                if (batchedDistances.TryGetValue(request, out var distanceValue))
+                {
+                    distanceCache[cacheKey] = distanceValue;
+                }
+                else
+                {
+                    distanceCache[cacheKey] = null;
+                }
+            }
+        }
+
+        private void EnsureHorsePerformanceIndexes()
+        {
+            if (_horsePerformanceIndexesEnsured)
+            {
+                return;
+            }
+
+            lock (HorseIndexLock)
+            {
+                if (_horsePerformanceIndexesEnsured)
+                {
+                    return;
+                }
+
+                using var connection = new SqlConnection(_connectionString);
+                connection.Open();
+                const string sql = @"IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_RunnerResult_HorseId_RaceId' AND object_id = OBJECT_ID(N'dbo.RunnerResult'))
+BEGIN
+    CREATE INDEX IX_RunnerResult_HorseId_RaceId ON dbo.RunnerResult(HorseId, RaceId)
+        INCLUDE (RunnerResultId, FinishPos, DistanceBeatenLengths);
+END;
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_Race_RaceDate' AND object_id = OBJECT_ID(N'dbo.Race'))
+BEGIN
+    CREATE INDEX IX_Race_RaceDate ON dbo.Race(RaceDate, RaceId)
+        INCLUDE (DistanceYards, WinningTimeMs);
+END;
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_Horse_Name' AND object_id = OBJECT_ID(N'dbo.Horse'))
+BEGIN
+    CREATE INDEX IX_Horse_Name ON dbo.Horse(Name, HorseId);
+END;";
+
+                connection.Execute(sql);
+                _horsePerformanceIndexesEnsured = true;
+            }
         }
 
         private (float WinRate, int Wins, int Starts)? LoadWinRateLast5(HorseIdentity identity, IRacingRepository repository)
@@ -2379,6 +2466,7 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
             DateTime? maxRaceDateExclusive = identitySummary.MaxRaceDate?.Date.AddDays(1);
             if (horseIdArray.Length > 0)
             {
+                EnsureHorsePerformanceIndexes();
                 var parallelOptions = new ParallelOptions
                 {
                     MaxDegreeOfParallelism = Math.Max(1, Math.Min(Math.Min(Environment.ProcessorCount, horseIdArray.Length), 4))
@@ -2390,7 +2478,7 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
                     connection.Open();
                     return connection;
                 }, trackAllValues: true);
-
+                
                 try
                 {
                     Parallel.ForEach(Partitioner.Create(0, horseIdArray.Length, batchSize), parallelOptions, range =>

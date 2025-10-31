@@ -1770,6 +1770,18 @@ new RunnerFlow { HorseName = "Alpha Runner" },
             {
                 return null;
             }
+            public IReadOnlyDictionary<HorseMetricRequest, (int Wins, int Starts)?> GetRecentHorseWinStatsBatch(
+                IEnumerable<HorseMetricRequest> requests,
+                int windowSize)
+            {
+                return new Dictionary<HorseMetricRequest, (int Wins, int Starts)?>();
+            }
+            public IReadOnlyDictionary<HorseMetricRequest, float?> GetRecentHorseAverageSpeedsBatch(
+                            IEnumerable<HorseMetricRequest> requests,
+                            int windowSize)
+            {
+                return new Dictionary<HorseMetricRequest, float?>();
+            }
             public (int Wins, int Starts)? GetRecentHorseWinStats(string? horseName, int? horseId, DateTime? beforeDate, int windowSize)
             {
                 return null;
@@ -1810,6 +1822,10 @@ new RunnerFlow { HorseName = "Alpha Runner" },
                 }
 
                 return LimitParticipantResults(RecentJockeyResultsDefault, maxCount);
+            }
+            public IReadOnlyDictionary<HorseMetricRequest, int?> GetLastRaceDistancesBatch(IEnumerable<HorseMetricRequest> requests)
+            {
+                return new Dictionary<HorseMetricRequest, int?>();
             }
             public UpcomingRace? GetUpcomingRaceByMarketId(string? marketId)
             {
@@ -2163,6 +2179,10 @@ new RunnerFlow { HorseName = "Alpha Runner" },
             {
                 return Array.Empty<HorseHistoricalRaceSummary>();
             }
+            public IReadOnlyDictionary<HorseMetricRequest, int?> GetLastRaceDistancesBatch(IEnumerable<HorseMetricRequest> requests)
+            {
+                return new Dictionary<HorseMetricRequest, int?>();
+            }
             public IReadOnlyList<ParticipantHistoricalRaceSummary> GetRecentTrainerResults(string? trainerName, int? trainerId, int maxCount)
             {
                 if (trainerId.HasValue && RecentTrainerResultsById.TryGetValue(trainerId.Value, out var byId))
@@ -2201,6 +2221,16 @@ new RunnerFlow { HorseName = "Alpha Runner" },
                 }
 
                 return LimitParticipantResults(RecentJockeyResultsDefault, maxCount);
+            }
+            public IReadOnlyDictionary<HorseMetricRequest, float?> GetRecentHorseAverageSpeedsBatch(
+                IEnumerable<HorseMetricRequest> requests,
+                int windowSize)
+            {
+                return new Dictionary<HorseMetricRequest, float?>();
+            }
+            public IReadOnlyDictionary<HorseMetricRequest, int?> GetLastRaceDistancesBatch(IEnumerable<HorseMetricRequest> requests)
+            {
+                return new Dictionary<HorseMetricRequest, int?>();
             }
             public void InsertRaceScreen(RaceScreen screen)
             {

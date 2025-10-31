@@ -195,10 +195,16 @@ namespace HorseRacingML.Tests
             {
                 return null;
             }
+            public IReadOnlyDictionary<HorseMetricRequest, (int Wins, int Starts)?> GetRecentHorseWinStatsBatch(
+                IEnumerable<HorseMetricRequest> requests,
+                int windowSize) => new Dictionary<HorseMetricRequest, (int Wins, int Starts)?>();
             public IReadOnlyList<HorseSpeedEntry> GetRecentHorseSpeedEntries(string? horseName, int? horseId, DateTime? beforeDate, int windowSize)
             {
                 return Array.Empty<HorseSpeedEntry>();
             }
+            public IReadOnlyDictionary<HorseMetricRequest, float?> GetRecentHorseAverageSpeedsBatch(
+                IEnumerable<HorseMetricRequest> requests,
+                int windowSize) => new Dictionary<HorseMetricRequest, float?>();
             public IReadOnlyList<HorseHistoricalRaceSummary> GetRecentHorseResults(string? horseName, int? horseId, int maxCount)
             {
                 return Array.Empty<HorseHistoricalRaceSummary>();
@@ -215,7 +221,10 @@ namespace HorseRacingML.Tests
             {
                 return null;
             }
-
+            public IReadOnlyDictionary<HorseMetricRequest, int?> GetLastRaceDistancesBatch(IEnumerable<HorseMetricRequest> requests)
+            {
+                return new Dictionary<HorseMetricRequest, int?>();
+            }
             public void InsertRaceScreen(RaceScreen screen)
             {
             }

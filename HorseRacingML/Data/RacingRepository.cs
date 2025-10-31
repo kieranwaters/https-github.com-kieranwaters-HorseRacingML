@@ -26,12 +26,14 @@ namespace HorseRacingML.Data
         private static readonly Regex BracketTextRegex =
             new Regex("\\s*\\([^\\)]*\\)|\\s*\\[[^\\]]*\\]", RegexOptions.Compiled);
         private const int GoingMaxLength = 30;
+        private const float MsPerLength = 200f;
         private static readonly object SchemaLock = new();
         private static bool _raceScreenTableEnsured;
         private static bool _runnerFlowTableEnsured;
         private static bool _upcomingRaceTableEnsured;
         private readonly AsyncLocal<DayReportScopeState?> _dayReportScope = new();
         private static bool _runnerResultUniquenessEnsured;
+        private static bool _horsePerformanceIndexesEnsured;
         private IDbConnection OpenConnection()
         {
             const int maxAttempts = 3;
@@ -54,6 +56,71 @@ namespace HorseRacingML.Data
             var finalConn = new SqlConnection(_connectionString);
             finalConn.Open();
             return finalConn;
+        }
+        private void EnsureHorsePerformanceIndexes()
+        {
+            if (_horsePerformanceIndexesEnsured)
+            {
+                return;
+            }
+
+            lock (SchemaLock)
+            {
+                if (_horsePerformanceIndexesEnsured)
+                {
+                    return;
+                }
+
+                using var connection = OpenConnection();
+
+                const string sql = @"
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_RunnerResult_HorseId_RaceId' AND object_id = OBJECT_ID(N'dbo.RunnerResult'))
+BEGIN
+    CREATE INDEX IX_RunnerResult_HorseId_RaceId ON dbo.RunnerResult(HorseId, RaceId)
+        INCLUDE (RunnerResultId, FinishPos, DistanceBeatenLengths);
+END;
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_Race_RaceDate' AND object_id = OBJECT_ID(N'dbo.Race'))
+BEGIN
+    CREATE INDEX IX_Race_RaceDate ON dbo.Race(RaceDate, RaceId)
+        INCLUDE (DistanceYards, WinningTimeMs);
+END;
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_Horse_Name' AND object_id = OBJECT_ID(N'dbo.Horse'))
+BEGIN
+    CREATE INDEX IX_Horse_Name ON dbo.Horse(Name, HorseId);
+END;";
+
+                connection.Execute(sql);
+                _horsePerformanceIndexesEnsured = true;
+            }
+        }
+
+        private static string BuildHorseIdRequestCte(
+            IReadOnlyList<HorseMetricRequest> requests,
+            DynamicParameters parameters)
+        {
+            var builder = new StringBuilder();
+            builder.AppendLine("WITH Request(RequestIndex, HorseId, BeforeDate) AS (");
+
+            for (var i = 0; i < requests.Count; i++)
+            {
+                var request = requests[i];
+                var prefix = i == 0 ? "    SELECT " : "    UNION ALL SELECT ";
+                builder.Append(prefix)
+                    .Append(i)
+                    .Append(", @HorseId")
+                    .Append(i)
+                    .Append(", @BeforeDate")
+                    .Append(i)
+                    .AppendLine();
+
+                parameters.Add($"HorseId{i}", request.HorseId);
+                parameters.Add($"BeforeDate{i}", request.BeforeDate);
+            }
+
+            builder.AppendLine(")");
+            return builder.ToString();
         }
         public void InsertRunnerFlow(RunnerFlow flow)
         {
@@ -2570,6 +2637,103 @@ ORDER BY r.RaceDate DESC, rr.RunnerResultId DESC;";
 
             return ComputeWinStats(byName);
         }
+        public IReadOnlyDictionary<HorseMetricRequest, (int Wins, int Starts)?> GetRecentHorseWinStatsBatch(
+            IEnumerable<HorseMetricRequest> requests,
+            int windowSize)
+        {
+            if (requests is null)
+            {
+                throw new ArgumentNullException(nameof(requests));
+            }
+
+            if (windowSize <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(windowSize));
+            }
+
+            var deduped = requests
+                .Where(r => r.HorseId.HasValue || !string.IsNullOrWhiteSpace(r.NormalizedHorseName))
+                .Distinct()
+                .ToList();
+
+            var results = new Dictionary<HorseMetricRequest, (int Wins, int Starts)?>(deduped.Count);
+            if (deduped.Count == 0)
+            {
+                return results;
+            }
+
+            var horseIdRequests = deduped
+                .Where(r => r.HorseId.HasValue && r.HorseId.Value > 0)
+                .ToList();
+
+            if (horseIdRequests.Count > 0)
+            {
+                EnsureHorsePerformanceIndexes();
+                using var connection = OpenConnection();
+                var parameters = new DynamicParameters();
+                parameters.Add("Window", windowSize);
+                var cte = BuildHorseIdRequestCte(horseIdRequests, parameters);
+
+                var sql = $@"{cte}
+SELECT req.RequestIndex,
+       aggregated.Wins,
+       aggregated.Starts
+FROM Request req
+OUTER APPLY (
+    SELECT SUM(CASE WHEN innerResult.FinishPos = 1 THEN 1 ELSE 0 END) AS Wins,
+           COUNT(innerResult.FinishPos) AS Starts
+    FROM (
+        SELECT TOP (@Window) rr.FinishPos
+        FROM RunnerResult rr
+        INNER JOIN Race r ON r.RaceId = rr.RaceId
+        WHERE rr.HorseId = req.HorseId
+          AND (req.BeforeDate IS NULL OR r.RaceDate < req.BeforeDate)
+        ORDER BY r.RaceDate DESC, rr.RunnerResultId DESC
+    ) innerResult
+) aggregated;";
+
+                var rows = connection.Query<RequestWinRateRow>(sql, parameters).ToList();
+                foreach (var row in rows)
+                {
+                    if (row.RequestIndex < 0 || row.RequestIndex >= horseIdRequests.Count)
+                    {
+                        continue;
+                    }
+
+                    var request = horseIdRequests[row.RequestIndex];
+                    if (row.Starts.HasValue && row.Starts.Value > 0)
+                    {
+                        results[request] = (row.Wins ?? 0, row.Starts.Value);
+                    }
+                    else
+                    {
+                        results[request] = null;
+                    }
+                }
+
+                for (var i = 0; i < horseIdRequests.Count; i++)
+                {
+                    var request = horseIdRequests[i];
+                    if (!results.ContainsKey(request))
+                    {
+                        results[request] = null;
+                    }
+                }
+            }
+
+            foreach (var request in deduped)
+            {
+                if (results.ContainsKey(request))
+                {
+                    continue;
+                }
+
+                var stats = GetRecentHorseWinStats(request.RawHorseName, request.HorseId, request.BeforeDate, windowSize);
+                results[request] = stats;
+            }
+
+            return results;
+        }
         public IReadOnlyList<HorseSpeedEntry> GetRecentHorseSpeedEntries(
             string? horseName,
             int? horseId,
@@ -2645,7 +2809,230 @@ ORDER BY r.RaceDate DESC, rr.RunnerResultId DESC;";
                 ? byName
                 : Array.Empty<HorseSpeedEntry>();
         }
+        public IReadOnlyDictionary<HorseMetricRequest, float?> GetRecentHorseAverageSpeedsBatch(
+            IEnumerable<HorseMetricRequest> requests,
+            int windowSize)
+        {
+            if (requests is null)
+            {
+                throw new ArgumentNullException(nameof(requests));
+            }
 
+            if (windowSize <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(windowSize));
+            }
+
+            var deduped = requests
+                .Where(r => r.HorseId.HasValue || !string.IsNullOrWhiteSpace(r.NormalizedHorseName))
+                .Distinct()
+                .ToList();
+
+            var results = new Dictionary<HorseMetricRequest, float?>(deduped.Count);
+            if (deduped.Count == 0)
+            {
+                return results;
+            }
+
+            var horseIdRequests = deduped
+                .Where(r => r.HorseId.HasValue && r.HorseId.Value > 0)
+                .ToList();
+
+            if (horseIdRequests.Count > 0)
+            {
+                EnsureHorsePerformanceIndexes();
+                using var connection = OpenConnection();
+                var parameters = new DynamicParameters();
+                parameters.Add("Window", windowSize);
+                parameters.Add("MsPerLength", MsPerLength);
+                var cte = BuildHorseIdRequestCte(horseIdRequests, parameters);
+
+                var sql = $@"{cte}
+SELECT req.RequestIndex,
+       CASE WHEN aggregated.SpeedCount > 0 THEN aggregated.SpeedSum / aggregated.SpeedCount ELSE NULL END AS AverageSpeed
+FROM Request req
+OUTER APPLY (
+    SELECT SUM(speed.SpeedValue) AS SpeedSum,
+           COUNT(speed.SpeedValue) AS SpeedCount
+    FROM (
+        SELECT TOP (@Window)
+               CASE
+                   WHEN r.DistanceYards IS NULL OR r.DistanceYards <= 0 THEN NULL
+                   WHEN r.WinningTimeMs IS NULL OR r.WinningTimeMs <= 0 THEN NULL
+                   WHEN rr.DistanceBeatenLengths IS NOT NULL
+                       THEN CAST(r.DistanceYards AS float) /
+                            NULLIF(CAST(r.WinningTimeMs AS float) + CAST(rr.DistanceBeatenLengths AS float) * @MsPerLength, 0)
+                   ELSE CAST(r.DistanceYards AS float) / NULLIF(CAST(r.WinningTimeMs AS float), 0)
+               END AS SpeedValue
+        FROM RunnerResult rr
+        INNER JOIN Race r ON r.RaceId = rr.RaceId
+        WHERE rr.HorseId = req.HorseId
+          AND (req.BeforeDate IS NULL OR r.RaceDate < req.BeforeDate)
+        ORDER BY r.RaceDate DESC, rr.RunnerResultId DESC
+    ) speed
+    WHERE speed.SpeedValue IS NOT NULL
+) aggregated;";
+
+                var rows = connection.Query<RequestAverageSpeedRow>(sql, parameters).ToList();
+                foreach (var row in rows)
+                {
+                    if (row.RequestIndex < 0 || row.RequestIndex >= horseIdRequests.Count)
+                    {
+                        continue;
+                    }
+
+                    var request = horseIdRequests[row.RequestIndex];
+                    if (row.AverageSpeed.HasValue)
+                    {
+                        results[request] = (float)row.AverageSpeed.Value;
+                    }
+                    else
+                    {
+                        results[request] = null;
+                    }
+                }
+
+                for (var i = 0; i < horseIdRequests.Count; i++)
+                {
+                    var request = horseIdRequests[i];
+                    if (!results.ContainsKey(request))
+                    {
+                        results[request] = null;
+                    }
+                }
+            }
+
+            foreach (var request in deduped)
+            {
+                if (results.ContainsKey(request))
+                {
+                    continue;
+                }
+
+                var entries = GetRecentHorseSpeedEntries(request.RawHorseName, request.HorseId, request.BeforeDate, windowSize);
+                if (entries == null || entries.Count == 0)
+                {
+                    results[request] = null;
+                    continue;
+                }
+
+                float speedSum = 0f;
+                int speedCount = 0;
+                foreach (var entry in entries)
+                {
+                    if (!entry.DistanceYards.HasValue || entry.DistanceYards.Value <= 0)
+                    {
+                        continue;
+                    }
+
+                    if (!entry.WinningTimeMilliseconds.HasValue || entry.WinningTimeMilliseconds.Value <= 0)
+                    {
+                        continue;
+                    }
+
+                    var runnerTime = (float)entry.WinningTimeMilliseconds.Value;
+                    if (entry.DistanceBeatenLengths.HasValue)
+                    {
+                        runnerTime += (float)entry.DistanceBeatenLengths.Value * MsPerLength;
+                    }
+
+                    if (runnerTime <= 0f)
+                    {
+                        continue;
+                    }
+
+                    var speed = entry.DistanceYards.Value / runnerTime;
+                    if (!float.IsNaN(speed) && !float.IsInfinity(speed) && speed > 0f)
+                    {
+                        speedSum += speed;
+                        speedCount++;
+                    }
+                }
+
+                results[request] = speedCount > 0 ? speedSum / speedCount : (float?)null;
+            }
+
+            return results;
+        }
+
+        public IReadOnlyDictionary<HorseMetricRequest, int?> GetLastRaceDistancesBatch(IEnumerable<HorseMetricRequest> requests)
+        {
+            if (requests is null)
+            {
+                throw new ArgumentNullException(nameof(requests));
+            }
+
+            var deduped = requests
+                .Where(r => r.HorseId.HasValue || !string.IsNullOrWhiteSpace(r.NormalizedHorseName))
+                .Distinct()
+                .ToList();
+
+            var results = new Dictionary<HorseMetricRequest, int?>(deduped.Count);
+            if (deduped.Count == 0)
+            {
+                return results;
+            }
+
+            var horseIdRequests = deduped
+                .Where(r => r.HorseId.HasValue && r.HorseId.Value > 0)
+                .ToList();
+
+            if (horseIdRequests.Count > 0)
+            {
+                EnsureHorsePerformanceIndexes();
+                using var connection = OpenConnection();
+                var parameters = new DynamicParameters();
+                var cte = BuildHorseIdRequestCte(horseIdRequests, parameters);
+
+                var sql = $@"{cte}
+SELECT req.RequestIndex,
+       distance.DistanceYards
+FROM Request req
+OUTER APPLY (
+    SELECT TOP (1) r.DistanceYards
+    FROM RunnerResult rr
+    INNER JOIN Race r ON r.RaceId = rr.RaceId
+    WHERE rr.HorseId = req.HorseId
+      AND r.DistanceYards IS NOT NULL
+      AND (req.BeforeDate IS NULL OR r.RaceDate < req.BeforeDate)
+    ORDER BY r.RaceDate DESC, rr.RunnerResultId DESC
+) distance;";
+
+                var rows = connection.Query<RequestLastDistanceRow>(sql, parameters).ToList();
+                foreach (var row in rows)
+                {
+                    if (row.RequestIndex < 0 || row.RequestIndex >= horseIdRequests.Count)
+                    {
+                        continue;
+                    }
+
+                    var request = horseIdRequests[row.RequestIndex];
+                    results[request] = row.DistanceYards;
+                }
+
+                for (var i = 0; i < horseIdRequests.Count; i++)
+                {
+                    var request = horseIdRequests[i];
+                    if (!results.ContainsKey(request))
+                    {
+                        results[request] = null;
+                    }
+                }
+            }
+
+            foreach (var request in deduped)
+            {
+                if (results.ContainsKey(request))
+                {
+                    continue;
+                }
+
+                var distance = GetLastRaceDistance(request.RawHorseName, request.HorseId, request.BeforeDate);
+                results[request] = distance;
+            }
+
+            return results;
+        }
         private static (int Wins, int Starts)? ComputeWinStats(IReadOnlyCollection<short?> finishes)
         {
             if (finishes == null || finishes.Count == 0)
@@ -2888,6 +3275,24 @@ BEGIN
 END";
             using var conn = OpenConnection();
             return conn.QuerySingle<int>(sql, horse);
+        }
+        private sealed class RequestWinRateRow
+        {
+            public int RequestIndex { get; set; }
+            public int? Wins { get; set; }
+            public int? Starts { get; set; }
+        }
+
+        private sealed class RequestAverageSpeedRow
+        {
+            public int RequestIndex { get; set; }
+            public double? AverageSpeed { get; set; }
+        }
+
+        private sealed class RequestLastDistanceRow
+        {
+            public int RequestIndex { get; set; }
+            public int? DistanceYards { get; set; }
         }
     }
 }

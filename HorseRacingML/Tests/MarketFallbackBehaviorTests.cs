@@ -1326,6 +1326,9 @@ namespace HorseRacingML.Tests
             public int? GetLastWinningTimeMilliseconds(string? horseName, int? horseId, DateTime? beforeDate) => null;
             public (int Wins, int Starts)? GetRecentHorseWinStats(string? horseName, int? horseId, DateTime? beforeDate, int windowSize) => null;
             public byte? GetMostRecentRaceClass(string? horseName, int? horseId) => null;
+            public IReadOnlyDictionary<HorseMetricRequest, (int Wins, int Starts)?> GetRecentHorseWinStatsBatch(
+                IEnumerable<HorseMetricRequest> requests,
+                int windowSize) => new Dictionary<HorseMetricRequest, (int Wins, int Starts)?>();
             public byte? GetMostRecentRaceClassForHorseJockey(
                 string? horseName,
                 int? horseId,
@@ -1333,6 +1336,11 @@ namespace HorseRacingML.Tests
                 int? jockeyId) => null;
             public IReadOnlyList<HorseSpeedEntry> GetRecentHorseSpeedEntries(string? horseName, int? horseId, DateTime? beforeDate, int windowSize)
                => Array.Empty<HorseSpeedEntry>();
+            public IReadOnlyDictionary<HorseMetricRequest, float?> GetRecentHorseAverageSpeedsBatch(
+                IEnumerable<HorseMetricRequest> requests,
+                int windowSize) => new Dictionary<HorseMetricRequest, float?>();
+            public IReadOnlyDictionary<HorseMetricRequest, int?> GetLastRaceDistancesBatch(IEnumerable<HorseMetricRequest> requests)
+                => new Dictionary<HorseMetricRequest, int?>();
             public IReadOnlyList<HorseHistoricalRaceSummary> GetRecentHorseResults(string? horseName, int? horseId, int maxCount)
                 => Array.Empty<HorseHistoricalRaceSummary>();
             public IReadOnlyList<ParticipantHistoricalRaceSummary> GetRecentTrainerResults(string? trainerName, int? trainerId, int maxCount)
