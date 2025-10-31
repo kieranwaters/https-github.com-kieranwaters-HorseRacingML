@@ -1838,6 +1838,103 @@ WHERE r.RaceId IN @Ids";
 
             return result;
         }
+        public IDictionary<int, RaceFeatureBackfill> GetRaceFeatureBackfills(IEnumerable<int> raceIds)
+        {
+            if (raceIds is null)
+            {
+                throw new ArgumentNullException(nameof(raceIds));
+            }
+
+            var distinctIds = raceIds
+                .Where(id => id > 0)
+                .Distinct()
+                .ToList();
+
+            if (distinctIds.Count == 0)
+            {
+                return new Dictionary<int, RaceFeatureBackfill>();
+            }
+
+            var result = new Dictionary<int, RaceFeatureBackfill>();
+
+            using var conn = OpenConnection();
+
+            var raceColumns = LoadColumnNames(conn, "Race");
+            bool hasRaceType = raceColumns.Contains("RaceType");
+            bool hasSurface = raceColumns.Contains("Surface");
+            bool hasGoing = raceColumns.Contains("Going");
+            bool hasDistanceYards = raceColumns.Contains("DistanceYards");
+            bool hasDistanceText = raceColumns.Contains("DistanceText");
+            bool hasRunnerCount = raceColumns.Contains("RunnerCount");
+
+            var selectParts = new List<string>
+            {
+                "r.RaceId"
+            };
+
+            selectParts.Add(hasRaceType
+                ? "r.RaceType AS RaceType"
+                : "CAST(NULL AS nvarchar(128)) AS RaceType");
+            selectParts.Add(hasSurface
+                ? "r.Surface AS Surface"
+                : "CAST(NULL AS nvarchar(64)) AS Surface");
+            selectParts.Add(hasGoing
+                ? "r.Going AS Going"
+                : "CAST(NULL AS nvarchar(30)) AS Going");
+            selectParts.Add(hasDistanceYards
+                ? "r.DistanceYards AS DistanceYards"
+                : "CAST(NULL AS int) AS DistanceYards");
+            selectParts.Add(hasDistanceText
+                ? "r.DistanceText AS DistanceText"
+                : "CAST(NULL AS nvarchar(64)) AS DistanceText");
+            selectParts.Add(hasRunnerCount
+                ? "r.RunnerCount AS RunnerCount"
+                : "CAST(NULL AS int) AS RunnerCount");
+
+            string sql = $"SELECT {string.Join(", ", selectParts)} FROM Race r WHERE r.RaceId IN @Ids";
+
+            const int chunkSize = 2000;
+            for (int offset = 0; offset < distinctIds.Count; offset += chunkSize)
+            {
+                var chunk = distinctIds.Skip(offset).Take(chunkSize).ToArray();
+                if (chunk.Length == 0)
+                {
+                    continue;
+                }
+
+                foreach (var row in conn.Query<RaceFeatureBackfill>(sql, new { Ids = chunk }))
+                {
+                    if (row == null)
+                    {
+                        continue;
+                    }
+
+                    result[row.RaceId] = row;
+                }
+            }
+
+            return result;
+        }
+
+        private static HashSet<string> LoadColumnNames(IDbConnection connection, string tableName)
+        {
+            if (connection is null)
+            {
+                throw new ArgumentNullException(nameof(connection));
+            }
+
+            if (string.IsNullOrWhiteSpace(tableName))
+            {
+                throw new ArgumentException("Table name must be provided.", nameof(tableName));
+            }
+
+            const string sql = @"SELECT COLUMN_NAME
+FROM INFORMATION_SCHEMA.COLUMNS
+WHERE TABLE_NAME = @Table";
+
+            var names = connection.Query<string>(sql, new { Table = tableName });
+            return new HashSet<string>(names ?? Array.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+        }
         private sealed class HorseDistanceRow
         {
             public int? DistanceYards { get; set; }

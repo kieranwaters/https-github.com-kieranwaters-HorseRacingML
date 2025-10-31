@@ -316,13 +316,15 @@ namespace HorseRacingML.ML
                 {
                     int horseId = PreparedDataset.GetRequiredInt32(row, "HorseId");
                         DateTime date = (DateTime)row["RaceDate"];
-                        if (TryGetTimeOfDay(row, out var timeOfDay))
+                    var normalizedRaceDate = date.Date;
+                    if (TryGetTimeOfDay(row, out var timeOfDay))
                         {
                             float minutes = (float)timeOfDay.TotalMinutes;
                             float timeAngle = 2f * MathF.PI * minutes / (24f * 60f);
                             row["TimeOfDaySin"] = MathF.Sin(timeAngle);
                             row["TimeOfDayCos"] = MathF.Cos(timeAngle);
-                        }
+                        row["RaceDate"] = normalizedRaceDate;
+                    }
                         else
                         {
                             row["TimeOfDaySin"] = 0f;
@@ -408,8 +410,8 @@ namespace HorseRacingML.ML
                             int distanceYards = distanceYardsValue ?? 0;
                             row["DistanceMissing"] = distanceMissing;
                             row["DistanceTextMissing"] = distanceTextMissing;
-
-                            bool backBookMissing = row["BackBookPercentage"] == null;
+                        row["RaceDate"] = normalizedRaceDate;
+                        bool backBookMissing = row["BackBookPercentage"] == null;
                             bool layBookMissing = row["LayBookPercentage"] == null;
                             row["BackBookPercentageMissing"] = backBookMissing;
                             row["LayBookPercentageMissing"] = layBookMissing;
@@ -1978,7 +1980,7 @@ namespace HorseRacingML.ML
                     $"[TrainAI] Backfill progress: {currentCount}/{totalRaces} races enriched. " +
                     $"Elapsed {FormatDuration(elapsed)}, avg {averagePerRace.TotalSeconds:F2}s/race, ETA {FormatDuration(estimatedRemaining)}.");
             }
-
+            var raceMetadataLookup = BuildRaceMetadataLookup(repository, races);
             Parallel.ForEach(races, parallelOptions, race =>
             {
                 var raceRows = race?.Rows;
@@ -1999,6 +2001,12 @@ namespace HorseRacingML.ML
                     if (row is null)
                     {
                         continue;
+                    }
+                    if (PreparedDataset.TryGetRequiredInt32(row, "RaceId", out var raceId) &&
+                        raceMetadataLookup.TryGetValue(raceId, out var metadata) &&
+                        metadata != null)
+                    {
+                        ApplyRaceMetadataBackfill(row, metadata);
                     }
                     bool distanceBackfilled = false;
 
@@ -2104,6 +2112,139 @@ namespace HorseRacingML.ML
 
             stopwatch.Stop();
             Console.WriteLine($"[TrainAI] Repository backfills complete in {FormatDuration(stopwatch.Elapsed)}.");
+        }
+        private static IDictionary<int, RaceFeatureBackfill> BuildRaceMetadataLookup(
+            IRacingRepository? repository,
+            IReadOnlyList<PreparedRace> races)
+        {
+            if (repository is null || races is null || races.Count == 0)
+            {
+                return new Dictionary<int, RaceFeatureBackfill>();
+            }
+
+            var missingRaceIds = new HashSet<int>();
+            foreach (var race in races)
+            {
+                if (race?.Rows == null)
+                {
+                    continue;
+                }
+
+                foreach (var row in race.Rows)
+                {
+                    if (row is null)
+                    {
+                        continue;
+                    }
+
+                    if (!PreparedDataset.TryGetRequiredInt32(row, "RaceId", out var raceId))
+                    {
+                        continue;
+                    }
+
+                    if (NeedsRaceMetadataBackfill(row))
+                    {
+                        missingRaceIds.Add(raceId);
+                    }
+                }
+            }
+
+            if (missingRaceIds.Count == 0)
+            {
+                return new Dictionary<int, RaceFeatureBackfill>();
+            }
+
+            return repository.GetRaceFeatureBackfills(missingRaceIds);
+        }
+
+        private static bool NeedsRaceMetadataBackfill(Dictionary<string, object?> row)
+        {
+            return !HasMeaningfulString(row, "RaceType") ||
+                   !HasMeaningfulString(row, "Surface") ||
+                   !HasMeaningfulString(row, "Going") ||
+                   !HasMeaningfulString(row, "DistanceText") ||
+                   !HasMeaningfulNumeric(row, "DistanceYards") ||
+                   !HasMeaningfulNumeric(row, "RunnerCount");
+        }
+
+        private static void ApplyRaceMetadataBackfill(Dictionary<string, object?> row, RaceFeatureBackfill metadata)
+        {
+            if (row is null || metadata is null)
+            {
+                return;
+            }
+
+            if (!HasMeaningfulString(row, "RaceType") && !string.IsNullOrWhiteSpace(metadata.RaceType))
+            {
+                row["RaceType"] = metadata.RaceType?.Trim();
+            }
+
+            if (!HasMeaningfulString(row, "Surface") && !string.IsNullOrWhiteSpace(metadata.Surface))
+            {
+                row["Surface"] = metadata.Surface?.Trim();
+            }
+
+            if (!HasMeaningfulString(row, "Going") && !string.IsNullOrWhiteSpace(metadata.Going))
+            {
+                row["Going"] = metadata.Going?.Trim();
+            }
+
+            if (!HasMeaningfulNumeric(row, "DistanceYards") && metadata.DistanceYards.HasValue)
+            {
+                row["DistanceYards"] = metadata.DistanceYards.Value;
+            }
+
+            if (!HasMeaningfulString(row, "DistanceText") && !string.IsNullOrWhiteSpace(metadata.DistanceText))
+            {
+                row["DistanceText"] = metadata.DistanceText?.Trim();
+            }
+
+            if (!HasMeaningfulNumeric(row, "RunnerCount") && metadata.RunnerCount.HasValue)
+            {
+                row["RunnerCount"] = metadata.RunnerCount.Value;
+            }
+        }
+
+        private static bool HasMeaningfulString(Dictionary<string, object?> row, string key)
+        {
+            if (!row.TryGetValue(key, out var value) || value is null)
+            {
+                return false;
+            }
+
+            if (value is string s)
+            {
+                return !string.IsNullOrWhiteSpace(s);
+            }
+
+            return true;
+        }
+
+        private static bool HasMeaningfulNumeric(Dictionary<string, object?> row, string key)
+        {
+            if (!row.TryGetValue(key, out var value) || value is null)
+            {
+                return false;
+            }
+
+            if (PreparedDataset.TryConvertToInt32(value, out var intValue))
+            {
+                return intValue != 0;
+            }
+
+            if (value is IConvertible convertible)
+            {
+                try
+                {
+                    return Math.Abs(convertible.ToDouble(null)) > 0.0;
+                }
+                catch
+                {
+                    return false;
+                }
+            }
+
+            return false;
         }
         private static string FormatDuration(TimeSpan time)
         {
