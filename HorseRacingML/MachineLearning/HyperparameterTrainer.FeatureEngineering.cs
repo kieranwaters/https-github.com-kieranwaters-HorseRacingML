@@ -96,6 +96,7 @@ namespace HorseRacingML.ML
         {
             private readonly HyperparameterTrainer _trainer;
             private readonly ISet<string>? _identifierKeys;
+            private readonly ISet<string> _preserveKeys;
             private readonly Dictionary<int, List<HistoryEntry>> _horseHistory = new();
             private readonly Dictionary<int, RollingStat> _trainerStats = new();
             private readonly Dictionary<int, RollingStat> _jockeyStats = new();
@@ -129,7 +130,20 @@ namespace HorseRacingML.ML
             public FeatureEngineeringState(HyperparameterTrainer trainer, ISet<string>? identifierKeys = null)
             {
                 _trainer = trainer ?? throw new ArgumentNullException(nameof(trainer));
-                _identifierKeys = identifierKeys;
+                if (identifierKeys is null)
+                {
+                    _preserveKeys = BackfillRequiredKeys;
+                }
+                else
+                {
+                    var combined = new HashSet<string>(BackfillRequiredKeys, StringComparer.OrdinalIgnoreCase);
+                    foreach (var key in identifierKeys)
+                    {
+                        combined.Add(key);
+                    }
+
+                    _preserveKeys = combined;
+                }
             }
             private static float ComputeStandardDeviation(IReadOnlyList<float> values)
             {
@@ -1478,8 +1492,8 @@ namespace HorseRacingML.ML
                             {
                                 raceRow["RaceAvgSpeedLast5"] = 0f;
                             }
-                            TrimRunnerRow(raceRow, _identifierKeys);
-                        }
+                        TrimRunnerRow(raceRow, _preserveKeys);
+                    }
                     }
                 }
             }
@@ -1707,7 +1721,17 @@ namespace HorseRacingML.ML
                 "Purse"
         };
 
-
+        private static readonly ISet<string> BackfillRequiredKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "HorseId",
+            "HorseName",
+            "TrainerId",
+            "TrainerName",
+            "JockeyId",
+            "JockeyName",
+            "CourseId",
+            "RaceDate"
+        };
 
         private static void TrimRunnerRow(Dictionary<string, object?> row, ISet<string>? preserveKeys = null)
         {
@@ -1900,13 +1924,13 @@ namespace HorseRacingML.ML
             Console.WriteLine(
                 $"[TrainAI] Raw data streaming complete. Feature engineering ran for {processedRaceCount} races ({includedRaceCount} included) across {totalRunnerRows:N0} runner rows.");
 
-            ApplyRepositoryBackfills(races);
+            ApplyRepositoryBackfills(races, includeIdentifiers);
 
             Console.WriteLine(
                 $"[TrainAI] Dataset preparation finished. {races.Count} races ready ({includedRunnerRows:N0} runner rows retained).");
             return new PreparedDataset(races);
         }
-        private void ApplyRepositoryBackfills(List<PreparedRace> races)
+        private void ApplyRepositoryBackfills(List<PreparedRace> races, bool includeIdentifiers)
         {
             if (races is null || races.Count == 0)
             {
@@ -2112,6 +2136,30 @@ namespace HorseRacingML.ML
 
             stopwatch.Stop();
             Console.WriteLine($"[TrainAI] Repository backfills complete in {FormatDuration(stopwatch.Elapsed)}.");
+            if (!includeIdentifiers)
+            {
+                foreach (var race in races)
+                {
+                    var raceRows = race?.Rows;
+                    if (raceRows is null)
+                    {
+                        continue;
+                    }
+
+                    foreach (var row in raceRows)
+                    {
+                        if (row is null)
+                        {
+                            continue;
+                        }
+
+                        foreach (var key in BackfillRequiredKeys)
+                        {
+                            row.Remove(key);
+                        }
+                    }
+                }
+            }
         }
         private static IDictionary<int, RaceFeatureBackfill> BuildRaceMetadataLookup(
             IRacingRepository? repository,
@@ -2217,7 +2265,12 @@ namespace HorseRacingML.ML
                 return !string.IsNullOrWhiteSpace(s);
             }
 
-            return true;
+            if (value is System.Data.SqlTypes.SqlString sql)
+            {
+                return !sql.IsNull && !string.IsNullOrWhiteSpace(sql.Value);
+            }
+
+            return false;
         }
 
         private static bool HasMeaningfulNumeric(Dictionary<string, object?> row, string key)

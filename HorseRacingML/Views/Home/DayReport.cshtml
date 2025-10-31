@@ -1337,6 +1337,7 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                                               data-kelly-fraction="@kellyData"
                                               data-stake-type="@stakeType"
                                               data-lay-odds="@layOddsData"
+                                              data-original-lay-odds="@layOddsData"
                                               data-original-text="@displayedStake">@displayedStake</span>
                                     </td>
                                 </tr>
@@ -2261,6 +2262,7 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                     }
 
                     refreshRowAiProbabilityDisplay(row);
+                     updateStakeDisplays();
                     return;
                 }
 
@@ -2300,6 +2302,7 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                 if (options.formatValue) {
                     input.value = formatDecimal(parsed);
                 }
+                updateStakeDisplays();
             };
 
             const updateLayOddsFromInput = (input, options = {}) => {
@@ -2647,36 +2650,144 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
             let customKellyBankroll = null;
             let customStakeAmount = null;
             let stakeDampener = 1;
+            const calculateBackKellyFraction = (probability, decimalOdds) => {
+                if (!(typeof probability === 'number' && Number.isFinite(probability) && probability > 0 && probability < 1)) {
+                    return 0;
+                }
 
+                if (!(typeof decimalOdds === 'number' && Number.isFinite(decimalOdds) && decimalOdds > 1)) {
+                    return 0;
+                }
+
+                const b = decimalOdds - 1;
+                if (!Number.isFinite(b) || Math.abs(b) < Number.EPSILON) {
+                    return 0;
+                }
+
+                const q = 1 - probability;
+                const fraction = (b * probability - q) / b;
+                if (!Number.isFinite(fraction)) {
+                    return 0;
+                }
+
+                if (fraction <= 0) {
+                    return 0;
+                }
+
+                if (fraction >= 1) {
+                    return 1;
+                }
+
+                return fraction;
+            };
+
+            const calculateLayKellyFractionFromOdds = (probability, layDecimalOdds) => {
+                if (!(typeof probability === 'number' && Number.isFinite(probability) && probability > 0 && probability < 1)) {
+                    return 0;
+                }
+
+                if (!(typeof layDecimalOdds === 'number' && Number.isFinite(layDecimalOdds) && layDecimalOdds > 1)) {
+                    return 0;
+                }
+
+                const fraction = 1 - (probability * layDecimalOdds);
+                if (!Number.isFinite(fraction)) {
+                    return 0;
+                }
+
+                if (fraction <= 0) {
+                    return 0;
+                }
+
+                if (fraction >= 1) {
+                    return 1;
+                }
+
+                return fraction;
+            };
             const updateStakeDisplays = () => {
                 const stakeElements = document.querySelectorAll('.stake-value');
                 stakeElements.forEach(element => {
                     const stakeTypeRaw = element.dataset.stakeType ?? '';
                     const stakeType = stakeTypeRaw === 'lay' ? 'lay' : stakeTypeRaw === 'none' ? 'none' : 'back';
-                    const defaultStakeRaw = element.dataset.defaultStake ?? '';
-                    const kellyFraction = Number.parseFloat(element.dataset.kellyFraction ?? '');
-                    const layOdds = Number.parseFloat(element.dataset.layOdds ?? '');
                     const originalText = element.dataset.originalText ?? '';
+                    const defaultStakeValue = Number.parseFloat(element.dataset.defaultStake ?? '');
+                    const baseKellyFraction = Number.parseFloat(element.dataset.kellyFraction ?? '');
+                    const layOdds = Number.parseFloat(element.dataset.layOdds ?? '');
+                    const originalLayOdds = Number.parseFloat(element.dataset.originalLayOdds ?? '');
 
+                    const row = element.closest('tr');
+                    const aiProbability = row ? parseProbabilityAttribute(row.dataset.aiProbability) : 0;
+                    const marketOdds = row ? Number.parseFloat(row.dataset.marketOdds ?? '') : NaN;
+
+                    let effectiveKellyFraction = Number.isFinite(baseKellyFraction) && baseKellyFraction > 0
+                        ? baseKellyFraction
+                        : 0;
+
+                    if (stakeType === 'back') {
+                        const computedKelly = calculateBackKellyFraction(aiProbability, marketOdds);
+                        if (computedKelly > 0) {
+                            effectiveKellyFraction = computedKelly;
+                        }
+                    } else if (stakeType === 'lay') {
+                        const computedKelly = calculateLayKellyFractionFromOdds(aiProbability, layOdds);
+                        if (computedKelly > 0) {
+                            effectiveKellyFraction = computedKelly;
+                        }
+                    }
+
+                    let impliedBankroll = NaN;
+                    if (stakeType === 'lay') {
+                        const baseLayOdds = Number.isFinite(originalLayOdds) && originalLayOdds > 1
+                            ? originalLayOdds
+                            : (Number.isFinite(layOdds) && layOdds > 1 ? layOdds : NaN);
+                        if (Number.isFinite(baseLayOdds) && baseLayOdds > 1 && Number.isFinite(baseKellyFraction) && baseKellyFraction > 0 && Number.isFinite(defaultStakeValue) && defaultStakeValue > 0) {
+                            impliedBankroll = (defaultStakeValue * (baseLayOdds - 1)) / baseKellyFraction;
+                        }
+                    } else if (Number.isFinite(baseKellyFraction) && baseKellyFraction > 0 && Number.isFinite(defaultStakeValue) && defaultStakeValue > 0) {
+                        impliedBankroll = defaultStakeValue / baseKellyFraction;
+                    }
+
+                    let recommendedStake = NaN;
+                    if (Number.isFinite(impliedBankroll) && impliedBankroll > 0 && Number.isFinite(effectiveKellyFraction) && effectiveKellyFraction > 0) {
+                        if (stakeType === 'lay') {
+                            if (Number.isFinite(layOdds) && layOdds > 1) {
+                                recommendedStake = (impliedBankroll * effectiveKellyFraction) / (layOdds - 1);
+                            }
+                        } else {
+                            recommendedStake = impliedBankroll * effectiveKellyFraction;
+                        }
+                    }
                     let stake = NaN;
 
                     if (customStakeAmount !== null && stakeType !== 'none') {
                         stake = customStakeAmount;
                     } else if (customKellyBankroll !== null && stakeType !== 'none') {
-                        if (Number.isFinite(kellyFraction) && kellyFraction > 0) {
+                        if (Number.isFinite(effectiveKellyFraction) && effectiveKellyFraction > 0) {
                             if (stakeType === 'lay') {
                                 if (Number.isFinite(layOdds) && layOdds > 1) {
-                                    const liability = customKellyBankroll * kellyFraction;
+                                    const liability = customKellyBankroll * effectiveKellyFraction;
                                     stake = liability / (layOdds - 1);
                                 }
                             } else {
-                                stake = customKellyBankroll * kellyFraction;
+                                stake = customKellyBankroll * effectiveKellyFraction;
                             }
                         }
-                    } else if (defaultStakeRaw) {
-                        const parsedDefault = Number.parseFloat(defaultStakeRaw);
-                        if (Number.isFinite(parsedDefault) && parsedDefault > 0) {
-                            stake = parsedDefault;
+                    } else if (Number.isFinite(recommendedStake) && recommendedStake > 0) {
+                        stake = recommendedStake;
+                    } else if (Number.isFinite(defaultStakeValue) && defaultStakeValue > 0) {
+                        stake = defaultStakeValue;
+                    }
+
+                    if (stakeType !== 'none' && row) {
+                        const kellyCell = row.querySelector('.kelly-cell');
+                        if (kellyCell) {
+                            const kellyText = formatKellyPercent(effectiveKellyFraction);
+                            if (stakeType === 'lay') {
+                                kellyCell.textContent = kellyText ? `Lay ${kellyText}` : 'Lay -';
+                            } else {
+                                kellyCell.textContent = kellyText ?? '-';
+                            }
                         }
                     }
 
@@ -3356,6 +3467,7 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                     stakeSpan.dataset.kellyFraction = betting.kellyData;
                     stakeSpan.dataset.stakeType = betting.type;
                     stakeSpan.dataset.layOdds = betting.layOddsData;
+                    stakeSpan.dataset.originalLayOdds = betting.layOddsData;
                     stakeSpan.dataset.originalText = betting.stakeText ?? '-';
                     stakeSpan.textContent = betting.stakeText;
                     stakeCell.appendChild(stakeSpan);
@@ -3583,7 +3695,9 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                     const stakeSpan = targetRow.querySelector('.stake-value');
                     if (stakeSpan) {
                         if (typeof runner.layDecimalOdds === 'number' && Number.isFinite(runner.layDecimalOdds) && runner.layDecimalOdds > 1) {
-                            stakeSpan.dataset.layOdds = runner.layDecimalOdds.toString();
+                            const layOddsValue = runner.layDecimalOdds.toString();
+                            stakeSpan.dataset.layOdds = layOddsValue;
+                            stakeSpan.dataset.originalLayOdds = layOddsValue;
                         } else if (!Number.isFinite(Number.parseFloat(stakeSpan.dataset.layOdds ?? ''))) {
                             delete stakeSpan.dataset.layOdds;
                         }
