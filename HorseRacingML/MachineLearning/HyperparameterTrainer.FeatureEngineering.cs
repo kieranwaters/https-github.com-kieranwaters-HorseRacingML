@@ -1,18 +1,19 @@
 ﻿using Dapper;
+using HorseRacingML.Data;
 using HorseRacingML.Models;
 using Microsoft.Data.SqlClient;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Globalization;
-using HorseRacingML.Data;
 using System.Diagnostics;
+using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Xunit;
+using static Dapper.SqlMapper;
 using PreparedDataset = HorseRacingML.ML.HyperparameterTrainer.TrainingDataset.PreparedDataset;
 using PreparedRace = HorseRacingML.ML.HyperparameterTrainer.TrainingDataset.PreparedDataset.PreparedRace;
 
@@ -1916,7 +1917,8 @@ namespace HorseRacingML.ML
             }
 
             Console.WriteLine($"[TrainAI] Applying repository backfills for {races.Count} races.");
-            var prefetchedHistoryByHorseId = PrefetchHorseHistoryByHorseId(races);
+            var horseIdentitySummary = CollectHorseIdentitySummary(races);
+            var prefetchedHistoryByHorseId = PrefetchHorseHistoryByHorseId(horseIdentitySummary);
             if (prefetchedHistoryByHorseId.Count > 0)
             {
                 Console.WriteLine($"[TrainAI] Prefetched historical performance for {prefetchedHistoryByHorseId.Count} horses.");
@@ -1924,15 +1926,24 @@ namespace HorseRacingML.ML
             var winRateCache = new ConcurrentDictionary<HorseCacheKey, (float WinRate, int Wins, int Starts)?>(HorseCacheKeyComparer.Instance);
             var speedCache = new ConcurrentDictionary<HorseCacheKey, float?>(HorseCacheKeyComparer.Instance);
             var distanceCache = new ConcurrentDictionary<HorseCacheKey, int?>(HorseCacheKeyComparer.Instance);
-
+            if (repository is not null)
+            {
+                PreloadRepositoryCaches(
+                    repository,
+                    horseIdentitySummary.Identities,
+                    prefetchedHistoryByHorseId,
+                    winRateCache,
+                    speedCache,
+                    distanceCache);
+            }
             const int backfillProgressInterval = 25;
-            const int backfillThreadCount = 8;
             int processed = 0;
             var totalRaces = races.Count;
             var stopwatch = Stopwatch.StartNew();
+            var maxThreads = Math.Max(1, Environment.ProcessorCount);
             var parallelOptions = new ParallelOptions
             {
-                MaxDegreeOfParallelism = Math.Min(backfillThreadCount, Math.Max(1, totalRaces))
+                MaxDegreeOfParallelism = Math.Min(maxThreads, Math.Max(1, totalRaces))
             };
 
             void ReportProgress(int currentCount)
@@ -2095,31 +2106,48 @@ namespace HorseRacingML.ML
         {
             if (time <= TimeSpan.Zero)
             {
-                return "00:00";
+                return "0s";
             }
 
-            if (time.TotalDays >= 1d)
+            var builder = new StringBuilder();
+
+            if (time.Days > 0)
             {
-                return time.ToString(@"d\.hh\:mm\:ss", CultureInfo.InvariantCulture);
+                builder.Append(time.Days).Append('d').Append(' ');
             }
 
-            if (time.TotalHours >= 1d)
+            if (time.Hours > 0 || builder.Length > 0)
             {
-                return time.ToString(@"hh\:mm\:ss", CultureInfo.InvariantCulture);
+                builder.Append(time.Hours).Append('h').Append(' ');
             }
 
-            return time.ToString(@"mm\:ss", CultureInfo.InvariantCulture);
+            if (time.Minutes > 0 || builder.Length > 0)
+            {
+                builder.Append(time.Minutes).Append('m').Append(' ');
+            }
+
+            if (time.Seconds > 0)
+            {
+                builder.Append(time.Seconds).Append('s');
+            }
+            else if (builder.Length == 0)
+            {
+                builder.Append(time.TotalSeconds < 1 ? "<1s" : "0s");
+            }
+
+            return builder.ToString().Trim();
         }
-        private Dictionary<int, List<PrefetchedHorseRace>> PrefetchHorseHistoryByHorseId(List<PreparedRace> races)
+        private HorseIdentitySummary CollectHorseIdentitySummary(List<PreparedRace> races)
         {
-            var result = new Dictionary<int, List<PrefetchedHorseRace>>();
+            var identities = new List<HorseIdentity>();
+            var horseIds = new HashSet<int>();
+            var seen = new HashSet<HorseCacheKey>(HorseCacheKeyComparer.Instance);
+            DateTime? maxRaceDate = null;
+
             if (races is null || races.Count == 0)
             {
-                return result;
+                return new HorseIdentitySummary(identities, horseIds, maxRaceDate);
             }
-
-            var horseIds = new HashSet<int>();
-            DateTime? maxRaceDate = null;
 
             foreach (var race in races)
             {
@@ -2135,12 +2163,16 @@ namespace HorseRacingML.ML
                         continue;
                     }
 
-                    if (!TryGetHorseIdentity(row, out var identity) || !identity.HorseId.HasValue)
+                    if (!TryGetHorseIdentity(row, out var identity))
                     {
                         continue;
                     }
 
-                    horseIds.Add(identity.HorseId.Value);
+                    if (identity.HorseId.HasValue)
+                    {
+                        horseIds.Add(identity.HorseId.Value);
+                    }
+
                     if (identity.RaceDate.HasValue)
                     {
                         var date = identity.RaceDate.Value.Date;
@@ -2149,12 +2181,173 @@ namespace HorseRacingML.ML
                             maxRaceDate = date;
                         }
                     }
+
+                    var key = identity.ToCacheKey();
+                    if (seen.Add(key))
+                    {
+                        identities.Add(identity);
+                    }
                 }
             }
 
+            return new HorseIdentitySummary(identities, horseIds, maxRaceDate);
+        }
+
+        private void PreloadRepositoryCaches(
+            IRacingRepository repository,
+            IReadOnlyList<HorseIdentity> identities,
+            Dictionary<int, List<PrefetchedHorseRace>> prefetchedHistory,
+            ConcurrentDictionary<HorseCacheKey, (float WinRate, int Wins, int Starts)?> winRateCache,
+            ConcurrentDictionary<HorseCacheKey, float?> speedCache,
+            ConcurrentDictionary<HorseCacheKey, int?> distanceCache)
+        {
+            if (identities is null || identities.Count == 0)
+            {
+                return;
+            }
+
+            var horsesToPreload = new List<HorseIdentity>();
+            foreach (var identity in identities)
+            {
+                if (!identity.HorseId.HasValue && string.IsNullOrWhiteSpace(identity.NormalizedName))
+                {
+                    continue;
+                }
+
+                if (identity.HorseId.HasValue && prefetchedHistory.ContainsKey(identity.HorseId.Value))
+                {
+                    continue;
+                }
+
+                horsesToPreload.Add(identity);
+            }
+
+            if (horsesToPreload.Count == 0)
+            {
+                return;
+            }
+
+            var preloadOptions = new ParallelOptions
+            {
+                MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount)
+            };
+
+            Parallel.ForEach(horsesToPreload, preloadOptions, identity =>
+            {
+                var cacheKey = identity.ToCacheKey();
+
+                var winRate = LoadWinRateLast5(identity, repository);
+                winRateCache[cacheKey] = winRate;
+
+                var speed = LoadAvgSpeedLast5(identity, repository);
+                speedCache[cacheKey] = speed;
+
+                var distance = LoadLastRaceDistance(identity, repository);
+                distanceCache[cacheKey] = distance;
+            });
+        }
+
+        private (float WinRate, int Wins, int Starts)? LoadWinRateLast5(HorseIdentity identity, IRacingRepository repository)
+        {
+            try
+            {
+                var stats = repository.GetRecentHorseWinStats(identity.RawName, identity.HorseId, identity.RaceDate, 5);
+                if (stats.HasValue && stats.Value.Starts > 0)
+                {
+                    var winRate = ClampProbability(ComputeSmoothedWinRate(stats.Value.Wins, stats.Value.Starts));
+                    return (winRate, stats.Value.Wins, stats.Value.Starts);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[AI] Failed to resolve WinRateLast5 for {identity.Display}: {ex.Message}");
+            }
+
+            return null;
+        }
+
+        private float? LoadAvgSpeedLast5(HorseIdentity identity, IRacingRepository repository)
+        {
+            try
+            {
+                const int windowSize = 5;
+                var entries = repository.GetRecentHorseSpeedEntries(identity.RawName, identity.HorseId, identity.RaceDate, windowSize);
+                if (entries == null || entries.Count == 0)
+                {
+                    return null;
+                }
+
+                var speeds = new List<float>(entries.Count);
+                foreach (var entry in entries)
+                {
+                    if (!entry.DistanceYards.HasValue || entry.DistanceYards.Value <= 0)
+                    {
+                        continue;
+                    }
+
+                    if (!entry.WinningTimeMilliseconds.HasValue || entry.WinningTimeMilliseconds.Value <= 0)
+                    {
+                        continue;
+                    }
+
+                    var runnerTimeMs = (float)entry.WinningTimeMilliseconds.Value;
+                    if (entry.DistanceBeatenLengths.HasValue)
+                    {
+                        runnerTimeMs += (float)entry.DistanceBeatenLengths.Value * MsPerLength;
+                    }
+
+                    if (runnerTimeMs <= 0f)
+                    {
+                        continue;
+                    }
+
+                    var speed = entry.DistanceYards.Value / runnerTimeMs;
+                    if (!float.IsNaN(speed) && !float.IsInfinity(speed) && speed > 0f)
+                    {
+                        speeds.Add(speed);
+                    }
+                }
+
+                if (speeds.Count == 0)
+                {
+                    return null;
+                }
+
+                var average = speeds.Average();
+                if (float.IsNaN(average) || float.IsInfinity(average) || average <= 0f)
+                {
+                    return null;
+                }
+
+                return average;
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[AI] Failed to resolve AvgSpeedLast5 for {identity.Display}: {ex.Message}");
+                return null;
+            }
+        }
+
+        private int? LoadLastRaceDistance(HorseIdentity identity, IRacingRepository repository)
+        {
+            try
+            {
+                return repository.GetLastRaceDistance(identity.RawName, identity.HorseId, identity.RaceDate);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[AI] Failed to resolve DistanceChangeFromLast for {identity.Display}: {ex.Message}");
+                return null;
+            }
+        }
+
+        private Dictionary<int, List<PrefetchedHorseRace>> PrefetchHorseHistoryByHorseId(HorseIdentitySummary identitySummary)
+        {
+            var result = new ConcurrentDictionary<int, List<PrefetchedHorseRace>>();
+            var horseIds = identitySummary.HorseIds;
             if (horseIds.Count == 0)
             {
-                return result;
+                return new Dictionary<int, List<PrefetchedHorseRace>>();
             }
 
             const string sql = @"SELECT
@@ -2171,48 +2364,58 @@ WHERE rr.HorseId IN @HorseIds
   AND (@MaxRaceDateExclusive IS NULL OR r.RaceDate < @MaxRaceDateExclusive)
 ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
 
-            var horseIdList = horseIds.ToList();
-            const int batchSize = 1800;
-            DateTime? maxRaceDateExclusive = maxRaceDate?.Date.AddDays(1);
-
-            using var conn = new SqlConnection(_connectionString);
-            conn.Open();
-
-            for (int offset = 0; offset < horseIdList.Count; offset += batchSize)
+            var horseIdArray = horseIds.ToArray();
+            const int batchSize = 4000;
+            DateTime? maxRaceDateExclusive = identitySummary.MaxRaceDate?.Date.AddDays(1);
+            var parallelOptions = new ParallelOptions
             {
-                var count = Math.Min(batchSize, horseIdList.Count - offset);
-                var batch = horseIdList.GetRange(offset, count).ToArray();
+                MaxDegreeOfParallelism = Math.Max(1, Math.Min(Environment.ProcessorCount, horseIdArray.Length))
+            };
+
+            Parallel.ForEach(Partitioner.Create(0, horseIdArray.Length, batchSize), parallelOptions, range =>
+            {
+                var count = range.Item2 - range.Item1;
+                if (count <= 0)
+                {
+                    return;
+                }
+
+                var batch = new int[count];
+                Array.Copy(horseIdArray, range.Item1, batch, 0, count);
                 if (batch.Length == 0)
                 {
-                    continue;
+                    return;
                 }
+
+                using var conn = new SqlConnection(_connectionString);
+                conn.Open();
 
                 var rows = conn.Query<PrefetchedHorseRaceRow>(sql, new
                 {
                     HorseIds = batch,
                     MaxRaceDateExclusive = maxRaceDateExclusive
-                });
+                }).ToList();
 
                 foreach (var row in rows)
                 {
-                    if (!result.TryGetValue(row.HorseId, out var list))
+                    var list = result.GetOrAdd(row.HorseId, _ => new List<PrefetchedHorseRace>());
+                    lock (list)
                     {
-                        list = new List<PrefetchedHorseRace>();
-                        result[row.HorseId] = list;
+                        list.Add(new PrefetchedHorseRace(
+                            row.RaceDate.Date,
+                            row.FinishPos,
+                            row.DistanceYards,
+                            row.WinningTimeMilliseconds,
+                            row.DistanceBeatenLengths,
+                            row.RunnerResultId));
                     }
-
-                    list.Add(new PrefetchedHorseRace(
-                        row.RaceDate.Date,
-                        row.FinishPos,
-                        row.DistanceYards,
-                        row.WinningTimeMilliseconds,
-                        row.DistanceBeatenLengths,
-                        row.RunnerResultId));
                 }
-            }
+            });
 
-            foreach (var list in result.Values)
+            var finalized = new Dictionary<int, List<PrefetchedHorseRace>>(result.Count);
+            foreach (var kvp in result)
             {
+                var list = kvp.Value;
                 list.Sort((left, right) =>
                 {
                     int compare = left.RaceDate.CompareTo(right.RaceDate);
@@ -2223,10 +2426,14 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
 
                     return left.RunnerResultId.CompareTo(right.RunnerResultId);
                 });
+
+                finalized[kvp.Key] = list;
             }
 
-            return result;
+            return finalized;
         }
+
+        
 
         private PrefetchedHorseStats? ComputePrefetchedHorseStats(List<PrefetchedHorseRace> history, DateTime raceDate)
         {
@@ -2366,25 +2573,7 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
             }
             if (!cache.TryGetValue(cacheKey, out var cached))
             {
-                try
-                {
-                    var stats = repository.GetRecentHorseWinStats(identity.RawName, identity.HorseId, identity.RaceDate, 5);
-                    if (stats.HasValue && stats.Value.Starts > 0)
-                    {
-                        var winRate = ClampProbability(ComputeSmoothedWinRate(stats.Value.Wins, stats.Value.Starts));
-                        cached = (winRate, stats.Value.Wins, stats.Value.Starts);
-                    }
-                    else
-                    {
-                        cached = null;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Console.Error.WriteLine($"[AI] Failed to resolve WinRateLast5 for {identity.Display}: {ex.Message}");
-                    cached = null;
-                }
-
+                cached = LoadWinRateLast5(identity, repository);
                 cache[cacheKey] = cached;
             }
 
@@ -2424,64 +2613,10 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
             }
             if (!cache.TryGetValue(cacheKey, out var cached))
             {
-                float? resolved = null;
-                try
-                {
-                    const int windowSize = 5;
-                    var entries = _racingRepository.GetRecentHorseSpeedEntries(identity.RawName, identity.HorseId, identity.RaceDate, windowSize);
-                    if (entries != null && entries.Count > 0)
-                    {
-                        var speeds = new List<float>(entries.Count);
-                        foreach (var entry in entries)
-                        {
-                            if (!entry.DistanceYards.HasValue || entry.DistanceYards.Value <= 0)
-                            {
-                                continue;
-                            }
-
-                            if (!entry.WinningTimeMilliseconds.HasValue || entry.WinningTimeMilliseconds.Value <= 0)
-                            {
-                                continue;
-                            }
-
-                            var runnerTimeMs = (float)entry.WinningTimeMilliseconds.Value;
-                            if (entry.DistanceBeatenLengths.HasValue)
-                            {
-                                runnerTimeMs += (float)entry.DistanceBeatenLengths.Value * MsPerLength;
-                            }
-
-                            if (runnerTimeMs <= 0f)
-                            {
-                                continue;
-                            }
-
-                            var speed = entry.DistanceYards.Value / runnerTimeMs;
-                            if (!float.IsNaN(speed) && !float.IsInfinity(speed) && speed > 0f)
-                            {
-                                speeds.Add(speed);
-                            }
-                        }
-
-                        if (speeds.Count > 0)
-                        {
-                            var average = speeds.Average();
-                            if (!float.IsNaN(average) && !float.IsInfinity(average) && average > 0f)
-                            {
-                                resolved = average;
-                            }
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Console.Error.WriteLine($"[AI] Failed to resolve AvgSpeedLast5 for {identity.Display}: {ex.Message}");
-                }
-
-                cache[cacheKey] = resolved;
-                cached = resolved;
+                cached = LoadAvgSpeedLast5(identity, repository);
+                cache[cacheKey] = cached;
             }
-
-            if (cached.HasValue && cached.Value > 0f &&
+                if (cached.HasValue && cached.Value > 0f &&
                 !float.IsNaN(cached.Value) && !float.IsInfinity(cached.Value))
             {
                 return cached.Value;
@@ -2517,16 +2652,7 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
             }
             if (!cache.TryGetValue(cacheKey, out var cached))
             {
-                try
-                {
-                    cached = repository.GetLastRaceDistance(identity.RawName, identity.HorseId, identity.RaceDate);
-                }
-                catch (Exception ex)
-                {
-                    Console.Error.WriteLine($"[AI] Failed to resolve DistanceChangeFromLast for {identity.Display}: {ex.Message}");
-                    cached = null;
-                }
-
+                cached = LoadLastRaceDistance(identity, repository);
                 cache[cacheKey] = cached;
             }
 
@@ -2630,7 +2756,10 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
 
             return value;
         }
-
+        private readonly record struct HorseIdentitySummary(
+              List<HorseIdentity> Identities,
+              HashSet<int> HorseIds,
+              DateTime? MaxRaceDate);
         private readonly struct HorseIdentity
         {
             public HorseIdentity(int? horseId, string? rawName, string? normalizedName, DateTime? raceDate)
