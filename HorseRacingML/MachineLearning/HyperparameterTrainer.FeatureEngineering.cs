@@ -3424,7 +3424,7 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
             }
 
             var ratings = new List<float>(Math.Min(history.Count, maxWindow));
-            if (entry.OfficialRating.HasValue && entry.OfficialRating.Value > 0)
+            for (int i = history.Count - 1; i >= 0 && ratings.Count < maxWindow; i--)
             {
                 var entry = history[i];
                 if (entry.RaceDate.Date >= cutoffDate)
@@ -3433,7 +3433,7 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
                 }
 
                 float? rating = null;
-                if (entry.OfficialRating.HasValue)
+                if (entry.OfficialRating.HasValue && entry.OfficialRating.Value > 0)
                 {
                     rating = entry.OfficialRating.Value;
                 }

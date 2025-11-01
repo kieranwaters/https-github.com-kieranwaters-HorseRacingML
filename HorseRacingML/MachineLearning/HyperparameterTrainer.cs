@@ -351,10 +351,18 @@ namespace HorseRacingML.ML
                 return matrix;
             }
 
-            var trainFeatureTensor = np.array(BuildFeatureMatrix(trainFeatures, featureCount), dtype: tf.float32);
-            var trainLabelTensor = np.array(BuildLabelMatrix(trainLabels), dtype: tf.float32);
-            var valFeatureTensor = np.array(BuildFeatureMatrix(valFeatures, featureCount), dtype: tf.float32);
-            var valLabelTensor = np.array(BuildLabelMatrix(valLabels), dtype: tf.float32);
+            var trainFeatureTensor = Tensorflow.NumPy.np.array(
+                BuildFeatureMatrix(trainFeatures, featureCount),
+                dtype: tf.float32);
+            var trainLabelTensor = Tensorflow.NumPy.np.array(
+                BuildLabelMatrix(trainLabels),
+                dtype: tf.float32);
+            var valFeatureTensor = Tensorflow.NumPy.np.array(
+                BuildFeatureMatrix(valFeatures, featureCount),
+                dtype: tf.float32);
+            var valLabelTensor = Tensorflow.NumPy.np.array(
+                BuildLabelMatrix(valLabels),
+                dtype: tf.float32);
             var graph = tf.Graph().as_default();
 
             var x = tf.placeholder(tf.float32, shape: new TensorShape(-1, featureCount), name: "x");
@@ -505,8 +513,12 @@ namespace HorseRacingML.ML
                             batchLabels[b] = trainLabels[dataIndex];
                         }
 
-                        var batchX = np.array(BuildFeatureMatrix(batchFeatures, featureCount), dtype: tf.float32);
-                        var batchY = np.array(BuildLabelMatrix(batchLabels), dtype: tf.float32);
+                        var batchX = Tensorflow.NumPy.np.array(
+                            BuildFeatureMatrix(batchFeatures, featureCount),
+                            dtype: tf.float32);
+                        var batchY = Tensorflow.NumPy.np.array(
+                            BuildLabelMatrix(batchLabels),
+                            dtype: tf.float32);
                         sess.run(optimizer, new FeedItem(x, batchX), new FeedItem(y, batchY));
                     }
 
