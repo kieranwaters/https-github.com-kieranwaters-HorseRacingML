@@ -2167,6 +2167,8 @@ namespace HorseRacingML.ML
                     {
                         ResolveDistanceChangeFromLast(row, distanceCache);
                     }
+                    ApplyTrainerClassFallbacks(row);
+                    ApplyJockeyClassFallbacks(row);
                 }
 
                 if (winRateCount > 0)
@@ -2223,6 +2225,168 @@ namespace HorseRacingML.ML
                             row.Remove(key);
                         }
                     }
+                }
+            }
+        }
+        private static float? GetMeaningfulFloat(Dictionary<string, object?> row, string key, bool allowZero = false)
+        {
+            if (row is null)
+            {
+                return null;
+            }
+
+            if (TryGetFloat(row, key, out var value))
+            {
+                if (float.IsNaN(value) || float.IsInfinity(value))
+                {
+                    return null;
+                }
+
+                if (allowZero || Math.Abs(value) > 1e-6f)
+                {
+                    return value;
+                }
+            }
+
+            return null;
+        }
+
+        private static void ApplyTrainerClassFallbacks(Dictionary<string, object?> row)
+        {
+            if (row is null)
+            {
+                return;
+            }
+
+            float? trainerClassWin = GetMeaningfulFloat(row, "TrainerClassWinRate");
+            if (!trainerClassWin.HasValue)
+            {
+                float? fallbackWin = GetMeaningfulFloat(row, "TrainerWinRate")
+                    ?? GetMeaningfulFloat(row, $"TrainerWinRateLast{TrainerJockeyRecentStarts}")
+                    ?? GetMeaningfulFloat(row, "TrainerWinRateRecentDays")
+                    ?? GetMeaningfulFloat(row, "TrainerSurfaceWinRate")
+                    ?? GetMeaningfulFloat(row, "TrainerGoingWinRate")
+                    ?? GetMeaningfulFloat(row, "TrainerDistanceBucketWinRate")
+                    ?? GetMeaningfulFloat(row, "TrainerCourseWinRate");
+
+                if (fallbackWin.HasValue)
+                {
+                    trainerClassWin = ClampProbability(fallbackWin.Value);
+                    row["TrainerClassWinRate"] = trainerClassWin.Value;
+                }
+            }
+
+            float? trainerClassAvg = GetMeaningfulFloat(row, "TrainerClassAvgNorm");
+            if (!trainerClassAvg.HasValue)
+            {
+                trainerClassAvg = GetMeaningfulFloat(row, "TrainerSurfaceAvgNorm")
+                    ?? GetMeaningfulFloat(row, "TrainerGoingAvgNorm")
+                    ?? GetMeaningfulFloat(row, "TrainerDistanceBucketAvgNorm");
+
+                if (!trainerClassAvg.HasValue)
+                {
+                    var sourceWin = trainerClassWin ?? GetMeaningfulFloat(row, "TrainerWinRate");
+                    if (sourceWin.HasValue)
+                    {
+                        trainerClassAvg = ClampNormalizedPosition(1f - ClampProbability(sourceWin.Value));
+                    }
+                }
+
+                if (trainerClassAvg.HasValue)
+                {
+                    row["TrainerClassAvgNorm"] = trainerClassAvg.Value;
+                }
+            }
+
+            float? lastTrainerClass = GetMeaningfulFloat(row, "LastTrainerClassNormPos");
+            if (!lastTrainerClass.HasValue)
+            {
+                lastTrainerClass = GetMeaningfulFloat(row, "LastTrainerSurfaceNormPos")
+                    ?? GetMeaningfulFloat(row, "LastTrainerGoingNormPos")
+                    ?? GetMeaningfulFloat(row, "LastTrainerDistanceBucketNormPos")
+                    ?? trainerClassAvg;
+
+                if (!lastTrainerClass.HasValue && trainerClassWin.HasValue)
+                {
+                    lastTrainerClass = ClampNormalizedPosition(1f - ClampProbability(trainerClassWin.Value));
+                }
+
+                if (lastTrainerClass.HasValue)
+                {
+                    row["LastTrainerClassNormPos"] = lastTrainerClass.Value;
+                }
+            }
+        }
+
+        private static void ApplyJockeyClassFallbacks(Dictionary<string, object?> row)
+        {
+            if (row is null)
+            {
+                return;
+            }
+
+            float? jockeyClassWin = GetMeaningfulFloat(row, "JockeyClassWinRate");
+            if (!jockeyClassWin.HasValue)
+            {
+                float? fallbackWin = GetMeaningfulFloat(row, "JockeyWinRate")
+                    ?? GetMeaningfulFloat(row, $"JockeyWinRateLast{TrainerJockeyRecentStarts}")
+                    ?? GetMeaningfulFloat(row, "JockeyWinRateRecentDays")
+                    ?? GetMeaningfulFloat(row, "TrainerClassWinRate")
+                    ?? GetMeaningfulFloat(row, "TrainerWinRate")
+                    ?? GetMeaningfulFloat(row, "JockeySurfaceWinRate")
+                    ?? GetMeaningfulFloat(row, "JockeyGoingWinRate")
+                    ?? GetMeaningfulFloat(row, "JockeyDistanceBucketWinRate")
+                    ?? GetMeaningfulFloat(row, "TrainerJockeyWinRate");
+
+                if (fallbackWin.HasValue)
+                {
+                    jockeyClassWin = ClampProbability(fallbackWin.Value);
+                    row["JockeyClassWinRate"] = jockeyClassWin.Value;
+                }
+            }
+
+            float? jockeyClassAvg = GetMeaningfulFloat(row, "JockeyClassAvgNorm");
+            if (!jockeyClassAvg.HasValue)
+            {
+                jockeyClassAvg = GetMeaningfulFloat(row, "JockeySurfaceAvgNorm")
+                    ?? GetMeaningfulFloat(row, "JockeyGoingAvgNorm")
+                    ?? GetMeaningfulFloat(row, "JockeyDistanceBucketAvgNorm")
+                    ?? GetMeaningfulFloat(row, "TrainerClassAvgNorm");
+
+                if (!jockeyClassAvg.HasValue)
+                {
+                    var sourceWin = jockeyClassWin
+                        ?? GetMeaningfulFloat(row, "JockeyWinRate")
+                        ?? GetMeaningfulFloat(row, "TrainerClassWinRate");
+                    if (sourceWin.HasValue)
+                    {
+                        jockeyClassAvg = ClampNormalizedPosition(1f - ClampProbability(sourceWin.Value));
+                    }
+                }
+
+                if (jockeyClassAvg.HasValue)
+                {
+                    row["JockeyClassAvgNorm"] = jockeyClassAvg.Value;
+                }
+            }
+
+            float? lastJockeyClass = GetMeaningfulFloat(row, "LastJockeyClassNormPos");
+            if (!lastJockeyClass.HasValue)
+            {
+                lastJockeyClass = GetMeaningfulFloat(row, "LastJockeySurfaceNormPos")
+                    ?? GetMeaningfulFloat(row, "LastJockeyGoingNormPos")
+                    ?? GetMeaningfulFloat(row, "LastJockeyDistanceBucketNormPos")
+                    ?? jockeyClassAvg
+                    ?? GetMeaningfulFloat(row, "LastTrainerClassNormPos");
+
+                if (!lastJockeyClass.HasValue && jockeyClassWin.HasValue)
+                {
+                    lastJockeyClass = ClampNormalizedPosition(1f - ClampProbability(jockeyClassWin.Value));
+                }
+
+                if (lastJockeyClass.HasValue)
+                {
+                    row["LastJockeyClassNormPos"] = lastJockeyClass.Value;
                 }
             }
         }
@@ -2317,6 +2481,26 @@ namespace HorseRacingML.ML
                 row["RunnerCount"] = metadata.RunnerCount.Value;
             }
         }
+        private static readonly HashSet<string> NonMeaningfulStringTokens = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "Unknown",
+            "Missing",
+            "N/A",
+            "N\\A",
+            "NA",
+            "-"
+        };
+
+        private static bool IsMeaningfulStringValue(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            var trimmed = value.Trim();
+            return trimmed.Length > 0 && !NonMeaningfulStringTokens.Contains(trimmed);
+        }
 
         private static bool HasMeaningfulString(Dictionary<string, object?> row, string key)
         {
@@ -2327,17 +2511,16 @@ namespace HorseRacingML.ML
 
             if (value is string s)
             {
-                return !string.IsNullOrWhiteSpace(s);
+                return IsMeaningfulStringValue(s);
             }
 
             if (value is System.Data.SqlTypes.SqlString sql)
             {
-                return !sql.IsNull && !string.IsNullOrWhiteSpace(sql.Value);
+                return !sql.IsNull && IsMeaningfulStringValue(sql.Value);
             }
 
             return false;
         }
-
         private static bool HasMeaningfulNumeric(Dictionary<string, object?> row, string key)
         {
             if (!row.TryGetValue(key, out var value) || value is null)
