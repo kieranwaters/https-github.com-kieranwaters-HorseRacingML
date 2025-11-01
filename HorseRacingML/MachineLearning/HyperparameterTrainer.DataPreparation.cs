@@ -495,15 +495,26 @@ namespace HorseRacingML.ML
             IDictionary<string, Dictionary<string, int>> stringMaps)
         {
             var vec = new float[dim];
-            if (stringMaps.TryGetValue(key, out var map) && map.TryGetValue(s, out var idx))
+            if (!stringMaps.TryGetValue(key, out var map) || map.Count == 0)
+            {
+                return vec;
+            }
+
+            if (map.TryGetValue(s, out var idx) && idx >= 0 && idx < dim)
             {
                 vec[idx] = 1f;
+                return vec;
             }
-            else
+
+            if (map.TryGetValue("__unknown__", out var unknownIdx) && unknownIdx >= 0 && unknownIdx < dim)
             {
-                // Reserve the last index for unknown categories
+                vec[unknownIdx] = 1f;
+            }
+            else if (dim > 0)
+            {
                 vec[dim - 1] = 1f;
             }
+
             return vec;
         }
 

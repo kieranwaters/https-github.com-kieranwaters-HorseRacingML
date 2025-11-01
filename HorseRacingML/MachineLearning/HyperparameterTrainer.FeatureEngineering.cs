@@ -1685,6 +1685,11 @@ namespace HorseRacingML.ML
                         var trimmed = s.Trim();
                         return trimmed.Length == 0 ? null : trimmed;
                     }
+                case char c:
+                    {
+                        var text = c.ToString().Trim();
+                        return text.Length == 0 ? null : text;
+                    }
                 case char[] chars:
                     {
                         if (chars.Length == 0)
