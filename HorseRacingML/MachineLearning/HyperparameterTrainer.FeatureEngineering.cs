@@ -488,6 +488,9 @@ namespace HorseRacingML.ML
                         bool classMissing = !classValue.HasValue;
                         int classVal = classValue ?? 0;
                         row["ClassMissing"] = classMissing;
+                        bool ratingMissing = !(row.TryGetValue("OfficialRating", out var ratingObj) && ratingObj != null);
+                        float rating = ratingMissing ? raceStat.AvgRating : Convert.ToSingle(ratingObj);
+                        row["RatingMissing"] = ratingMissing;
                         if ((ratingMissing && (rating <= 0f || float.IsNaN(rating))) ||
                                 (!ratingMissing && (float.IsNaN(rating) || rating <= 0f)))
                         {
@@ -559,10 +562,6 @@ namespace HorseRacingML.ML
                         bool weightMissing = row["WeightLbs"] == null;
                         float weight = weightMissing ? 0f : Convert.ToSingle(row["WeightLbs"]);
                         row["WeightMissing"] = weightMissing;
-
-                        bool ratingMissing = !(row.TryGetValue("OfficialRating", out var ratingObj) && ratingObj != null);
-                        float rating = ratingMissing ? raceStat.AvgRating : Convert.ToSingle(ratingObj);
-                        row["RatingMissing"] = ratingMissing;
                         row["RelativeDraw"] = runnerCount > 0 ? (float)draw / runnerCount : 0f;
                         int saddlecloth = 0;
                         bool saddleclothMissing = !(row.TryGetValue("SaddleclothNumber", out var saddleclothObj) &&
