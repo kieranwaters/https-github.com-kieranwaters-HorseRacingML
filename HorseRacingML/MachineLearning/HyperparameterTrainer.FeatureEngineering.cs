@@ -29,6 +29,17 @@ namespace HorseRacingML.ML
         // Windows (in races) for which performance metrics will be generated
         private static readonly int[] PerformanceWindows =
             { 1, 3, 5, 10, 15, 20, 25, 30, 50, 100 };
+        private static readonly IReadOnlyDictionary<int, float> ClassRatingBaselines =
+            new Dictionary<int, float>
+            {
+                [1] = 105f,
+                [2] = 100f,
+                [3] = 95f,
+                [4] = 90f,
+                [5] = 85f,
+                [6] = 80f,
+                [7] = 75f
+            };
         private const int TrainerJockeyRecentStarts = 50;
         private const int TrainerJockeyRecentDays = 180;
         private const float TypicalRestDays = 30f;
@@ -477,8 +488,18 @@ namespace HorseRacingML.ML
                             bool classMissing = !classValue.HasValue;
                             int classVal = classValue ?? 0;
                             row["ClassMissing"] = classMissing;
+                        if ((ratingMissing && (rating <= 0f || float.IsNaN(rating))) ||
+                                (!ratingMissing && (float.IsNaN(rating) || rating <= 0f)))
+                        {
+                            var classBaseline = ResolveClassRatingBaseline(classValue);
+                            if (classBaseline.HasValue)
+                            {
+                                rating = classBaseline.Value;
+                            }
+                        }
 
-                            string? goingValue = NormalizeStringValue(
+                        row["RatingDiffFromField"] = rating - raceStat.AvgRating;
+                        string? goingValue = NormalizeStringValue(
                                 row.TryGetValue("Going", out var goingObj) ? goingObj : null);
                             bool goingMissing = string.IsNullOrEmpty(goingValue);
                             if (!goingMissing)
@@ -555,7 +576,6 @@ namespace HorseRacingML.ML
                             bool hasWeightStats = raceStat.HasWeightStats;
                             row["IsTopWeight"] = !weightMissing && hasWeightStats && Math.Abs(weight - raceStat.MaxWeight) < 0.001f;
                             row["IsBottomWeight"] = !weightMissing && hasWeightStats && Math.Abs(weight - raceStat.MinWeight) < 0.001f;
-                            row["RatingDiffFromField"] = rating - raceStat.AvgRating;
                             row["FieldRatingStdDev"] = raceStat.StdRating;
                             row["PurseLevel"] = raceStat.TotalPurse;
                             int age = row.TryGetValue("Age", out var ageObj) && PreparedDataset.TryConvertToInt32(ageObj, out var ageValue)
@@ -1934,6 +1954,7 @@ namespace HorseRacingML.ML
             string ageColumn = SelectColumn(runnerColumns, "rr", "Age", "int");
             string weightLbsColumn = SelectColumn(runnerColumns, "rr", "WeightLbs", "int");
             string weightTextColumn = SelectColumn(runnerColumns, "rr", "WeightText", "nvarchar(50)");
+            string officialRatingColumn = SelectColumn(runnerColumns, "rr", "OfficialRating", "int", "OfficialRating");
             string outcomeCodeColumn = SelectColumn(runnerColumns, "rr", "OutcomeCode", "nvarchar(50)");
             string distanceBeatenTextColumn = SelectColumn(runnerColumns, "rr", "DistanceBeatenText", "nvarchar(50)");
             string distanceBeatenLengthsColumn = SelectColumn(runnerColumns, "rr", "DistanceBeatenLengths", "decimal(9,4)");
@@ -1971,6 +1992,7 @@ namespace HorseRacingML.ML
                                    {ageColumn},
                                    {weightLbsColumn},
                                    {weightTextColumn},
+                                    {officialRatingColumn},
                                    rr.FinishPos,
                                    {outcomeCodeColumn},
                                    {distanceBeatenTextColumn},
@@ -2235,6 +2257,7 @@ namespace HorseRacingML.ML
                                 distanceBackfilled = true;
                             }
                         }
+                        ApplyPrefetchedRatingFallbacks(row, history, identity.RaceDate.Value);
                     }
                     var resolvedWinRate = ResolveWinRateLast5(row, winRateCache);
                     if (resolvedWinRate.HasValue)
@@ -2975,7 +2998,9 @@ END;";
     r.DistanceYards,
     r.WinningTimeMs AS WinningTimeMilliseconds,
     rr.DistanceBeatenLengths,
-    rr.RunnerResultId
+     rr.RunnerResultId,
+    rr.OfficialRating,
+    r.Class
 FROM RunnerResult rr
 JOIN Race r ON r.RaceId = rr.RaceId
 WHERE rr.HorseId IN @HorseIds
@@ -3045,7 +3070,9 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
                                     row.DistanceYards,
                                     row.WinningTimeMilliseconds,
                                     row.DistanceBeatenLengths,
-                                    row.RunnerResultId));
+                                     row.RunnerResultId,
+                                    row.OfficialRating,
+                                    row.Class));
                             }
                         }
                     });
@@ -3175,6 +3202,8 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
             public int? WinningTimeMilliseconds { get; init; }
             public decimal? DistanceBeatenLengths { get; init; }
             public int RunnerResultId { get; init; }
+            public short? OfficialRating { get; init; }
+            public byte? Class { get; init; }
         }
 
         private readonly record struct PrefetchedHorseRace(
@@ -3183,7 +3212,9 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
             int? DistanceYards,
             int? WinningTimeMilliseconds,
             decimal? DistanceBeatenLengths,
-            int RunnerResultId);
+            int RunnerResultId,
+            short? OfficialRating,
+            byte? Class);
 
         private readonly record struct PrefetchedHorseStats(
             float? WinRate,
@@ -3362,7 +3393,81 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
             identity = new HorseIdentity(horseId, rawName, normalized, raceDate);
             return true;
         }
+        private void ApplyPrefetchedRatingFallbacks(
+            Dictionary<string, object?> row,
+            List<PrefetchedHorseRace> history,
+            DateTime raceDate)
+        {
+            if (row is null || history is null || history.Count == 0)
+            {
+                return;
+            }
 
+            if (PerformanceWindows.Length == 0)
+            {
+                return;
+            }
+
+            var cutoffDate = raceDate.Date;
+            int maxWindow = PerformanceWindows[^1];
+            if (maxWindow <= 0)
+            {
+                return;
+            }
+
+            var ratings = new List<float>(Math.Min(history.Count, maxWindow));
+            for (int i = history.Count - 1; i >= 0 && ratings.Count < maxWindow; i--)
+            {
+                var entry = history[i];
+                if (entry.RaceDate.Date >= cutoffDate)
+                {
+                    continue;
+                }
+
+                float? rating = null;
+                if (entry.OfficialRating.HasValue)
+                {
+                    rating = entry.OfficialRating.Value;
+                }
+                else
+                {
+                    rating = ResolveClassRatingBaseline(entry.Class);
+                }
+
+                if (rating.HasValue)
+                {
+                    ratings.Add(rating.Value);
+                }
+            }
+
+            if (ratings.Count == 0)
+            {
+                return;
+            }
+
+            foreach (var window in PerformanceWindows)
+            {
+                var key = $"AvgRatingLast{window}";
+                if (TryGetFloat(row, key, out var existing) && existing > 0f)
+                {
+                    continue;
+                }
+
+                int count = Math.Min(window, ratings.Count);
+                if (count <= 0)
+                {
+                    continue;
+                }
+
+                float sum = 0f;
+                for (int i = 0; i < count; i++)
+                {
+                    sum += ratings[i];
+                }
+
+                row[key] = sum / count;
+            }
+        }
         private static bool TryGetFloat(Dictionary<string, object?> row, string key, out float value)
         {
             value = 0f;
@@ -3410,6 +3515,23 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
               List<HorseIdentity> Identities,
               HashSet<int> HorseIds,
               DateTime? MaxRaceDate);
+        private static float? ResolveClassRatingBaseline(int? classValue)
+        {
+            if (!classValue.HasValue)
+            {
+                return null;
+            }
+
+            if (ClassRatingBaselines.TryGetValue(classValue.Value, out var baseline))
+            {
+                return baseline;
+            }
+
+            return null;
+        }
+
+        private static float? ResolveClassRatingBaseline(byte? classValue)
+            => ResolveClassRatingBaseline(classValue.HasValue ? (int?)classValue.Value : null);
         private readonly struct HorseIdentity
         {
             public HorseIdentity(int? horseId, string? rawName, string? normalizedName, DateTime? raceDate)
