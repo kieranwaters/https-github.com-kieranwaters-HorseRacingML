@@ -2088,7 +2088,7 @@ namespace HorseRacingML.ML
             };
                 }
 
-                var featureState = new FeatureEngineeringState(this, identifierKeys);
+                var featureState = new FeatureEngineeringState(_trainer, identifierKeys);
                 var races = new List<PreparedRace>();
                 var rnd = new Random();
                 var currentRows = new List<Dictionary<string, object?>>();
@@ -3847,7 +3847,7 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
                 "Draw"
             };
 
-                var featureState = new FeatureEngineeringState(this, identifierKeys);
+                var featureState = new FeatureEngineeringState(_trainer, identifierKeys);
                 return (sql, runnerColumns, featureState);
             }
 
@@ -4332,7 +4332,7 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
                        ?? ParseClassFromText(upcoming?.RaceType);
             }
 
-            protected virtual RunnerLookupData LoadRunnerLookupData(
+            protected RunnerLookupData LoadRunnerLookupData(
                  SqlConnection conn,
                  UpcomingRace upcoming,
                  IReadOnlyCollection<string> runnerColumns,
@@ -4860,7 +4860,27 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
                 return map;
             }
         }
+        public virtual PreparedDataset PrepareDataset(
+            ISet<int?>? includeRaceIds = null,
+            ISet<int?>? stateRaceWhitelist = null,
+            bool includeIdentifiers = false)
+        {
+            var state = new FeatureEngineeringState(this);
+            return state.PrepareDataset(includeRaceIds, stateRaceWhitelist, includeIdentifiers);
+        }
 
+        public virtual PreparedRace? PrepareUpcomingRace(UpcomingRace upcoming, IReadOnlyList<RunnerFlow> flows)
+        {
+            var results = PrepareUpcomingRaces(new[] { (upcoming, flows) });
+            return results.Count > 0 ? results[0] : null;
+        }
+
+        public virtual IReadOnlyList<PreparedRace?> PrepareUpcomingRaces(
+            IReadOnlyList<(UpcomingRace upcoming, IReadOnlyList<RunnerFlow> flows)> requests)
+        {
+            var state = new FeatureEngineeringState(this);
+            return state.PrepareUpcomingRaces(requests);
+        }
         protected virtual (int CourseId, string? CourseName) ResolveCourse(SqlConnection conn, UpcomingRace upcoming)
         {
             if (!string.IsNullOrWhiteSpace(upcoming.VenueName))

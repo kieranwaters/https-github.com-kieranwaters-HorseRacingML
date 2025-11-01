@@ -1476,7 +1476,7 @@ new RunnerFlow { HorseName = "Alpha Runner" },
             Assert.Equal("Synthetic Lookup Runner", repo.LastDistanceBeatenHorseName);
         }
         [Fact]
-        public void AverageSpeedWindow_UsesOlderHistoryWhenRecentMissing((object avgSpeed, object avgDiff) value)
+        public void AverageSpeedWindow_UsesOlderHistoryWhenRecentMissing()
         {
             var history = new List<(bool HasSpeed, float Speed, float SpeedDiff)>
             {
@@ -1487,7 +1487,7 @@ new RunnerFlow { HorseName = "Alpha Runner" },
                 (false, 0f, 0f),
                 (true, 6f, 0.6f)
             };
-            value = HyperparameterTrainer.TestComputeAverageSpeedForWindow(history, window: 5);
+            var (avgSpeed, avgDiff) = HyperparameterTrainer.TestComputeAverageSpeedForWindow(history, window: 5);
 
             Assert.Equal(3.2f, avgSpeed, 3);
             Assert.Equal(0.32f, avgDiff, 3);
