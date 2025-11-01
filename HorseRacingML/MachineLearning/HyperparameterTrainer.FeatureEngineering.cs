@@ -685,6 +685,7 @@ namespace HorseRacingML.ML
                             row["JockeyClassWinRate"] = jockeyClassWinFallback;
                             row["JockeyClassAvgNorm"] = jockeyClassAvgFallback;
                             row["LastJockeyClassNormPos"] = jockeyClassLastFallback;
+                        }
                             if (!_horseHistory.TryGetValue(horseId, out var history))
                             {
                                 history = new List<HistoryEntry>();
@@ -1562,7 +1563,7 @@ namespace HorseRacingML.ML
                                     _trainerJockeyCourseStats[pairCourseKey] = pairCourseStat;
                                 }
                             }
-                        }
+                        
                     }
                 }
                 if (includeRace)
@@ -4902,4 +4903,4 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
             public short? OfficialRating { get; set; }
         }
     }
-}
+}}
