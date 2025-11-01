@@ -494,7 +494,8 @@ namespace HorseRacingML.ML
                             continue;
                         }
 
-                        var batchIdx = indices[start..(start + batchCount)];
+                        var batchIdx = new int[batchCount];
+                        Array.Copy(indices, start, batchIdx, 0, batchCount);
                         var batchFeatures = new List<float[]>(batchCount);
                         var batchLabels = new float[batchCount];
                         for (int b = 0; b < batchCount; b++)
