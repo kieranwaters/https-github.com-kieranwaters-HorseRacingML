@@ -165,6 +165,13 @@ namespace HorseRacingML.ML
                     _preserveKeys = combined;
                 }
             }
+
+            public FeatureEngineeringState(FeatureEngineeringState featureEngineeringState, ISet<string>? identifierKeys)
+            {
+                this.featureEngineeringState = featureEngineeringState;
+                _identifierKeys = identifierKeys;
+            }
+
             private static float ComputeStandardDeviation(IReadOnlyList<float> values)
             {
                 if (values == null || values.Count == 0)
@@ -2652,6 +2659,9 @@ namespace HorseRacingML.ML
             "NA",
             "-"
         };
+            private object _prefetchedHistoryCache;
+            private string _connectionString;
+            private FeatureEngineeringState featureEngineeringState;
 
             private static bool IsMeaningfulStringValue(string? value)
             {

@@ -8,6 +8,8 @@ using System.Linq;
 using System;
 using System.Collections.Generic;
 using Xunit;
+using PreparedDataset = HorseRacingML.ML.HyperparameterTrainer.TrainingDataset.PreparedDataset;
+using PreparedRace = HorseRacingML.ML.HyperparameterTrainer.TrainingDataset.PreparedDataset.PreparedRace;
 
 namespace HorseRacingML.Tests
 {
@@ -820,14 +822,18 @@ namespace HorseRacingML.Tests
             {
             }
 
-            public override TrainingDataset.PreparedDataset PrepareDataset(ISet<int?>? includeRaceIds = null, ISet<int?>? stateRaceWhitelist = null, bool includeIdentifiers = false)
+            public override PreparedDataset PrepareDataset(
+                ISet<int?>? includeRaceIds = null,
+                ISet<int?>? stateRaceWhitelist = null,
+                bool includeIdentifiers = false)
             {
-                return new TrainingDataset.PreparedDataset(new List<TrainingDataset.PreparedDataset.PreparedRace>());
+                return new PreparedDataset(new List<PreparedRace>());
             }
 
-            public override IReadOnlyList<TrainingDataset.PreparedDataset.PreparedRace?> PrepareUpcomingRaces(IReadOnlyList<(UpcomingRace upcoming, IReadOnlyList<RunnerFlow> flows)> requests)
+            public override IReadOnlyList<PreparedRace?> PrepareUpcomingRaces(
+                IReadOnlyList<(UpcomingRace upcoming, IReadOnlyList<RunnerFlow> flows)> requests)
             {
-                return Array.Empty<TrainingDataset.PreparedDataset.PreparedRace?>();
+                return Array.Empty<PreparedRace?>();
             }
         }
     }

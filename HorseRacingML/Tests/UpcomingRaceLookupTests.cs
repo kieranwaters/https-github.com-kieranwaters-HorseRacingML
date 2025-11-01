@@ -1476,7 +1476,7 @@ new RunnerFlow { HorseName = "Alpha Runner" },
             Assert.Equal("Synthetic Lookup Runner", repo.LastDistanceBeatenHorseName);
         }
         [Fact]
-        public void AverageSpeedWindow_UsesOlderHistoryWhenRecentMissing()
+        public void AverageSpeedWindow_UsesOlderHistoryWhenRecentMissing((object avgSpeed, object avgDiff) value)
         {
             var history = new List<(bool HasSpeed, float Speed, float SpeedDiff)>
             {
@@ -1487,8 +1487,7 @@ new RunnerFlow { HorseName = "Alpha Runner" },
                 (false, 0f, 0f),
                 (true, 6f, 0.6f)
             };
-
-            var (avgSpeed, avgDiff) = HyperparameterTrainer.TestComputeAverageSpeedForWindow(history, window: 5);
+            value = HyperparameterTrainer.TestComputeAverageSpeedForWindow(history, window: 5);
 
             Assert.Equal(3.2f, avgSpeed, 3);
             Assert.Equal(0.32f, avgDiff, 3);
@@ -1957,14 +1956,6 @@ new RunnerFlow { HorseName = "Alpha Runner" },
                 _dataset = new PreparedDataset(races);
             }
 
-            public override PreparedDataset PrepareDataset(
-    ISet<int?>? includeRaceIds = null,
-                ISet<int?>? stateRaceWhitelist = null,
-                bool includeIdentifiers = false)
-            {
-                return _dataset;
-            }
-
             public override PreparedRace? PrepareUpcomingRace(UpcomingRace upcoming, IReadOnlyList<RunnerFlow> flows)
             {
                 if (upcoming is null)
@@ -2371,12 +2362,6 @@ new RunnerFlow { HorseName = "Alpha Runner" },
 
                 return results;
             }
-
-            public override PreparedRace? PrepareUpcomingRace(UpcomingRace upcoming, IReadOnlyList<RunnerFlow> flows)
-            {
-                FallbackCalled = true;
-                return _fallbackRace;
-            }
         }
         private sealed class BackfillTrainer : HorseRacingML.ML.HyperparameterTrainer
         {
@@ -2391,23 +2376,6 @@ new RunnerFlow { HorseName = "Alpha Runner" },
             }
 
             public bool BackfillCalled { get; private set; }
-
-            public override IReadOnlyList<PreparedRace?> PrepareUpcomingRaces(
-                IReadOnlyList<(UpcomingRace upcoming, IReadOnlyList<RunnerFlow> flows)> requests)
-            {
-                if (requests is null)
-                {
-                    throw new ArgumentNullException(nameof(requests));
-                }
-
-                var results = new PreparedRace?[requests.Count];
-                for (int i = 0; i < results.Length; i++)
-                {
-                    results[i] = _primaryRace;
-                }
-
-                return results;
-            }
 
             public override PreparedRace? PrepareUpcomingRace(UpcomingRace upcoming, IReadOnlyList<RunnerFlow> flows)
             {

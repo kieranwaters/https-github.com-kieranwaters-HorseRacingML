@@ -8,6 +8,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using Xunit;
+using PreparedDataset = HorseRacingML.ML.HyperparameterTrainer.TrainingDataset.PreparedDataset;
 using PreparedRace = HorseRacingML.ML.HyperparameterTrainer.TrainingDataset.PreparedDataset.PreparedRace;
 
 namespace HorseRacingML.Tests
@@ -272,12 +273,12 @@ namespace HorseRacingML.Tests
             {
             }
 
-            public override TrainingDataset.PreparedDataset PrepareDataset(
+            public override PreparedDataset PrepareDataset(
                 ISet<int?>? includeRaceIds = null,
                 ISet<int?>? stateRaceWhitelist = null,
                 bool includeIdentifiers = false)
             {
-                return new TrainingDataset.PreparedDataset(new List<TrainingDataset.PreparedDataset.PreparedRace>());
+                return new PreparedDataset(new List<PreparedRace>());
             }
             public void InsertRunnerFlows(IEnumerable<RunnerFlow> flows)
             {
