@@ -1896,34 +1896,34 @@ namespace HorseRacingML.ML
 
             private static readonly HashSet<string> NonTrainingKeys = new HashSet<string>
         {
-                "HorseId",
-                "CourseId",
-                "TrainerId",
-                "JockeyId",
-                "OutcomeCode",
-                "DistanceBeatenText",
-                "SP_Fraction",
-                "SP_Decimal",
-                "OpeningFraction",
-                "TouchedHighFraction",
-                "TouchedLowFraction",
-                "HorseName",
-                "JockeyName",
-                "TrainerName",
-                "Title",
-                "RaceMonth",
-                "RaceDayOfWeek",
-                "Season",
-                "ActualOff",
-                "ScheduledOff",
-                "RaceDate",
-                "CourseName",
-                "DistanceText",
-                "Status",
-                "WeightText",
-                "FavTag",
-                "SaddleclothNumber",
-                "Purse"
+            "HorseId",
+            "CourseId",
+            "TrainerId",
+            "JockeyId",
+            "OutcomeCode",
+            "DistanceBeatenText",
+            "SP_Fraction",
+            "SP_Decimal",
+            "OpeningFraction",
+            "TouchedHighFraction",
+            "TouchedLowFraction",
+            "HorseName",
+            "JockeyName",
+            "TrainerName",
+            "Title",
+            "RaceMonth",
+            "RaceDayOfWeek",
+            "Season",
+            "ActualOff",
+            "ScheduledOff",
+            "RaceDate",
+            "CourseName",
+            "DistanceText",
+            "Status",
+            "WeightText",
+            "FavTag",
+            "SaddleclothNumber",
+            "Purse"
         };
 
             private static readonly ISet<string> BackfillRequiredKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -1972,9 +1972,9 @@ namespace HorseRacingML.ML
                 return result;
             }
             public virtual PreparedDataset PrepareDataset(
-                            ISet<int?>? includeRaceIds = null,
-                            ISet<int?>? stateRaceWhitelist = null,
-                            bool includeIdentifiers = false)
+                ISet<int?>? includeRaceIds = null,
+                ISet<int?>? stateRaceWhitelist = null,
+                bool includeIdentifiers = false)
             {
                 using var conn = new SqlConnection(_connectionString);
                 conn.Open();
@@ -2017,65 +2017,65 @@ namespace HorseRacingML.ML
                 string touchedLowColumn = SelectColumn(runnerColumns, "rr", "TouchedLowFraction", "nvarchar(50)");
 
                 var sql = $@"SELECT c.Name AS CourseName,
-                                   h.Name AS HorseName,
-                                   j.Name AS JockeyName,
-                                   t.Name AS TrainerName,
-                                   r.RaceId,
-                                   r.CourseId,
-                                   r.RaceDate,
-                                   {scheduledOffColumn},
-                                   {actualOffColumn},
-                                   {titleColumn},
-                                   {raceTypeColumn},
-                                   {classColumn},
-                                   {surfaceColumn},
-                                   {goingColumn},
-                                   {distanceYardsColumn},
-                                   {distanceTextColumn},
-                                   {runnerCountColumn},
-                                   {statusColumn},
-                                   {winningTimeColumn},
-                                   rr.HorseId,
-                                   rr.TrainerId,
-                                   rr.JockeyId,
-                                   {saddleclothColumn},
-                                   {drawColumn},
-                                   {ageColumn},
-                                   {weightLbsColumn},
-                                   {weightTextColumn},
-                                    {officialRatingColumn},
-                                   rr.FinishPos,
-                                   {outcomeCodeColumn},
-                                   {distanceBeatenTextColumn},
-                                   {distanceBeatenLengthsColumn},
-                                   {spFractionColumn},
-                                   {spDecimalColumn},
-                                   {favTagColumn},
-                                   {openingFractionColumn},
-                                   {touchedHighColumn},
-                                   {touchedLowColumn}
-                            FROM Race r
-                            JOIN Course c ON r.CourseId = c.CourseId
-                            JOIN RunnerResult rr ON r.RaceId = rr.RaceId
-                            LEFT JOIN Horse h ON rr.HorseId = h.HorseId
-                            LEFT JOIN Trainer t ON rr.TrainerId = t.TrainerId
-                            LEFT JOIN Jockey j ON rr.JockeyId = j.JockeyId
-                            ORDER BY r.RaceDate, r.RaceId, rr.RunnerResultId";
+                               h.Name AS HorseName,
+                               j.Name AS JockeyName,
+                               t.Name AS TrainerName,
+                               r.RaceId,
+                               r.CourseId,
+                               r.RaceDate,
+                               {scheduledOffColumn},
+                               {actualOffColumn},
+                               {titleColumn},
+                               {raceTypeColumn},
+                               {classColumn},
+                               {surfaceColumn},
+                               {goingColumn},
+                               {distanceYardsColumn},
+                               {distanceTextColumn},
+                               {runnerCountColumn},
+                               {statusColumn},
+                               {winningTimeColumn},
+                               rr.HorseId,
+                               rr.TrainerId,
+                               rr.JockeyId,
+                               {saddleclothColumn},
+                               {drawColumn},
+                               {ageColumn},
+                               {weightLbsColumn},
+                               {weightTextColumn},
+                                {officialRatingColumn},
+                               rr.FinishPos,
+                               {outcomeCodeColumn},
+                               {distanceBeatenTextColumn},
+                               {distanceBeatenLengthsColumn},
+                               {spFractionColumn},
+                               {spDecimalColumn},
+                               {favTagColumn},
+                               {openingFractionColumn},
+                               {touchedHighColumn},
+                               {touchedLowColumn}
+                        FROM Race r
+                        JOIN Course c ON r.CourseId = c.CourseId
+                        JOIN RunnerResult rr ON r.RaceId = rr.RaceId
+                        LEFT JOIN Horse h ON rr.HorseId = h.HorseId
+                        LEFT JOIN Trainer t ON rr.TrainerId = t.TrainerId
+                        LEFT JOIN Jockey j ON rr.JockeyId = j.JockeyId
+                        ORDER BY r.RaceDate, r.RaceId, rr.RunnerResultId";
 
                 ISet<string>? identifierKeys = null;
                 if (includeIdentifiers)
                 {
                     identifierKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-                {
-                    "HorseName",
-                    "HorseId",
-                    "TrainerName",
-                    "TrainerId",
-                    "JockeyName",
-                    "JockeyId",
-                    "SaddleclothNumber",
-                    "Draw"
-                };
+            {
+                "HorseName",
+                "HorseId",
+                "TrainerName",
+                "TrainerId",
+                "JockeyName",
+                "JockeyId",
+                "SaddleclothNumber",
+                "Draw"
+            };
                 }
 
                 var featureState = new FeatureEngineeringState(this, identifierKeys);
