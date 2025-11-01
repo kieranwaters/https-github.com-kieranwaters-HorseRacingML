@@ -465,7 +465,7 @@ namespace HorseRacingML.ML
                         row.Remove("Season");
                         row.Remove("ActualOff");
                         row.Remove("ScheduledOff");
-                        row.Remove("RaceDate");
+                        row["RaceDate"] = normalizedRaceDate;
                         short? finish = row["FinishPos"] != null ? (short?)Convert.ToInt16(row["FinishPos"]) : null;
                         int raceId = PreparedDataset.GetRequiredInt32(row, "RaceId");
                         int runnerCount = row.TryGetValue("RunnerCount", out var runnerCountObj) &&
@@ -490,6 +490,11 @@ namespace HorseRacingML.ML
                         row["ClassMissing"] = classMissing;
                         bool ratingMissing = !(row.TryGetValue("OfficialRating", out var ratingObj) && ratingObj != null);
                         float rating = ratingMissing ? raceStat.AvgRating : Convert.ToSingle(ratingObj);
+                        if (!ratingMissing && (float.IsNaN(rating) || rating <= 0f))
+                        {
+                            ratingMissing = true;
+                            rating = raceStat.AvgRating;
+                        }
                         row["RatingMissing"] = ratingMissing;
                         if ((ratingMissing && (rating <= 0f || float.IsNaN(rating))) ||
                                 (!ratingMissing && (float.IsNaN(rating) || rating <= 0f)))
@@ -498,6 +503,10 @@ namespace HorseRacingML.ML
                             if (classBaseline.HasValue)
                             {
                                 rating = classBaseline.Value;
+                            }
+                            else if (!float.IsNaN(raceStat.AvgRating) && raceStat.AvgRating > 0f)
+                            {
+                                rating = raceStat.AvgRating;
                             }
                         }
 
@@ -3415,7 +3424,7 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
             }
 
             var ratings = new List<float>(Math.Min(history.Count, maxWindow));
-            for (int i = history.Count - 1; i >= 0 && ratings.Count < maxWindow; i--)
+            if (entry.OfficialRating.HasValue && entry.OfficialRating.Value > 0)
             {
                 var entry = history[i];
                 if (entry.RaceDate.Date >= cutoffDate)
@@ -3433,7 +3442,12 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
                     rating = ResolveClassRatingBaseline(entry.Class);
                 }
 
-                if (rating.HasValue)
+                if (!rating.HasValue && ratings.Count > 0)
+                {
+                    rating = ratings[^1];
+                }
+
+                if (rating.HasValue && rating.Value > 0f && !float.IsNaN(rating.Value))
                 {
                     ratings.Add(rating.Value);
                 }
@@ -3535,12 +3549,19 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
                 return null;
             }
 
-            if (ClassRatingBaselines.TryGetValue(classValue.Value, out var baseline))
+            var classInt = classValue.Value;
+            if (classInt <= 0)
+            {
+                return null;
+            }
+
+            if (ClassRatingBaselines.TryGetValue(classInt, out var baseline))
             {
                 return baseline;
             }
 
-            return null;
+            classInt = Math.Min(classInt, 12);
+            return 110f - (classInt * 5f);
         }
 
         private static float? ResolveClassRatingBaseline(byte? classValue)
