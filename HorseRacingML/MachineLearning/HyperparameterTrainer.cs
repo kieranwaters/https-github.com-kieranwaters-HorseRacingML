@@ -116,6 +116,10 @@ namespace HorseRacingML.ML
 
             return (wins + _winRateAlpha) / (starts + _winRateBeta);
         }
+        public float SmoothedWinRate(int wins, int starts)
+        {
+            return ComputeSmoothedWinRate(wins, starts);
+        }
         protected void SetRacingRepository(IRacingRepository? repository)
         {
             _racingRepository = repository;
