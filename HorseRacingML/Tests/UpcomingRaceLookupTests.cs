@@ -2089,13 +2089,13 @@ new RunnerFlow { HorseName = "Alpha Runner" },
             {
                 return Array.Empty<RunnerResult>();
             }
-            protected override RunnerLookupData LoadRunnerLookupData(
+            protected override RunnerLookupData? OverrideRunnerLookupData(
                 SqlConnection conn,
                 UpcomingRace upcoming,
                 IReadOnlyCollection<string> runnerColumns,
                 IReadOnlyCollection<string> horseNames,
                 IReadOnlyCollection<string> jockeyNames,
-                IReadOnlyCollection<int>? horseIdsFromFlows = null)
+                IReadOnlyCollection<int>? horseIdsFromFlows)
             {
                 return _lookupData;
             }

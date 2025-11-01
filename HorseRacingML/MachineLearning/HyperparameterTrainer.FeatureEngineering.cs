@@ -3954,7 +3954,7 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
                 IReadOnlyCollection<string> runnerColumns)
             {
                 var rows = new List<Dictionary<string, object?>>(flows.Count);
-                var (courseId, courseName) = ResolveCourse(conn, upcoming);
+                var (courseId, courseName) = _trainer.ResolveCourse(conn, upcoming);
                 int runnerCount = flows.Count;
                 var validFlows = new List<RunnerFlow>(flows.Count);
                 var horseNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -4011,7 +4011,13 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
                 var horseNameList = horseNames.Values.ToList();
                 var jockeyNameList = jockeyNames.Values.ToList();
                 var trainerNameList = trainerNames.Values.ToList();
-                var lookupData = LoadRunnerLookupData(conn, upcoming, runnerColumns, horseNameList, jockeyNameList, explicitHorseIds);
+                var lookupData = LoadRunnerLookupData(
+                    conn,
+                    upcoming,
+                    runnerColumns,
+                    horseNameList,
+                    jockeyNameList,
+                    explicitHorseIds);
                 var horseIdLookup = lookupData.HorseIds;
                 var jockeyIdLookup = lookupData.JockeyIds;
                 var runnerSnapshots = lookupData.RunnerSnapshots;
@@ -4334,7 +4340,21 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
                  IReadOnlyCollection<string> horseNames,
                  IReadOnlyCollection<string> jockeyNames,
                  IReadOnlyCollection<int>? horseIdsFromFlows = null)
+
             {
+                var custom = _trainer.OverrideRunnerLookupData(
+                    conn,
+                    upcoming,
+                    runnerColumns,
+                    horseNames,
+                    jockeyNames,
+                    horseIdsFromFlows);
+
+                if (custom is not null)
+                {
+                    return custom;
+                }
+
                 var horseIdLookup = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
                 Dictionary<string, HashSet<string>>? horseCandidateMap = null;
                 if (horseNames.Count > 0)
@@ -4840,110 +4860,125 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
 
                 return map;
             }
-            protected virtual (int CourseId, string? CourseName) ResolveCourse(SqlConnection conn, UpcomingRace upcoming)
+        }
+
+        protected virtual (int CourseId, string? CourseName) ResolveCourse(SqlConnection conn, UpcomingRace upcoming)
+        {
+            if (!string.IsNullOrWhiteSpace(upcoming.VenueName))
             {
-                if (!string.IsNullOrWhiteSpace(upcoming.VenueName))
+                const string exactSql = "SELECT TOP (1) CourseId, Name FROM Course WHERE Name = @Name ORDER BY CourseId";
+                var exact = conn.QuerySingleOrDefault<(int CourseId, string Name)?>(exactSql, new { Name = upcoming.VenueName });
+                if (exact.HasValue)
                 {
-                    const string exactSql = "SELECT TOP (1) CourseId, Name FROM Course WHERE Name = @Name ORDER BY CourseId";
-                    var exact = conn.QuerySingleOrDefault<(int CourseId, string Name)?>(exactSql, new { Name = upcoming.VenueName });
-                    if (exact.HasValue)
+                    return (exact.Value.CourseId, exact.Value.Name);
+                }
+
+                const string courseSql = "SELECT CourseId, Name FROM Course";
+                var allCourses = conn.Query<(int CourseId, string Name)>(courseSql).ToList();
+                var normalizedVenue = NormalizeLookupKey(upcoming.VenueName);
+                (int CourseId, string Name)? best = null;
+                int bestScore = int.MaxValue;
+                foreach (var course in allCourses)
+                {
+                    var candidate = NormalizeLookupKey(course.Name);
+                    int score = 0;
+                    if (candidate == normalizedVenue)
                     {
-                        return (exact.Value.CourseId, exact.Value.Name);
+                        score -= 3;
+                    }
+                    else if (!string.IsNullOrEmpty(candidate) &&
+                             (candidate.Contains(normalizedVenue) || normalizedVenue.Contains(candidate)))
+                    {
+                        score -= 1;
+                    }
+                    else
+                    {
+                        score += 1;
                     }
 
-                    const string courseSql = "SELECT CourseId, Name FROM Course";
-                    var allCourses = conn.Query<(int CourseId, string Name)>(courseSql).ToList();
-                    var normalizedVenue = NormalizeLookupKey(upcoming.VenueName);
-                    (int CourseId, string Name)? best = null;
-                    int bestScore = int.MaxValue;
-                    foreach (var course in allCourses)
+                    if (score < bestScore || (score == bestScore && (!best.HasValue || course.CourseId < best.Value.CourseId)))
                     {
-                        var candidate = NormalizeLookupKey(course.Name);
-                        int score = 0;
-                        if (candidate == normalizedVenue)
-                        {
-                            score -= 3;
-                        }
-                        else if (!string.IsNullOrEmpty(candidate) &&
-                                 (candidate.Contains(normalizedVenue) || normalizedVenue.Contains(candidate)))
-                        {
-                            score -= 1;
-                        }
-                        else
-                        {
-                            score += 1;
-                        }
-
-                        if (score < bestScore || (score == bestScore && (!best.HasValue || course.CourseId < best.Value.CourseId)))
-                        {
-                            best = course;
-                            bestScore = score;
-                        }
-                    }
-
-                    if (best.HasValue)
-                    {
-                        return (best.Value.CourseId, best.Value.Name);
+                        best = course;
+                        bestScore = score;
                     }
                 }
-                Console.WriteLine($"\t\tNo match found in Course.Name for venue '{upcoming.VenueName ?? "<null>"}'; using synthetic course metadata.");
-                int syntheticCourseId = GenerateSyntheticId("course:" + (upcoming.VenueName ?? upcoming.MarketId ?? string.Empty));
-                return (syntheticCourseId, upcoming.VenueName);
-            }
-            private static int GenerateSyntheticId(string value)
-            {
-                if (string.IsNullOrWhiteSpace(value))
-                {
-                    return int.MaxValue;
-                }
 
-                unchecked
+                if (best.HasValue)
                 {
-                    int hash = 17;
-                    hash = hash * 31 + StringComparer.OrdinalIgnoreCase.GetHashCode(value.Trim());
-                    return 0x60000000 | (hash & 0x0FFFFFFF);
+                    return (best.Value.CourseId, best.Value.Name);
                 }
             }
 
-            private static string NormalizeLookupKey(string? value)
-            {
-                if (string.IsNullOrWhiteSpace(value))
-                {
-                    return string.Empty;
-                }
+            Console.WriteLine($"\t\tNo match found in Course.Name for venue '{upcoming.VenueName ?? "<null>"}'; using synthetic course metadata.");
+            int syntheticCourseId = GenerateSyntheticId("course:" + (upcoming.VenueName ?? upcoming.MarketId ?? string.Empty));
+            return (syntheticCourseId, upcoming.VenueName);
+        }
 
-                var lower = value.Trim().ToLowerInvariant();
-                lower = System.Text.RegularExpressions.Regex.Replace(lower, "[^a-z0-9]+", " ");
-                lower = System.Text.RegularExpressions.Regex.Replace(lower, "\\s+", " ").Trim();
-                return lower;
-            }
-            protected sealed class RunnerLookupData
-            {
-                public RunnerLookupData(
-                    Dictionary<string, int> horseIds,
-                    Dictionary<string, int> jockeyIds,
-                    Dictionary<int, RunnerSnapshot> runnerSnapshots)
-                {
-                    HorseIds = horseIds ?? throw new ArgumentNullException(nameof(horseIds));
-                    JockeyIds = jockeyIds ?? throw new ArgumentNullException(nameof(jockeyIds));
-                    RunnerSnapshots = runnerSnapshots ?? throw new ArgumentNullException(nameof(runnerSnapshots));
-                }
+        protected virtual RunnerLookupData? OverrideRunnerLookupData(
+            SqlConnection conn,
+            UpcomingRace upcoming,
+            IReadOnlyCollection<string> runnerColumns,
+            IReadOnlyCollection<string> horseNames,
+            IReadOnlyCollection<string> jockeyNames,
+            IReadOnlyCollection<int>? horseIdsFromFlows)
+        {
+            return null;
+        }
 
-                public Dictionary<string, int> HorseIds { get; }
-                public Dictionary<string, int> JockeyIds { get; }
-                public Dictionary<int, RunnerSnapshot> RunnerSnapshots { get; }
+        private static int GenerateSyntheticId(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return int.MaxValue;
             }
 
-            protected sealed class RunnerSnapshot
+            unchecked
             {
-                public int HorseId { get; set; }
-                public int? TrainerId { get; set; }
-                public string? TrainerName { get; set; }
-                public short? Age { get; set; }
-                public short? WeightLbs { get; set; }
-                public string? WeightText { get; set; }
-                public short? OfficialRating { get; set; }
+                int hash = 17;
+                hash = hash * 31 + StringComparer.OrdinalIgnoreCase.GetHashCode(value.Trim());
+                return 0x60000000 | (hash & 0x0FFFFFFF);
             }
+        }
+
+        private static string NormalizeLookupKey(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            var lower = value.Trim().ToLowerInvariant();
+            lower = System.Text.RegularExpressions.Regex.Replace(lower, "[^a-z0-9]+", " ");
+            lower = System.Text.RegularExpressions.Regex.Replace(lower, "\\s+", " ").Trim();
+            return lower;
+        }
+
+        protected sealed class RunnerSnapshot
+        {
+            public int HorseId { get; set; }
+            public int? TrainerId { get; set; }
+            public string? TrainerName { get; set; }
+            public short? Age { get; set; }
+            public short? WeightLbs { get; set; }
+            public string? WeightText { get; set; }
+            public short? OfficialRating { get; set; }
+        }
+
+        protected sealed class RunnerLookupData
+        {
+            public RunnerLookupData(
+                Dictionary<string, int> horseIds,
+                Dictionary<string, int> jockeyIds,
+                Dictionary<int, RunnerSnapshot> runnerSnapshots)
+            {
+                HorseIds = horseIds ?? throw new ArgumentNullException(nameof(horseIds));
+                JockeyIds = jockeyIds ?? throw new ArgumentNullException(nameof(jockeyIds));
+                RunnerSnapshots = runnerSnapshots ?? throw new ArgumentNullException(nameof(runnerSnapshots));
+            }
+
+            public Dictionary<string, int> HorseIds { get; }
+            public Dictionary<string, int> JockeyIds { get; }
+            public Dictionary<int, RunnerSnapshot> RunnerSnapshots { get; }
         }
     }
 }
