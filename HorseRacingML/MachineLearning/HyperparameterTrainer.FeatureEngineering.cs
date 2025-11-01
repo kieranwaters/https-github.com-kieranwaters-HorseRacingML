@@ -1764,14 +1764,14 @@ namespace HorseRacingML.ML
                        float MinSaddlecloth,
                        float MaxSaddlecloth,
                        bool HasWeightStats);
-        
 
-        private static float? ParseDistanceBeaten(string text)
-        {
-            if (string.IsNullOrWhiteSpace(text))
-                return null;
-            text = text.Trim().ToLowerInvariant();
-            var map = new Dictionary<string, float>
+
+            private static float? ParseDistanceBeaten(string text)
+            {
+                if (string.IsNullOrWhiteSpace(text))
+                    return null;
+                text = text.Trim().ToLowerInvariant();
+                var map = new Dictionary<string, float>
             {
                 {"nse", 0.05f},
                 {"nose", 0.05f},
@@ -1782,119 +1782,119 @@ namespace HorseRacingML.ML
                 {"nk", 0.3f},
                 {"dist", 30f}
             };
-            if (map.TryGetValue(text, out var val))
-                return val;
-            text = text.Replace("¼", ".25").Replace("½", ".5").Replace("¾", ".75");
-            double total = 0;
-            foreach (var part in text.Split(new[] { ' ', '+' }, StringSplitOptions.RemoveEmptyEntries))
-            {
-                if (double.TryParse(part, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var num))
+                if (map.TryGetValue(text, out var val))
+                    return val;
+                text = text.Replace("¼", ".25").Replace("½", ".5").Replace("¾", ".75");
+                double total = 0;
+                foreach (var part in text.Split(new[] { ' ', '+' }, StringSplitOptions.RemoveEmptyEntries))
                 {
-                    total += num;
-                }
-                else if (part.Contains('/'))
-                {
-                    var frac = part.Split('/');
-                    if (frac.Length == 2 &&
-                        double.TryParse(frac[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) &&
-                        double.TryParse(frac[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var d) &&
-                        d != 0)
+                    if (double.TryParse(part, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var num))
                     {
-                        total += n / d;
+                        total += num;
                     }
-                }
-            }
-            return total > 0 ? (float)total : (float?)null;
-        }
-
-        private float SmoothedWinRate(int wins, int starts)
-            => ComputeSmoothedWinRate(wins, starts);
-
-
-        private static object? NormalizeDbValue(object? value)
-        {
-            if (value is null || value is DBNull)
-            {
-                return null;
-            }
-
-            switch (value)
-            {
-                case string s:
+                    else if (part.Contains('/'))
                     {
-                        var trimmed = s.Trim();
-                        return trimmed.Length == 0 ? null : trimmed;
-                    }
-                case char c:
-                    {
-                        var text = c.ToString().Trim();
-                        return text.Length == 0 ? null : text;
-                    }
-                case char[] chars:
-                    {
-                        if (chars.Length == 0)
+                        var frac = part.Split('/');
+                        if (frac.Length == 2 &&
+                            double.TryParse(frac[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) &&
+                            double.TryParse(frac[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var d) &&
+                            d != 0)
                         {
-                            return null;
+                            total += n / d;
                         }
-
-                        var text = new string(chars).Trim();
-                        return text.Length == 0 ? null : text;
                     }
-                case ReadOnlyMemory<char> memory:
-                    {
-                        var text = memory.ToString().Trim();
-                        return text.Length == 0 ? null : text;
-                    }
-                case SqlString sqlString when !sqlString.IsNull:
-                    {
-                        var text = sqlString.Value?.Trim();
-                        return string.IsNullOrEmpty(text) ? null : text;
-                    }
-                case SqlChars sqlChars when !sqlChars.IsNull:
-                    {
-                        var text = new string(sqlChars.Value ?? Array.Empty<char>()).Trim();
-                        return text.Length == 0 ? null : text;
-                    }
-                case SqlBoolean sqlBool when !sqlBool.IsNull:
-                    return sqlBool.Value;
-                case SqlByte sqlByte when !sqlByte.IsNull:
-                    return sqlByte.Value;
-                case SqlInt16 sqlInt16 when !sqlInt16.IsNull:
-                    return sqlInt16.Value;
-                case SqlInt32 sqlInt32 when !sqlInt32.IsNull:
-                    return sqlInt32.Value;
-                case SqlInt64 sqlInt64 when !sqlInt64.IsNull:
-                    return sqlInt64.Value;
-                case SqlSingle sqlSingle when !sqlSingle.IsNull:
-                    return sqlSingle.Value;
-                case SqlDouble sqlDouble when !sqlDouble.IsNull:
-                    return sqlDouble.Value;
-                case SqlDecimal sqlDecimal when !sqlDecimal.IsNull:
-                    return sqlDecimal.Value;
-                case SqlMoney sqlMoney when !sqlMoney.IsNull:
-                    return sqlMoney.Value;
-                case SqlDateTime sqlDate when !sqlDate.IsNull:
-                    return sqlDate.Value;
+                }
+                return total > 0 ? (float)total : (float?)null;
             }
 
-            return value;
-        }
+            private float SmoothedWinRate(int wins, int starts)
+                => ComputeSmoothedWinRate(wins, starts);
 
-        private static void Shuffle<T>(IList<T> list, Random random)
-        {
-            if (list is null)
-                throw new ArgumentNullException(nameof(list));
-            if (random is null)
-                throw new ArgumentNullException(nameof(random));
 
-            for (int i = list.Count - 1; i > 0; i--)
+            private static object? NormalizeDbValue(object? value)
             {
-                int j = random.Next(i + 1);
-                (list[i], list[j]) = (list[j], list[i]);
-            }
-        }
+                if (value is null || value is DBNull)
+                {
+                    return null;
+                }
 
-        private static readonly HashSet<string> NonTrainingKeys = new HashSet<string>
+                switch (value)
+                {
+                    case string s:
+                        {
+                            var trimmed = s.Trim();
+                            return trimmed.Length == 0 ? null : trimmed;
+                        }
+                    case char c:
+                        {
+                            var text = c.ToString().Trim();
+                            return text.Length == 0 ? null : text;
+                        }
+                    case char[] chars:
+                        {
+                            if (chars.Length == 0)
+                            {
+                                return null;
+                            }
+
+                            var text = new string(chars).Trim();
+                            return text.Length == 0 ? null : text;
+                        }
+                    case ReadOnlyMemory<char> memory:
+                        {
+                            var text = memory.ToString().Trim();
+                            return text.Length == 0 ? null : text;
+                        }
+                    case SqlString sqlString when !sqlString.IsNull:
+                        {
+                            var text = sqlString.Value?.Trim();
+                            return string.IsNullOrEmpty(text) ? null : text;
+                        }
+                    case SqlChars sqlChars when !sqlChars.IsNull:
+                        {
+                            var text = new string(sqlChars.Value ?? Array.Empty<char>()).Trim();
+                            return text.Length == 0 ? null : text;
+                        }
+                    case SqlBoolean sqlBool when !sqlBool.IsNull:
+                        return sqlBool.Value;
+                    case SqlByte sqlByte when !sqlByte.IsNull:
+                        return sqlByte.Value;
+                    case SqlInt16 sqlInt16 when !sqlInt16.IsNull:
+                        return sqlInt16.Value;
+                    case SqlInt32 sqlInt32 when !sqlInt32.IsNull:
+                        return sqlInt32.Value;
+                    case SqlInt64 sqlInt64 when !sqlInt64.IsNull:
+                        return sqlInt64.Value;
+                    case SqlSingle sqlSingle when !sqlSingle.IsNull:
+                        return sqlSingle.Value;
+                    case SqlDouble sqlDouble when !sqlDouble.IsNull:
+                        return sqlDouble.Value;
+                    case SqlDecimal sqlDecimal when !sqlDecimal.IsNull:
+                        return sqlDecimal.Value;
+                    case SqlMoney sqlMoney when !sqlMoney.IsNull:
+                        return sqlMoney.Value;
+                    case SqlDateTime sqlDate when !sqlDate.IsNull:
+                        return sqlDate.Value;
+                }
+
+                return value;
+            }
+
+            private static void Shuffle<T>(IList<T> list, Random random)
+            {
+                if (list is null)
+                    throw new ArgumentNullException(nameof(list));
+                if (random is null)
+                    throw new ArgumentNullException(nameof(random));
+
+                for (int i = list.Count - 1; i > 0; i--)
+                {
+                    int j = random.Next(i + 1);
+                    (list[i], list[j]) = (list[j], list[i]);
+                }
+            }
+
+            private static readonly HashSet<string> NonTrainingKeys = new HashSet<string>
         {
                 "HorseId",
                 "CourseId",
@@ -1926,7 +1926,7 @@ namespace HorseRacingML.ML
                 "Purse"
         };
 
-        private static readonly ISet<string> BackfillRequiredKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            private static readonly ISet<string> BackfillRequiredKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "HorseId",
             "HorseName",
@@ -1938,21 +1938,21 @@ namespace HorseRacingML.ML
             "RaceDate"
         };
 
-        private static void TrimRunnerRow(Dictionary<string, object?> row, ISet<string>? preserveKeys = null)
-        {
-            if (row is null)
-                throw new ArgumentNullException(nameof(row));
-
-            foreach (var key in NonTrainingKeys)
+            private static void TrimRunnerRow(Dictionary<string, object?> row, ISet<string>? preserveKeys = null)
             {
-                if (preserveKeys != null && preserveKeys.Contains(key))
-                {
-                    continue;
-                }
+                if (row is null)
+                    throw new ArgumentNullException(nameof(row));
 
-                row.Remove(key);
+                foreach (var key in NonTrainingKeys)
+                {
+                    if (preserveKeys != null && preserveKeys.Contains(key))
+                    {
+                        continue;
+                    }
+
+                    row.Remove(key);
+                }
             }
-        }
             private static HashSet<int>? ToNonNullableSet(ISet<int?>? source)
             {
                 if (source is null)
@@ -1983,40 +1983,40 @@ namespace HorseRacingML.ML
                 var stateRaceWhitelistSet = ToNonNullableSet(stateRaceWhitelist);
 
                 var raceColumns = PreparedDataset.LoadColumnNames(conn, "Race");
-            var runnerColumns = PreparedDataset.LoadColumnNames(conn, "RunnerResult");
-            string scheduledOffColumn = raceColumns.Contains("ScheduledOff")
-                ? "r.ScheduledOff AS ScheduledOff"
-                : "CAST(NULL AS time(0)) AS ScheduledOff";
-            string actualOffColumn = raceColumns.Contains("ActualOff")
-                ? "r.ActualOff AS ActualOff"
-                : "CAST(NULL AS time(0)) AS ActualOff";
-            string titleColumn = SelectColumn(raceColumns, "r", "Title", "nvarchar(512)");
-            string raceTypeColumn = SelectColumn(raceColumns, "r", "RaceType", "nvarchar(128)");
-            string classColumn = SelectColumn(raceColumns, "r", "Class", "int");
-            string surfaceColumn = SelectColumn(raceColumns, "r", "Surface", "nvarchar(64)");
-            string goingColumn = SelectColumn(raceColumns, "r", "Going", "nvarchar(30)");
-            string distanceYardsColumn = SelectColumn(raceColumns, "r", "DistanceYards", "int");
-            string distanceTextColumn = SelectColumn(raceColumns, "r", "DistanceText", "nvarchar(64)");
-            string runnerCountColumn = SelectColumn(raceColumns, "r", "RunnerCount", "int");
-            string statusColumn = SelectColumn(raceColumns, "r", "Status", "nvarchar(32)");
-            string winningTimeColumn = SelectColumn(raceColumns, "r", "WinningTimeMs", "int");
-            string saddleclothColumn = SelectColumn(runnerColumns, "rr", "SaddleclothNumber", "int");
-            string drawColumn = SelectColumn(runnerColumns, "rr", "Draw", "int");
-            string ageColumn = SelectColumn(runnerColumns, "rr", "Age", "int");
-            string weightLbsColumn = SelectColumn(runnerColumns, "rr", "WeightLbs", "int");
-            string weightTextColumn = SelectColumn(runnerColumns, "rr", "WeightText", "nvarchar(50)");
-            string officialRatingColumn = SelectColumn(runnerColumns, "rr", "OfficialRating", "int", "OfficialRating");
-            string outcomeCodeColumn = SelectColumn(runnerColumns, "rr", "OutcomeCode", "nvarchar(50)");
-            string distanceBeatenTextColumn = SelectColumn(runnerColumns, "rr", "DistanceBeatenText", "nvarchar(50)");
-            string distanceBeatenLengthsColumn = SelectColumn(runnerColumns, "rr", "DistanceBeatenLengths", "decimal(9,4)");
-            string spFractionColumn = SelectColumn(runnerColumns, "rr", "SP_Fraction", "nvarchar(50)");
-            string spDecimalColumn = SelectColumn(runnerColumns, "rr", "SP_Decimal", "decimal(18,6)");
-            string favTagColumn = SelectColumn(runnerColumns, "rr", "FavTag", "nvarchar(16)");
-            string openingFractionColumn = SelectColumn(runnerColumns, "rr", "OpeningFraction", "nvarchar(50)");
-            string touchedHighColumn = SelectColumn(runnerColumns, "rr", "TouchedHighFraction", "nvarchar(50)");
-            string touchedLowColumn = SelectColumn(runnerColumns, "rr", "TouchedLowFraction", "nvarchar(50)");
+                var runnerColumns = PreparedDataset.LoadColumnNames(conn, "RunnerResult");
+                string scheduledOffColumn = raceColumns.Contains("ScheduledOff")
+                    ? "r.ScheduledOff AS ScheduledOff"
+                    : "CAST(NULL AS time(0)) AS ScheduledOff";
+                string actualOffColumn = raceColumns.Contains("ActualOff")
+                    ? "r.ActualOff AS ActualOff"
+                    : "CAST(NULL AS time(0)) AS ActualOff";
+                string titleColumn = SelectColumn(raceColumns, "r", "Title", "nvarchar(512)");
+                string raceTypeColumn = SelectColumn(raceColumns, "r", "RaceType", "nvarchar(128)");
+                string classColumn = SelectColumn(raceColumns, "r", "Class", "int");
+                string surfaceColumn = SelectColumn(raceColumns, "r", "Surface", "nvarchar(64)");
+                string goingColumn = SelectColumn(raceColumns, "r", "Going", "nvarchar(30)");
+                string distanceYardsColumn = SelectColumn(raceColumns, "r", "DistanceYards", "int");
+                string distanceTextColumn = SelectColumn(raceColumns, "r", "DistanceText", "nvarchar(64)");
+                string runnerCountColumn = SelectColumn(raceColumns, "r", "RunnerCount", "int");
+                string statusColumn = SelectColumn(raceColumns, "r", "Status", "nvarchar(32)");
+                string winningTimeColumn = SelectColumn(raceColumns, "r", "WinningTimeMs", "int");
+                string saddleclothColumn = SelectColumn(runnerColumns, "rr", "SaddleclothNumber", "int");
+                string drawColumn = SelectColumn(runnerColumns, "rr", "Draw", "int");
+                string ageColumn = SelectColumn(runnerColumns, "rr", "Age", "int");
+                string weightLbsColumn = SelectColumn(runnerColumns, "rr", "WeightLbs", "int");
+                string weightTextColumn = SelectColumn(runnerColumns, "rr", "WeightText", "nvarchar(50)");
+                string officialRatingColumn = SelectColumn(runnerColumns, "rr", "OfficialRating", "int", "OfficialRating");
+                string outcomeCodeColumn = SelectColumn(runnerColumns, "rr", "OutcomeCode", "nvarchar(50)");
+                string distanceBeatenTextColumn = SelectColumn(runnerColumns, "rr", "DistanceBeatenText", "nvarchar(50)");
+                string distanceBeatenLengthsColumn = SelectColumn(runnerColumns, "rr", "DistanceBeatenLengths", "decimal(9,4)");
+                string spFractionColumn = SelectColumn(runnerColumns, "rr", "SP_Fraction", "nvarchar(50)");
+                string spDecimalColumn = SelectColumn(runnerColumns, "rr", "SP_Decimal", "decimal(18,6)");
+                string favTagColumn = SelectColumn(runnerColumns, "rr", "FavTag", "nvarchar(16)");
+                string openingFractionColumn = SelectColumn(runnerColumns, "rr", "OpeningFraction", "nvarchar(50)");
+                string touchedHighColumn = SelectColumn(runnerColumns, "rr", "TouchedHighFraction", "nvarchar(50)");
+                string touchedLowColumn = SelectColumn(runnerColumns, "rr", "TouchedLowFraction", "nvarchar(50)");
 
-            var sql = $@"SELECT c.Name AS CourseName,
+                var sql = $@"SELECT c.Name AS CourseName,
                                    h.Name AS HorseName,
                                    j.Name AS JockeyName,
                                    t.Name AS TrainerName,
@@ -2062,10 +2062,10 @@ namespace HorseRacingML.ML
                             LEFT JOIN Jockey j ON rr.JockeyId = j.JockeyId
                             ORDER BY r.RaceDate, r.RaceId, rr.RunnerResultId";
 
-            ISet<string>? identifierKeys = null;
-            if (includeIdentifiers)
-            {
-                identifierKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                ISet<string>? identifierKeys = null;
+                if (includeIdentifiers)
+                {
+                    identifierKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
                 {
                     "HorseName",
                     "HorseId",
@@ -2076,504 +2076,56 @@ namespace HorseRacingML.ML
                     "SaddleclothNumber",
                     "Draw"
                 };
-            }
+                }
 
-            var featureState = new FeatureEngineeringState(this, identifierKeys);
-            var races = new List<PreparedRace>();
-            var rnd = new Random();
-            var currentRows = new List<Dictionary<string, object?>>();
-            int? currentRaceId = null;
+                var featureState = new FeatureEngineeringState(this, identifierKeys);
+                var races = new List<PreparedRace>();
+                var rnd = new Random();
+                var currentRows = new List<Dictionary<string, object?>>();
+                int? currentRaceId = null;
                 bool ShouldInclude(int raceId) => includeRaceIdSet is null || includeRaceIdSet.Contains(raceId);
                 bool ShouldUpdate(int raceId) => stateRaceWhitelistSet is null || stateRaceWhitelistSet.Contains(raceId);
                 const int raceProgressInterval = 250;
-            long totalRunnerRows = 0;
-            long includedRunnerRows = 0;
-            int processedRaceCount = 0;
-            int includedRaceCount = 0;
+                long totalRunnerRows = 0;
+                long includedRunnerRows = 0;
+                int processedRaceCount = 0;
+                int includedRaceCount = 0;
 
-            Console.WriteLine("[TrainAI] Loading races and runner rows from the database...");
+                Console.WriteLine("[TrainAI] Loading races and runner rows from the database...");
 
-            void FinalizeRace(List<Dictionary<string, object?>> rows, int raceId)
-            {
-                if (rows is null || rows.Count == 0)
+                void FinalizeRace(List<Dictionary<string, object?>> rows, int raceId)
                 {
-                    return;
-                }
-
-                Shuffle(rows, rnd);
-                bool include = ShouldInclude(raceId);
-                bool update = ShouldUpdate(raceId);
-                if (!include && !update)
-                {
-                    return;
-                }
-
-                ResolveHorseIdentifiers(conn, rows);
-                featureState.ProcessRace(rows, include, update);
-
-                processedRaceCount++;
-                if (include)
-                {
-                    races.Add(new PreparedRace(raceId, rows));
-                    includedRaceCount++;
-                    includedRunnerRows += rows.Count;
-                }
-            }
-            foreach (var record in conn.Query(sql, commandTimeout: 6000, buffered: false))
-            {
-                var source = (IDictionary<string, object?>)record;
-                var row = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
-                foreach (var kvp in source)
-                {
-                    row[kvp.Key] = NormalizeDbValue(kvp.Value);
-                }
-
-                if (!PreparedDataset.TryGetRequiredInt32(row, "RaceId", out var raceId))
-                {
-                    continue;
-                }
-
-                if (currentRaceId.HasValue && raceId != currentRaceId.Value)
-                {
-                    FinalizeRace(currentRows, currentRaceId.Value);
-                    currentRows = new List<Dictionary<string, object?>>();
-                }
-
-                currentRows.Add(row);
-                //FinalizeRace(currentRows, currentRaceId.Value);
-                currentRaceId = raceId;
-            }
-
-            if (currentRaceId.HasValue && currentRows.Count > 0)
-            {
-                FinalizeRace(currentRows, currentRaceId.Value);
-            }
-            Console.WriteLine(
-                $"[TrainAI] Raw data streaming complete. Feature engineering ran for {processedRaceCount} races ({includedRaceCount} included) across {totalRunnerRows:N0} runner rows.");
-
-            ApplyRepositoryBackfills(races, includeIdentifiers);
-
-            Console.WriteLine(
-                $"[TrainAI] Dataset preparation finished. {races.Count} races ready ({includedRunnerRows:N0} runner rows retained).");
-            return new PreparedDataset(races);
-        }
-        private void ApplyRepositoryBackfills(List<PreparedRace> races, bool includeIdentifiers)
-        {
-            if (races is null || races.Count == 0)
-            {
-                Console.WriteLine("[TrainAI] No races supplied for repository backfills.");
-                return;
-            }
-
-            var repository = EnsureRacingRepository();
-            if (repository is null)
-            {
-                Console.WriteLine("[TrainAI] Skipping repository backfills because the racing repository is unavailable.");
-                return;
-            }
-
-            Console.WriteLine($"[TrainAI] Applying repository backfills for {races.Count} races.");
-            var horseIdentitySummary = CollectHorseIdentitySummary(races);
-            var prefetchedHistoryByHorseId = PrefetchHorseHistoryByHorseId(horseIdentitySummary);
-            if (prefetchedHistoryByHorseId.Count > 0)
-            {
-                Console.WriteLine($"[TrainAI] Prefetched historical performance for {prefetchedHistoryByHorseId.Count} horses.");
-            }
-            var winRateCache = new ConcurrentDictionary<HorseCacheKey, (float WinRate, int Wins, int Starts)?>(HorseCacheKeyComparer.Instance);
-            var speedCache = new ConcurrentDictionary<HorseCacheKey, float?>(HorseCacheKeyComparer.Instance);
-            var distanceCache = new ConcurrentDictionary<HorseCacheKey, int?>(HorseCacheKeyComparer.Instance);
-            if (repository is not null)
-            {
-                PreloadRepositoryCaches(
-                    repository,
-                    horseIdentitySummary.Identities,
-                    prefetchedHistoryByHorseId,
-                    winRateCache,
-                    speedCache,
-                    distanceCache);
-            }
-            const int backfillProgressInterval = 250;
-            int processed = 0;
-            var totalRaces = races.Count;
-            var stopwatch = Stopwatch.StartNew();
-            var maxThreads = Math.Max(1, Environment.ProcessorCount);
-            var parallelOptions = new ParallelOptions
-            {
-                MaxDegreeOfParallelism = Math.Min(maxThreads, Math.Max(1, totalRaces))
-            };
-
-            void ReportProgress(int currentCount)
-            {
-                if (currentCount <= 0)
-                {
-                    return;
-                }
-
-                if (currentCount % backfillProgressInterval != 0 && currentCount != totalRaces)
-                {
-                    return;
-                }
-
-                var elapsed = stopwatch.Elapsed;
-                if (elapsed.Ticks == 0)
-                {
-                    Console.WriteLine($"[TrainAI] Backfill progress: {currentCount}/{totalRaces} races enriched.");
-                    return;
-                }
-
-                var averagePerRace = TimeSpan.FromTicks(elapsed.Ticks / currentCount);
-                var remainingRaces = Math.Max(0, totalRaces - currentCount);
-                var estimatedRemaining = remainingRaces > 0
-                    ? TimeSpan.FromTicks(averagePerRace.Ticks * remainingRaces)
-                    : TimeSpan.Zero;
-
-                Console.WriteLine(
-                    $"[TrainAI] Backfill progress: {currentCount}/{totalRaces} races enriched. " +
-                    $"Elapsed {FormatDuration(elapsed)}, avg {averagePerRace.TotalSeconds:F5}s/race, ETA {FormatDuration(estimatedRemaining)}.");
-            }
-            var raceMetadataLookup = BuildRaceMetadataLookup(repository, races);
-            Parallel.ForEach(races, parallelOptions, race =>
-            {
-                var raceRows = race?.Rows;
-                if (raceRows == null || raceRows.Count == 0)
-                {
-                    var skippedCount = Interlocked.Increment(ref processed);
-                    ReportProgress(skippedCount);
-                    return;
-                }
-                double winRateSum = 0d;
-                int winRateCount = 0;
-                var rowCount = raceRows.Count;
-                var perRunnerWinRate = new float?[rowCount];
-
-                for (var rowIndex = 0; rowIndex < rowCount; rowIndex++)
-                {
-                    var row = raceRows[rowIndex];
-                    if (row is null)
+                    if (rows is null || rows.Count == 0)
                     {
-                        continue;
-                    }
-                    if (PreparedDataset.TryGetRequiredInt32(row, "RaceId", out var raceId) &&
-                        raceMetadataLookup.TryGetValue(raceId, out var metadata) &&
-                        metadata != null)
-                    {
-                        ApplyRaceMetadataBackfill(row, metadata);
-                    }
-                    bool distanceBackfilled = false;
-
-                    if (TryGetHorseIdentity(row, out var identity) &&
-                        identity.HorseId.HasValue &&
-                        identity.RaceDate.HasValue &&
-                        prefetchedHistoryByHorseId.TryGetValue(identity.HorseId.Value, out var history) &&
-                        history.Count > 0)
-                    {
-                        var stats = ComputePrefetchedHorseStats(history, identity.RaceDate.Value);
-                        if (stats.HasValue)
-                        {
-                            if (stats.Value.WinRate.HasValue)
-                            {
-                                var sanitized = ClampProbability(stats.Value.WinRate.Value);
-                                if (!TryGetFloat(row, "WinRateLast5", out var existingWinRate) || existingWinRate <= 0f)
-                                {
-                                    row["WinRateLast5"] = sanitized;
-                                }
-                            }
-
-                            if (stats.Value.AverageSpeed.HasValue)
-                            {
-                                if (!TryGetFloat(row, "AvgSpeedLast5", out var existingSpeed) ||
-                                    existingSpeed <= 0f ||
-                                    float.IsNaN(existingSpeed) ||
-                                    float.IsInfinity(existingSpeed))
-                                {
-                                    row["AvgSpeedLast5"] = stats.Value.AverageSpeed.Value;
-                                }
-
-                                if (TryGetFloat(row, "AvgSpeedLast5", out var finalSpeed) &&
-                                    finalSpeed > 0f &&
-                                    !float.IsNaN(finalSpeed) &&
-                                    !float.IsInfinity(finalSpeed))
-                                {
-                                    row["RaceAvgSpeedLast5"] = finalSpeed;
-                                }
-                            }
-
-                            if (stats.Value.LastDistanceYards.HasValue &&
-                                PreparedDataset.TryGetValueWithAliases(row, "DistanceYards", out var distanceObj, requireNonNull: true) &&
-                                distanceObj != null &&
-                                PreparedDataset.TryConvertToInt32(distanceObj, out var currentDistance) &&
-                                currentDistance > 0)
-                            {
-                                row["DistanceChangeFromLast"] = (float)(currentDistance - stats.Value.LastDistanceYards.Value);
-                                distanceBackfilled = true;
-                            }
-                        }
-                        ApplyPrefetchedRatingFallbacks(row, history, identity.RaceDate.Value);
-                    }
-                    var resolvedWinRate = ResolveWinRateLast5(row, winRateCache);
-                    if (resolvedWinRate.HasValue)
-                    {
-                        var winRateValue = resolvedWinRate.Value;
-                        perRunnerWinRate[rowIndex] = winRateValue;
-                        winRateSum += winRateValue;
-                        winRateCount++;
+                        return;
                     }
 
-                    var resolvedSpeed = ResolveAvgSpeedLast5(row, speedCache);
-                    if (resolvedSpeed.HasValue)
+                    Shuffle(rows, rnd);
+                    bool include = ShouldInclude(raceId);
+                    bool update = ShouldUpdate(raceId);
+                    if (!include && !update)
                     {
-                        row["AvgSpeedLast5"] = resolvedSpeed.Value;
-                        row["RaceAvgSpeedLast5"] = resolvedSpeed.Value;
+                        return;
                     }
 
-                    if (!distanceBackfilled)
+                    ResolveHorseIdentifiers(conn, rows);
+                    featureState.ProcessRace(rows, include, update);
+
+                    processedRaceCount++;
+                    if (include)
                     {
-                        ResolveDistanceChangeFromLast(row, distanceCache);
-                    }
-                    ApplyTrainerClassFallbacks(row);
-                    ApplyJockeyClassFallbacks(row);
-                }
-
-                if (winRateCount > 0)
-                {
-                    for (var rowIndex = 0; rowIndex < rowCount; rowIndex++)
-                    {
-                        var row = raceRows[rowIndex];
-                        if (row is null)
-                        {
-                            continue;
-                        }
-
-                        float valueToAssign;
-                        var runnerWinRate = perRunnerWinRate[rowIndex];
-                        if (runnerWinRate.HasValue)
-                        {
-                            valueToAssign = winRateCount > 1
-                                ? (float)((winRateSum - runnerWinRate.Value) / (winRateCount - 1))
-                                : runnerWinRate.Value;
-                        }
-                        else
-                        {
-                            valueToAssign = (float)(winRateSum / winRateCount);
-                        }
-
-                        row["RaceAvgWinRateLast5"] = valueToAssign;
+                        races.Add(new PreparedRace(raceId, rows));
+                        includedRaceCount++;
+                        includedRunnerRows += rows.Count;
                     }
                 }
-                var current = Interlocked.Increment(ref processed);
-                ReportProgress(current);
-            });
-
-            stopwatch.Stop();
-            Console.WriteLine($"[TrainAI] Repository backfills complete in {FormatDuration(stopwatch.Elapsed)}.");
-            if (!includeIdentifiers)
-            {
-                foreach (var race in races)
+                foreach (var record in conn.Query(sql, commandTimeout: 6000, buffered: false))
                 {
-                    var raceRows = race?.Rows;
-                    if (raceRows is null)
+                    var source = (IDictionary<string, object?>)record;
+                    var row = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var kvp in source)
                     {
-                        continue;
-                    }
-
-                    foreach (var row in raceRows)
-                    {
-                        if (row is null)
-                        {
-                            continue;
-                        }
-
-                        foreach (var key in BackfillRequiredKeys)
-                        {
-                            row.Remove(key);
-                        }
-                    }
-                }
-            }
-        }
-        private static float? GetMeaningfulFloat(Dictionary<string, object?> row, string key, bool allowZero = false)
-        {
-            if (row is null)
-            {
-                return null;
-            }
-
-            if (TryGetFloat(row, key, out var value))
-            {
-                if (float.IsNaN(value) || float.IsInfinity(value))
-                {
-                    return null;
-                }
-
-                if (allowZero || Math.Abs(value) > 1e-6f)
-                {
-                    return value;
-                }
-            }
-
-            return null;
-        }
-        private static void ApplyTrainerClassFallbacks(Dictionary<string, object?> row)
-        {
-            if (row is null)
-            {
-                return;
-            }
-
-            float? trainerClassWin = GetMeaningfulFloat(row, "TrainerClassWinRate");
-            if (!trainerClassWin.HasValue)
-            {
-                float? fallbackWin = GetMeaningfulFloat(row, "TrainerWinRate")
-                    ?? GetMeaningfulFloat(row, $"TrainerWinRateLast{TrainerJockeyRecentStarts}")
-                    ?? GetMeaningfulFloat(row, "TrainerWinRateRecentDays")
-                    ?? GetMeaningfulFloat(row, "TrainerSurfaceWinRate")
-                    ?? GetMeaningfulFloat(row, "TrainerGoingWinRate")
-                    ?? GetMeaningfulFloat(row, "TrainerDistanceBucketWinRate")
-                    ?? GetMeaningfulFloat(row, "TrainerCourseWinRate");
-
-                if (fallbackWin.HasValue)
-                {
-                    trainerClassWin = ClampProbability(fallbackWin.Value);
-                    row["TrainerClassWinRate"] = trainerClassWin.Value;
-                }
-            }
-
-            float? trainerClassAvg = GetMeaningfulFloat(row, "TrainerClassAvgNorm");
-            if (!trainerClassAvg.HasValue)
-            {
-                trainerClassAvg = GetMeaningfulFloat(row, "TrainerSurfaceAvgNorm")
-                    ?? GetMeaningfulFloat(row, "TrainerGoingAvgNorm")
-                    ?? GetMeaningfulFloat(row, "TrainerDistanceBucketAvgNorm");
-
-                if (!trainerClassAvg.HasValue)
-                {
-                    var sourceWin = trainerClassWin ?? GetMeaningfulFloat(row, "TrainerWinRate");
-                    if (sourceWin.HasValue)
-                    {
-                        trainerClassAvg = ClampNormalizedPosition(1f - ClampProbability(sourceWin.Value));
-                    }
-                }
-
-                if (trainerClassAvg.HasValue)
-                {
-                    row["TrainerClassAvgNorm"] = trainerClassAvg.Value;
-                }
-            }
-
-            float? lastTrainerClass = GetMeaningfulFloat(row, "LastTrainerClassNormPos");
-            if (!lastTrainerClass.HasValue)
-            {
-                lastTrainerClass = GetMeaningfulFloat(row, "LastTrainerSurfaceNormPos")
-                    ?? GetMeaningfulFloat(row, "LastTrainerGoingNormPos")
-                    ?? GetMeaningfulFloat(row, "LastTrainerDistanceBucketNormPos")
-                    ?? trainerClassAvg;
-
-                if (!lastTrainerClass.HasValue && trainerClassWin.HasValue)
-                {
-                    lastTrainerClass = ClampNormalizedPosition(1f - ClampProbability(trainerClassWin.Value));
-                }
-
-                if (lastTrainerClass.HasValue)
-                {
-                    row["LastTrainerClassNormPos"] = lastTrainerClass.Value;
-                }
-            }
-        }
-
-        private static void ApplyJockeyClassFallbacks(Dictionary<string, object?> row)
-        {
-            if (row is null)
-            {
-                return;
-            }
-
-            float? jockeyClassWin = GetMeaningfulFloat(row, "JockeyClassWinRate");
-            if (!jockeyClassWin.HasValue)
-            {
-                float? fallbackWin = GetMeaningfulFloat(row, "JockeyWinRate")
-                    ?? GetMeaningfulFloat(row, $"JockeyWinRateLast{TrainerJockeyRecentStarts}")
-                    ?? GetMeaningfulFloat(row, "JockeyWinRateRecentDays")
-                    ?? GetMeaningfulFloat(row, "TrainerClassWinRate")
-                    ?? GetMeaningfulFloat(row, "TrainerWinRate")
-                    ?? GetMeaningfulFloat(row, "JockeySurfaceWinRate")
-                    ?? GetMeaningfulFloat(row, "JockeyGoingWinRate")
-                    ?? GetMeaningfulFloat(row, "JockeyDistanceBucketWinRate")
-                    ?? GetMeaningfulFloat(row, "TrainerJockeyWinRate");
-
-                if (fallbackWin.HasValue)
-                {
-                    jockeyClassWin = ClampProbability(fallbackWin.Value);
-                    row["JockeyClassWinRate"] = jockeyClassWin.Value;
-                }
-            }
-
-            float? jockeyClassAvg = GetMeaningfulFloat(row, "JockeyClassAvgNorm");
-            if (!jockeyClassAvg.HasValue)
-            {
-                jockeyClassAvg = GetMeaningfulFloat(row, "JockeySurfaceAvgNorm")
-                    ?? GetMeaningfulFloat(row, "JockeyGoingAvgNorm")
-                    ?? GetMeaningfulFloat(row, "JockeyDistanceBucketAvgNorm")
-                    ?? GetMeaningfulFloat(row, "TrainerClassAvgNorm");
-
-                if (!jockeyClassAvg.HasValue)
-                {
-                    var sourceWin = jockeyClassWin
-                        ?? GetMeaningfulFloat(row, "JockeyWinRate")
-                        ?? GetMeaningfulFloat(row, "TrainerClassWinRate");
-                    if (sourceWin.HasValue)
-                    {
-                        jockeyClassAvg = ClampNormalizedPosition(1f - ClampProbability(sourceWin.Value));
-                    }
-                }
-
-                if (jockeyClassAvg.HasValue)
-                {
-                    row["JockeyClassAvgNorm"] = jockeyClassAvg.Value;
-                }
-            }
-
-            float? lastJockeyClass = GetMeaningfulFloat(row, "LastJockeyClassNormPos");
-            if (!lastJockeyClass.HasValue)
-            {
-                lastJockeyClass = GetMeaningfulFloat(row, "LastJockeySurfaceNormPos")
-                    ?? GetMeaningfulFloat(row, "LastJockeyGoingNormPos")
-                    ?? GetMeaningfulFloat(row, "LastJockeyDistanceBucketNormPos")
-                    ?? jockeyClassAvg
-                    ?? GetMeaningfulFloat(row, "LastTrainerClassNormPos");
-
-                if (!lastJockeyClass.HasValue && jockeyClassWin.HasValue)
-                {
-                    lastJockeyClass = ClampNormalizedPosition(1f - ClampProbability(jockeyClassWin.Value));
-                }
-
-                if (lastJockeyClass.HasValue)
-                {
-                    row["LastJockeyClassNormPos"] = lastJockeyClass.Value;
-                }
-            }
-        }
-        private static IDictionary<int, RaceFeatureBackfill> BuildRaceMetadataLookup(
-            IRacingRepository? repository,
-            IReadOnlyList<PreparedRace> races)
-        {
-            if (repository is null || races is null || races.Count == 0)
-            {
-                return new Dictionary<int, RaceFeatureBackfill>();
-            }
-
-            var missingRaceIds = new HashSet<int>();
-            foreach (var race in races)
-            {
-                if (race?.Rows == null)
-                {
-                    continue;
-                }
-
-                foreach (var row in race.Rows)
-                {
-                    if (row is null)
-                    {
-                        continue;
+                        row[kvp.Key] = NormalizeDbValue(kvp.Value);
                     }
 
                     if (!PreparedDataset.TryGetRequiredInt32(row, "RaceId", out var raceId))
@@ -2581,69 +2133,517 @@ namespace HorseRacingML.ML
                         continue;
                     }
 
-                    if (NeedsRaceMetadataBackfill(row))
+                    if (currentRaceId.HasValue && raceId != currentRaceId.Value)
                     {
-                        missingRaceIds.Add(raceId);
+                        FinalizeRace(currentRows, currentRaceId.Value);
+                        currentRows = new List<Dictionary<string, object?>>();
+                    }
+
+                    currentRows.Add(row);
+                    //FinalizeRace(currentRows, currentRaceId.Value);
+                    currentRaceId = raceId;
+                }
+
+                if (currentRaceId.HasValue && currentRows.Count > 0)
+                {
+                    FinalizeRace(currentRows, currentRaceId.Value);
+                }
+                Console.WriteLine(
+                    $"[TrainAI] Raw data streaming complete. Feature engineering ran for {processedRaceCount} races ({includedRaceCount} included) across {totalRunnerRows:N0} runner rows.");
+
+                ApplyRepositoryBackfills(races, includeIdentifiers);
+
+                Console.WriteLine(
+                    $"[TrainAI] Dataset preparation finished. {races.Count} races ready ({includedRunnerRows:N0} runner rows retained).");
+                return new PreparedDataset(races);
+            }
+            private void ApplyRepositoryBackfills(List<PreparedRace> races, bool includeIdentifiers)
+            {
+                if (races is null || races.Count == 0)
+                {
+                    Console.WriteLine("[TrainAI] No races supplied for repository backfills.");
+                    return;
+                }
+
+                var repository = EnsureRacingRepository();
+                if (repository is null)
+                {
+                    Console.WriteLine("[TrainAI] Skipping repository backfills because the racing repository is unavailable.");
+                    return;
+                }
+
+                Console.WriteLine($"[TrainAI] Applying repository backfills for {races.Count} races.");
+                var horseIdentitySummary = CollectHorseIdentitySummary(races);
+                var prefetchedHistoryByHorseId = PrefetchHorseHistoryByHorseId(horseIdentitySummary);
+                if (prefetchedHistoryByHorseId.Count > 0)
+                {
+                    Console.WriteLine($"[TrainAI] Prefetched historical performance for {prefetchedHistoryByHorseId.Count} horses.");
+                }
+                var winRateCache = new ConcurrentDictionary<HorseCacheKey, (float WinRate, int Wins, int Starts)?>(HorseCacheKeyComparer.Instance);
+                var speedCache = new ConcurrentDictionary<HorseCacheKey, float?>(HorseCacheKeyComparer.Instance);
+                var distanceCache = new ConcurrentDictionary<HorseCacheKey, int?>(HorseCacheKeyComparer.Instance);
+                if (repository is not null)
+                {
+                    PreloadRepositoryCaches(
+                        repository,
+                        horseIdentitySummary.Identities,
+                        prefetchedHistoryByHorseId,
+                        winRateCache,
+                        speedCache,
+                        distanceCache);
+                }
+                const int backfillProgressInterval = 250;
+                int processed = 0;
+                var totalRaces = races.Count;
+                var stopwatch = Stopwatch.StartNew();
+                var maxThreads = Math.Max(1, Environment.ProcessorCount);
+                var parallelOptions = new ParallelOptions
+                {
+                    MaxDegreeOfParallelism = Math.Min(maxThreads, Math.Max(1, totalRaces))
+                };
+
+                void ReportProgress(int currentCount)
+                {
+                    if (currentCount <= 0)
+                    {
+                        return;
+                    }
+
+                    if (currentCount % backfillProgressInterval != 0 && currentCount != totalRaces)
+                    {
+                        return;
+                    }
+
+                    var elapsed = stopwatch.Elapsed;
+                    if (elapsed.Ticks == 0)
+                    {
+                        Console.WriteLine($"[TrainAI] Backfill progress: {currentCount}/{totalRaces} races enriched.");
+                        return;
+                    }
+
+                    var averagePerRace = TimeSpan.FromTicks(elapsed.Ticks / currentCount);
+                    var remainingRaces = Math.Max(0, totalRaces - currentCount);
+                    var estimatedRemaining = remainingRaces > 0
+                        ? TimeSpan.FromTicks(averagePerRace.Ticks * remainingRaces)
+                        : TimeSpan.Zero;
+
+                    Console.WriteLine(
+                        $"[TrainAI] Backfill progress: {currentCount}/{totalRaces} races enriched. " +
+                        $"Elapsed {FormatDuration(elapsed)}, avg {averagePerRace.TotalSeconds:F5}s/race, ETA {FormatDuration(estimatedRemaining)}.");
+                }
+                var raceMetadataLookup = BuildRaceMetadataLookup(repository, races);
+                Parallel.ForEach(races, parallelOptions, race =>
+                {
+                    var raceRows = race?.Rows;
+                    if (raceRows == null || raceRows.Count == 0)
+                    {
+                        var skippedCount = Interlocked.Increment(ref processed);
+                        ReportProgress(skippedCount);
+                        return;
+                    }
+                    double winRateSum = 0d;
+                    int winRateCount = 0;
+                    var rowCount = raceRows.Count;
+                    var perRunnerWinRate = new float?[rowCount];
+
+                    for (var rowIndex = 0; rowIndex < rowCount; rowIndex++)
+                    {
+                        var row = raceRows[rowIndex];
+                        if (row is null)
+                        {
+                            continue;
+                        }
+                        if (PreparedDataset.TryGetRequiredInt32(row, "RaceId", out var raceId) &&
+                            raceMetadataLookup.TryGetValue(raceId, out var metadata) &&
+                            metadata != null)
+                        {
+                            ApplyRaceMetadataBackfill(row, metadata);
+                        }
+                        bool distanceBackfilled = false;
+
+                        if (TryGetHorseIdentity(row, out var identity) &&
+                            identity.HorseId.HasValue &&
+                            identity.RaceDate.HasValue &&
+                            prefetchedHistoryByHorseId.TryGetValue(identity.HorseId.Value, out var history) &&
+                            history.Count > 0)
+                        {
+                            var stats = ComputePrefetchedHorseStats(history, identity.RaceDate.Value);
+                            if (stats.HasValue)
+                            {
+                                if (stats.Value.WinRate.HasValue)
+                                {
+                                    var sanitized = ClampProbability(stats.Value.WinRate.Value);
+                                    if (!TryGetFloat(row, "WinRateLast5", out var existingWinRate) || existingWinRate <= 0f)
+                                    {
+                                        row["WinRateLast5"] = sanitized;
+                                    }
+                                }
+
+                                if (stats.Value.AverageSpeed.HasValue)
+                                {
+                                    if (!TryGetFloat(row, "AvgSpeedLast5", out var existingSpeed) ||
+                                        existingSpeed <= 0f ||
+                                        float.IsNaN(existingSpeed) ||
+                                        float.IsInfinity(existingSpeed))
+                                    {
+                                        row["AvgSpeedLast5"] = stats.Value.AverageSpeed.Value;
+                                    }
+
+                                    if (TryGetFloat(row, "AvgSpeedLast5", out var finalSpeed) &&
+                                        finalSpeed > 0f &&
+                                        !float.IsNaN(finalSpeed) &&
+                                        !float.IsInfinity(finalSpeed))
+                                    {
+                                        row["RaceAvgSpeedLast5"] = finalSpeed;
+                                    }
+                                }
+
+                                if (stats.Value.LastDistanceYards.HasValue &&
+                                    PreparedDataset.TryGetValueWithAliases(row, "DistanceYards", out var distanceObj, requireNonNull: true) &&
+                                    distanceObj != null &&
+                                    PreparedDataset.TryConvertToInt32(distanceObj, out var currentDistance) &&
+                                    currentDistance > 0)
+                                {
+                                    row["DistanceChangeFromLast"] = (float)(currentDistance - stats.Value.LastDistanceYards.Value);
+                                    distanceBackfilled = true;
+                                }
+                            }
+                            ApplyPrefetchedRatingFallbacks(row, history, identity.RaceDate.Value);
+                        }
+                        var resolvedWinRate = ResolveWinRateLast5(row, winRateCache);
+                        if (resolvedWinRate.HasValue)
+                        {
+                            var winRateValue = resolvedWinRate.Value;
+                            perRunnerWinRate[rowIndex] = winRateValue;
+                            winRateSum += winRateValue;
+                            winRateCount++;
+                        }
+
+                        var resolvedSpeed = ResolveAvgSpeedLast5(row, speedCache);
+                        if (resolvedSpeed.HasValue)
+                        {
+                            row["AvgSpeedLast5"] = resolvedSpeed.Value;
+                            row["RaceAvgSpeedLast5"] = resolvedSpeed.Value;
+                        }
+
+                        if (!distanceBackfilled)
+                        {
+                            ResolveDistanceChangeFromLast(row, distanceCache);
+                        }
+                        ApplyTrainerClassFallbacks(row);
+                        ApplyJockeyClassFallbacks(row);
+                    }
+
+                    if (winRateCount > 0)
+                    {
+                        for (var rowIndex = 0; rowIndex < rowCount; rowIndex++)
+                        {
+                            var row = raceRows[rowIndex];
+                            if (row is null)
+                            {
+                                continue;
+                            }
+
+                            float valueToAssign;
+                            var runnerWinRate = perRunnerWinRate[rowIndex];
+                            if (runnerWinRate.HasValue)
+                            {
+                                valueToAssign = winRateCount > 1
+                                    ? (float)((winRateSum - runnerWinRate.Value) / (winRateCount - 1))
+                                    : runnerWinRate.Value;
+                            }
+                            else
+                            {
+                                valueToAssign = (float)(winRateSum / winRateCount);
+                            }
+
+                            row["RaceAvgWinRateLast5"] = valueToAssign;
+                        }
+                    }
+                    var current = Interlocked.Increment(ref processed);
+                    ReportProgress(current);
+                });
+
+                stopwatch.Stop();
+                Console.WriteLine($"[TrainAI] Repository backfills complete in {FormatDuration(stopwatch.Elapsed)}.");
+                if (!includeIdentifiers)
+                {
+                    foreach (var race in races)
+                    {
+                        var raceRows = race?.Rows;
+                        if (raceRows is null)
+                        {
+                            continue;
+                        }
+
+                        foreach (var row in raceRows)
+                        {
+                            if (row is null)
+                            {
+                                continue;
+                            }
+
+                            foreach (var key in BackfillRequiredKeys)
+                            {
+                                row.Remove(key);
+                            }
+                        }
+                    }
+                }
+            }
+            private static float? GetMeaningfulFloat(Dictionary<string, object?> row, string key, bool allowZero = false)
+            {
+                if (row is null)
+                {
+                    return null;
+                }
+
+                if (TryGetFloat(row, key, out var value))
+                {
+                    if (float.IsNaN(value) || float.IsInfinity(value))
+                    {
+                        return null;
+                    }
+
+                    if (allowZero || Math.Abs(value) > 1e-6f)
+                    {
+                        return value;
+                    }
+                }
+
+                return null;
+            }
+            private static void ApplyTrainerClassFallbacks(Dictionary<string, object?> row)
+            {
+                if (row is null)
+                {
+                    return;
+                }
+
+                float? trainerClassWin = GetMeaningfulFloat(row, "TrainerClassWinRate");
+                if (!trainerClassWin.HasValue)
+                {
+                    float? fallbackWin = GetMeaningfulFloat(row, "TrainerWinRate")
+                        ?? GetMeaningfulFloat(row, $"TrainerWinRateLast{TrainerJockeyRecentStarts}")
+                        ?? GetMeaningfulFloat(row, "TrainerWinRateRecentDays")
+                        ?? GetMeaningfulFloat(row, "TrainerSurfaceWinRate")
+                        ?? GetMeaningfulFloat(row, "TrainerGoingWinRate")
+                        ?? GetMeaningfulFloat(row, "TrainerDistanceBucketWinRate")
+                        ?? GetMeaningfulFloat(row, "TrainerCourseWinRate");
+
+                    if (fallbackWin.HasValue)
+                    {
+                        trainerClassWin = ClampProbability(fallbackWin.Value);
+                        row["TrainerClassWinRate"] = trainerClassWin.Value;
+                    }
+                }
+
+                float? trainerClassAvg = GetMeaningfulFloat(row, "TrainerClassAvgNorm");
+                if (!trainerClassAvg.HasValue)
+                {
+                    trainerClassAvg = GetMeaningfulFloat(row, "TrainerSurfaceAvgNorm")
+                        ?? GetMeaningfulFloat(row, "TrainerGoingAvgNorm")
+                        ?? GetMeaningfulFloat(row, "TrainerDistanceBucketAvgNorm");
+
+                    if (!trainerClassAvg.HasValue)
+                    {
+                        var sourceWin = trainerClassWin ?? GetMeaningfulFloat(row, "TrainerWinRate");
+                        if (sourceWin.HasValue)
+                        {
+                            trainerClassAvg = ClampNormalizedPosition(1f - ClampProbability(sourceWin.Value));
+                        }
+                    }
+
+                    if (trainerClassAvg.HasValue)
+                    {
+                        row["TrainerClassAvgNorm"] = trainerClassAvg.Value;
+                    }
+                }
+
+                float? lastTrainerClass = GetMeaningfulFloat(row, "LastTrainerClassNormPos");
+                if (!lastTrainerClass.HasValue)
+                {
+                    lastTrainerClass = GetMeaningfulFloat(row, "LastTrainerSurfaceNormPos")
+                        ?? GetMeaningfulFloat(row, "LastTrainerGoingNormPos")
+                        ?? GetMeaningfulFloat(row, "LastTrainerDistanceBucketNormPos")
+                        ?? trainerClassAvg;
+
+                    if (!lastTrainerClass.HasValue && trainerClassWin.HasValue)
+                    {
+                        lastTrainerClass = ClampNormalizedPosition(1f - ClampProbability(trainerClassWin.Value));
+                    }
+
+                    if (lastTrainerClass.HasValue)
+                    {
+                        row["LastTrainerClassNormPos"] = lastTrainerClass.Value;
                     }
                 }
             }
 
-            if (missingRaceIds.Count == 0)
+            private static void ApplyJockeyClassFallbacks(Dictionary<string, object?> row)
             {
-                return new Dictionary<int, RaceFeatureBackfill>();
+                if (row is null)
+                {
+                    return;
+                }
+
+                float? jockeyClassWin = GetMeaningfulFloat(row, "JockeyClassWinRate");
+                if (!jockeyClassWin.HasValue)
+                {
+                    float? fallbackWin = GetMeaningfulFloat(row, "JockeyWinRate")
+                        ?? GetMeaningfulFloat(row, $"JockeyWinRateLast{TrainerJockeyRecentStarts}")
+                        ?? GetMeaningfulFloat(row, "JockeyWinRateRecentDays")
+                        ?? GetMeaningfulFloat(row, "TrainerClassWinRate")
+                        ?? GetMeaningfulFloat(row, "TrainerWinRate")
+                        ?? GetMeaningfulFloat(row, "JockeySurfaceWinRate")
+                        ?? GetMeaningfulFloat(row, "JockeyGoingWinRate")
+                        ?? GetMeaningfulFloat(row, "JockeyDistanceBucketWinRate")
+                        ?? GetMeaningfulFloat(row, "TrainerJockeyWinRate");
+
+                    if (fallbackWin.HasValue)
+                    {
+                        jockeyClassWin = ClampProbability(fallbackWin.Value);
+                        row["JockeyClassWinRate"] = jockeyClassWin.Value;
+                    }
+                }
+
+                float? jockeyClassAvg = GetMeaningfulFloat(row, "JockeyClassAvgNorm");
+                if (!jockeyClassAvg.HasValue)
+                {
+                    jockeyClassAvg = GetMeaningfulFloat(row, "JockeySurfaceAvgNorm")
+                        ?? GetMeaningfulFloat(row, "JockeyGoingAvgNorm")
+                        ?? GetMeaningfulFloat(row, "JockeyDistanceBucketAvgNorm")
+                        ?? GetMeaningfulFloat(row, "TrainerClassAvgNorm");
+
+                    if (!jockeyClassAvg.HasValue)
+                    {
+                        var sourceWin = jockeyClassWin
+                            ?? GetMeaningfulFloat(row, "JockeyWinRate")
+                            ?? GetMeaningfulFloat(row, "TrainerClassWinRate");
+                        if (sourceWin.HasValue)
+                        {
+                            jockeyClassAvg = ClampNormalizedPosition(1f - ClampProbability(sourceWin.Value));
+                        }
+                    }
+
+                    if (jockeyClassAvg.HasValue)
+                    {
+                        row["JockeyClassAvgNorm"] = jockeyClassAvg.Value;
+                    }
+                }
+
+                float? lastJockeyClass = GetMeaningfulFloat(row, "LastJockeyClassNormPos");
+                if (!lastJockeyClass.HasValue)
+                {
+                    lastJockeyClass = GetMeaningfulFloat(row, "LastJockeySurfaceNormPos")
+                        ?? GetMeaningfulFloat(row, "LastJockeyGoingNormPos")
+                        ?? GetMeaningfulFloat(row, "LastJockeyDistanceBucketNormPos")
+                        ?? jockeyClassAvg
+                        ?? GetMeaningfulFloat(row, "LastTrainerClassNormPos");
+
+                    if (!lastJockeyClass.HasValue && jockeyClassWin.HasValue)
+                    {
+                        lastJockeyClass = ClampNormalizedPosition(1f - ClampProbability(jockeyClassWin.Value));
+                    }
+
+                    if (lastJockeyClass.HasValue)
+                    {
+                        row["LastJockeyClassNormPos"] = lastJockeyClass.Value;
+                    }
+                }
+            }
+            private static IDictionary<int, RaceFeatureBackfill> BuildRaceMetadataLookup(
+                IRacingRepository? repository,
+                IReadOnlyList<PreparedRace> races)
+            {
+                if (repository is null || races is null || races.Count == 0)
+                {
+                    return new Dictionary<int, RaceFeatureBackfill>();
+                }
+
+                var missingRaceIds = new HashSet<int>();
+                foreach (var race in races)
+                {
+                    if (race?.Rows == null)
+                    {
+                        continue;
+                    }
+
+                    foreach (var row in race.Rows)
+                    {
+                        if (row is null)
+                        {
+                            continue;
+                        }
+
+                        if (!PreparedDataset.TryGetRequiredInt32(row, "RaceId", out var raceId))
+                        {
+                            continue;
+                        }
+
+                        if (NeedsRaceMetadataBackfill(row))
+                        {
+                            missingRaceIds.Add(raceId);
+                        }
+                    }
+                }
+
+                if (missingRaceIds.Count == 0)
+                {
+                    return new Dictionary<int, RaceFeatureBackfill>();
+                }
+
+                return repository.GetRaceFeatureBackfills(missingRaceIds);
             }
 
-            return repository.GetRaceFeatureBackfills(missingRaceIds);
-        }
-
-        private static bool NeedsRaceMetadataBackfill(Dictionary<string, object?> row)
-        {
-            return !HasMeaningfulString(row, "RaceType") ||
-                   !HasMeaningfulString(row, "Surface") ||
-                   !HasMeaningfulString(row, "Going") ||
-                   !HasMeaningfulString(row, "DistanceText") ||
-                   !HasMeaningfulNumeric(row, "DistanceYards") ||
-                   !HasMeaningfulNumeric(row, "RunnerCount");
-        }
-
-        private static void ApplyRaceMetadataBackfill(Dictionary<string, object?> row, RaceFeatureBackfill metadata)
-        {
-            if (row is null || metadata is null)
+            private static bool NeedsRaceMetadataBackfill(Dictionary<string, object?> row)
             {
-                return;
+                return !HasMeaningfulString(row, "RaceType") ||
+                       !HasMeaningfulString(row, "Surface") ||
+                       !HasMeaningfulString(row, "Going") ||
+                       !HasMeaningfulString(row, "DistanceText") ||
+                       !HasMeaningfulNumeric(row, "DistanceYards") ||
+                       !HasMeaningfulNumeric(row, "RunnerCount");
             }
 
-            if (!HasMeaningfulString(row, "RaceType") && !string.IsNullOrWhiteSpace(metadata.RaceType))
+            private static void ApplyRaceMetadataBackfill(Dictionary<string, object?> row, RaceFeatureBackfill metadata)
             {
-                row["RaceType"] = metadata.RaceType?.Trim();
-            }
+                if (row is null || metadata is null)
+                {
+                    return;
+                }
 
-            if (!HasMeaningfulString(row, "Surface") && !string.IsNullOrWhiteSpace(metadata.Surface))
-            {
-                row["Surface"] = metadata.Surface?.Trim();
-            }
+                if (!HasMeaningfulString(row, "RaceType") && !string.IsNullOrWhiteSpace(metadata.RaceType))
+                {
+                    row["RaceType"] = metadata.RaceType?.Trim();
+                }
 
-            if (!HasMeaningfulString(row, "Going") && !string.IsNullOrWhiteSpace(metadata.Going))
-            {
-                row["Going"] = metadata.Going?.Trim();
-            }
+                if (!HasMeaningfulString(row, "Surface") && !string.IsNullOrWhiteSpace(metadata.Surface))
+                {
+                    row["Surface"] = metadata.Surface?.Trim();
+                }
 
-            if (!HasMeaningfulNumeric(row, "DistanceYards") && metadata.DistanceYards.HasValue)
-            {
-                row["DistanceYards"] = metadata.DistanceYards.Value;
-            }
+                if (!HasMeaningfulString(row, "Going") && !string.IsNullOrWhiteSpace(metadata.Going))
+                {
+                    row["Going"] = metadata.Going?.Trim();
+                }
 
-            if (!HasMeaningfulString(row, "DistanceText") && !string.IsNullOrWhiteSpace(metadata.DistanceText))
-            {
-                row["DistanceText"] = metadata.DistanceText?.Trim();
-            }
+                if (!HasMeaningfulNumeric(row, "DistanceYards") && metadata.DistanceYards.HasValue)
+                {
+                    row["DistanceYards"] = metadata.DistanceYards.Value;
+                }
 
-            if (!HasMeaningfulNumeric(row, "RunnerCount") && metadata.RunnerCount.HasValue)
-            {
-                row["RunnerCount"] = metadata.RunnerCount.Value;
+                if (!HasMeaningfulString(row, "DistanceText") && !string.IsNullOrWhiteSpace(metadata.DistanceText))
+                {
+                    row["DistanceText"] = metadata.DistanceText?.Trim();
+                }
+
+                if (!HasMeaningfulNumeric(row, "RunnerCount") && metadata.RunnerCount.HasValue)
+                {
+                    row["RunnerCount"] = metadata.RunnerCount.Value;
+                }
             }
-        }
-        private static readonly HashSet<string> NonMeaningfulStringTokens = new(StringComparer.OrdinalIgnoreCase)
+            private static readonly HashSet<string> NonMeaningfulStringTokens = new(StringComparer.OrdinalIgnoreCase)
         {
             "Unknown",
             "Missing",
@@ -2653,271 +2653,271 @@ namespace HorseRacingML.ML
             "-"
         };
 
-        private static bool IsMeaningfulStringValue(string? value)
-        {
-            if (string.IsNullOrWhiteSpace(value))
+            private static bool IsMeaningfulStringValue(string? value)
             {
-                return false;
-            }
-
-            var trimmed = value.Trim();
-            return trimmed.Length > 0 && !NonMeaningfulStringTokens.Contains(trimmed);
-        }
-
-        private static bool HasMeaningfulString(Dictionary<string, object?> row, string key)
-        {
-            if (!row.TryGetValue(key, out var value) || value is null)
-            {
-                return false;
-            }
-
-            if (value is string s)
-            {
-                return IsMeaningfulStringValue(s);
-            }
-
-            if (value is System.Data.SqlTypes.SqlString sql)
-            {
-                return !sql.IsNull && IsMeaningfulStringValue(sql.Value);
-            }
-
-            return false;
-        }
-        private static bool HasMeaningfulNumeric(Dictionary<string, object?> row, string key)
-        {
-            if (!row.TryGetValue(key, out var value) || value is null)
-            {
-                return false;
-            }
-
-            if (PreparedDataset.TryConvertToInt32(value, out var intValue))
-            {
-                return intValue != 0;
-            }
-
-            if (value is IConvertible convertible)
-            {
-                try
-                {
-                    return Math.Abs(convertible.ToDouble(null)) > 0.0;
-                }
-                catch
+                if (string.IsNullOrWhiteSpace(value))
                 {
                     return false;
                 }
+
+                var trimmed = value.Trim();
+                return trimmed.Length > 0 && !NonMeaningfulStringTokens.Contains(trimmed);
             }
 
-            return false;
-        }
-        private static string FormatDuration(TimeSpan time)
-        {
-            if (time <= TimeSpan.Zero)
+            private static bool HasMeaningfulString(Dictionary<string, object?> row, string key)
             {
-                return "0s";
+                if (!row.TryGetValue(key, out var value) || value is null)
+                {
+                    return false;
+                }
+
+                if (value is string s)
+                {
+                    return IsMeaningfulStringValue(s);
+                }
+
+                if (value is System.Data.SqlTypes.SqlString sql)
+                {
+                    return !sql.IsNull && IsMeaningfulStringValue(sql.Value);
+                }
+
+                return false;
             }
-
-            var builder = new StringBuilder();
-
-            if (time.Days > 0)
+            private static bool HasMeaningfulNumeric(Dictionary<string, object?> row, string key)
             {
-                builder.Append(time.Days).Append('d').Append(' ');
+                if (!row.TryGetValue(key, out var value) || value is null)
+                {
+                    return false;
+                }
+
+                if (PreparedDataset.TryConvertToInt32(value, out var intValue))
+                {
+                    return intValue != 0;
+                }
+
+                if (value is IConvertible convertible)
+                {
+                    try
+                    {
+                        return Math.Abs(convertible.ToDouble(null)) > 0.0;
+                    }
+                    catch
+                    {
+                        return false;
+                    }
+                }
+
+                return false;
             }
-
-            if (time.Hours > 0 || builder.Length > 0)
+            private static string FormatDuration(TimeSpan time)
             {
-                builder.Append(time.Hours).Append('h').Append(' ');
+                if (time <= TimeSpan.Zero)
+                {
+                    return "0s";
+                }
+
+                var builder = new StringBuilder();
+
+                if (time.Days > 0)
+                {
+                    builder.Append(time.Days).Append('d').Append(' ');
+                }
+
+                if (time.Hours > 0 || builder.Length > 0)
+                {
+                    builder.Append(time.Hours).Append('h').Append(' ');
+                }
+
+                if (time.Minutes > 0 || builder.Length > 0)
+                {
+                    builder.Append(time.Minutes).Append('m').Append(' ');
+                }
+
+                if (time.Seconds > 0)
+                {
+                    builder.Append(time.Seconds).Append('s');
+                }
+                else if (builder.Length == 0)
+                {
+                    builder.Append(time.TotalSeconds < 1 ? "<1s" : "0s");
+                }
+
+                return builder.ToString().Trim();
             }
-
-            if (time.Minutes > 0 || builder.Length > 0)
+            private HorseIdentitySummary CollectHorseIdentitySummary(List<PreparedRace> races)
             {
-                builder.Append(time.Minutes).Append('m').Append(' ');
-            }
+                var identities = new List<HorseIdentity>();
+                var horseIds = new HashSet<int>();
+                var seen = new HashSet<HorseCacheKey>(HorseCacheKeyComparer.Instance);
+                DateTime? maxRaceDate = null;
 
-            if (time.Seconds > 0)
-            {
-                builder.Append(time.Seconds).Append('s');
-            }
-            else if (builder.Length == 0)
-            {
-                builder.Append(time.TotalSeconds < 1 ? "<1s" : "0s");
-            }
+                if (races is null || races.Count == 0)
+                {
+                    return new HorseIdentitySummary(identities, horseIds, maxRaceDate);
+                }
 
-            return builder.ToString().Trim();
-        }
-        private HorseIdentitySummary CollectHorseIdentitySummary(List<PreparedRace> races)
-        {
-            var identities = new List<HorseIdentity>();
-            var horseIds = new HashSet<int>();
-            var seen = new HashSet<HorseCacheKey>(HorseCacheKeyComparer.Instance);
-            DateTime? maxRaceDate = null;
+                foreach (var race in races)
+                {
+                    if (race?.Rows == null || race.Rows.Count == 0)
+                    {
+                        continue;
+                    }
 
-            if (races is null || races.Count == 0)
-            {
+                    foreach (var row in race.Rows)
+                    {
+                        if (row is null)
+                        {
+                            continue;
+                        }
+
+                        if (!TryGetHorseIdentity(row, out var identity))
+                        {
+                            continue;
+                        }
+
+                        if (identity.HorseId.HasValue)
+                        {
+                            horseIds.Add(identity.HorseId.Value);
+                        }
+
+                        if (identity.RaceDate.HasValue)
+                        {
+                            var date = identity.RaceDate.Value.Date;
+                            if (!maxRaceDate.HasValue || date > maxRaceDate.Value)
+                            {
+                                maxRaceDate = date;
+                            }
+                        }
+
+                        var key = identity.ToCacheKey();
+                        if (seen.Add(key))
+                        {
+                            identities.Add(identity);
+                        }
+                    }
+                }
+
                 return new HorseIdentitySummary(identities, horseIds, maxRaceDate);
             }
 
-            foreach (var race in races)
+            private void PreloadRepositoryCaches(
+                IRacingRepository repository,
+                IReadOnlyList<HorseIdentity> identities,
+                Dictionary<int, List<PrefetchedHorseRace>> prefetchedHistory,
+                ConcurrentDictionary<HorseCacheKey, (float WinRate, int Wins, int Starts)?> winRateCache,
+                ConcurrentDictionary<HorseCacheKey, float?> speedCache,
+                ConcurrentDictionary<HorseCacheKey, int?> distanceCache)
             {
-                if (race?.Rows == null || race.Rows.Count == 0)
+                if (identities is null || identities.Count == 0)
                 {
-                    continue;
+                    return;
                 }
 
-                foreach (var row in race.Rows)
+                var horsesToPreload = new List<HorseIdentity>();
+                foreach (var identity in identities)
                 {
-                    if (row is null)
+                    if (!identity.HorseId.HasValue && string.IsNullOrWhiteSpace(identity.NormalizedName))
                     {
                         continue;
                     }
 
-                    if (!TryGetHorseIdentity(row, out var identity))
+                    if (identity.HorseId.HasValue && prefetchedHistory.ContainsKey(identity.HorseId.Value))
                     {
                         continue;
                     }
 
-                    if (identity.HorseId.HasValue)
+                    horsesToPreload.Add(identity);
+                }
+
+                if (horsesToPreload.Count == 0)
+                {
+                    return;
+                }
+
+                var uniqueRequests = new List<(HorseCacheKey CacheKey, HorseMetricRequest Request)>(horsesToPreload.Count);
+                var seen = new HashSet<HorseCacheKey>(HorseCacheKeyComparer.Instance);
+
+                foreach (var identity in horsesToPreload)
+                {
+                    var cacheKey = identity.ToCacheKey();
+                    if (!seen.Add(cacheKey))
                     {
-                        horseIds.Add(identity.HorseId.Value);
+                        continue;
                     }
 
-                    if (identity.RaceDate.HasValue)
+                    var request = new HorseMetricRequest(
+                        identity.HorseId,
+                        identity.NormalizedName,
+                        identity.RaceDate,
+                        identity.RawName);
+                    uniqueRequests.Add((cacheKey, request));
+                }
+
+                if (uniqueRequests.Count == 0)
+                {
+                    return;
+                }
+
+                const int windowSize = 5;
+                var requestList = uniqueRequests.Select(entry => entry.Request).ToList();
+
+                var batchedWinRates = repository.GetRecentHorseWinStatsBatch(requestList, windowSize);
+                var batchedSpeeds = repository.GetRecentHorseAverageSpeedsBatch(requestList, windowSize);
+                var batchedDistances = repository.GetLastRaceDistancesBatch(requestList);
+
+                foreach (var (cacheKey, request) in uniqueRequests)
+                {
+                    if (batchedWinRates.TryGetValue(request, out var winStats) && winStats.HasValue && winStats.Value.Starts > 0)
                     {
-                        var date = identity.RaceDate.Value.Date;
-                        if (!maxRaceDate.HasValue || date > maxRaceDate.Value)
-                        {
-                            maxRaceDate = date;
-                        }
+                        var winRate = ClampProbability(ComputeSmoothedWinRate(winStats.Value.Wins, winStats.Value.Starts));
+                        winRateCache[cacheKey] = (winRate, winStats.Value.Wins, winStats.Value.Starts);
+                    }
+                    else
+                    {
+                        winRateCache[cacheKey] = null;
                     }
 
-                    var key = identity.ToCacheKey();
-                    if (seen.Add(key))
+                    if (batchedSpeeds.TryGetValue(request, out var speedValue) &&
+                        speedValue.HasValue &&
+                        speedValue.Value > 0f &&
+                        !float.IsNaN(speedValue.Value) &&
+                        !float.IsInfinity(speedValue.Value))
                     {
-                        identities.Add(identity);
+                        speedCache[cacheKey] = speedValue.Value;
+                    }
+                    else
+                    {
+                        speedCache[cacheKey] = null;
+                    }
+
+                    if (batchedDistances.TryGetValue(request, out var distanceValue))
+                    {
+                        distanceCache[cacheKey] = distanceValue;
+                    }
+                    else
+                    {
+                        distanceCache[cacheKey] = null;
                     }
                 }
             }
 
-            return new HorseIdentitySummary(identities, horseIds, maxRaceDate);
-        }
-
-        private void PreloadRepositoryCaches(
-            IRacingRepository repository,
-            IReadOnlyList<HorseIdentity> identities,
-            Dictionary<int, List<PrefetchedHorseRace>> prefetchedHistory,
-            ConcurrentDictionary<HorseCacheKey, (float WinRate, int Wins, int Starts)?> winRateCache,
-            ConcurrentDictionary<HorseCacheKey, float?> speedCache,
-            ConcurrentDictionary<HorseCacheKey, int?> distanceCache)
-        {
-            if (identities is null || identities.Count == 0)
-            {
-                return;
-            }
-
-            var horsesToPreload = new List<HorseIdentity>();
-            foreach (var identity in identities)
-            {
-                if (!identity.HorseId.HasValue && string.IsNullOrWhiteSpace(identity.NormalizedName))
-                {
-                    continue;
-                }
-
-                if (identity.HorseId.HasValue && prefetchedHistory.ContainsKey(identity.HorseId.Value))
-                {
-                    continue;
-                }
-
-                horsesToPreload.Add(identity);
-            }
-
-            if (horsesToPreload.Count == 0)
-            {
-                return;
-            }
-
-            var uniqueRequests = new List<(HorseCacheKey CacheKey, HorseMetricRequest Request)>(horsesToPreload.Count);
-            var seen = new HashSet<HorseCacheKey>(HorseCacheKeyComparer.Instance);
-
-            foreach (var identity in horsesToPreload)
-            {
-                var cacheKey = identity.ToCacheKey();
-                if (!seen.Add(cacheKey))
-                {
-                    continue;
-                }
-
-                var request = new HorseMetricRequest(
-                    identity.HorseId,
-                    identity.NormalizedName,
-                    identity.RaceDate,
-                    identity.RawName);
-                uniqueRequests.Add((cacheKey, request));
-            }
-
-            if (uniqueRequests.Count == 0)
-            {
-                return;
-            }
-
-            const int windowSize = 5;
-            var requestList = uniqueRequests.Select(entry => entry.Request).ToList();
-
-            var batchedWinRates = repository.GetRecentHorseWinStatsBatch(requestList, windowSize);
-            var batchedSpeeds = repository.GetRecentHorseAverageSpeedsBatch(requestList, windowSize);
-            var batchedDistances = repository.GetLastRaceDistancesBatch(requestList);
-
-            foreach (var (cacheKey, request) in uniqueRequests)
-            {
-                if (batchedWinRates.TryGetValue(request, out var winStats) && winStats.HasValue && winStats.Value.Starts > 0)
-                {
-                    var winRate = ClampProbability(ComputeSmoothedWinRate(winStats.Value.Wins, winStats.Value.Starts));
-                    winRateCache[cacheKey] = (winRate, winStats.Value.Wins, winStats.Value.Starts);
-                }
-                else
-                {
-                    winRateCache[cacheKey] = null;
-                }
-
-                if (batchedSpeeds.TryGetValue(request, out var speedValue) &&
-                    speedValue.HasValue &&
-                    speedValue.Value > 0f &&
-                    !float.IsNaN(speedValue.Value) &&
-                    !float.IsInfinity(speedValue.Value))
-                {
-                    speedCache[cacheKey] = speedValue.Value;
-                }
-                else
-                {
-                    speedCache[cacheKey] = null;
-                }
-
-                if (batchedDistances.TryGetValue(request, out var distanceValue))
-                {
-                    distanceCache[cacheKey] = distanceValue;
-                }
-                else
-                {
-                    distanceCache[cacheKey] = null;
-                }
-            }
-        }
-
-        private void EnsureHorsePerformanceIndexes()
-        {
-            if (_horsePerformanceIndexesEnsured)
-            {
-                return;
-            }
-
-            lock (HorseIndexLock)
+            private void EnsureHorsePerformanceIndexes()
             {
                 if (_horsePerformanceIndexesEnsured)
                 {
                     return;
                 }
 
-                using var connection = new SqlConnection(_connectionString);
-                connection.Open();
-                const string sql = @"IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_RunnerResult_HorseId_RaceId' AND object_id = OBJECT_ID(N'dbo.RunnerResult'))
+                lock (HorseIndexLock)
+                {
+                    if (_horsePerformanceIndexesEnsured)
+                    {
+                        return;
+                    }
+
+                    using var connection = new SqlConnection(_connectionString);
+                    connection.Open();
+                    const string sql = @"IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_RunnerResult_HorseId_RaceId' AND object_id = OBJECT_ID(N'dbo.RunnerResult'))
 BEGIN
     CREATE INDEX IX_RunnerResult_HorseId_RaceId ON dbo.RunnerResult(HorseId, RaceId)
         INCLUDE (RunnerResultId, FinishPos, DistanceBeatenLengths);
@@ -2934,115 +2934,115 @@ BEGIN
     CREATE INDEX IX_Horse_Name ON dbo.Horse(Name, HorseId);
 END;";
 
-                connection.Execute(sql);
-                _horsePerformanceIndexesEnsured = true;
-            }
-        }
-
-        private (float WinRate, int Wins, int Starts)? LoadWinRateLast5(HorseIdentity identity, IRacingRepository repository)
-        {
-            try
-            {
-                var stats = repository.GetRecentHorseWinStats(identity.RawName, identity.HorseId, identity.RaceDate, 5);
-                if (stats.HasValue && stats.Value.Starts > 0)
-                {
-                    var winRate = ClampProbability(ComputeSmoothedWinRate(stats.Value.Wins, stats.Value.Starts));
-                    return (winRate, stats.Value.Wins, stats.Value.Starts);
+                    connection.Execute(sql);
+                    _horsePerformanceIndexesEnsured = true;
                 }
             }
-            catch (Exception ex)
+
+            private (float WinRate, int Wins, int Starts)? LoadWinRateLast5(HorseIdentity identity, IRacingRepository repository)
             {
-                Console.Error.WriteLine($"[AI] Failed to resolve WinRateLast5 for {identity.Display}: {ex.Message}");
-            }
-
-            return null;
-        }
-
-        private float? LoadAvgSpeedLast5(HorseIdentity identity, IRacingRepository repository)
-        {
-            try
-            {
-                const int windowSize = 5;
-                var entries = repository.GetRecentHorseSpeedEntries(identity.RawName, identity.HorseId, identity.RaceDate, windowSize);
-                if (entries == null || entries.Count == 0)
+                try
                 {
-                    return null;
-                }
-
-                var speeds = new List<float>(entries.Count);
-                foreach (var entry in entries)
-                {
-                    if (!entry.DistanceYards.HasValue || entry.DistanceYards.Value <= 0)
+                    var stats = repository.GetRecentHorseWinStats(identity.RawName, identity.HorseId, identity.RaceDate, 5);
+                    if (stats.HasValue && stats.Value.Starts > 0)
                     {
-                        continue;
-                    }
-
-                    if (!entry.WinningTimeMilliseconds.HasValue || entry.WinningTimeMilliseconds.Value <= 0)
-                    {
-                        continue;
-                    }
-
-                    var runnerTimeMs = (float)entry.WinningTimeMilliseconds.Value;
-                    if (entry.DistanceBeatenLengths.HasValue)
-                    {
-                        runnerTimeMs += (float)entry.DistanceBeatenLengths.Value * MsPerLength;
-                    }
-
-                    if (runnerTimeMs <= 0f)
-                    {
-                        continue;
-                    }
-
-                    var speed = entry.DistanceYards.Value / runnerTimeMs;
-                    if (!float.IsNaN(speed) && !float.IsInfinity(speed) && speed > 0f)
-                    {
-                        speeds.Add(speed);
+                        var winRate = ClampProbability(ComputeSmoothedWinRate(stats.Value.Wins, stats.Value.Starts));
+                        return (winRate, stats.Value.Wins, stats.Value.Starts);
                     }
                 }
-
-                if (speeds.Count == 0)
+                catch (Exception ex)
                 {
-                    return null;
+                    Console.Error.WriteLine($"[AI] Failed to resolve WinRateLast5 for {identity.Display}: {ex.Message}");
                 }
 
-                var average = speeds.Average();
-                if (float.IsNaN(average) || float.IsInfinity(average) || average <= 0f)
-                {
-                    return null;
-                }
-
-                return average;
-            }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine($"[AI] Failed to resolve AvgSpeedLast5 for {identity.Display}: {ex.Message}");
                 return null;
             }
-        }
 
-        private int? LoadLastRaceDistance(HorseIdentity identity, IRacingRepository repository)
-        {
-            try
+            private float? LoadAvgSpeedLast5(HorseIdentity identity, IRacingRepository repository)
             {
-                return repository.GetLastRaceDistance(identity.RawName, identity.HorseId, identity.RaceDate);
-            }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine($"[AI] Failed to resolve DistanceChangeFromLast for {identity.Display}: {ex.Message}");
-                return null;
-            }
-        }
+                try
+                {
+                    const int windowSize = 5;
+                    var entries = repository.GetRecentHorseSpeedEntries(identity.RawName, identity.HorseId, identity.RaceDate, windowSize);
+                    if (entries == null || entries.Count == 0)
+                    {
+                        return null;
+                    }
 
-        private Dictionary<int, List<PrefetchedHorseRace>> PrefetchHorseHistoryByHorseId(HorseIdentitySummary identitySummary)
-        {
-            var fetchedResults = new ConcurrentDictionary<int, List<PrefetchedHorseRace>>();
-            var horseIds = identitySummary.HorseIds;
-            if (horseIds.Count == 0)
-            {
-                return new Dictionary<int, List<PrefetchedHorseRace>>();
+                    var speeds = new List<float>(entries.Count);
+                    foreach (var entry in entries)
+                    {
+                        if (!entry.DistanceYards.HasValue || entry.DistanceYards.Value <= 0)
+                        {
+                            continue;
+                        }
+
+                        if (!entry.WinningTimeMilliseconds.HasValue || entry.WinningTimeMilliseconds.Value <= 0)
+                        {
+                            continue;
+                        }
+
+                        var runnerTimeMs = (float)entry.WinningTimeMilliseconds.Value;
+                        if (entry.DistanceBeatenLengths.HasValue)
+                        {
+                            runnerTimeMs += (float)entry.DistanceBeatenLengths.Value * MsPerLength;
+                        }
+
+                        if (runnerTimeMs <= 0f)
+                        {
+                            continue;
+                        }
+
+                        var speed = entry.DistanceYards.Value / runnerTimeMs;
+                        if (!float.IsNaN(speed) && !float.IsInfinity(speed) && speed > 0f)
+                        {
+                            speeds.Add(speed);
+                        }
+                    }
+
+                    if (speeds.Count == 0)
+                    {
+                        return null;
+                    }
+
+                    var average = speeds.Average();
+                    if (float.IsNaN(average) || float.IsInfinity(average) || average <= 0f)
+                    {
+                        return null;
+                    }
+
+                    return average;
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"[AI] Failed to resolve AvgSpeedLast5 for {identity.Display}: {ex.Message}");
+                    return null;
+                }
             }
 
-            const string sql = @"SELECT
+            private int? LoadLastRaceDistance(HorseIdentity identity, IRacingRepository repository)
+            {
+                try
+                {
+                    return repository.GetLastRaceDistance(identity.RawName, identity.HorseId, identity.RaceDate);
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"[AI] Failed to resolve DistanceChangeFromLast for {identity.Display}: {ex.Message}");
+                    return null;
+                }
+            }
+
+            private Dictionary<int, List<PrefetchedHorseRace>> PrefetchHorseHistoryByHorseId(HorseIdentitySummary identitySummary)
+            {
+                var fetchedResults = new ConcurrentDictionary<int, List<PrefetchedHorseRace>>();
+                var horseIds = identitySummary.HorseIds;
+                if (horseIds.Count == 0)
+                {
+                    return new Dictionary<int, List<PrefetchedHorseRace>>();
+                }
+
+                const string sql = @"SELECT
     rr.HorseId,
     r.RaceDate,
     rr.FinishPos,
@@ -3058,737 +3058,737 @@ WHERE rr.HorseId IN @HorseIds
   AND (@MaxRaceDateExclusive IS NULL OR r.RaceDate < @MaxRaceDateExclusive)
 ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
 
-            var cachedResults = new Dictionary<int, List<PrefetchedHorseRace>>();
-            foreach (var horseId in horseIds)
-            {
-                if (_prefetchedHistoryCache.TryGetValue(horseId, out var cachedHistory))
+                var cachedResults = new Dictionary<int, List<PrefetchedHorseRace>>();
+                foreach (var horseId in horseIds)
                 {
-                    cachedResults[horseId] = new List<PrefetchedHorseRace>(cachedHistory);
-                }
-            }
-
-            var horseIdArray = horseIds.Where(id => !cachedResults.ContainsKey(id)).ToArray();
-            const int batchSize = 1500;
-            DateTime? maxRaceDateExclusive = identitySummary.MaxRaceDate?.Date.AddDays(1);
-            if (horseIdArray.Length > 0)
-            {
-                EnsureHorsePerformanceIndexes();
-                var parallelOptions = new ParallelOptions
-                {
-                    MaxDegreeOfParallelism = Math.Max(1, Math.Min(Math.Min(Environment.ProcessorCount, horseIdArray.Length), 4))
-                };
-
-                using var connectionFactory = new ThreadLocal<SqlConnection>(() =>
-                {
-                    var connection = new SqlConnection(_connectionString);
-                    connection.Open();
-                    return connection;
-                }, trackAllValues: true);
-                
-                try
-                {
-                    Parallel.ForEach(Partitioner.Create(0, horseIdArray.Length, batchSize), parallelOptions, range =>
+                    if (_prefetchedHistoryCache.TryGetValue(horseId, out var cachedHistory))
                     {
-                        var count = range.Item2 - range.Item1;
-                        if (count <= 0)
-                        {
-                            return;
-                        }
+                        cachedResults[horseId] = new List<PrefetchedHorseRace>(cachedHistory);
+                    }
+                }
 
-                        var batch = new int[count];
-                        Array.Copy(horseIdArray, range.Item1, batch, 0, count);
-                        if (batch.Length == 0)
-                        {
-                            return;
-                        }
+                var horseIdArray = horseIds.Where(id => !cachedResults.ContainsKey(id)).ToArray();
+                const int batchSize = 1500;
+                DateTime? maxRaceDateExclusive = identitySummary.MaxRaceDate?.Date.AddDays(1);
+                if (horseIdArray.Length > 0)
+                {
+                    EnsureHorsePerformanceIndexes();
+                    var parallelOptions = new ParallelOptions
+                    {
+                        MaxDegreeOfParallelism = Math.Max(1, Math.Min(Math.Min(Environment.ProcessorCount, horseIdArray.Length), 4))
+                    };
 
-                        var conn = connectionFactory.Value;
+                    using var connectionFactory = new ThreadLocal<SqlConnection>(() =>
+                    {
+                        var connection = new SqlConnection(_connectionString);
+                        connection.Open();
+                        return connection;
+                    }, trackAllValues: true);
 
-                        var rows = conn.Query<PrefetchedHorseRaceRow>(sql, new
+                    try
+                    {
+                        Parallel.ForEach(Partitioner.Create(0, horseIdArray.Length, batchSize), parallelOptions, range =>
                         {
-                            HorseIds = batch,
-                            MaxRaceDateExclusive = maxRaceDateExclusive
-                        }).ToList();
-
-                        foreach (var row in rows)
-                        {
-                            var list = fetchedResults.GetOrAdd(row.HorseId, _ => new List<PrefetchedHorseRace>());
-                            lock (list)
+                            var count = range.Item2 - range.Item1;
+                            if (count <= 0)
                             {
-                                list.Add(new PrefetchedHorseRace(
-                                    row.RaceDate.Date,
-                                    row.FinishPos,
-                                    row.DistanceYards,
-                                    row.WinningTimeMilliseconds,
-                                    row.DistanceBeatenLengths,
-                                     row.RunnerResultId,
-                                    row.OfficialRating,
-                                    row.Class));
+                                return;
+                            }
+
+                            var batch = new int[count];
+                            Array.Copy(horseIdArray, range.Item1, batch, 0, count);
+                            if (batch.Length == 0)
+                            {
+                                return;
+                            }
+
+                            var conn = connectionFactory.Value;
+
+                            var rows = conn.Query<PrefetchedHorseRaceRow>(sql, new
+                            {
+                                HorseIds = batch,
+                                MaxRaceDateExclusive = maxRaceDateExclusive
+                            }).ToList();
+
+                            foreach (var row in rows)
+                            {
+                                var list = fetchedResults.GetOrAdd(row.HorseId, _ => new List<PrefetchedHorseRace>());
+                                lock (list)
+                                {
+                                    list.Add(new PrefetchedHorseRace(
+                                        row.RaceDate.Date,
+                                        row.FinishPos,
+                                        row.DistanceYards,
+                                        row.WinningTimeMilliseconds,
+                                        row.DistanceBeatenLengths,
+                                         row.RunnerResultId,
+                                        row.OfficialRating,
+                                        row.Class));
+                                }
+                            }
+                        });
+                    }
+                    finally
+                    {
+                        foreach (var connection in connectionFactory.Values)
+                        {
+                            connection.Dispose();
+                        }
+                    }
+                }
+
+                var finalized = new Dictionary<int, List<PrefetchedHorseRace>>(cachedResults.Count + fetchedResults.Count);
+                foreach (var kvp in cachedResults)
+                {
+                    finalized[kvp.Key] = kvp.Value;
+                }
+
+                foreach (var kvp in fetchedResults)
+                {
+                    var list = kvp.Value;
+                    list.Sort((left, right) =>
+                    {
+                        int compare = left.RaceDate.CompareTo(right.RaceDate);
+                        if (compare != 0)
+                        {
+                            return compare;
+                        }
+
+                        return left.RunnerResultId.CompareTo(right.RunnerResultId);
+                    });
+
+                    _prefetchedHistoryCache[kvp.Key] = list.ToArray();
+                    finalized[kvp.Key] = list;
+                }
+
+                return finalized;
+            }
+            private PrefetchedHorseStats? ComputePrefetchedHorseStats(List<PrefetchedHorseRace> history, DateTime raceDate)
+            {
+                if (history is null || history.Count == 0)
+                {
+                    return null;
+                }
+
+                var targetDate = raceDate.Date;
+                int lastIndex = FindLastIndexBefore(history, targetDate);
+                if (lastIndex < 0)
+                {
+                    return null;
+                }
+
+                int firstIndex = Math.Max(0, lastIndex - 4);
+                int starts = lastIndex - firstIndex + 1;
+
+                int wins = 0;
+                float speedSum = 0f;
+                int speedCount = 0;
+
+                for (int i = firstIndex; i <= lastIndex; i++)
+                {
+                    var entry = history[i];
+                    if (entry.FinishPos.HasValue && entry.FinishPos.Value == 1)
+                    {
+                        wins++;
+                    }
+
+                    if (entry.DistanceYards.HasValue && entry.DistanceYards.Value > 0 &&
+                        entry.WinningTimeMilliseconds.HasValue && entry.WinningTimeMilliseconds.Value > 0)
+                    {
+                        var runnerTime = (float)entry.WinningTimeMilliseconds.Value;
+                        if (entry.DistanceBeatenLengths.HasValue)
+                        {
+                            runnerTime += (float)entry.DistanceBeatenLengths.Value * MsPerLength;
+                        }
+
+                        if (runnerTime > 0f)
+                        {
+                            var speed = entry.DistanceYards.Value / runnerTime;
+                            if (!float.IsNaN(speed) && !float.IsInfinity(speed) && speed > 0f)
+                            {
+                                speedSum += speed;
+                                speedCount++;
                             }
                         }
-                    });
-                }
-                finally
-                {
-                    foreach (var connection in connectionFactory.Values)
-                    {
-                        connection.Dispose();
                     }
                 }
+
+                float? winRate = starts > 0 ? ComputeSmoothedWinRate(wins, starts) : (float?)null;
+                float? averageSpeed = speedCount > 0 ? speedSum / speedCount : (float?)null;
+                int? lastDistance = history[lastIndex].DistanceYards;
+
+                return new PrefetchedHorseStats(winRate, averageSpeed, lastDistance);
             }
 
-            var finalized = new Dictionary<int, List<PrefetchedHorseRace>>(cachedResults.Count + fetchedResults.Count);
-            foreach (var kvp in cachedResults)
+            private static int FindLastIndexBefore(List<PrefetchedHorseRace> history, DateTime targetDate)
             {
-                finalized[kvp.Key] = kvp.Value;
-            }
+                int low = 0;
+                int high = history.Count - 1;
+                int result = -1;
 
-            foreach (var kvp in fetchedResults)
-            {
-                var list = kvp.Value;
-                list.Sort((left, right) =>
+                while (low <= high)
                 {
-                    int compare = left.RaceDate.CompareTo(right.RaceDate);
-                    if (compare != 0)
+                    int mid = low + ((high - low) / 2);
+                    var midDate = history[mid].RaceDate.Date;
+                    if (midDate < targetDate)
                     {
-                        return compare;
+                        result = mid;
+                        low = mid + 1;
                     }
-
-                    return left.RunnerResultId.CompareTo(right.RunnerResultId);
-                });
-
-                _prefetchedHistoryCache[kvp.Key] = list.ToArray();
-                finalized[kvp.Key] = list;
-            }
-
-            return finalized;
-        }
-        private PrefetchedHorseStats? ComputePrefetchedHorseStats(List<PrefetchedHorseRace> history, DateTime raceDate)
-        {
-            if (history is null || history.Count == 0)
-            {
-                return null;
-            }
-
-            var targetDate = raceDate.Date;
-            int lastIndex = FindLastIndexBefore(history, targetDate);
-            if (lastIndex < 0)
-            {
-                return null;
-            }
-
-            int firstIndex = Math.Max(0, lastIndex - 4);
-            int starts = lastIndex - firstIndex + 1;
-
-            int wins = 0;
-            float speedSum = 0f;
-            int speedCount = 0;
-
-            for (int i = firstIndex; i <= lastIndex; i++)
-            {
-                var entry = history[i];
-                if (entry.FinishPos.HasValue && entry.FinishPos.Value == 1)
-                {
-                    wins++;
-                }
-
-                if (entry.DistanceYards.HasValue && entry.DistanceYards.Value > 0 &&
-                    entry.WinningTimeMilliseconds.HasValue && entry.WinningTimeMilliseconds.Value > 0)
-                {
-                    var runnerTime = (float)entry.WinningTimeMilliseconds.Value;
-                    if (entry.DistanceBeatenLengths.HasValue)
+                    else
                     {
-                        runnerTime += (float)entry.DistanceBeatenLengths.Value * MsPerLength;
-                    }
-
-                    if (runnerTime > 0f)
-                    {
-                        var speed = entry.DistanceYards.Value / runnerTime;
-                        if (!float.IsNaN(speed) && !float.IsInfinity(speed) && speed > 0f)
-                        {
-                            speedSum += speed;
-                            speedCount++;
-                        }
+                        high = mid - 1;
                     }
                 }
+
+                return result;
             }
 
-            float? winRate = starts > 0 ? ComputeSmoothedWinRate(wins, starts) : (float?)null;
-            float? averageSpeed = speedCount > 0 ? speedSum / speedCount : (float?)null;
-            int? lastDistance = history[lastIndex].DistanceYards;
-
-            return new PrefetchedHorseStats(winRate, averageSpeed, lastDistance);
-        }
-
-        private static int FindLastIndexBefore(List<PrefetchedHorseRace> history, DateTime targetDate)
-        {
-            int low = 0;
-            int high = history.Count - 1;
-            int result = -1;
-
-            while (low <= high)
+            private sealed class PrefetchedHorseRaceRow
             {
-                int mid = low + ((high - low) / 2);
-                var midDate = history[mid].RaceDate.Date;
-                if (midDate < targetDate)
+                public int HorseId { get; init; }
+                public DateTime RaceDate { get; init; }
+                public short? FinishPos { get; init; }
+                public int? DistanceYards { get; init; }
+                public int? WinningTimeMilliseconds { get; init; }
+                public decimal? DistanceBeatenLengths { get; init; }
+                public int RunnerResultId { get; init; }
+                public short? OfficialRating { get; init; }
+                public byte? Class { get; init; }
+            }
+
+            private readonly record struct PrefetchedHorseRace(
+                DateTime RaceDate,
+                short? FinishPos,
+                int? DistanceYards,
+                int? WinningTimeMilliseconds,
+                decimal? DistanceBeatenLengths,
+                int RunnerResultId,
+                short? OfficialRating,
+                byte? Class);
+
+            private readonly record struct PrefetchedHorseStats(
+                float? WinRate,
+                float? AverageSpeed,
+                int? LastDistanceYards);
+
+            private float? ResolveWinRateLast5(Dictionary<string, object?> row, ConcurrentDictionary<HorseCacheKey, (float WinRate, int Wins, int Starts)?> cache)
+            {
+                if (row is null)
                 {
-                    result = mid;
-                    low = mid + 1;
+                    return null;
                 }
-                else
+
+                if (TryGetFloat(row, "WinRateLast5", out var existingWinRate) && existingWinRate >= 0f)
                 {
-                    high = mid - 1;
+                    return existingWinRate;
                 }
-            }
 
-            return result;
-        }
+                if (TryGetFloat(row, "LifetimeWinRate", out var lifetimeWinRate))
+                {
+                    var sanitized = ClampProbability(lifetimeWinRate);
+                    row["WinRateLast5"] = sanitized;
+                    return sanitized;
+                }
 
-        private sealed class PrefetchedHorseRaceRow
-        {
-            public int HorseId { get; init; }
-            public DateTime RaceDate { get; init; }
-            public short? FinishPos { get; init; }
-            public int? DistanceYards { get; init; }
-            public int? WinningTimeMilliseconds { get; init; }
-            public decimal? DistanceBeatenLengths { get; init; }
-            public int RunnerResultId { get; init; }
-            public short? OfficialRating { get; init; }
-            public byte? Class { get; init; }
-        }
+                if (!TryGetHorseIdentity(row, out var identity))
+                {
+                    return null;
+                }
 
-        private readonly record struct PrefetchedHorseRace(
-            DateTime RaceDate,
-            short? FinishPos,
-            int? DistanceYards,
-            int? WinningTimeMilliseconds,
-            decimal? DistanceBeatenLengths,
-            int RunnerResultId,
-            short? OfficialRating,
-            byte? Class);
+                var cacheKey = identity.ToCacheKey();
+                var repository = EnsureRacingRepository();
+                if (repository is null)
+                {
+                    cache[cacheKey] = null;
+                    return null;
+                }
+                if (!cache.TryGetValue(cacheKey, out var cached))
+                {
+                    cached = LoadWinRateLast5(identity, repository);
+                    cache[cacheKey] = cached;
+                }
 
-        private readonly record struct PrefetchedHorseStats(
-            float? WinRate,
-            float? AverageSpeed,
-            int? LastDistanceYards);
+                if (cached.HasValue)
+                {
+                    row["WinRateLast5"] = cached.Value.WinRate;
+                    return cached.Value.WinRate;
+                }
 
-        private float? ResolveWinRateLast5(Dictionary<string, object?> row, ConcurrentDictionary<HorseCacheKey, (float WinRate, int Wins, int Starts)?> cache)
-        {
-            if (row is null)
-            {
                 return null;
             }
 
-            if (TryGetFloat(row, "WinRateLast5", out var existingWinRate) && existingWinRate >= 0f)
+            private float? ResolveAvgSpeedLast5(Dictionary<string, object?> row, ConcurrentDictionary<HorseCacheKey, float?> cache)
             {
-                return existingWinRate;
-            }
+                if (row is null)
+                {
+                    return null;
+                }
 
-            if (TryGetFloat(row, "LifetimeWinRate", out var lifetimeWinRate))
-            {
-                var sanitized = ClampProbability(lifetimeWinRate);
-                row["WinRateLast5"] = sanitized;
-                return sanitized;
-            }
+                if (TryGetFloat(row, "AvgSpeedLast5", out var existingSpeed) && existingSpeed > 0f &&
+                    !float.IsNaN(existingSpeed) && !float.IsInfinity(existingSpeed))
+                {
+                    return existingSpeed;
+                }
 
-            if (!TryGetHorseIdentity(row, out var identity))
-            {
-                return null;
-            }
+                if (!TryGetHorseIdentity(row, out var identity))
+                {
+                    return null;
+                }
 
-            var cacheKey = identity.ToCacheKey();
-            var repository = EnsureRacingRepository();
-            if (repository is null)
-            {
-                cache[cacheKey] = null;
-                return null;
-            }
-            if (!cache.TryGetValue(cacheKey, out var cached))
-            {
-                cached = LoadWinRateLast5(identity, repository);
-                cache[cacheKey] = cached;
-            }
-
-            if (cached.HasValue)
-            {
-                row["WinRateLast5"] = cached.Value.WinRate;
-                return cached.Value.WinRate;
-            }
-
-            return null;
-        }
-
-        private float? ResolveAvgSpeedLast5(Dictionary<string, object?> row, ConcurrentDictionary<HorseCacheKey, float?> cache)
-        {
-            if (row is null)
-            {
-                return null;
-            }
-
-            if (TryGetFloat(row, "AvgSpeedLast5", out var existingSpeed) && existingSpeed > 0f &&
-                !float.IsNaN(existingSpeed) && !float.IsInfinity(existingSpeed))
-            {
-                return existingSpeed;
-            }
-
-            if (!TryGetHorseIdentity(row, out var identity))
-            {
-                return null;
-            }
-
-            var cacheKey = identity.ToCacheKey();
-            var repository = EnsureRacingRepository();
-            if (repository is null)
-            {
-                cache[cacheKey] = null;
-                return null;
-            }
-            if (!cache.TryGetValue(cacheKey, out var cached))
-            {
-                cached = LoadAvgSpeedLast5(identity, repository);
-                cache[cacheKey] = cached;
-            }
+                var cacheKey = identity.ToCacheKey();
+                var repository = EnsureRacingRepository();
+                if (repository is null)
+                {
+                    cache[cacheKey] = null;
+                    return null;
+                }
+                if (!cache.TryGetValue(cacheKey, out var cached))
+                {
+                    cached = LoadAvgSpeedLast5(identity, repository);
+                    cache[cacheKey] = cached;
+                }
                 if (cached.HasValue && cached.Value > 0f &&
                 !float.IsNaN(cached.Value) && !float.IsInfinity(cached.Value))
-            {
-                return cached.Value;
-            }
-
-            return null;
-        }
-
-        private void ResolveDistanceChangeFromLast(Dictionary<string, object?> row, ConcurrentDictionary<HorseCacheKey, int?> cache)
-        {
-            if (row is null)
-            {
-                return;
-            }
-
-            if (!PreparedDataset.TryGetValueWithAliases(row, "DistanceYards", out var distanceObj, requireNonNull: true) ||
-                !PreparedDataset.TryConvertToInt32(distanceObj!, out var currentDistance) || currentDistance <= 0)
-            {
-                return;
-            }
-
-            if (!TryGetHorseIdentity(row, out var identity))
-            {
-                return;
-            }
-
-            var cacheKey = identity.ToCacheKey();
-            var repository = EnsureRacingRepository();
-            if (repository is null)
-            {
-                cache[cacheKey] = null;
-                return;
-            }
-            if (!cache.TryGetValue(cacheKey, out var cached))
-            {
-                cached = LoadLastRaceDistance(identity, repository);
-                cache[cacheKey] = cached;
-            }
-
-            if (cached.HasValue)
-            {
-                row["DistanceChangeFromLast"] = (float)(currentDistance - cached.Value);
-            }
-        }
-
-        private static bool TryGetHorseIdentity(Dictionary<string, object?> row, out HorseIdentity identity)
-        {
-            identity = default;
-            if (row is null)
-            {
-                return false;
-            }
-
-            int? horseId = null;
-            if (row.TryGetValue("HorseId", out var horseObj) && horseObj != null && PreparedDataset.TryConvertToInt32(horseObj, out var horseIdValue))
-            {
-                if (horseIdValue > 0)
                 {
-                    horseId = horseIdValue;
+                    return cached.Value;
+                }
+
+                return null;
+            }
+
+            private void ResolveDistanceChangeFromLast(Dictionary<string, object?> row, ConcurrentDictionary<HorseCacheKey, int?> cache)
+            {
+                if (row is null)
+                {
+                    return;
+                }
+
+                if (!PreparedDataset.TryGetValueWithAliases(row, "DistanceYards", out var distanceObj, requireNonNull: true) ||
+                    !PreparedDataset.TryConvertToInt32(distanceObj!, out var currentDistance) || currentDistance <= 0)
+                {
+                    return;
+                }
+
+                if (!TryGetHorseIdentity(row, out var identity))
+                {
+                    return;
+                }
+
+                var cacheKey = identity.ToCacheKey();
+                var repository = EnsureRacingRepository();
+                if (repository is null)
+                {
+                    cache[cacheKey] = null;
+                    return;
+                }
+                if (!cache.TryGetValue(cacheKey, out var cached))
+                {
+                    cached = LoadLastRaceDistance(identity, repository);
+                    cache[cacheKey] = cached;
+                }
+
+                if (cached.HasValue)
+                {
+                    row["DistanceChangeFromLast"] = (float)(currentDistance - cached.Value);
                 }
             }
 
-            string? rawName = null;
-            if (row.TryGetValue("HorseName", out var horseNameObj) && horseNameObj != null)
+            private static bool TryGetHorseIdentity(Dictionary<string, object?> row, out HorseIdentity identity)
             {
-                rawName = horseNameObj as string ?? horseNameObj.ToString();
-            }
-
-            string? normalized = null;
-            if (!string.IsNullOrWhiteSpace(rawName))
-            {
-                normalized = NormalizeHorseNameForLookup(rawName);
-            }
-
-            DateTime? raceDate = null;
-            if (row.TryGetValue("RaceDate", out var raceDateObj) && raceDateObj != null)
-            {
-                if (raceDateObj is DateTime dt)
-                {
-                    raceDate = dt.Date;
-                }
-                else if (raceDateObj is DateTimeOffset dto)
-                {
-                    raceDate = dto.Date;
-                }
-            }
-
-            if (!horseId.HasValue && string.IsNullOrWhiteSpace(normalized))
-            {
-                return false;
-            }
-
-            identity = new HorseIdentity(horseId, rawName, normalized, raceDate);
-            return true;
-        }
-        private void ApplyPrefetchedRatingFallbacks(
-            Dictionary<string, object?> row,
-            List<PrefetchedHorseRace> history,
-            DateTime raceDate)
-        {
-            if (row is null || history is null || history.Count == 0)
-            {
-                return;
-            }
-
-            if (PerformanceWindows.Length == 0)
-            {
-                return;
-            }
-
-            var cutoffDate = raceDate.Date;
-            int maxWindow = PerformanceWindows[^1];
-            if (maxWindow <= 0)
-            {
-                return;
-            }
-
-            var ratings = new List<float>(Math.Min(history.Count, maxWindow));
-            for (int i = history.Count - 1; i >= 0 && ratings.Count < maxWindow; i--)
-            {
-                var entry = history[i];
-                if (entry.RaceDate.Date >= cutoffDate)
-                {
-                    continue;
-                }
-
-                float? rating = null;
-                if (entry.OfficialRating.HasValue && entry.OfficialRating.Value > 0)
-                {
-                    rating = entry.OfficialRating.Value;
-                }
-                else
-                {
-                    rating = ResolveClassRatingBaseline(entry.Class);
-                }
-
-                if (!rating.HasValue && ratings.Count > 0)
-                {
-                    rating = ratings[^1];
-                }
-
-                if (rating.HasValue && rating.Value > 0f && !float.IsNaN(rating.Value))
-                {
-                    ratings.Add(rating.Value);
-                }
-            }
-
-            if (ratings.Count == 0)
-            {
-                return;
-            }
-
-            foreach (var window in PerformanceWindows)
-            {
-                var key = $"AvgRatingLast{window}";
-                if (TryGetFloat(row, key, out var existing) && existing > 0f)
-                {
-                    continue;
-                }
-
-                int count = Math.Min(window, ratings.Count);
-                if (count <= 0)
-                {
-                    continue;
-                }
-
-                float sum = 0f;
-                for (int i = 0; i < count; i++)
-                {
-                    sum += ratings[i];
-                }
-
-                row[key] = sum / count;
-            }
-        }
-        private static bool TryGetFloat(Dictionary<string, object?> row, string key, out float value)
-        {
-            value = 0f;
-            if (row is null || string.IsNullOrWhiteSpace(key))
-            {
-                return false;
-            }
-
-            if (!row.TryGetValue(key, out var obj) || obj is null)
-            {
-                return false;
-            }
-
-            try
-            {
-                value = Convert.ToSingle(obj);
-                if (float.IsNaN(value) || float.IsInfinity(value))
+                identity = default;
+                if (row is null)
                 {
                     return false;
                 }
 
+                int? horseId = null;
+                if (row.TryGetValue("HorseId", out var horseObj) && horseObj != null && PreparedDataset.TryConvertToInt32(horseObj, out var horseIdValue))
+                {
+                    if (horseIdValue > 0)
+                    {
+                        horseId = horseIdValue;
+                    }
+                }
+
+                string? rawName = null;
+                if (row.TryGetValue("HorseName", out var horseNameObj) && horseNameObj != null)
+                {
+                    rawName = horseNameObj as string ?? horseNameObj.ToString();
+                }
+
+                string? normalized = null;
+                if (!string.IsNullOrWhiteSpace(rawName))
+                {
+                    normalized = NormalizeHorseNameForLookup(rawName);
+                }
+
+                DateTime? raceDate = null;
+                if (row.TryGetValue("RaceDate", out var raceDateObj) && raceDateObj != null)
+                {
+                    if (raceDateObj is DateTime dt)
+                    {
+                        raceDate = dt.Date;
+                    }
+                    else if (raceDateObj is DateTimeOffset dto)
+                    {
+                        raceDate = dto.Date;
+                    }
+                }
+
+                if (!horseId.HasValue && string.IsNullOrWhiteSpace(normalized))
+                {
+                    return false;
+                }
+
+                identity = new HorseIdentity(horseId, rawName, normalized, raceDate);
                 return true;
             }
-            catch
+            private void ApplyPrefetchedRatingFallbacks(
+                Dictionary<string, object?> row,
+                List<PrefetchedHorseRace> history,
+                DateTime raceDate)
             {
-                return false;
-            }
-        }
-
-        private static float ClampProbability(float value)
-        {
-            if (value < 0f)
-            {
-                return 0f;
-            }
-
-            if (value > 1f)
-            {
-                return 1f;
-            }
-
-            return value;
-        }
-       private readonly struct HorseIdentitySummary
-        {
-            public HorseIdentitySummary(
-                List<HorseIdentity> identities,
-                HashSet<int> horseIds,
-                DateTime? maxRaceDate)
-            {
-                Identities = identities;
-                HorseIds = horseIds;
-                MaxRaceDate = maxRaceDate;
-            }
-
-            public List<HorseIdentity> Identities { get; }
-
-            public HashSet<int> HorseIds { get; }
-
-            public DateTime? MaxRaceDate { get; }
-        }
-        private static float? ResolveClassRatingBaseline(int? classValue)
-        {
-            if (!classValue.HasValue)
-            {
-                return null;
-            }
-
-            var classInt = classValue.Value;
-            if (classInt <= 0)
-            {
-                return null;
-            }
-
-            if (ClassRatingBaselines.TryGetValue(classInt, out var baseline))
-            {
-                return baseline;
-            }
-
-            classInt = Math.Min(classInt, 12);
-            return 110f - (classInt * 5f);
-        }
-
-        private static float? ResolveClassRatingBaseline(byte? classValue)
-            => ResolveClassRatingBaseline(classValue.HasValue ? (int?)classValue.Value : null);
-        private readonly struct HorseIdentity
-        {
-            public HorseIdentity(int? horseId, string? rawName, string? normalizedName, DateTime? raceDate)
-            {
-                HorseId = horseId;
-                RawName = rawName;
-                NormalizedName = normalizedName;
-                RaceDate = raceDate?.Date;
-            }
-
-            public int? HorseId { get; }
-            public string? RawName { get; }
-            public string? NormalizedName { get; }
-            public DateTime? RaceDate { get; }
-            public string Display => !string.IsNullOrWhiteSpace(RawName)
-                ? RawName!
-                : (HorseId.HasValue ? $"horse:{HorseId.Value}" : "unknown horse");
-            public HorseCacheKey ToCacheKey() => new(HorseId, NormalizedName, RaceDate);
-        }
-
-        private readonly struct HorseCacheKey : IEquatable<HorseCacheKey>
-        {
-            public HorseCacheKey(int? horseId, string? horseNameKey, DateTime? raceDate)
-            {
-                HorseId = horseId;
-                HorseNameKey = horseNameKey;
-                RaceDate = raceDate?.Date;
-            }
-
-            public int? HorseId { get; }
-            public string? HorseNameKey { get; }
-            public DateTime? RaceDate { get; }
-
-            public bool Equals(HorseCacheKey other)
-            {
-                return HorseId == other.HorseId &&
-                       string.Equals(HorseNameKey, other.HorseNameKey, StringComparison.OrdinalIgnoreCase) &&
-                       Nullable.Equals(RaceDate, other.RaceDate);
-            }
-
-            public override bool Equals(object? obj) => obj is HorseCacheKey other && Equals(other);
-
-            public override int GetHashCode()
-            {
-                var hash = new HashCode();
-                hash.Add(HorseId.GetValueOrDefault());
-                hash.Add(HorseId.HasValue);
-                hash.Add(HorseNameKey ?? string.Empty, StringComparer.OrdinalIgnoreCase);
-                hash.Add(RaceDate?.Date ?? default);
-                return hash.ToHashCode();
-            }
-        }
-
-        private sealed class HorseCacheKeyComparer : IEqualityComparer<HorseCacheKey>
-        {
-            public static HorseCacheKeyComparer Instance { get; } = new();
-
-            public bool Equals(HorseCacheKey x, HorseCacheKey y) => x.Equals(y);
-
-            public int GetHashCode(HorseCacheKey obj) => obj.GetHashCode();
-        }
-
-        public virtual PreparedRace? PrepareUpcomingRace(UpcomingRace upcoming, IReadOnlyList<RunnerFlow> flows)
-        {
-            if (upcoming is null)
-                throw new ArgumentNullException(nameof(upcoming));
-            if (flows is null)
-                throw new ArgumentNullException(nameof(flows));
-            if (flows.Count == 0)
-            {
-                return null;
-            }
-            var results = PrepareUpcomingRaces(new[] { (upcoming, flows) });
-            return results.Count > 0 ? results[0] : null;
-        }
-
-        public virtual IReadOnlyList<PreparedRace?> PrepareUpcomingRaces(IReadOnlyList<(UpcomingRace upcoming, IReadOnlyList<RunnerFlow> flows)> requests)
-        {
-            if (requests is null)
-                throw new ArgumentNullException(nameof(requests));
-
-            if (requests.Count == 0)
-            {
-                return Array.Empty<PreparedRace?>();
-            }
-
-            var results = new PreparedRace?[requests.Count];
-            var valid = new List<(int Index, UpcomingRace Upcoming, IReadOnlyList<RunnerFlow> Flows)>(requests.Count);
-            for (int i = 0; i < requests.Count; i++)
-            {
-                var (upcoming, flows) = requests[i];
-                if (upcoming == null)
+                if (row is null || history is null || history.Count == 0)
                 {
-                    results[i] = null;
-                    continue;
+                    return;
                 }
 
-                if (flows == null || flows.Count == 0)
+                if (PerformanceWindows.Length == 0)
                 {
-                    results[i] = null;
-                    continue;
+                    return;
                 }
 
-                valid.Add((i, upcoming, flows));
+                var cutoffDate = raceDate.Date;
+                int maxWindow = PerformanceWindows[^1];
+                if (maxWindow <= 0)
+                {
+                    return;
+                }
+
+                var ratings = new List<float>(Math.Min(history.Count, maxWindow));
+                for (int i = history.Count - 1; i >= 0 && ratings.Count < maxWindow; i--)
+                {
+                    var entry = history[i];
+                    if (entry.RaceDate.Date >= cutoffDate)
+                    {
+                        continue;
+                    }
+
+                    float? rating = null;
+                    if (entry.OfficialRating.HasValue && entry.OfficialRating.Value > 0)
+                    {
+                        rating = entry.OfficialRating.Value;
+                    }
+                    else
+                    {
+                        rating = ResolveClassRatingBaseline(entry.Class);
+                    }
+
+                    if (!rating.HasValue && ratings.Count > 0)
+                    {
+                        rating = ratings[^1];
+                    }
+
+                    if (rating.HasValue && rating.Value > 0f && !float.IsNaN(rating.Value))
+                    {
+                        ratings.Add(rating.Value);
+                    }
+                }
+
+                if (ratings.Count == 0)
+                {
+                    return;
+                }
+
+                foreach (var window in PerformanceWindows)
+                {
+                    var key = $"AvgRatingLast{window}";
+                    if (TryGetFloat(row, key, out var existing) && existing > 0f)
+                    {
+                        continue;
+                    }
+
+                    int count = Math.Min(window, ratings.Count);
+                    if (count <= 0)
+                    {
+                        continue;
+                    }
+
+                    float sum = 0f;
+                    for (int i = 0; i < count; i++)
+                    {
+                        sum += ratings[i];
+                    }
+
+                    row[key] = sum / count;
+                }
+            }
+            private static bool TryGetFloat(Dictionary<string, object?> row, string key, out float value)
+            {
+                value = 0f;
+                if (row is null || string.IsNullOrWhiteSpace(key))
+                {
+                    return false;
+                }
+
+                if (!row.TryGetValue(key, out var obj) || obj is null)
+                {
+                    return false;
+                }
+
+                try
+                {
+                    value = Convert.ToSingle(obj);
+                    if (float.IsNaN(value) || float.IsInfinity(value))
+                    {
+                        return false;
+                    }
+
+                    return true;
+                }
+                catch
+                {
+                    return false;
+                }
             }
 
-            if (valid.Count == 0)
+            private static float ClampProbability(float value)
             {
+                if (value < 0f)
+                {
+                    return 0f;
+                }
+
+                if (value > 1f)
+                {
+                    return 1f;
+                }
+
+                return value;
+            }
+            private readonly struct HorseIdentitySummary
+            {
+                public HorseIdentitySummary(
+                    List<HorseIdentity> identities,
+                    HashSet<int> horseIds,
+                    DateTime? maxRaceDate)
+                {
+                    Identities = identities;
+                    HorseIds = horseIds;
+                    MaxRaceDate = maxRaceDate;
+                }
+
+                public List<HorseIdentity> Identities { get; }
+
+                public HashSet<int> HorseIds { get; }
+
+                public DateTime? MaxRaceDate { get; }
+            }
+            private static float? ResolveClassRatingBaseline(int? classValue)
+            {
+                if (!classValue.HasValue)
+                {
+                    return null;
+                }
+
+                var classInt = classValue.Value;
+                if (classInt <= 0)
+                {
+                    return null;
+                }
+
+                if (ClassRatingBaselines.TryGetValue(classInt, out var baseline))
+                {
+                    return baseline;
+                }
+
+                classInt = Math.Min(classInt, 12);
+                return 110f - (classInt * 5f);
+            }
+
+            private static float? ResolveClassRatingBaseline(byte? classValue)
+                => ResolveClassRatingBaseline(classValue.HasValue ? (int?)classValue.Value : null);
+            private readonly struct HorseIdentity
+            {
+                public HorseIdentity(int? horseId, string? rawName, string? normalizedName, DateTime? raceDate)
+                {
+                    HorseId = horseId;
+                    RawName = rawName;
+                    NormalizedName = normalizedName;
+                    RaceDate = raceDate?.Date;
+                }
+
+                public int? HorseId { get; }
+                public string? RawName { get; }
+                public string? NormalizedName { get; }
+                public DateTime? RaceDate { get; }
+                public string Display => !string.IsNullOrWhiteSpace(RawName)
+                    ? RawName!
+                    : (HorseId.HasValue ? $"horse:{HorseId.Value}" : "unknown horse");
+                public HorseCacheKey ToCacheKey() => new(HorseId, NormalizedName, RaceDate);
+            }
+
+            private readonly struct HorseCacheKey : IEquatable<HorseCacheKey>
+            {
+                public HorseCacheKey(int? horseId, string? horseNameKey, DateTime? raceDate)
+                {
+                    HorseId = horseId;
+                    HorseNameKey = horseNameKey;
+                    RaceDate = raceDate?.Date;
+                }
+
+                public int? HorseId { get; }
+                public string? HorseNameKey { get; }
+                public DateTime? RaceDate { get; }
+
+                public bool Equals(HorseCacheKey other)
+                {
+                    return HorseId == other.HorseId &&
+                           string.Equals(HorseNameKey, other.HorseNameKey, StringComparison.OrdinalIgnoreCase) &&
+                           Nullable.Equals(RaceDate, other.RaceDate);
+                }
+
+                public override bool Equals(object? obj) => obj is HorseCacheKey other && Equals(other);
+
+                public override int GetHashCode()
+                {
+                    var hash = new HashCode();
+                    hash.Add(HorseId.GetValueOrDefault());
+                    hash.Add(HorseId.HasValue);
+                    hash.Add(HorseNameKey ?? string.Empty, StringComparer.OrdinalIgnoreCase);
+                    hash.Add(RaceDate?.Date ?? default);
+                    return hash.ToHashCode();
+                }
+            }
+
+            private sealed class HorseCacheKeyComparer : IEqualityComparer<HorseCacheKey>
+            {
+                public static HorseCacheKeyComparer Instance { get; } = new();
+
+                public bool Equals(HorseCacheKey x, HorseCacheKey y) => x.Equals(y);
+
+                public int GetHashCode(HorseCacheKey obj) => obj.GetHashCode();
+            }
+
+            public virtual PreparedRace? PrepareUpcomingRace(UpcomingRace upcoming, IReadOnlyList<RunnerFlow> flows)
+            {
+                if (upcoming is null)
+                    throw new ArgumentNullException(nameof(upcoming));
+                if (flows is null)
+                    throw new ArgumentNullException(nameof(flows));
+                if (flows.Count == 0)
+                {
+                    return null;
+                }
+                var results = PrepareUpcomingRaces(new[] { (upcoming, flows) });
+                return results.Count > 0 ? results[0] : null;
+            }
+
+            public virtual IReadOnlyList<PreparedRace?> PrepareUpcomingRaces(IReadOnlyList<(UpcomingRace upcoming, IReadOnlyList<RunnerFlow> flows)> requests)
+            {
+                if (requests is null)
+                    throw new ArgumentNullException(nameof(requests));
+
+                if (requests.Count == 0)
+                {
+                    return Array.Empty<PreparedRace?>();
+                }
+
+                var results = new PreparedRace?[requests.Count];
+                var valid = new List<(int Index, UpcomingRace Upcoming, IReadOnlyList<RunnerFlow> Flows)>(requests.Count);
+                for (int i = 0; i < requests.Count; i++)
+                {
+                    var (upcoming, flows) = requests[i];
+                    if (upcoming == null)
+                    {
+                        results[i] = null;
+                        continue;
+                    }
+
+                    if (flows == null || flows.Count == 0)
+                    {
+                        results[i] = null;
+                        continue;
+                    }
+
+                    valid.Add((i, upcoming, flows));
+                }
+
+                if (valid.Count == 0)
+                {
+                    return results;
+                }
+
+                using var conn = new SqlConnection(_connectionString);
+                conn.Open();
+                var (sql, runnerColumns, featureState) = BuildUpcomingPreparationContext(conn);
+
+                var sorted = valid
+                    .OrderBy(v => v.Upcoming.RaceDate.Date)
+                    .ToList();
+
+                var maxTargetDate = sorted[^1].Upcoming.RaceDate.Date;
+
+                var historicalRecords = conn.Query(sql, new { TargetDate = maxTargetDate }, commandTimeout: 6000, buffered: false);
+                var historicalRaces = MaterializeHistoricalRaces(conn, historicalRecords);
+
+                int historyIndex = 0;
+                foreach (var entry in sorted)
+                {
+                    var targetDate = entry.Upcoming.RaceDate.Date;
+                    while (historyIndex < historicalRaces.Count && historicalRaces[historyIndex].RaceDate < targetDate)
+                    {
+                        featureState.ProcessRace(historicalRaces[historyIndex].Rows, includeRace: false, updateState: true);
+                        historyIndex++;
+                    }
+
+                    var prepared = PrepareUpcomingRaceFromState(conn, entry.Upcoming, entry.Flows, runnerColumns, featureState);
+                    results[entry.Index] = prepared;
+                }
+
                 return results;
             }
 
-            using var conn = new SqlConnection(_connectionString);
-            conn.Open();
-            var (sql, runnerColumns, featureState) = BuildUpcomingPreparationContext(conn);
-
-            var sorted = valid
-                .OrderBy(v => v.Upcoming.RaceDate.Date)
-                .ToList();
-
-            var maxTargetDate = sorted[^1].Upcoming.RaceDate.Date;
-
-            var historicalRecords = conn.Query(sql, new { TargetDate = maxTargetDate }, commandTimeout: 6000, buffered: false);
-            var historicalRaces = MaterializeHistoricalRaces(conn, historicalRecords);
-
-            int historyIndex = 0;
-            foreach (var entry in sorted)
+            private (string Sql, HashSet<string> RunnerColumns, FeatureEngineeringState FeatureState) BuildUpcomingPreparationContext(SqlConnection conn)
             {
-                var targetDate = entry.Upcoming.RaceDate.Date;
-                while (historyIndex < historicalRaces.Count && historicalRaces[historyIndex].RaceDate < targetDate)
-                {
-                    featureState.ProcessRace(historicalRaces[historyIndex].Rows, includeRace: false, updateState: true);
-                    historyIndex++;
-                }
-
-                var prepared = PrepareUpcomingRaceFromState(conn, entry.Upcoming, entry.Flows, runnerColumns, featureState);
-                results[entry.Index] = prepared;
-            }
-
-            return results;
-        }
-
-        private (string Sql, HashSet<string> RunnerColumns, FeatureEngineeringState FeatureState) BuildUpcomingPreparationContext(SqlConnection conn)
-        {
-            var raceColumns = PreparedDataset.LoadColumnNames(conn, "Race");
-            var runnerColumns = PreparedDataset.LoadColumnNames(conn, "RunnerResult");
-            string scheduledOffColumn = raceColumns.Contains("ScheduledOff")
-                ? "r.ScheduledOff AS ScheduledOff"
-                : "CAST(NULL AS time(0)) AS ScheduledOff";
-            string actualOffColumn = raceColumns.Contains("ActualOff")
-                ? "r.ActualOff AS ActualOff"
-                : "CAST(NULL AS time(0)) AS ActualOff";
-            string purseColumn = raceColumns.Contains("Purse")
-                ? "r.Purse AS Purse"
-                : "CAST(NULL AS decimal(18, 2)) AS Purse";
-            string titleColumn = SelectColumn(raceColumns, "r", "Title", "nvarchar(512)");
-            string raceTypeColumn = SelectColumn(raceColumns, "r", "RaceType", "nvarchar(128)");
-            string classColumn = SelectColumn(raceColumns, "r", "Class", "int");
-            string surfaceColumn = SelectColumn(raceColumns, "r", "Surface", "nvarchar(64)");
-            string goingColumn = SelectColumn(raceColumns, "r", "Going", "nvarchar(30)");
-            string distanceYardsColumn = SelectColumn(raceColumns, "r", "DistanceYards", "int");
-            string distanceTextColumn = SelectColumn(raceColumns, "r", "DistanceText", "nvarchar(64)");
-            string runnerCountColumn = SelectColumn(raceColumns, "r", "RunnerCount", "int");
-            string statusColumn = SelectColumn(raceColumns, "r", "Status", "nvarchar(32)");
-            string winningTimeColumn = SelectColumn(raceColumns, "r", "WinningTimeMs", "int");
-            string saddleclothColumn = SelectColumn(runnerColumns, "rr", "SaddleclothNumber", "int");
-            string drawColumn = SelectColumn(runnerColumns, "rr", "Draw", "int");
-            string ageColumn = SelectColumn(runnerColumns, "rr", "Age", "int");
-            string weightLbsColumn = SelectColumn(runnerColumns, "rr", "WeightLbs", "int");
-            string weightTextColumn = SelectColumn(runnerColumns, "rr", "WeightText", "nvarchar(50)");
-            string officialRatingColumn = SelectColumn(runnerColumns, "rr", "OfficialRating", "int", "OfficialRating");
-            string outcomeCodeColumn = SelectColumn(runnerColumns, "rr", "OutcomeCode", "nvarchar(50)");
-            string distanceBeatenTextColumn = SelectColumn(runnerColumns, "rr", "DistanceBeatenText", "nvarchar(50)");
-            string distanceBeatenLengthsColumn = SelectColumn(runnerColumns, "rr", "DistanceBeatenLengths", "decimal(9,4)");
-            string spFractionColumn = SelectColumn(runnerColumns, "rr", "SP_Fraction", "nvarchar(50)");
-            string spDecimalColumn = SelectColumn(runnerColumns, "rr", "SP_Decimal", "decimal(18,6)");
-            string favTagColumn = SelectColumn(runnerColumns, "rr", "FavTag", "nvarchar(16)");
-            string openingFractionColumn = SelectColumn(runnerColumns, "rr", "OpeningFraction", "nvarchar(50)");
-            string touchedHighColumn = SelectColumn(runnerColumns, "rr", "TouchedHighFraction", "nvarchar(50)");
-            string touchedLowColumn = SelectColumn(runnerColumns, "rr", "TouchedLowFraction", "nvarchar(50)");
-            var sql = $@"SELECT c.Name AS CourseName,
+                var raceColumns = PreparedDataset.LoadColumnNames(conn, "Race");
+                var runnerColumns = PreparedDataset.LoadColumnNames(conn, "RunnerResult");
+                string scheduledOffColumn = raceColumns.Contains("ScheduledOff")
+                    ? "r.ScheduledOff AS ScheduledOff"
+                    : "CAST(NULL AS time(0)) AS ScheduledOff";
+                string actualOffColumn = raceColumns.Contains("ActualOff")
+                    ? "r.ActualOff AS ActualOff"
+                    : "CAST(NULL AS time(0)) AS ActualOff";
+                string purseColumn = raceColumns.Contains("Purse")
+                    ? "r.Purse AS Purse"
+                    : "CAST(NULL AS decimal(18, 2)) AS Purse";
+                string titleColumn = SelectColumn(raceColumns, "r", "Title", "nvarchar(512)");
+                string raceTypeColumn = SelectColumn(raceColumns, "r", "RaceType", "nvarchar(128)");
+                string classColumn = SelectColumn(raceColumns, "r", "Class", "int");
+                string surfaceColumn = SelectColumn(raceColumns, "r", "Surface", "nvarchar(64)");
+                string goingColumn = SelectColumn(raceColumns, "r", "Going", "nvarchar(30)");
+                string distanceYardsColumn = SelectColumn(raceColumns, "r", "DistanceYards", "int");
+                string distanceTextColumn = SelectColumn(raceColumns, "r", "DistanceText", "nvarchar(64)");
+                string runnerCountColumn = SelectColumn(raceColumns, "r", "RunnerCount", "int");
+                string statusColumn = SelectColumn(raceColumns, "r", "Status", "nvarchar(32)");
+                string winningTimeColumn = SelectColumn(raceColumns, "r", "WinningTimeMs", "int");
+                string saddleclothColumn = SelectColumn(runnerColumns, "rr", "SaddleclothNumber", "int");
+                string drawColumn = SelectColumn(runnerColumns, "rr", "Draw", "int");
+                string ageColumn = SelectColumn(runnerColumns, "rr", "Age", "int");
+                string weightLbsColumn = SelectColumn(runnerColumns, "rr", "WeightLbs", "int");
+                string weightTextColumn = SelectColumn(runnerColumns, "rr", "WeightText", "nvarchar(50)");
+                string officialRatingColumn = SelectColumn(runnerColumns, "rr", "OfficialRating", "int", "OfficialRating");
+                string outcomeCodeColumn = SelectColumn(runnerColumns, "rr", "OutcomeCode", "nvarchar(50)");
+                string distanceBeatenTextColumn = SelectColumn(runnerColumns, "rr", "DistanceBeatenText", "nvarchar(50)");
+                string distanceBeatenLengthsColumn = SelectColumn(runnerColumns, "rr", "DistanceBeatenLengths", "decimal(9,4)");
+                string spFractionColumn = SelectColumn(runnerColumns, "rr", "SP_Fraction", "nvarchar(50)");
+                string spDecimalColumn = SelectColumn(runnerColumns, "rr", "SP_Decimal", "decimal(18,6)");
+                string favTagColumn = SelectColumn(runnerColumns, "rr", "FavTag", "nvarchar(16)");
+                string openingFractionColumn = SelectColumn(runnerColumns, "rr", "OpeningFraction", "nvarchar(50)");
+                string touchedHighColumn = SelectColumn(runnerColumns, "rr", "TouchedHighFraction", "nvarchar(50)");
+                string touchedLowColumn = SelectColumn(runnerColumns, "rr", "TouchedLowFraction", "nvarchar(50)");
+                var sql = $@"SELECT c.Name AS CourseName,
                                    h.Name AS HorseName,
                                    j.Name AS JockeyName,
                                    t.Name AS TrainerName,
@@ -3836,7 +3836,7 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
                             WHERE r.RaceDate < @TargetDate
                             ORDER BY r.RaceDate, r.RaceId, rr.RunnerResultId";
 
-            var identifierKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                var identifierKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
                 "HorseName",
                 "HorseId",
@@ -3848,683 +3848,683 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
                 "Draw"
             };
 
-            var featureState = new FeatureEngineeringState(this, identifierKeys);
-            return (sql, runnerColumns, featureState);
-        }
+                var featureState = new FeatureEngineeringState(this, identifierKeys);
+                return (sql, runnerColumns, featureState);
+            }
 
-        private List<(DateTime RaceDate, List<Dictionary<string, object?>> Rows)> MaterializeHistoricalRaces(
-            SqlConnection conn,
-            IEnumerable<object> records)
-        {
-            var races = new List<(DateTime RaceDate, List<Dictionary<string, object?>> Rows)>();
-            var currentRows = new List<Dictionary<string, object?>>(capacity: 32);
-            int? currentRaceId = null;
-            DateTime? currentRaceDate = null;
-
-            foreach (var record in records)
+            private List<(DateTime RaceDate, List<Dictionary<string, object?>> Rows)> MaterializeHistoricalRaces(
+                SqlConnection conn,
+                IEnumerable<object> records)
             {
-                if (record is null)
-                {
-                    continue;
-                }
+                var races = new List<(DateTime RaceDate, List<Dictionary<string, object?>> Rows)>();
+                var currentRows = new List<Dictionary<string, object?>>(capacity: 32);
+                int? currentRaceId = null;
+                DateTime? currentRaceDate = null;
 
-                var source = (IDictionary<string, object?>)record;
-                var row = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
-                foreach (var kvp in source)
+                foreach (var record in records)
                 {
-                    row[kvp.Key] = NormalizeDbValue(kvp.Value);
-                }
-
-                if (!PreparedDataset.TryGetRequiredInt32(row, "RaceId", out var raceId))
-                {
-                    continue;
-                }
-                if (!row.TryGetValue("RaceDate", out var raceDateObj) || raceDateObj is not DateTime raceDateValue)
-                {
-                    continue;
-                }
-
-                var raceDate = raceDateValue.Date;
-                if (currentRaceId.HasValue && raceId != currentRaceId.Value)
-                {
-                    if (currentRows.Count > 0 && currentRaceDate.HasValue)
+                    if (record is null)
                     {
-                        ResolveHorseIdentifiers(conn, currentRows);
-                        races.Add((currentRaceDate.Value, currentRows));
+                        continue;
                     }
 
-                    currentRows = new List<Dictionary<string, object?>>(currentRows.Count);
-                }
-
-                currentRows.Add(row);
-                currentRaceId = raceId;
-                currentRaceDate = raceDate;
-            }
-
-            if (currentRows.Count > 0 && currentRaceDate.HasValue)
-            {
-                races.Add((currentRaceDate.Value, currentRows));
-            }
-
-            return races;
-        }
-
-        private PreparedRace? PrepareUpcomingRaceFromState(
-            SqlConnection conn,
-            UpcomingRace upcoming,
-            IReadOnlyList<RunnerFlow> flows,
-            IReadOnlyCollection<string> runnerColumns,
-            FeatureEngineeringState featureState)
-        {
-            var syntheticRaceId = CreateSyntheticRaceId(upcoming);
-            var syntheticRows = BuildUpcomingRaceRows(conn, upcoming, flows, syntheticRaceId, runnerColumns);
-            if (syntheticRows.Count == 0)
-            {
-                return null;
-            }
-
-            featureState.ProcessRace(syntheticRows, includeRace: true, updateState: false);
-            return new PreparedRace(syntheticRaceId, syntheticRows);
-        }
-
-        private static int CreateSyntheticRaceId(UpcomingRace upcoming)
-        {
-            unchecked
-            {
-                int hash = 17;
-                hash = hash * 31 + upcoming.RaceDate.GetHashCode();
-                if (!string.IsNullOrWhiteSpace(upcoming.MarketId))
-                {
-                    hash = hash * 31 + StringComparer.OrdinalIgnoreCase.GetHashCode(upcoming.MarketId.Trim());
-                }
-                if (!string.IsNullOrWhiteSpace(upcoming.Title))
-                {
-                    hash = hash * 31 + StringComparer.OrdinalIgnoreCase.GetHashCode(upcoming.Title.Trim());
-                }
-
-                return unchecked((int)(0x80000000 | ((uint)hash & 0x7FFFFFFF)));
-            }
-        }
-
-        private List<Dictionary<string, object?>> BuildUpcomingRaceRows(
-            SqlConnection conn,
-            UpcomingRace upcoming,
-            IReadOnlyList<RunnerFlow> flows,
-            int raceId,
-            IReadOnlyCollection<string> runnerColumns)
-        {
-            var rows = new List<Dictionary<string, object?>>(flows.Count);
-            var (courseId, courseName) = ResolveCourse(conn, upcoming);
-            int runnerCount = flows.Count;
-            var validFlows = new List<RunnerFlow>(flows.Count);
-            var horseNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            var jockeyNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            var trainerNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            var horseIdsByName = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-            var horseIdsByFlow = new Dictionary<RunnerFlow, int>();
-            var explicitHorseIds = new HashSet<int>();
-
-            foreach (var flow in flows)
-            {
-                if (flow == null)
-                {
-                    continue;
-                }
-
-                var horseName = flow.HorseName;
-                if (string.IsNullOrWhiteSpace(horseName))
-                {
-                    continue;
-                }
-                validFlows.Add(flow);
-                if (!horseNames.ContainsKey(horseName))
-                {
-                    horseNames[horseName] = horseName;
-                }
-                if (flow.FeatureValues != null &&
-                    flow.FeatureValues.TryGetValue("HorseId", out var horseIdValue) &&
-                    PreparedDataset.TryConvertToInt32(horseIdValue, out var parsedHorseId) &&
-                    parsedHorseId > 0)
-                {
-                    horseIdsByFlow[flow] = parsedHorseId;
-                    explicitHorseIds.Add(parsedHorseId);
-                    if (!horseIdsByName.ContainsKey(horseName))
+                    var source = (IDictionary<string, object?>)record;
+                    var row = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var kvp in source)
                     {
-                        horseIdsByName[horseName] = parsedHorseId;
+                        row[kvp.Key] = NormalizeDbValue(kvp.Value);
                     }
-                }
 
-                if (!string.IsNullOrWhiteSpace(flow.JockeyName) && !jockeyNames.ContainsKey(flow.JockeyName!))
-                {
-                    jockeyNames[flow.JockeyName!] = flow.JockeyName!;
-                }
-                if (!string.IsNullOrWhiteSpace(flow.TrainerName))
-                {
-                    var trainerName = flow.TrainerName!.Trim();
-                    if (!string.IsNullOrWhiteSpace(trainerName) && !trainerNames.ContainsKey(trainerName))
+                    if (!PreparedDataset.TryGetRequiredInt32(row, "RaceId", out var raceId))
                     {
-                        trainerNames[trainerName] = trainerName;
+                        continue;
                     }
-                }
-            }
-
-            var horseNameList = horseNames.Values.ToList();
-            var jockeyNameList = jockeyNames.Values.ToList();
-            var trainerNameList = trainerNames.Values.ToList();
-            var lookupData = LoadRunnerLookupData(conn, upcoming, runnerColumns, horseNameList, jockeyNameList, explicitHorseIds);
-            var horseIdLookup = lookupData.HorseIds;
-            var jockeyIdLookup = lookupData.JockeyIds;
-            var runnerSnapshots = lookupData.RunnerSnapshots;
-            var trainerIdLookup = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-
-            if (trainerNames.Count > 0)
-            {
-                var trainerCandidateMap = BuildNameCandidateMap(trainerNameList);
-                if (trainerCandidateMap.Count > 0)
-                {
-                    const string trainerSql = "SELECT Name, MIN(TrainerId) AS TrainerId FROM Trainer WHERE Name IN @Names GROUP BY Name";
-                    var trainerCandidateList = trainerCandidateMap.Keys.ToArray();
-                    foreach (var (name, trainerId) in conn.Query<(string Name, int TrainerId)>(trainerSql, new { Names = trainerCandidateList }))
+                    if (!row.TryGetValue("RaceDate", out var raceDateObj) || raceDateObj is not DateTime raceDateValue)
                     {
-                        if (!trainerCandidateMap.TryGetValue(name, out var originals) || originals == null)
+                        continue;
+                    }
+
+                    var raceDate = raceDateValue.Date;
+                    if (currentRaceId.HasValue && raceId != currentRaceId.Value)
+                    {
+                        if (currentRows.Count > 0 && currentRaceDate.HasValue)
                         {
-                            continue;
+                            ResolveHorseIdentifiers(conn, currentRows);
+                            races.Add((currentRaceDate.Value, currentRows));
                         }
 
-                        foreach (var original in originals)
-                        {
-                            if (!trainerIdLookup.ContainsKey(original))
-                            {
-                                trainerIdLookup[original] = trainerId;
-                            }
-                        }
+                        currentRows = new List<Dictionary<string, object?>>(currentRows.Count);
                     }
+
+                    currentRows.Add(row);
+                    currentRaceId = raceId;
+                    currentRaceDate = raceDate;
                 }
 
-                var unmatched = new HashSet<string>(trainerNames.Keys, StringComparer.OrdinalIgnoreCase);
-                foreach (var matched in trainerIdLookup.Keys)
+                if (currentRows.Count > 0 && currentRaceDate.HasValue)
                 {
-                    unmatched.Remove(matched);
+                    races.Add((currentRaceDate.Value, currentRows));
                 }
 
-                if (unmatched.Count > 0)
-                {
-                    var normalizedMap = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
-                    foreach (var original in unmatched)
-                    {
-                        if (string.IsNullOrWhiteSpace(original))
-                        {
-                            continue;
-                        }
-
-                        IEnumerable<string> candidates = trainerCandidateMap.Count > 0
-                            ? trainerCandidateMap.Where(kvp => kvp.Value.Contains(original)).Select(kvp => kvp.Key)
-                            : RacingRepository.BuildHistoricalNameCandidates(original);
-
-                        foreach (var candidate in candidates)
-                        {
-                            var normalized = RacingRepository.NormalizeHistoricalNameKey(candidate);
-                            if (string.IsNullOrEmpty(normalized))
-                            {
-                                continue;
-                            }
-
-                            if (!normalizedMap.TryGetValue(normalized, out var originals))
-                            {
-                                originals = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                                normalizedMap[normalized] = originals;
-                            }
-
-                            originals.Add(original);
-                        }
-                    }
-
-                    if (normalizedMap.Count > 0)
-                    {
-                        PopulateNormalizedLookup(
-                            conn,
-                            "Trainer",
-                            "TrainerId",
-                            normalizedMap,
-                            trainerIdLookup);
-                    }
-                }
+                return races;
             }
 
-            foreach (var pair in horseIdsByName)
+            private PreparedRace? PrepareUpcomingRaceFromState(
+                SqlConnection conn,
+                UpcomingRace upcoming,
+                IReadOnlyList<RunnerFlow> flows,
+                IReadOnlyCollection<string> runnerColumns,
+                FeatureEngineeringState featureState)
             {
-                horseIdLookup[pair.Key] = pair.Value;
-            }
-
-            foreach (var flow in validFlows)
-            {
-                var horseName = flow.HorseName!;
-                var row = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
-                {
-                    ["RaceId"] = raceId,
-                    ["CourseId"] = courseId,
-                    ["CourseName"] = courseName,
-                    ["RaceDate"] = upcoming.RaceDate,
-                    ["ScheduledOff"] = upcoming.ScheduledOff,
-                    ["ActualOff"] = null,
-                    ["Title"] = upcoming.Title,
-                    ["RaceType"] = upcoming.RaceType,
-                    ["Surface"] = upcoming.Surface,
-                    ["Going"] = upcoming.Going,
-                    ["DistanceYards"] = upcoming.DistanceYards,
-                    ["DistanceText"] = upcoming.DistanceText,
-                    ["RunnerCount"] = upcoming.RunnerCount ?? Math.Min(runnerCount, byte.MaxValue),
-                    ["Status"] = null,
-                    ["WinningTimeMs"] = null,
-                    ["HorseName"] = horseName,
-                    ["JockeyName"] = flow.JockeyName,
-                    ["SaddleclothNumber"] = flow.ClothNumber,
-                    ["Draw"] = flow.Draw,
-                    ["Age"] = null,
-                    ["WeightLbs"] = null,
-                    ["WeightText"] = null,
-                    ["OfficialRating"] = null,
-                    ["FinishPos"] = null,
-                    ["OutcomeCode"] = null,
-                    ["DistanceBeatenText"] = null,
-                    ["SP_Fraction"] = null,
-                    ["SP_Decimal"] = null,
-                    ["FavTag"] = null,
-                    ["OpeningFraction"] = null,
-                    ["TouchedHighFraction"] = null,
-                    ["TouchedLowFraction"] = null,
-                    ["BackPrice1"] = flow.BackPrice1,
-                    ["BackPrice2"] = flow.BackPrice2,
-                    ["BackPrice3"] = flow.BackPrice3,
-                    ["LayPrice1"] = flow.LayPrice1,
-                    ["LayPrice2"] = flow.LayPrice2,
-                    ["LayPrice3"] = flow.LayPrice3
-                };
-                var resolvedClass = ResolveUpcomingRaceClass(upcoming, flow);
-                if (resolvedClass.HasValue)
-                {
-                    row["Class"] = resolvedClass.Value;
-                }
-                // Values that depend on historical lookups are populated below when data is available.
-                row["Purse"] = null;
-                row["TrainerId"] = null;
-                row["TrainerName"] = null;
-                var trainerNameKey = flow.TrainerName?.Trim();
-
-                int? resolvedHorseId = null;
-                if (horseIdsByFlow.TryGetValue(flow, out var horseIdFromFlow))
-                {
-                    resolvedHorseId = horseIdFromFlow;
-                }
-                else if (horseIdLookup.TryGetValue(horseName, out var horseIdFromLookup))
-                {
-                    resolvedHorseId = horseIdFromLookup;
-                }
-
-                if (resolvedHorseId.HasValue)
-                {
-                    row["HorseId"] = resolvedHorseId.Value;
-                }
-                else
-                {
-                    Console.WriteLine($"\t\tNo match found in Horse.Name for '{horseName}'; using synthetic horse identifier.");
-                    row["HorseId"] = GenerateSyntheticId("horse:" + horseName);
-                }
-
-                if (!string.IsNullOrWhiteSpace(flow.JockeyName) &&
-                    jockeyIdLookup.TryGetValue(flow.JockeyName!, out var jockeyId))
-                {
-                    row["JockeyId"] = jockeyId;
-                }
-                else if (!string.IsNullOrWhiteSpace(flow.JockeyName))
-                {
-                    Console.WriteLine($"\t\tNo match found in Jockey.Name for '{flow.JockeyName}'; jockey history will be unavailable.");
-                }
-
-                if (runnerColumns != null &&
-                    row.TryGetValue("HorseId", out var horseIdObj) &&
-                    horseIdObj is int horseIdFromRow &&
-                    runnerSnapshots.TryGetValue(horseIdFromRow, out var snapshot))
-                {
-                    if (row["TrainerId"] == null && snapshot.TrainerId.HasValue)
-                    {
-                        row["TrainerId"] = snapshot.TrainerId.Value;
-                    }
-
-                    if (row["TrainerName"] == null && !string.IsNullOrWhiteSpace(snapshot.TrainerName))
-                    {
-                        row["TrainerName"] = snapshot.TrainerName;
-                    }
-
-                    if (row["Age"] == null && snapshot.Age.HasValue)
-                    {
-                        row["Age"] = Convert.ToInt32(snapshot.Age.Value);
-                    }
-
-                    if (row["WeightLbs"] == null && snapshot.WeightLbs.HasValue)
-                    {
-                        row["WeightLbs"] = Convert.ToInt32(snapshot.WeightLbs.Value);
-                    }
-
-                    if (row["WeightText"] == null && snapshot.WeightText != null)
-                    {
-                        row["WeightText"] = snapshot.WeightText;
-                    }
-
-                    if (snapshot.OfficialRating.HasValue)
-                    {
-                        row["OfficialRating"] = Convert.ToInt32(snapshot.OfficialRating.Value);
-                    }
-                }
-
-                if ((row["TrainerId"] == null || !PreparedDataset.TryConvertToInt32(row["TrainerId"], out _)) &&
-                    !string.IsNullOrWhiteSpace(trainerNameKey) &&
-                    trainerIdLookup.TryGetValue(trainerNameKey, out var trainerId))
-                {
-                    row["TrainerId"] = trainerId;
-                }
-
-                if (row["TrainerName"] == null && !string.IsNullOrWhiteSpace(trainerNameKey))
-                {
-                    row["TrainerName"] = trainerNameKey;
-                }
-
-                rows.Add(row);
-            }
-            return rows;
-        }
-        internal List<Dictionary<string, object?>> TestBuildUpcomingRaceRows(
-           SqlConnection conn,
-           UpcomingRace upcoming,
-           IReadOnlyList<RunnerFlow> flows,
-           int raceId,
-           IReadOnlyCollection<string> runnerColumns) =>
-           BuildUpcomingRaceRows(conn, upcoming, flows, raceId, runnerColumns);
-        internal static (float AvgSpeed, float AvgSpeedDiff) TestComputeAverageSpeedForWindow(
-           IReadOnlyList<(bool HasSpeed, float Speed, float SpeedDiff)> history,
-           int window)
-        {
-            if (history == null)
-            {
-                throw new ArgumentNullException(nameof(history));
-            }
-
-            if (window <= 0 || history.Count == 0)
-            {
-                return (0f, 0f);
-            }
-
-            var entries = new List<HistoryEntry>(history.Count);
-            var date = BaseDate;
-            foreach (var sample in history)
-            {
-                date = date.AddDays(1);
-                entries.Add(new HistoryEntry(
-                    date,
-                    NormFinish: 0f,
-                    Finish: null,
-                    Going: null,
-                    Surface: null,
-                    CourseId: 0,
-                    Bucket: null,
-                    RaceClass: null,
-                    RaceSpeed: 0f,
-                    Speed: sample.Speed,
-                    SpeedDiff: sample.SpeedDiff,
-                    Age: 0,
-                    Won: false,
-                    Rating: 0f,
-                    Weight: 0f,
-                    HasSpeed: sample.HasSpeed,
-                    HasWinningTime: false,
-                    WinningTimeMs: null,
-                    DistanceYards: null));
-            }
-
-            var selected = FeatureEngineeringState.TakeRecentEntries(entries, window, h => h.HasSpeed);
-            if (selected.Count == 0)
-            {
-                return (0f, 0f);
-            }
-
-            return (
-                selected.Average(h => h.Speed),
-                selected.Average(h => h.SpeedDiff));
-        }
-        private static int? ResolveUpcomingRaceClass(UpcomingRace? upcoming, RunnerFlow? flow)
-        {
-            if (flow?.FeatureValues != null &&
-                flow.FeatureValues.TryGetValue("Class", out var classObj) &&
-                PreparedDataset.TryConvertToInt32(classObj, out var classFromFlow) &&
-                classFromFlow > 0)
-            {
-                return classFromFlow;
-            }
-
-            static int? ParseClassFromText(string? text)
-            {
-                if (string.IsNullOrWhiteSpace(text))
+                var syntheticRaceId = CreateSyntheticRaceId(upcoming);
+                var syntheticRows = BuildUpcomingRaceRows(conn, upcoming, flows, syntheticRaceId, runnerColumns);
+                if (syntheticRows.Count == 0)
                 {
                     return null;
                 }
 
-                var match = UpcomingClassRegex.Match(text);
-                if (!match.Success)
-                {
-                    return null;
-                }
-
-                return int.TryParse(match.Groups["value"].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) && value > 0
-                    ? value
-                    : null;
+                featureState.ProcessRace(syntheticRows, includeRace: true, updateState: false);
+                return new PreparedRace(syntheticRaceId, syntheticRows);
             }
 
-            return ParseClassFromText(flow?.RaceDetails)
-                   ?? ParseClassFromText(flow?.RaceTitle)
-                   ?? ParseClassFromText(flow?.RaceType)
-                   ?? ParseClassFromText(upcoming?.RaceDetails)
-                   ?? ParseClassFromText(upcoming?.Title)
-                   ?? ParseClassFromText(upcoming?.RaceType);
-        }
-
-        protected virtual RunnerLookupData LoadRunnerLookupData(
-             SqlConnection conn,
-             UpcomingRace upcoming,
-             IReadOnlyCollection<string> runnerColumns,
-             IReadOnlyCollection<string> horseNames,
-             IReadOnlyCollection<string> jockeyNames,
-             IReadOnlyCollection<int>? horseIdsFromFlows = null)
-        {
-            var horseIdLookup = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-            Dictionary<string, HashSet<string>>? horseCandidateMap = null;
-            if (horseNames.Count > 0)
+            private static int CreateSyntheticRaceId(UpcomingRace upcoming)
             {
-                horseCandidateMap = BuildNameCandidateMap(horseNames);
-                if (horseCandidateMap.Count > 0)
+                unchecked
                 {
-                    const string horseSql = "SELECT Name, MIN(HorseId) AS HorseId FROM Horse WHERE Name IN @Names GROUP BY Name";
-                    var candidateList = horseCandidateMap.Keys.ToArray();
-                    foreach (var (name, horseId) in conn.Query<(string Name, int HorseId)>(horseSql, new { Names = candidateList }))
+                    int hash = 17;
+                    hash = hash * 31 + upcoming.RaceDate.GetHashCode();
+                    if (!string.IsNullOrWhiteSpace(upcoming.MarketId))
                     {
-                        if (!horseCandidateMap.TryGetValue(name, out var originals) || originals == null)
-                        {
-                            continue;
-                        }
-
-                        foreach (var original in originals)
-                        {
-                            if (!horseIdLookup.ContainsKey(original))
-                            {
-                                horseIdLookup[original] = horseId;
-                            }
-                        }
+                        hash = hash * 31 + StringComparer.OrdinalIgnoreCase.GetHashCode(upcoming.MarketId.Trim());
                     }
-                }
-            }
-            if (horseNames.Count > 0)
-            {
-                var unmatched = new HashSet<string>(horseNames, StringComparer.OrdinalIgnoreCase);
-                foreach (var matched in horseIdLookup.Keys)
-                {
-                    unmatched.Remove(matched);
-                }
-
-                if (unmatched.Count > 0)
-                {
-                    var normalizedMap = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
-                    foreach (var original in unmatched)
+                    if (!string.IsNullOrWhiteSpace(upcoming.Title))
                     {
-                        if (string.IsNullOrWhiteSpace(original))
-                        {
-                            continue;
-                        }
-
-                        IEnumerable<string> candidates = horseCandidateMap != null && horseCandidateMap.Count > 0
-                            ? horseCandidateMap.Where(kvp => kvp.Value.Contains(original)).Select(kvp => kvp.Key)
-                            : RacingRepository.BuildHistoricalNameCandidates(original);
-
-                        foreach (var candidate in candidates)
-                        {
-                            var normalized = RacingRepository.NormalizeHistoricalNameKey(candidate);
-                            if (string.IsNullOrEmpty(normalized))
-                            {
-                                continue;
-                            }
-
-                            if (!normalizedMap.TryGetValue(normalized, out var originals))
-                            {
-                                originals = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                                normalizedMap[normalized] = originals;
-                            }
-
-                            originals.Add(original);
-                        }
+                        hash = hash * 31 + StringComparer.OrdinalIgnoreCase.GetHashCode(upcoming.Title.Trim());
                     }
 
-                    if (normalizedMap.Count > 0)
-                    {
-                        PopulateNormalizedLookup(
-                            conn,
-                            "Horse",
-                            "HorseId",
-                            normalizedMap,
-                            horseIdLookup);
-                    }
+                    return unchecked((int)(0x80000000 | ((uint)hash & 0x7FFFFFFF)));
                 }
             }
 
-            var jockeyIdLookup = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-            Dictionary<string, HashSet<string>>? jockeyCandidateMap = null;
-            if (jockeyNames.Count > 0)
+            private List<Dictionary<string, object?>> BuildUpcomingRaceRows(
+                SqlConnection conn,
+                UpcomingRace upcoming,
+                IReadOnlyList<RunnerFlow> flows,
+                int raceId,
+                IReadOnlyCollection<string> runnerColumns)
             {
-                jockeyCandidateMap = BuildNameCandidateMap(jockeyNames);
-                if (jockeyCandidateMap.Count > 0)
-                {
-                    const string jockeySql = "SELECT Name, MIN(JockeyId) AS JockeyId FROM Jockey WHERE Name IN @Names GROUP BY Name";
-                    var candidateList = jockeyCandidateMap.Keys.ToArray();
-                    foreach (var (name, jockeyId) in conn.Query<(string Name, int JockeyId)>(jockeySql, new { Names = candidateList }))
-                    {
-                        if (!jockeyCandidateMap.TryGetValue(name, out var originals) || originals == null)
-                        {
-                            continue;
-                        }
+                var rows = new List<Dictionary<string, object?>>(flows.Count);
+                var (courseId, courseName) = ResolveCourse(conn, upcoming);
+                int runnerCount = flows.Count;
+                var validFlows = new List<RunnerFlow>(flows.Count);
+                var horseNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                var jockeyNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                var trainerNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                var horseIdsByName = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                var horseIdsByFlow = new Dictionary<RunnerFlow, int>();
+                var explicitHorseIds = new HashSet<int>();
 
-                        foreach (var original in originals)
+                foreach (var flow in flows)
+                {
+                    if (flow == null)
+                    {
+                        continue;
+                    }
+
+                    var horseName = flow.HorseName;
+                    if (string.IsNullOrWhiteSpace(horseName))
+                    {
+                        continue;
+                    }
+                    validFlows.Add(flow);
+                    if (!horseNames.ContainsKey(horseName))
+                    {
+                        horseNames[horseName] = horseName;
+                    }
+                    if (flow.FeatureValues != null &&
+                        flow.FeatureValues.TryGetValue("HorseId", out var horseIdValue) &&
+                        PreparedDataset.TryConvertToInt32(horseIdValue, out var parsedHorseId) &&
+                        parsedHorseId > 0)
+                    {
+                        horseIdsByFlow[flow] = parsedHorseId;
+                        explicitHorseIds.Add(parsedHorseId);
+                        if (!horseIdsByName.ContainsKey(horseName))
                         {
-                            if (!jockeyIdLookup.ContainsKey(original))
-                            {
-                                jockeyIdLookup[original] = jockeyId;
-                            }
+                            horseIdsByName[horseName] = parsedHorseId;
+                        }
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(flow.JockeyName) && !jockeyNames.ContainsKey(flow.JockeyName!))
+                    {
+                        jockeyNames[flow.JockeyName!] = flow.JockeyName!;
+                    }
+                    if (!string.IsNullOrWhiteSpace(flow.TrainerName))
+                    {
+                        var trainerName = flow.TrainerName!.Trim();
+                        if (!string.IsNullOrWhiteSpace(trainerName) && !trainerNames.ContainsKey(trainerName))
+                        {
+                            trainerNames[trainerName] = trainerName;
                         }
                     }
                 }
-            }
-            if (jockeyNames.Count > 0)
-            {
-                var unmatched = new HashSet<string>(jockeyNames, StringComparer.OrdinalIgnoreCase);
-                foreach (var matched in jockeyIdLookup.Keys)
-                {
-                    unmatched.Remove(matched);
-                }
 
-                if (unmatched.Count > 0)
+                var horseNameList = horseNames.Values.ToList();
+                var jockeyNameList = jockeyNames.Values.ToList();
+                var trainerNameList = trainerNames.Values.ToList();
+                var lookupData = LoadRunnerLookupData(conn, upcoming, runnerColumns, horseNameList, jockeyNameList, explicitHorseIds);
+                var horseIdLookup = lookupData.HorseIds;
+                var jockeyIdLookup = lookupData.JockeyIds;
+                var runnerSnapshots = lookupData.RunnerSnapshots;
+                var trainerIdLookup = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+                if (trainerNames.Count > 0)
                 {
-                    var normalizedMap = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
-                    foreach (var original in unmatched)
+                    var trainerCandidateMap = BuildNameCandidateMap(trainerNameList);
+                    if (trainerCandidateMap.Count > 0)
                     {
-                        if (string.IsNullOrWhiteSpace(original))
+                        const string trainerSql = "SELECT Name, MIN(TrainerId) AS TrainerId FROM Trainer WHERE Name IN @Names GROUP BY Name";
+                        var trainerCandidateList = trainerCandidateMap.Keys.ToArray();
+                        foreach (var (name, trainerId) in conn.Query<(string Name, int TrainerId)>(trainerSql, new { Names = trainerCandidateList }))
                         {
-                            continue;
-                        }
-
-                        IEnumerable<string> candidates = jockeyCandidateMap != null && jockeyCandidateMap.Count > 0
-                            ? jockeyCandidateMap.Where(kvp => kvp.Value.Contains(original)).Select(kvp => kvp.Key)
-                            : RacingRepository.BuildHistoricalNameCandidates(original);
-
-                        foreach (var candidate in candidates)
-                        {
-                            var normalized = RacingRepository.NormalizeHistoricalNameKey(candidate);
-                            if (string.IsNullOrEmpty(normalized))
+                            if (!trainerCandidateMap.TryGetValue(name, out var originals) || originals == null)
                             {
                                 continue;
                             }
 
-                            if (!normalizedMap.TryGetValue(normalized, out var originals))
+                            foreach (var original in originals)
                             {
-                                originals = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                                normalizedMap[normalized] = originals;
+                                if (!trainerIdLookup.ContainsKey(original))
+                                {
+                                    trainerIdLookup[original] = trainerId;
+                                }
                             }
-
-                            originals.Add(original);
                         }
                     }
 
-                    if (normalizedMap.Count > 0)
+                    var unmatched = new HashSet<string>(trainerNames.Keys, StringComparer.OrdinalIgnoreCase);
+                    foreach (var matched in trainerIdLookup.Keys)
                     {
-                        PopulateNormalizedLookup(
-                            conn,
-                            "Jockey",
-                            "JockeyId",
-                            normalizedMap,
-                            jockeyIdLookup);
+                        unmatched.Remove(matched);
+                    }
+
+                    if (unmatched.Count > 0)
+                    {
+                        var normalizedMap = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+                        foreach (var original in unmatched)
+                        {
+                            if (string.IsNullOrWhiteSpace(original))
+                            {
+                                continue;
+                            }
+
+                            IEnumerable<string> candidates = trainerCandidateMap.Count > 0
+                                ? trainerCandidateMap.Where(kvp => kvp.Value.Contains(original)).Select(kvp => kvp.Key)
+                                : RacingRepository.BuildHistoricalNameCandidates(original);
+
+                            foreach (var candidate in candidates)
+                            {
+                                var normalized = RacingRepository.NormalizeHistoricalNameKey(candidate);
+                                if (string.IsNullOrEmpty(normalized))
+                                {
+                                    continue;
+                                }
+
+                                if (!normalizedMap.TryGetValue(normalized, out var originals))
+                                {
+                                    originals = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                                    normalizedMap[normalized] = originals;
+                                }
+
+                                originals.Add(original);
+                            }
+                        }
+
+                        if (normalizedMap.Count > 0)
+                        {
+                            PopulateNormalizedLookup(
+                                conn,
+                                "Trainer",
+                                "TrainerId",
+                                normalizedMap,
+                                trainerIdLookup);
+                        }
                     }
                 }
-            }
-            var runnerSnapshots = new Dictionary<int, RunnerSnapshot>();
-            var knownHorseIds = new HashSet<int>();
-            foreach (var horseId in horseIdLookup.Values)
-            {
-                if (horseId > 0)
+
+                foreach (var pair in horseIdsByName)
                 {
-                    knownHorseIds.Add(horseId);
+                    horseIdLookup[pair.Key] = pair.Value;
                 }
+
+                foreach (var flow in validFlows)
+                {
+                    var horseName = flow.HorseName!;
+                    var row = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        ["RaceId"] = raceId,
+                        ["CourseId"] = courseId,
+                        ["CourseName"] = courseName,
+                        ["RaceDate"] = upcoming.RaceDate,
+                        ["ScheduledOff"] = upcoming.ScheduledOff,
+                        ["ActualOff"] = null,
+                        ["Title"] = upcoming.Title,
+                        ["RaceType"] = upcoming.RaceType,
+                        ["Surface"] = upcoming.Surface,
+                        ["Going"] = upcoming.Going,
+                        ["DistanceYards"] = upcoming.DistanceYards,
+                        ["DistanceText"] = upcoming.DistanceText,
+                        ["RunnerCount"] = upcoming.RunnerCount ?? Math.Min(runnerCount, byte.MaxValue),
+                        ["Status"] = null,
+                        ["WinningTimeMs"] = null,
+                        ["HorseName"] = horseName,
+                        ["JockeyName"] = flow.JockeyName,
+                        ["SaddleclothNumber"] = flow.ClothNumber,
+                        ["Draw"] = flow.Draw,
+                        ["Age"] = null,
+                        ["WeightLbs"] = null,
+                        ["WeightText"] = null,
+                        ["OfficialRating"] = null,
+                        ["FinishPos"] = null,
+                        ["OutcomeCode"] = null,
+                        ["DistanceBeatenText"] = null,
+                        ["SP_Fraction"] = null,
+                        ["SP_Decimal"] = null,
+                        ["FavTag"] = null,
+                        ["OpeningFraction"] = null,
+                        ["TouchedHighFraction"] = null,
+                        ["TouchedLowFraction"] = null,
+                        ["BackPrice1"] = flow.BackPrice1,
+                        ["BackPrice2"] = flow.BackPrice2,
+                        ["BackPrice3"] = flow.BackPrice3,
+                        ["LayPrice1"] = flow.LayPrice1,
+                        ["LayPrice2"] = flow.LayPrice2,
+                        ["LayPrice3"] = flow.LayPrice3
+                    };
+                    var resolvedClass = ResolveUpcomingRaceClass(upcoming, flow);
+                    if (resolvedClass.HasValue)
+                    {
+                        row["Class"] = resolvedClass.Value;
+                    }
+                    // Values that depend on historical lookups are populated below when data is available.
+                    row["Purse"] = null;
+                    row["TrainerId"] = null;
+                    row["TrainerName"] = null;
+                    var trainerNameKey = flow.TrainerName?.Trim();
+
+                    int? resolvedHorseId = null;
+                    if (horseIdsByFlow.TryGetValue(flow, out var horseIdFromFlow))
+                    {
+                        resolvedHorseId = horseIdFromFlow;
+                    }
+                    else if (horseIdLookup.TryGetValue(horseName, out var horseIdFromLookup))
+                    {
+                        resolvedHorseId = horseIdFromLookup;
+                    }
+
+                    if (resolvedHorseId.HasValue)
+                    {
+                        row["HorseId"] = resolvedHorseId.Value;
+                    }
+                    else
+                    {
+                        Console.WriteLine($"\t\tNo match found in Horse.Name for '{horseName}'; using synthetic horse identifier.");
+                        row["HorseId"] = GenerateSyntheticId("horse:" + horseName);
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(flow.JockeyName) &&
+                        jockeyIdLookup.TryGetValue(flow.JockeyName!, out var jockeyId))
+                    {
+                        row["JockeyId"] = jockeyId;
+                    }
+                    else if (!string.IsNullOrWhiteSpace(flow.JockeyName))
+                    {
+                        Console.WriteLine($"\t\tNo match found in Jockey.Name for '{flow.JockeyName}'; jockey history will be unavailable.");
+                    }
+
+                    if (runnerColumns != null &&
+                        row.TryGetValue("HorseId", out var horseIdObj) &&
+                        horseIdObj is int horseIdFromRow &&
+                        runnerSnapshots.TryGetValue(horseIdFromRow, out var snapshot))
+                    {
+                        if (row["TrainerId"] == null && snapshot.TrainerId.HasValue)
+                        {
+                            row["TrainerId"] = snapshot.TrainerId.Value;
+                        }
+
+                        if (row["TrainerName"] == null && !string.IsNullOrWhiteSpace(snapshot.TrainerName))
+                        {
+                            row["TrainerName"] = snapshot.TrainerName;
+                        }
+
+                        if (row["Age"] == null && snapshot.Age.HasValue)
+                        {
+                            row["Age"] = Convert.ToInt32(snapshot.Age.Value);
+                        }
+
+                        if (row["WeightLbs"] == null && snapshot.WeightLbs.HasValue)
+                        {
+                            row["WeightLbs"] = Convert.ToInt32(snapshot.WeightLbs.Value);
+                        }
+
+                        if (row["WeightText"] == null && snapshot.WeightText != null)
+                        {
+                            row["WeightText"] = snapshot.WeightText;
+                        }
+
+                        if (snapshot.OfficialRating.HasValue)
+                        {
+                            row["OfficialRating"] = Convert.ToInt32(snapshot.OfficialRating.Value);
+                        }
+                    }
+
+                    if ((row["TrainerId"] == null || !PreparedDataset.TryConvertToInt32(row["TrainerId"], out _)) &&
+                        !string.IsNullOrWhiteSpace(trainerNameKey) &&
+                        trainerIdLookup.TryGetValue(trainerNameKey, out var trainerId))
+                    {
+                        row["TrainerId"] = trainerId;
+                    }
+
+                    if (row["TrainerName"] == null && !string.IsNullOrWhiteSpace(trainerNameKey))
+                    {
+                        row["TrainerName"] = trainerNameKey;
+                    }
+
+                    rows.Add(row);
+                }
+                return rows;
             }
-            if (horseIdsFromFlows != null)
+            internal List<Dictionary<string, object?>> TestBuildUpcomingRaceRows(
+               SqlConnection conn,
+               UpcomingRace upcoming,
+               IReadOnlyList<RunnerFlow> flows,
+               int raceId,
+               IReadOnlyCollection<string> runnerColumns) =>
+               BuildUpcomingRaceRows(conn, upcoming, flows, raceId, runnerColumns);
+            internal static (float AvgSpeed, float AvgSpeedDiff) TestComputeAverageSpeedForWindow(
+               IReadOnlyList<(bool HasSpeed, float Speed, float SpeedDiff)> history,
+               int window)
             {
-                foreach (var horseId in horseIdsFromFlows)
+                if (history == null)
+                {
+                    throw new ArgumentNullException(nameof(history));
+                }
+
+                if (window <= 0 || history.Count == 0)
+                {
+                    return (0f, 0f);
+                }
+
+                var entries = new List<HistoryEntry>(history.Count);
+                var date = BaseDate;
+                foreach (var sample in history)
+                {
+                    date = date.AddDays(1);
+                    entries.Add(new HistoryEntry(
+                        date,
+                        NormFinish: 0f,
+                        Finish: null,
+                        Going: null,
+                        Surface: null,
+                        CourseId: 0,
+                        Bucket: null,
+                        RaceClass: null,
+                        RaceSpeed: 0f,
+                        Speed: sample.Speed,
+                        SpeedDiff: sample.SpeedDiff,
+                        Age: 0,
+                        Won: false,
+                        Rating: 0f,
+                        Weight: 0f,
+                        HasSpeed: sample.HasSpeed,
+                        HasWinningTime: false,
+                        WinningTimeMs: null,
+                        DistanceYards: null));
+                }
+
+                var selected = FeatureEngineeringState.TakeRecentEntries(entries, window, h => h.HasSpeed);
+                if (selected.Count == 0)
+                {
+                    return (0f, 0f);
+                }
+
+                return (
+                    selected.Average(h => h.Speed),
+                    selected.Average(h => h.SpeedDiff));
+            }
+            private static int? ResolveUpcomingRaceClass(UpcomingRace? upcoming, RunnerFlow? flow)
+            {
+                if (flow?.FeatureValues != null &&
+                    flow.FeatureValues.TryGetValue("Class", out var classObj) &&
+                    PreparedDataset.TryConvertToInt32(classObj, out var classFromFlow) &&
+                    classFromFlow > 0)
+                {
+                    return classFromFlow;
+                }
+
+                static int? ParseClassFromText(string? text)
+                {
+                    if (string.IsNullOrWhiteSpace(text))
+                    {
+                        return null;
+                    }
+
+                    var match = UpcomingClassRegex.Match(text);
+                    if (!match.Success)
+                    {
+                        return null;
+                    }
+
+                    return int.TryParse(match.Groups["value"].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) && value > 0
+                        ? value
+                        : null;
+                }
+
+                return ParseClassFromText(flow?.RaceDetails)
+                       ?? ParseClassFromText(flow?.RaceTitle)
+                       ?? ParseClassFromText(flow?.RaceType)
+                       ?? ParseClassFromText(upcoming?.RaceDetails)
+                       ?? ParseClassFromText(upcoming?.Title)
+                       ?? ParseClassFromText(upcoming?.RaceType);
+            }
+
+            protected virtual RunnerLookupData LoadRunnerLookupData(
+                 SqlConnection conn,
+                 UpcomingRace upcoming,
+                 IReadOnlyCollection<string> runnerColumns,
+                 IReadOnlyCollection<string> horseNames,
+                 IReadOnlyCollection<string> jockeyNames,
+                 IReadOnlyCollection<int>? horseIdsFromFlows = null)
+            {
+                var horseIdLookup = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                Dictionary<string, HashSet<string>>? horseCandidateMap = null;
+                if (horseNames.Count > 0)
+                {
+                    horseCandidateMap = BuildNameCandidateMap(horseNames);
+                    if (horseCandidateMap.Count > 0)
+                    {
+                        const string horseSql = "SELECT Name, MIN(HorseId) AS HorseId FROM Horse WHERE Name IN @Names GROUP BY Name";
+                        var candidateList = horseCandidateMap.Keys.ToArray();
+                        foreach (var (name, horseId) in conn.Query<(string Name, int HorseId)>(horseSql, new { Names = candidateList }))
+                        {
+                            if (!horseCandidateMap.TryGetValue(name, out var originals) || originals == null)
+                            {
+                                continue;
+                            }
+
+                            foreach (var original in originals)
+                            {
+                                if (!horseIdLookup.ContainsKey(original))
+                                {
+                                    horseIdLookup[original] = horseId;
+                                }
+                            }
+                        }
+                    }
+                }
+                if (horseNames.Count > 0)
+                {
+                    var unmatched = new HashSet<string>(horseNames, StringComparer.OrdinalIgnoreCase);
+                    foreach (var matched in horseIdLookup.Keys)
+                    {
+                        unmatched.Remove(matched);
+                    }
+
+                    if (unmatched.Count > 0)
+                    {
+                        var normalizedMap = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+                        foreach (var original in unmatched)
+                        {
+                            if (string.IsNullOrWhiteSpace(original))
+                            {
+                                continue;
+                            }
+
+                            IEnumerable<string> candidates = horseCandidateMap != null && horseCandidateMap.Count > 0
+                                ? horseCandidateMap.Where(kvp => kvp.Value.Contains(original)).Select(kvp => kvp.Key)
+                                : RacingRepository.BuildHistoricalNameCandidates(original);
+
+                            foreach (var candidate in candidates)
+                            {
+                                var normalized = RacingRepository.NormalizeHistoricalNameKey(candidate);
+                                if (string.IsNullOrEmpty(normalized))
+                                {
+                                    continue;
+                                }
+
+                                if (!normalizedMap.TryGetValue(normalized, out var originals))
+                                {
+                                    originals = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                                    normalizedMap[normalized] = originals;
+                                }
+
+                                originals.Add(original);
+                            }
+                        }
+
+                        if (normalizedMap.Count > 0)
+                        {
+                            PopulateNormalizedLookup(
+                                conn,
+                                "Horse",
+                                "HorseId",
+                                normalizedMap,
+                                horseIdLookup);
+                        }
+                    }
+                }
+
+                var jockeyIdLookup = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                Dictionary<string, HashSet<string>>? jockeyCandidateMap = null;
+                if (jockeyNames.Count > 0)
+                {
+                    jockeyCandidateMap = BuildNameCandidateMap(jockeyNames);
+                    if (jockeyCandidateMap.Count > 0)
+                    {
+                        const string jockeySql = "SELECT Name, MIN(JockeyId) AS JockeyId FROM Jockey WHERE Name IN @Names GROUP BY Name";
+                        var candidateList = jockeyCandidateMap.Keys.ToArray();
+                        foreach (var (name, jockeyId) in conn.Query<(string Name, int JockeyId)>(jockeySql, new { Names = candidateList }))
+                        {
+                            if (!jockeyCandidateMap.TryGetValue(name, out var originals) || originals == null)
+                            {
+                                continue;
+                            }
+
+                            foreach (var original in originals)
+                            {
+                                if (!jockeyIdLookup.ContainsKey(original))
+                                {
+                                    jockeyIdLookup[original] = jockeyId;
+                                }
+                            }
+                        }
+                    }
+                }
+                if (jockeyNames.Count > 0)
+                {
+                    var unmatched = new HashSet<string>(jockeyNames, StringComparer.OrdinalIgnoreCase);
+                    foreach (var matched in jockeyIdLookup.Keys)
+                    {
+                        unmatched.Remove(matched);
+                    }
+
+                    if (unmatched.Count > 0)
+                    {
+                        var normalizedMap = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+                        foreach (var original in unmatched)
+                        {
+                            if (string.IsNullOrWhiteSpace(original))
+                            {
+                                continue;
+                            }
+
+                            IEnumerable<string> candidates = jockeyCandidateMap != null && jockeyCandidateMap.Count > 0
+                                ? jockeyCandidateMap.Where(kvp => kvp.Value.Contains(original)).Select(kvp => kvp.Key)
+                                : RacingRepository.BuildHistoricalNameCandidates(original);
+
+                            foreach (var candidate in candidates)
+                            {
+                                var normalized = RacingRepository.NormalizeHistoricalNameKey(candidate);
+                                if (string.IsNullOrEmpty(normalized))
+                                {
+                                    continue;
+                                }
+
+                                if (!normalizedMap.TryGetValue(normalized, out var originals))
+                                {
+                                    originals = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                                    normalizedMap[normalized] = originals;
+                                }
+
+                                originals.Add(original);
+                            }
+                        }
+
+                        if (normalizedMap.Count > 0)
+                        {
+                            PopulateNormalizedLookup(
+                                conn,
+                                "Jockey",
+                                "JockeyId",
+                                normalizedMap,
+                                jockeyIdLookup);
+                        }
+                    }
+                }
+                var runnerSnapshots = new Dictionary<int, RunnerSnapshot>();
+                var knownHorseIds = new HashSet<int>();
+                foreach (var horseId in horseIdLookup.Values)
                 {
                     if (horseId > 0)
                     {
                         knownHorseIds.Add(horseId);
                     }
                 }
-            }
-            if (knownHorseIds.Count > 0)
-            {
-                string weightTextColumn = runnerColumns.Contains("WeightText")
-                    ? "rr.WeightText"
-                    : "CAST(NULL AS nvarchar(50))";
-                string officialRatingColumn = runnerColumns.Contains("OfficialRating")
-                    ? "rr.OfficialRating"
-                    : "CAST(NULL AS smallint)";
-                string ageColumn = runnerColumns.Contains("Age")
-                    ? "rr.Age"
-                    : "CAST(NULL AS smallint)";
-                string weightLbsColumn = runnerColumns.Contains("WeightLbs")
-                    ? "rr.WeightLbs"
-                    : "CAST(NULL AS smallint)";
+                if (horseIdsFromFlows != null)
+                {
+                    foreach (var horseId in horseIdsFromFlows)
+                    {
+                        if (horseId > 0)
+                        {
+                            knownHorseIds.Add(horseId);
+                        }
+                    }
+                }
+                if (knownHorseIds.Count > 0)
+                {
+                    string weightTextColumn = runnerColumns.Contains("WeightText")
+                        ? "rr.WeightText"
+                        : "CAST(NULL AS nvarchar(50))";
+                    string officialRatingColumn = runnerColumns.Contains("OfficialRating")
+                        ? "rr.OfficialRating"
+                        : "CAST(NULL AS smallint)";
+                    string ageColumn = runnerColumns.Contains("Age")
+                        ? "rr.Age"
+                        : "CAST(NULL AS smallint)";
+                    string weightLbsColumn = runnerColumns.Contains("WeightLbs")
+                        ? "rr.WeightLbs"
+                        : "CAST(NULL AS smallint)";
 
-                string snapshotSql = $@"SELECT ranked.HorseId,
+                    string snapshotSql = $@"SELECT ranked.HorseId,
                                                 ranked.TrainerId,
                                                 t.Name AS TrainerName,
                                                 ranked.Age,
@@ -4546,70 +4546,34 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
                                          LEFT JOIN Trainer t ON ranked.TrainerId = t.TrainerId
                                          WHERE ranked.RowNum = 1";
 
-                var horseIdList = knownHorseIds.ToList();
-                foreach (var snapshot in conn.Query<RunnerSnapshot>(snapshotSql, new
-                {
-                    HorseIds = horseIdList,
-                    TargetDate = upcoming.RaceDate.Date
-                }))
-                {
-                    runnerSnapshots[snapshot.HorseId] = snapshot;
-                }
-            }
-
-            return new RunnerLookupData(horseIdLookup, jockeyIdLookup, runnerSnapshots);
-        }
-        private static void ResolveHorseIdentifiers(
-            SqlConnection conn,
-            List<Dictionary<string, object?>> rows)
-        {
-            if (conn == null)
-            {
-                throw new ArgumentNullException(nameof(conn));
-            }
-
-            if (rows == null || rows.Count == 0)
-            {
-                return;
-            }
-
-            var unresolvedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var row in rows)
-            {
-                if (row == null)
-                {
-                    continue;
+                    var horseIdList = knownHorseIds.ToList();
+                    foreach (var snapshot in conn.Query<RunnerSnapshot>(snapshotSql, new
+                    {
+                        HorseIds = horseIdList,
+                        TargetDate = upcoming.RaceDate.Date
+                    }))
+                    {
+                        runnerSnapshots[snapshot.HorseId] = snapshot;
+                    }
                 }
 
-                if (row.TryGetValue("HorseId", out var horseIdValue) &&
-                    PreparedDataset.TryConvertToInt32(horseIdValue, out var existingId) &&
-                    existingId > 0)
-                {
-                    continue;
-                }
-
-                if (!row.TryGetValue("HorseName", out var horseNameObj) || horseNameObj == null)
-                {
-                    continue;
-                }
-
-                var horseName = horseNameObj as string ?? horseNameObj.ToString();
-                if (string.IsNullOrWhiteSpace(horseName))
-                {
-                    continue;
-                }
-
-                unresolvedNames.Add(horseName);
+                return new RunnerLookupData(horseIdLookup, jockeyIdLookup, runnerSnapshots);
             }
-
-            if (unresolvedNames.Count == 0)
+            private static void ResolveHorseIdentifiers(
+                SqlConnection conn,
+                List<Dictionary<string, object?>> rows)
             {
-                return;
-            }
+                if (conn == null)
+                {
+                    throw new ArgumentNullException(nameof(conn));
+                }
 
-            var resolved = ResolveHorseIdsByName(conn, unresolvedNames);
-            if (resolved.Count > 0)
-            {
+                if (rows == null || rows.Count == 0)
+                {
+                    return;
+                }
+
+                var unresolvedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (var row in rows)
                 {
                     if (row == null)
@@ -4635,314 +4599,351 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
                         continue;
                     }
 
-                    if (resolved.TryGetValue(horseName, out var horseId) && horseId > 0)
+                    unresolvedNames.Add(horseName);
+                }
+
+                if (unresolvedNames.Count == 0)
+                {
+                    return;
+                }
+
+                var resolved = ResolveHorseIdsByName(conn, unresolvedNames);
+                if (resolved.Count > 0)
+                {
+                    foreach (var row in rows)
                     {
-                        row["HorseId"] = horseId;
+                        if (row == null)
+                        {
+                            continue;
+                        }
+
+                        if (row.TryGetValue("HorseId", out var horseIdValue) &&
+                            PreparedDataset.TryConvertToInt32(horseIdValue, out var existingId) &&
+                            existingId > 0)
+                        {
+                            continue;
+                        }
+
+                        if (!row.TryGetValue("HorseName", out var horseNameObj) || horseNameObj == null)
+                        {
+                            continue;
+                        }
+
+                        var horseName = horseNameObj as string ?? horseNameObj.ToString();
+                        if (string.IsNullOrWhiteSpace(horseName))
+                        {
+                            continue;
+                        }
+
+                        if (resolved.TryGetValue(horseName, out var horseId) && horseId > 0)
+                        {
+                            row["HorseId"] = horseId;
+                        }
                     }
                 }
+
+                foreach (var row in rows)
+                {
+                    if (row == null)
+                    {
+                        continue;
+                    }
+
+                    if (row.TryGetValue("HorseId", out var horseIdValue) &&
+                        PreparedDataset.TryConvertToInt32(horseIdValue, out var existingId) &&
+                        existingId > 0)
+                    {
+                        continue;
+                    }
+
+                    if (!row.TryGetValue("HorseName", out var horseNameObj) || horseNameObj == null)
+                    {
+                        continue;
+                    }
+
+                    var horseName = horseNameObj as string ?? horseNameObj.ToString();
+                    if (string.IsNullOrWhiteSpace(horseName))
+                    {
+                        continue;
+                    }
+
+                    row["HorseId"] = GenerateSyntheticId("horse:" + horseName);
+                }
             }
 
-            foreach (var row in rows)
+            private static Dictionary<string, int> ResolveHorseIdsByName(
+                SqlConnection conn,
+                IReadOnlyCollection<string> horseNames)
             {
-                if (row == null)
+                if (horseNames == null)
                 {
-                    continue;
+                    throw new ArgumentNullException(nameof(horseNames));
                 }
 
-                if (row.TryGetValue("HorseId", out var horseIdValue) &&
-                    PreparedDataset.TryConvertToInt32(horseIdValue, out var existingId) &&
-                    existingId > 0)
+                var horseIdLookup = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                if (horseNames.Count == 0)
                 {
-                    continue;
+                    return horseIdLookup;
                 }
 
-                if (!row.TryGetValue("HorseName", out var horseNameObj) || horseNameObj == null)
+                var horseCandidateMap = BuildNameCandidateMap(horseNames);
+                if (horseCandidateMap.Count > 0)
                 {
-                    continue;
+                    const string horseSql = "SELECT Name, MIN(HorseId) AS HorseId FROM Horse WHERE Name IN @Names GROUP BY Name";
+                    var candidateList = horseCandidateMap.Keys.ToArray();
+                    foreach (var (name, horseId) in conn.Query<(string Name, int HorseId)>(horseSql, new { Names = candidateList }))
+                    {
+                        if (!horseCandidateMap.TryGetValue(name, out var originals) || originals == null)
+                        {
+                            continue;
+                        }
+
+                        foreach (var original in originals)
+                        {
+                            if (!horseIdLookup.ContainsKey(original))
+                            {
+                                horseIdLookup[original] = horseId;
+                            }
+                        }
+                    }
                 }
 
-                var horseName = horseNameObj as string ?? horseNameObj.ToString();
-                if (string.IsNullOrWhiteSpace(horseName))
+                var unmatched = new HashSet<string>(horseNames, StringComparer.OrdinalIgnoreCase);
+                foreach (var matched in horseIdLookup.Keys)
                 {
-                    continue;
+                    unmatched.Remove(matched);
                 }
 
-                row["HorseId"] = GenerateSyntheticId("horse:" + horseName);
-            }
-        }
+                if (unmatched.Count > 0)
+                {
+                    var normalizedMap = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var original in unmatched)
+                    {
+                        if (string.IsNullOrWhiteSpace(original))
+                        {
+                            continue;
+                        }
 
-        private static Dictionary<string, int> ResolveHorseIdsByName(
-            SqlConnection conn,
-            IReadOnlyCollection<string> horseNames)
-        {
-            if (horseNames == null)
-            {
-                throw new ArgumentNullException(nameof(horseNames));
-            }
+                        IEnumerable<string> candidates = horseCandidateMap.Count > 0
+                            ? horseCandidateMap.Where(kvp => kvp.Value.Contains(original)).Select(kvp => kvp.Key)
+                            : RacingRepository.BuildHistoricalNameCandidates(original);
 
-            var horseIdLookup = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-            if (horseNames.Count == 0)
-            {
+                        foreach (var candidate in candidates)
+                        {
+                            var normalized = RacingRepository.NormalizeHistoricalNameKey(candidate);
+                            if (string.IsNullOrEmpty(normalized))
+                            {
+                                continue;
+                            }
+
+                            if (!normalizedMap.TryGetValue(normalized, out var originals))
+                            {
+                                originals = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                                normalizedMap[normalized] = originals;
+                            }
+
+                            originals.Add(original);
+                        }
+                    }
+
+                    if (normalizedMap.Count > 0)
+                    {
+                        PopulateNormalizedLookup(conn, "Horse", "HorseId", normalizedMap, horseIdLookup);
+                    }
+                }
+
                 return horseIdLookup;
             }
-
-            var horseCandidateMap = BuildNameCandidateMap(horseNames);
-            if (horseCandidateMap.Count > 0)
+            private static void PopulateNormalizedLookup(
+                SqlConnection conn,
+                string tableName,
+                string idColumn,
+                IReadOnlyDictionary<string, HashSet<string>> normalizedMap,
+                IDictionary<string, int> lookup)
             {
-                const string horseSql = "SELECT Name, MIN(HorseId) AS HorseId FROM Horse WHERE Name IN @Names GROUP BY Name";
-                var candidateList = horseCandidateMap.Keys.ToArray();
-                foreach (var (name, horseId) in conn.Query<(string Name, int HorseId)>(horseSql, new { Names = candidateList }))
+                if (normalizedMap == null || normalizedMap.Count == 0)
                 {
-                    if (!horseCandidateMap.TryGetValue(name, out var originals) || originals == null)
+                    return;
+                }
+
+                var pending = new HashSet<string>(normalizedMap.Keys, StringComparer.OrdinalIgnoreCase);
+                if (pending.Count == 0)
+                {
+                    return;
+                }
+
+                var sql = $"SELECT {idColumn} AS Id, Name FROM {tableName} WHERE Name IS NOT NULL";
+                foreach (var (Id, Name) in conn.Query<(int Id, string Name)>(sql))
+                {
+                    if (string.IsNullOrWhiteSpace(Name))
+                    {
+                        continue;
+                    }
+
+                    var normalized = RacingRepository.NormalizeHistoricalNameKey(Name);
+                    if (string.IsNullOrEmpty(normalized) || !pending.Contains(normalized))
+                    {
+                        continue;
+                    }
+
+                    if (!normalizedMap.TryGetValue(normalized, out var originals) || originals == null)
                     {
                         continue;
                     }
 
                     foreach (var original in originals)
                     {
-                        if (!horseIdLookup.ContainsKey(original))
+                        if (!lookup.ContainsKey(original))
                         {
-                            horseIdLookup[original] = horseId;
+                            lookup[original] = Id;
                         }
+                    }
+
+                    pending.Remove(normalized);
+                    if (pending.Count == 0)
+                    {
+                        break;
                     }
                 }
             }
-
-            var unmatched = new HashSet<string>(horseNames, StringComparer.OrdinalIgnoreCase);
-            foreach (var matched in horseIdLookup.Keys)
+            private static Dictionary<string, HashSet<string>> BuildNameCandidateMap(IReadOnlyCollection<string> names)
             {
-                unmatched.Remove(matched);
-            }
-
-            if (unmatched.Count > 0)
-            {
-                var normalizedMap = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
-                foreach (var original in unmatched)
+                var map = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+                if (names == null || names.Count == 0)
                 {
-                    if (string.IsNullOrWhiteSpace(original))
+                    return map;
+                }
+
+                foreach (var name in names)
+                {
+                    if (string.IsNullOrWhiteSpace(name))
                     {
                         continue;
                     }
 
-                    IEnumerable<string> candidates = horseCandidateMap.Count > 0
-                        ? horseCandidateMap.Where(kvp => kvp.Value.Contains(original)).Select(kvp => kvp.Key)
-                        : RacingRepository.BuildHistoricalNameCandidates(original);
-
-                    foreach (var candidate in candidates)
+                    foreach (var candidate in RacingRepository.BuildHistoricalNameCandidates(name))
                     {
-                        var normalized = RacingRepository.NormalizeHistoricalNameKey(candidate);
-                        if (string.IsNullOrEmpty(normalized))
+                        if (string.IsNullOrWhiteSpace(candidate))
                         {
                             continue;
                         }
 
-                        if (!normalizedMap.TryGetValue(normalized, out var originals))
+                        if (!map.TryGetValue(candidate, out var originals))
                         {
                             originals = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                            normalizedMap[normalized] = originals;
+                            map[candidate] = originals;
                         }
 
-                        originals.Add(original);
+                        originals.Add(name);
                     }
                 }
 
-                if (normalizedMap.Count > 0)
-                {
-                    PopulateNormalizedLookup(conn, "Horse", "HorseId", normalizedMap, horseIdLookup);
-                }
-            }
-
-            return horseIdLookup;
-        }
-        private static void PopulateNormalizedLookup(
-            SqlConnection conn,
-            string tableName,
-            string idColumn,
-            IReadOnlyDictionary<string, HashSet<string>> normalizedMap,
-            IDictionary<string, int> lookup)
-        {
-            if (normalizedMap == null || normalizedMap.Count == 0)
-            {
-                return;
-            }
-
-            var pending = new HashSet<string>(normalizedMap.Keys, StringComparer.OrdinalIgnoreCase);
-            if (pending.Count == 0)
-            {
-                return;
-            }
-
-            var sql = $"SELECT {idColumn} AS Id, Name FROM {tableName} WHERE Name IS NOT NULL";
-            foreach (var (Id, Name) in conn.Query<(int Id, string Name)>(sql))
-            {
-                if (string.IsNullOrWhiteSpace(Name))
-                {
-                    continue;
-                }
-
-                var normalized = RacingRepository.NormalizeHistoricalNameKey(Name);
-                if (string.IsNullOrEmpty(normalized) || !pending.Contains(normalized))
-                {
-                    continue;
-                }
-
-                if (!normalizedMap.TryGetValue(normalized, out var originals) || originals == null)
-                {
-                    continue;
-                }
-
-                foreach (var original in originals)
-                {
-                    if (!lookup.ContainsKey(original))
-                    {
-                        lookup[original] = Id;
-                    }
-                }
-
-                pending.Remove(normalized);
-                if (pending.Count == 0)
-                {
-                    break;
-                }
-            }
-        }
-        private static Dictionary<string, HashSet<string>> BuildNameCandidateMap(IReadOnlyCollection<string> names)
-        {
-            var map = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
-            if (names == null || names.Count == 0)
-            {
                 return map;
             }
-
-            foreach (var name in names)
+            protected virtual (int CourseId, string? CourseName) ResolveCourse(SqlConnection conn, UpcomingRace upcoming)
             {
-                if (string.IsNullOrWhiteSpace(name))
+                if (!string.IsNullOrWhiteSpace(upcoming.VenueName))
                 {
-                    continue;
-                }
-
-                foreach (var candidate in RacingRepository.BuildHistoricalNameCandidates(name))
-                {
-                    if (string.IsNullOrWhiteSpace(candidate))
+                    const string exactSql = "SELECT TOP (1) CourseId, Name FROM Course WHERE Name = @Name ORDER BY CourseId";
+                    var exact = conn.QuerySingleOrDefault<(int CourseId, string Name)?>(exactSql, new { Name = upcoming.VenueName });
+                    if (exact.HasValue)
                     {
-                        continue;
+                        return (exact.Value.CourseId, exact.Value.Name);
                     }
 
-                    if (!map.TryGetValue(candidate, out var originals))
+                    const string courseSql = "SELECT CourseId, Name FROM Course";
+                    var allCourses = conn.Query<(int CourseId, string Name)>(courseSql).ToList();
+                    var normalizedVenue = NormalizeLookupKey(upcoming.VenueName);
+                    (int CourseId, string Name)? best = null;
+                    int bestScore = int.MaxValue;
+                    foreach (var course in allCourses)
                     {
-                        originals = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                        map[candidate] = originals;
+                        var candidate = NormalizeLookupKey(course.Name);
+                        int score = 0;
+                        if (candidate == normalizedVenue)
+                        {
+                            score -= 3;
+                        }
+                        else if (!string.IsNullOrEmpty(candidate) &&
+                                 (candidate.Contains(normalizedVenue) || normalizedVenue.Contains(candidate)))
+                        {
+                            score -= 1;
+                        }
+                        else
+                        {
+                            score += 1;
+                        }
+
+                        if (score < bestScore || (score == bestScore && (!best.HasValue || course.CourseId < best.Value.CourseId)))
+                        {
+                            best = course;
+                            bestScore = score;
+                        }
                     }
 
-                    originals.Add(name);
-                }
-            }
-
-            return map;
-        }
-        protected virtual (int CourseId, string? CourseName) ResolveCourse(SqlConnection conn, UpcomingRace upcoming)
-        {
-            if (!string.IsNullOrWhiteSpace(upcoming.VenueName))
-            {
-                const string exactSql = "SELECT TOP (1) CourseId, Name FROM Course WHERE Name = @Name ORDER BY CourseId";
-                var exact = conn.QuerySingleOrDefault<(int CourseId, string Name)?>(exactSql, new { Name = upcoming.VenueName });
-                if (exact.HasValue)
-                {
-                    return (exact.Value.CourseId, exact.Value.Name);
-                }
-
-                const string courseSql = "SELECT CourseId, Name FROM Course";
-                var allCourses = conn.Query<(int CourseId, string Name)>(courseSql).ToList();
-                var normalizedVenue = NormalizeLookupKey(upcoming.VenueName);
-                (int CourseId, string Name)? best = null;
-                int bestScore = int.MaxValue;
-                foreach (var course in allCourses)
-                {
-                    var candidate = NormalizeLookupKey(course.Name);
-                    int score = 0;
-                    if (candidate == normalizedVenue)
+                    if (best.HasValue)
                     {
-                        score -= 3;
-                    }
-                    else if (!string.IsNullOrEmpty(candidate) &&
-                             (candidate.Contains(normalizedVenue) || normalizedVenue.Contains(candidate)))
-                    {
-                        score -= 1;
-                    }
-                    else
-                    {
-                        score += 1;
-                    }
-
-                    if (score < bestScore || (score == bestScore && (!best.HasValue || course.CourseId < best.Value.CourseId)))
-                    {
-                        best = course;
-                        bestScore = score;
+                        return (best.Value.CourseId, best.Value.Name);
                     }
                 }
-
-                if (best.HasValue)
+                Console.WriteLine($"\t\tNo match found in Course.Name for venue '{upcoming.VenueName ?? "<null>"}'; using synthetic course metadata.");
+                int syntheticCourseId = GenerateSyntheticId("course:" + (upcoming.VenueName ?? upcoming.MarketId ?? string.Empty));
+                return (syntheticCourseId, upcoming.VenueName);
+            }
+            private static int GenerateSyntheticId(string value)
+            {
+                if (string.IsNullOrWhiteSpace(value))
                 {
-                    return (best.Value.CourseId, best.Value.Name);
+                    return int.MaxValue;
+                }
+
+                unchecked
+                {
+                    int hash = 17;
+                    hash = hash * 31 + StringComparer.OrdinalIgnoreCase.GetHashCode(value.Trim());
+                    return 0x60000000 | (hash & 0x0FFFFFFF);
                 }
             }
-            Console.WriteLine($"\t\tNo match found in Course.Name for venue '{upcoming.VenueName ?? "<null>"}'; using synthetic course metadata.");
-            int syntheticCourseId = GenerateSyntheticId("course:" + (upcoming.VenueName ?? upcoming.MarketId ?? string.Empty));
-            return (syntheticCourseId, upcoming.VenueName);
-        }
-        private static int GenerateSyntheticId(string value)
-        {
-            if (string.IsNullOrWhiteSpace(value))
+
+            private static string NormalizeLookupKey(string? value)
             {
-                return int.MaxValue;
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    return string.Empty;
+                }
+
+                var lower = value.Trim().ToLowerInvariant();
+                lower = System.Text.RegularExpressions.Regex.Replace(lower, "[^a-z0-9]+", " ");
+                lower = System.Text.RegularExpressions.Regex.Replace(lower, "\\s+", " ").Trim();
+                return lower;
+            }
+            protected sealed class RunnerLookupData
+            {
+                public RunnerLookupData(
+                    Dictionary<string, int> horseIds,
+                    Dictionary<string, int> jockeyIds,
+                    Dictionary<int, RunnerSnapshot> runnerSnapshots)
+                {
+                    HorseIds = horseIds ?? throw new ArgumentNullException(nameof(horseIds));
+                    JockeyIds = jockeyIds ?? throw new ArgumentNullException(nameof(jockeyIds));
+                    RunnerSnapshots = runnerSnapshots ?? throw new ArgumentNullException(nameof(runnerSnapshots));
+                }
+
+                public Dictionary<string, int> HorseIds { get; }
+                public Dictionary<string, int> JockeyIds { get; }
+                public Dictionary<int, RunnerSnapshot> RunnerSnapshots { get; }
             }
 
-            unchecked
+            protected sealed class RunnerSnapshot
             {
-                int hash = 17;
-                hash = hash * 31 + StringComparer.OrdinalIgnoreCase.GetHashCode(value.Trim());
-                return 0x60000000 | (hash & 0x0FFFFFFF);
+                public int HorseId { get; set; }
+                public int? TrainerId { get; set; }
+                public string? TrainerName { get; set; }
+                public short? Age { get; set; }
+                public short? WeightLbs { get; set; }
+                public string? WeightText { get; set; }
+                public short? OfficialRating { get; set; }
             }
-        }
-
-        private static string NormalizeLookupKey(string? value)
-        {
-            if (string.IsNullOrWhiteSpace(value))
-            {
-                return string.Empty;
-            }
-
-            var lower = value.Trim().ToLowerInvariant();
-            lower = System.Text.RegularExpressions.Regex.Replace(lower, "[^a-z0-9]+", " ");
-            lower = System.Text.RegularExpressions.Regex.Replace(lower, "\\s+", " ").Trim();
-            return lower;
-        }
-        protected sealed class RunnerLookupData
-        {
-            public RunnerLookupData(
-                Dictionary<string, int> horseIds,
-                Dictionary<string, int> jockeyIds,
-                Dictionary<int, RunnerSnapshot> runnerSnapshots)
-            {
-                HorseIds = horseIds ?? throw new ArgumentNullException(nameof(horseIds));
-                JockeyIds = jockeyIds ?? throw new ArgumentNullException(nameof(jockeyIds));
-                RunnerSnapshots = runnerSnapshots ?? throw new ArgumentNullException(nameof(runnerSnapshots));
-            }
-
-            public Dictionary<string, int> HorseIds { get; }
-            public Dictionary<string, int> JockeyIds { get; }
-            public Dictionary<int, RunnerSnapshot> RunnerSnapshots { get; }
-        }
-
-        protected sealed class RunnerSnapshot
-        {
-            public int HorseId { get; set; }
-            public int? TrainerId { get; set; }
-            public string? TrainerName { get; set; }
-            public short? Age { get; set; }
-            public short? WeightLbs { get; set; }
-            public string? WeightText { get; set; }
-            public short? OfficialRating { get; set; }
         }
     }
 }
