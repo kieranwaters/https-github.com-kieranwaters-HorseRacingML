@@ -1869,7 +1869,37 @@ namespace HorseRacingML.Scraping
                     }
                 }
             }
+            bool requiresHistorySnapshot =
+                !resolvedCareerStarts.HasValue || resolvedCareerStarts.Value <= 0 ||
+                !resolvedLifetimeWinRate.HasValue ||
+                (!HasMeaningfulFeatureValue(featureVector, "HasLastWin") && !HasMeaningfulFeatureValue(flow?.FeatureValues, "HasLastWin")) ||
+                (!HasMeaningfulFeatureValue(featureVector, "DaysSinceLastWin") && !HasMeaningfulFeatureValue(flow?.FeatureValues, "DaysSinceLastWin")) ||
+                (!HasMeaningfulFeatureValue(featureVector, "RacesSinceLastWin") && !HasMeaningfulFeatureValue(flow?.FeatureValues, "RacesSinceLastWin"));
 
+            if (requiresHistorySnapshot)
+            {
+                var historySnapshot = TryBuildCareerSnapshotFromHistory(featureVector, flow);
+                if (historySnapshot.HasValue)
+                {
+                    var snapshot = historySnapshot.Value;
+                    if (!resolvedCareerStarts.HasValue || resolvedCareerStarts.Value <= 0)
+                    {
+                        resolvedCareerStarts = snapshot.Starts;
+                    }
+
+                    if (!resolvedLifetimeWinRate.HasValue && resolvedCareerStarts.HasValue && resolvedCareerStarts.Value > 0)
+                    {
+                        resolvedLifetimeWinRate = _trainer.ComputeSmoothedWinRate(snapshot.Wins, resolvedCareerStarts.Value);
+                    }
+
+                    ApplyCareerSnapshot(featureVector, flow, snapshot, resolvedLifetimeWinRate);
+
+                    if (!resolvedLifetimeWinRate.HasValue && snapshot.Starts > 0)
+                    {
+                        resolvedLifetimeWinRate = _trainer.ComputeSmoothedWinRate(snapshot.Wins, snapshot.Starts);
+                    }
+                }
+            }
             if (!resolvedCareerStarts.HasValue)
             {
                 return;
@@ -1906,7 +1936,247 @@ namespace HorseRacingML.Scraping
             }
 
             AssignLifetimeWinRate(featureVector, flow, resolvedLifetimeWinRate.Value);
-           
+        }
+
+        private static bool HasMeaningfulFeatureValue(Dictionary<string, object?>? source, string key)
+        {
+            return TryGetMeaningfulValue(source, key, out _);
+        }
+
+        private readonly struct CareerHistorySnapshot
+        {
+            public CareerHistorySnapshot(int starts, int wins, bool hasLastWin, float? daysSinceLastWin, int? racesSinceLastWin)
+            {
+                Starts = starts;
+                Wins = wins;
+                HasLastWin = hasLastWin;
+                DaysSinceLastWin = daysSinceLastWin;
+                RacesSinceLastWin = racesSinceLastWin;
+            }
+
+            public int Starts { get; }
+
+            public int Wins { get; }
+
+            public bool HasLastWin { get; }
+
+            public float? DaysSinceLastWin { get; }
+
+            public int? RacesSinceLastWin { get; }
+        }
+
+        private CareerHistorySnapshot? TryBuildCareerSnapshotFromHistory(
+            Dictionary<string, object?>? featureVector,
+            RunnerFlow? flow)
+        {
+            var history = ResolveRunnerHistory(flow);
+            if (history == null || history.Count == 0)
+            {
+                return null;
+            }
+
+            var raceDate = ResolveRaceDateFromContext(flow, featureVector);
+            var ordered = history
+                .Where(entry => entry != null && (!raceDate.HasValue || entry!.RaceDate < raceDate.Value))
+                .OrderBy(entry => entry!.RaceDate)
+                .ToList();
+
+            if (ordered.Count == 0)
+            {
+                return null;
+            }
+
+            int starts = ordered.Count;
+            int wins = ordered.Count(IsWinningHistoricalResult);
+            bool hasLastWin = wins > 0;
+
+            float? daysSinceLastWin = null;
+            int? racesSinceLastWin = null;
+            if (hasLastWin)
+            {
+                int lastWinIndex = ordered.FindLastIndex(IsWinningHistoricalResult);
+                if (lastWinIndex >= 0)
+                {
+                    if (raceDate.HasValue)
+                    {
+                        var lastWinDate = ordered[lastWinIndex].RaceDate;
+                        if (lastWinDate != default)
+                        {
+                            daysSinceLastWin = (float)(raceDate.Value.Date - lastWinDate.Date).TotalDays;
+                            if (daysSinceLastWin < 0f)
+                            {
+                                daysSinceLastWin = 0f;
+                            }
+                        }
+                    }
+
+                    racesSinceLastWin = ordered.Count - 1 - lastWinIndex;
+                }
+            }
+
+            return new CareerHistorySnapshot(starts, wins, hasLastWin, daysSinceLastWin, racesSinceLastWin);
+        }
+
+        private static DateTime? ResolveRaceDateFromContext(
+            RunnerFlow? flow,
+            Dictionary<string, object?>? featureVector)
+        {
+            if (flow?.RaceDate.HasValue == true)
+            {
+                return flow.RaceDate.Value.Date;
+            }
+
+            if (featureVector != null && featureVector.TryGetValue("RaceDate", out var raceDateObj) && raceDateObj != null)
+            {
+                switch (raceDateObj)
+                {
+                    case DateTime dt:
+                        return dt.Date;
+                    case DateTimeOffset dto:
+                        return dto.Date;
+                    case string text when DateTime.TryParse(
+                        text,
+                        CultureInfo.InvariantCulture,
+                        DateTimeStyles.AssumeLocal | DateTimeStyles.AllowWhiteSpaces,
+                        out var parsedInvariant):
+                        return parsedInvariant.Date;
+                    case string text when DateTime.TryParse(
+                        text,
+                        CultureInfo.CurrentCulture,
+                        DateTimeStyles.AssumeLocal | DateTimeStyles.AllowWhiteSpaces,
+                        out var parsedCurrent):
+                        return parsedCurrent.Date;
+                }
+            }
+
+            return null;
+        }
+
+        private static bool IsWinningHistoricalResult(HorseHistoricalRaceSummary? summary)
+        {
+            if (summary == null)
+            {
+                return false;
+            }
+
+            if (summary.FinishPosition.HasValue && summary.FinishPosition.Value == 1)
+            {
+                return true;
+            }
+
+            if (!string.IsNullOrWhiteSpace(summary.OutcomeCode))
+            {
+                var normalized = summary.OutcomeCode.Trim();
+                if (string.Equals(normalized, "1", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(normalized, "1st", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(normalized, "Win", StringComparison.OrdinalIgnoreCase) ||
+                    normalized.StartsWith("1 ", StringComparison.OrdinalIgnoreCase) ||
+                    normalized.StartsWith("1-", StringComparison.OrdinalIgnoreCase) ||
+                    normalized.StartsWith("1/", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private void ApplyCareerSnapshot(
+            Dictionary<string, object?>? featureVector,
+            RunnerFlow? flow,
+            CareerHistorySnapshot snapshot,
+            float? lifetimeWinRateOverride)
+        {
+            float lifetimeWinRate = lifetimeWinRateOverride ?? _trainer.ComputeSmoothedWinRate(snapshot.Wins, snapshot.Starts);
+
+            if (featureVector != null)
+            {
+                if (!TryGetMeaningfulValue(featureVector, "CareerStarts", out _))
+                {
+                    featureVector["CareerStarts"] = snapshot.Starts;
+                }
+
+                if (!TryGetMeaningfulValue(featureVector, "LifetimeWinRate", out _))
+                {
+                    featureVector["LifetimeWinRate"] = lifetimeWinRate;
+                }
+
+                if (!TryGetMeaningfulValue(featureVector, "HasLastWin", out _))
+                {
+                    featureVector["HasLastWin"] = snapshot.HasLastWin;
+                }
+
+                if (snapshot.HasLastWin)
+                {
+                    if (snapshot.DaysSinceLastWin.HasValue && !TryGetMeaningfulValue(featureVector, "DaysSinceLastWin", out _))
+                    {
+                        featureVector["DaysSinceLastWin"] = snapshot.DaysSinceLastWin.Value;
+                    }
+
+                    if (snapshot.RacesSinceLastWin.HasValue && !TryGetMeaningfulValue(featureVector, "RacesSinceLastWin", out _))
+                    {
+                        featureVector["RacesSinceLastWin"] = snapshot.RacesSinceLastWin.Value;
+                    }
+                }
+                else
+                {
+                    if (featureVector.ContainsKey("DaysSinceLastWin"))
+                    {
+                        featureVector["DaysSinceLastWin"] = null;
+                    }
+
+                    if (featureVector.ContainsKey("RacesSinceLastWin"))
+                    {
+                        featureVector["RacesSinceLastWin"] = null;
+                    }
+                }
+            }
+
+            if (flow != null)
+            {
+                if (!flow.HistoricalRaceCount.HasValue || flow.HistoricalRaceCount.Value < snapshot.Starts)
+                {
+                    flow.HistoricalRaceCount = snapshot.Starts;
+                }
+
+                if (flow.FeatureValues == null)
+                {
+                    flow.FeatureValues = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+                }
+
+                if (!TryGetMeaningfulValue(flow.FeatureValues, "CareerStarts", out _))
+                {
+                    flow.FeatureValues["CareerStarts"] = snapshot.Starts;
+                }
+
+                if (!TryGetMeaningfulValue(flow.FeatureValues, "LifetimeWinRate", out _))
+                {
+                    flow.FeatureValues["LifetimeWinRate"] = lifetimeWinRate;
+                }
+
+                if (!TryGetMeaningfulValue(flow.FeatureValues, "HasLastWin", out _))
+                {
+                    flow.FeatureValues["HasLastWin"] = snapshot.HasLastWin;
+                }
+
+                if (snapshot.HasLastWin)
+                {
+                    if (snapshot.DaysSinceLastWin.HasValue && !TryGetMeaningfulValue(flow.FeatureValues, "DaysSinceLastWin", out _))
+                    {
+                        flow.FeatureValues["DaysSinceLastWin"] = snapshot.DaysSinceLastWin.Value;
+                    }
+
+                    if (snapshot.RacesSinceLastWin.HasValue && !TryGetMeaningfulValue(flow.FeatureValues, "RacesSinceLastWin", out _))
+                    {
+                        flow.FeatureValues["RacesSinceLastWin"] = snapshot.RacesSinceLastWin.Value;
+                    }
+                }
+                else
+                {
+                    flow.FeatureValues["DaysSinceLastWin"] = null;
+                    flow.FeatureValues["RacesSinceLastWin"] = null;
+                }
+            }
         }
 
         private static void AssignLifetimeWinRate(
