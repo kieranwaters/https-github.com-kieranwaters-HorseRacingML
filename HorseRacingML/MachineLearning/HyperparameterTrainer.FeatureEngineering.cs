@@ -112,6 +112,15 @@ namespace HorseRacingML.ML
 
             return Math.Clamp(value, -5f, 5f);
         }
+        private readonly record struct PrefetchedHorseRace(
+            DateTime RaceDate,
+            short? FinishPos,
+            int? DistanceYards,
+            int? WinningTimeMilliseconds,
+            decimal? DistanceBeatenLengths,
+            int RunnerResultId,
+            short? OfficialRating,
+            byte? Class);
         private sealed class FeatureEngineeringState
         {
             private readonly HyperparameterTrainer _trainer;
@@ -150,6 +159,7 @@ namespace HorseRacingML.ML
             public FeatureEngineeringState(HyperparameterTrainer trainer, ISet<string>? identifierKeys = null)
             {
                 _trainer = trainer ?? throw new ArgumentNullException(nameof(trainer));
+                _identifierKeys = identifierKeys;
                 if (identifierKeys is null)
                 {
                     _preserveKeys = BackfillRequiredKeys;
@@ -165,13 +175,6 @@ namespace HorseRacingML.ML
                     _preserveKeys = combined;
                 }
             }
-
-            public FeatureEngineeringState(FeatureEngineeringState featureEngineeringState, ISet<string>? identifierKeys)
-            {
-                this.featureEngineeringState = featureEngineeringState;
-                _identifierKeys = identifierKeys;
-            }
-
             private static float ComputeStandardDeviation(IReadOnlyList<float> values)
             {
                 if (values == null || values.Count == 0)
@@ -426,7 +429,7 @@ namespace HorseRacingML.ML
                     runnerRow["DistanceBeatenKnown"] = distanceKnown;
                     runnerRow["DistanceBeatenLengths"] = beatenLengths;
                 }
-                var raceStat = _trainer.ComputeRaceStats(rows);
+                var raceStat = ComputeRaceStats(rows);
                 foreach (var row in rows)
                 {
                     int horseId = PreparedDataset.GetRequiredInt32(row, "HorseId");
@@ -1815,7 +1818,7 @@ namespace HorseRacingML.ML
             }
 
             private float SmoothedWinRate(int wins, int starts)
-                => ComputeSmoothedWinRate(wins, starts);
+                => _trainer.ComputeSmoothedWinRate(wins, starts);
 
 
             private static object? NormalizeDbValue(object? value)
@@ -1978,12 +1981,12 @@ namespace HorseRacingML.ML
 
                 return result;
             }
-            public virtual PreparedDataset PrepareDataset(
+            public PreparedDataset PrepareDataset(
                 ISet<int?>? includeRaceIds = null,
                 ISet<int?>? stateRaceWhitelist = null,
                 bool includeIdentifiers = false)
             {
-                using var conn = new SqlConnection(_connectionString);
+                using var conn = new SqlConnection(_trainer._connectionString);
                 conn.Open();
 
                 var includeRaceIdSet = ToNonNullableSet(includeRaceIds);
@@ -2172,7 +2175,7 @@ namespace HorseRacingML.ML
                     return;
                 }
 
-                var repository = EnsureRacingRepository();
+                var repository = _trainer.EnsureRacingRepository();
                 if (repository is null)
                 {
                     Console.WriteLine("[TrainAI] Skipping repository backfills because the racing repository is unavailable.");
@@ -2659,9 +2662,6 @@ namespace HorseRacingML.ML
             "NA",
             "-"
         };
-            private object _prefetchedHistoryCache;
-            private string _connectionString;
-            private FeatureEngineeringState featureEngineeringState;
 
             private static bool IsMeaningfulStringValue(string? value)
             {
@@ -2879,7 +2879,7 @@ namespace HorseRacingML.ML
                 {
                     if (batchedWinRates.TryGetValue(request, out var winStats) && winStats.HasValue && winStats.Value.Starts > 0)
                     {
-                        var winRate = ClampProbability(ComputeSmoothedWinRate(winStats.Value.Wins, winStats.Value.Starts));
+                        var winRate = ClampProbability(_trainer.ComputeSmoothedWinRate(winStats.Value.Wins, winStats.Value.Starts));
                         winRateCache[cacheKey] = (winRate, winStats.Value.Wins, winStats.Value.Starts);
                     }
                     else
@@ -2925,7 +2925,7 @@ namespace HorseRacingML.ML
                         return;
                     }
 
-                    using var connection = new SqlConnection(_connectionString);
+                    using var connection = new SqlConnection(_trainer._connectionString);
                     connection.Open();
                     const string sql = @"IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_RunnerResult_HorseId_RaceId' AND object_id = OBJECT_ID(N'dbo.RunnerResult'))
 BEGIN
@@ -2956,7 +2956,7 @@ END;";
                     var stats = repository.GetRecentHorseWinStats(identity.RawName, identity.HorseId, identity.RaceDate, 5);
                     if (stats.HasValue && stats.Value.Starts > 0)
                     {
-                        var winRate = ClampProbability(ComputeSmoothedWinRate(stats.Value.Wins, stats.Value.Starts));
+                        var winRate = ClampProbability(_trainer.ComputeSmoothedWinRate(stats.Value.Wins, stats.Value.Starts));
                         return (winRate, stats.Value.Wins, stats.Value.Starts);
                     }
                 }
@@ -3071,7 +3071,7 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
                 var cachedResults = new Dictionary<int, List<PrefetchedHorseRace>>();
                 foreach (var horseId in horseIds)
                 {
-                    if (_prefetchedHistoryCache.TryGetValue(horseId, out var cachedHistory))
+                    if (_trainer._prefetchedHistoryCache.TryGetValue(horseId, out var cachedHistory))
                     {
                         cachedResults[horseId] = new List<PrefetchedHorseRace>(cachedHistory);
                     }
@@ -3090,7 +3090,7 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
 
                     using var connectionFactory = new ThreadLocal<SqlConnection>(() =>
                     {
-                        var connection = new SqlConnection(_connectionString);
+                        var connection = new SqlConnection(_trainer._connectionString);
                         connection.Open();
                         return connection;
                     }, trackAllValues: true);
@@ -3167,7 +3167,7 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
                         return left.RunnerResultId.CompareTo(right.RunnerResultId);
                     });
 
-                    _prefetchedHistoryCache[kvp.Key] = list.ToArray();
+                    _trainer._prefetchedHistoryCache[kvp.Key] = list.ToArray();
                     finalized[kvp.Key] = list;
                 }
 
@@ -3223,7 +3223,7 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
                     }
                 }
 
-                float? winRate = starts > 0 ? ComputeSmoothedWinRate(wins, starts) : (float?)null;
+                float? winRate = starts > 0 ? _trainer.ComputeSmoothedWinRate(wins, starts) : (float?)null;
                 float? averageSpeed = speedCount > 0 ? speedSum / speedCount : (float?)null;
                 int? lastDistance = history[lastIndex].DistanceYards;
 
@@ -3266,17 +3266,6 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
                 public short? OfficialRating { get; init; }
                 public byte? Class { get; init; }
             }
-
-            private readonly record struct PrefetchedHorseRace(
-                DateTime RaceDate,
-                short? FinishPos,
-                int? DistanceYards,
-                int? WinningTimeMilliseconds,
-                decimal? DistanceBeatenLengths,
-                int RunnerResultId,
-                short? OfficialRating,
-                byte? Class);
-
             private readonly record struct PrefetchedHorseStats(
                 float? WinRate,
                 float? AverageSpeed,
@@ -3307,7 +3296,7 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
                 }
 
                 var cacheKey = identity.ToCacheKey();
-                var repository = EnsureRacingRepository();
+                var repository = _trainer.EnsureRacingRepository();
                 if (repository is null)
                 {
                     cache[cacheKey] = null;
@@ -3347,7 +3336,7 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
                 }
 
                 var cacheKey = identity.ToCacheKey();
-                var repository = EnsureRacingRepository();
+                var repository = _trainer.EnsureRacingRepository();
                 if (repository is null)
                 {
                     cache[cacheKey] = null;
@@ -3386,7 +3375,7 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
                 }
 
                 var cacheKey = identity.ToCacheKey();
-                var repository = EnsureRacingRepository();
+                var repository = _trainer.EnsureRacingRepository();
                 if (repository is null)
                 {
                     cache[cacheKey] = null;
@@ -3681,7 +3670,7 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
                 public int GetHashCode(HorseCacheKey obj) => obj.GetHashCode();
             }
 
-            public virtual PreparedRace? PrepareUpcomingRace(UpcomingRace upcoming, IReadOnlyList<RunnerFlow> flows)
+            public PreparedRace? PrepareUpcomingRace(UpcomingRace upcoming, IReadOnlyList<RunnerFlow> flows)
             {
                 if (upcoming is null)
                     throw new ArgumentNullException(nameof(upcoming));
@@ -3695,7 +3684,7 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
                 return results.Count > 0 ? results[0] : null;
             }
 
-            public virtual IReadOnlyList<PreparedRace?> PrepareUpcomingRaces(IReadOnlyList<(UpcomingRace upcoming, IReadOnlyList<RunnerFlow> flows)> requests)
+            public IReadOnlyList<PreparedRace?> PrepareUpcomingRaces(IReadOnlyList<(UpcomingRace upcoming, IReadOnlyList<RunnerFlow> flows)> requests)
             {
                 if (requests is null)
                     throw new ArgumentNullException(nameof(requests));
@@ -3730,7 +3719,7 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
                     return results;
                 }
 
-                using var conn = new SqlConnection(_connectionString);
+                using var conn = new SqlConnection(_trainer._connectionString);
                 conn.Open();
                 var (sql, runnerColumns, featureState) = BuildUpcomingPreparationContext(conn);
 
@@ -4962,7 +4951,23 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
             lower = System.Text.RegularExpressions.Regex.Replace(lower, "\\s+", " ").Trim();
             return lower;
         }
+        internal List<Dictionary<string, object?>> TestBuildUpcomingRaceRows(
+            SqlConnection conn,
+            UpcomingRace upcoming,
+            IReadOnlyList<RunnerFlow> flows,
+            int raceId,
+            IReadOnlyCollection<string> runnerColumns)
+        {
+            var state = new FeatureEngineeringState(this);
+            return state.TestBuildUpcomingRaceRows(conn, upcoming, flows, raceId, runnerColumns);
+        }
 
+        internal static (float AvgSpeed, float AvgSpeedDiff) TestComputeAverageSpeedForWindow(
+            IReadOnlyList<(bool HasSpeed, float Speed, float SpeedDiff)> history,
+            int window)
+        {
+            return FeatureEngineeringState.TestComputeAverageSpeedForWindow(history, window);
+        }
         protected sealed class RunnerSnapshot
         {
             public int HorseId { get; set; }

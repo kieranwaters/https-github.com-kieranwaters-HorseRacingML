@@ -16,11 +16,6 @@ namespace HorseRacingML.ML
 {
     public partial class HyperparameterTrainer
     {
-        private PreparedRace? _fallbackRace;
-        private PreparedRace? _primaryRace;
-
-        public bool FallbackCalled { get; private set; }
-
         public class TrainingDataset
         {
             public TrainingDataset(
@@ -781,37 +776,5 @@ namespace HorseRacingML.ML
                 return null;
             }
         }
-
-            public override PreparedRace? PrepareUpcomingRace(UpcomingRace upcoming, IReadOnlyList<RunnerFlow> flows)
-            {
-                FallbackCalled = true;
-                return _fallbackRace;
-            }
-
-            public override IReadOnlyList<PreparedRace?> PrepareUpcomingRaces(
-                IReadOnlyList<(UpcomingRace upcoming, IReadOnlyList<RunnerFlow> flows)> requests)
-            {
-                if (requests is null)
-                {
-                    throw new ArgumentNullException(nameof(requests));
-                }
-
-                var results = new PreparedRace?[requests.Count];
-                for (int i = 0; i < results.Length; i++)
-                {
-                    results[i] = _primaryRace;
-                }
-
-                return results;
-            }
-
-            public override PreparedDataset PrepareDataset(
-    ISet<int?>? includeRaceIds = null,
-                ISet<int?>? stateRaceWhitelist = null,
-                bool includeIdentifiers = false)
-            {
-                return _dataset;
-            }
-
     }
 }
