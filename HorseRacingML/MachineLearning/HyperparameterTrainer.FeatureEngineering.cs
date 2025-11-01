@@ -92,7 +92,15 @@ namespace HorseRacingML.ML
             bool HasWinningTime,
             float? WinningTimeMs,
             float? DistanceYards);
+        private static float ClampNormalizedPosition(float value)
+        {
+            if (float.IsNaN(value))
+            {
+                return 0f;
+            }
 
+            return Math.Clamp(value, -5f, 5f);
+        }
         private sealed class FeatureEngineeringState
         {
             private readonly HyperparameterTrainer _trainer;
@@ -2148,7 +2156,7 @@ namespace HorseRacingML.ML
 
                 Console.WriteLine(
                     $"[TrainAI] Backfill progress: {currentCount}/{totalRaces} races enriched. " +
-                    $"Elapsed {FormatDuration(elapsed)}, avg {averagePerRace.TotalSeconds:F2}s/race, ETA {FormatDuration(estimatedRemaining)}.");
+                    $"Elapsed {FormatDuration(elapsed)}, avg {averagePerRace.TotalSeconds:F5}s/race, ETA {FormatDuration(estimatedRemaining)}.");
             }
             var raceMetadataLookup = BuildRaceMetadataLookup(repository, races);
             Parallel.ForEach(races, parallelOptions, race =>
@@ -2331,7 +2339,6 @@ namespace HorseRacingML.ML
 
             return null;
         }
-
         private static void ApplyTrainerClassFallbacks(Dictionary<string, object?> row)
         {
             if (row is null)
