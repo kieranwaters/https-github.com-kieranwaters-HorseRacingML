@@ -273,8 +273,8 @@ namespace HorseRacingML.Tests
             }
 
             public override TrainingDataset.PreparedDataset PrepareDataset(
-                ISet<int>? includeRaceIds = null,
-                ISet<int>? stateRaceWhitelist = null,
+                ISet<int?>? includeRaceIds = null,
+                ISet<int?>? stateRaceWhitelist = null,
                 bool includeIdentifiers = false)
             {
                 return new TrainingDataset.PreparedDataset(new List<TrainingDataset.PreparedDataset.PreparedRace>());

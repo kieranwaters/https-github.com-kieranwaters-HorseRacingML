@@ -1958,8 +1958,8 @@ new RunnerFlow { HorseName = "Alpha Runner" },
             }
 
             public override PreparedDataset PrepareDataset(
-                ISet<int>? includeRaceIds = null,
-                ISet<int>? stateRaceWhitelist = null,
+    ISet<int?>? includeRaceIds = null,
+                ISet<int?>? stateRaceWhitelist = null,
                 bool includeIdentifiers = false)
             {
                 return _dataset;
@@ -2017,7 +2017,7 @@ new RunnerFlow { HorseName = "Alpha Runner" },
 
             public int PrepareCalls { get; private set; }
 
-            public override PreparedDataset PrepareDataset(ISet<int>? includeRaceIds = null, ISet<int>? stateRaceWhitelist = null, bool includeIdentifiers = false)
+            public override PreparedDataset PrepareDataset(ISet<int?>? includeRaceIds = null, ISet<int?>? stateRaceWhitelist = null, bool includeIdentifiers = false)
             {
                 return new PreparedDataset(new List<PreparedRace>());
             }

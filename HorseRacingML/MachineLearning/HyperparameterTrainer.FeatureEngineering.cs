@@ -1953,16 +1953,36 @@ namespace HorseRacingML.ML
                 row.Remove(key);
             }
         }
+            private static HashSet<int>? ToNonNullableSet(ISet<int?>? source)
+            {
+                if (source is null)
+                {
+                    return null;
+                }
 
-        public virtual PreparedDataset PrepareDataset(
-                ISet<int>? includeRaceIds = null,
-                ISet<int>? stateRaceWhitelist = null,
-                bool includeIdentifiers = false)
-        {
-            using var conn = new SqlConnection(_connectionString);
-            conn.Open();
+                var result = new HashSet<int>();
+                foreach (var value in source)
+                {
+                    if (value.HasValue)
+                    {
+                        result.Add(value.Value);
+                    }
+                }
 
-            var raceColumns = PreparedDataset.LoadColumnNames(conn, "Race");
+                return result;
+            }
+            public virtual PreparedDataset PrepareDataset(
+                            ISet<int?>? includeRaceIds = null,
+                            ISet<int?>? stateRaceWhitelist = null,
+                            bool includeIdentifiers = false)
+            {
+                using var conn = new SqlConnection(_connectionString);
+                conn.Open();
+
+                var includeRaceIdSet = ToNonNullableSet(includeRaceIds);
+                var stateRaceWhitelistSet = ToNonNullableSet(stateRaceWhitelist);
+
+                var raceColumns = PreparedDataset.LoadColumnNames(conn, "Race");
             var runnerColumns = PreparedDataset.LoadColumnNames(conn, "RunnerResult");
             string scheduledOffColumn = raceColumns.Contains("ScheduledOff")
                 ? "r.ScheduledOff AS ScheduledOff"
@@ -2063,9 +2083,9 @@ namespace HorseRacingML.ML
             var rnd = new Random();
             var currentRows = new List<Dictionary<string, object?>>();
             int? currentRaceId = null;
-            bool ShouldInclude(int raceId) => includeRaceIds is null || includeRaceIds.Contains(raceId);
-            bool ShouldUpdate(int raceId) => stateRaceWhitelist is null || stateRaceWhitelist.Contains(raceId);
-            const int raceProgressInterval = 250;
+                bool ShouldInclude(int raceId) => includeRaceIdSet is null || includeRaceIdSet.Contains(raceId);
+                bool ShouldUpdate(int raceId) => stateRaceWhitelistSet is null || stateRaceWhitelistSet.Contains(raceId);
+                const int raceProgressInterval = 250;
             long totalRunnerRows = 0;
             long includedRunnerRows = 0;
             int processedRaceCount = 0;

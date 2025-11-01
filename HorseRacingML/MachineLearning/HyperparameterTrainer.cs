@@ -72,7 +72,7 @@ namespace HorseRacingML.ML
 
         public TrainingDataset LoadTrainingDataset(bool includeIdentifiers = false)
         {
-            var prepared = PrepareDataset(includeIdentifiers: includeIdentifiers);
+            var prepared = PrepareDataset(includeRaceIds: null, stateRaceWhitelist: null, includeIdentifiers: includeIdentifiers);
             var emptyValidation = new PreparedDataset(new List<PreparedRace>());
             return BuildTrainingDataset(prepared, emptyValidation);
         }
@@ -101,7 +101,21 @@ namespace HorseRacingML.ML
 
             return total == 0 ? 0 : (double)correct / total;
         }
+        private static HashSet<int?>? ToNullableSet(ISet<int>? source)
+        {
+            if (source is null)
+            {
+                return null;
+            }
 
+            var result = new HashSet<int?>();
+            foreach (var value in source)
+            {
+                result.Add(value);
+            }
+
+            return result;
+        }
         public float ComputeSmoothedWinRate(int wins, int starts)
         {
             if (wins < 0)
@@ -215,11 +229,11 @@ namespace HorseRacingML.ML
                 .Select(r => r.RaceId)
                 .ToHashSet();
 
-            var trainingPrepared = PrepareDataset(trainRaceIds, trainRaceIds);
+            var trainingPrepared = PrepareDataset(ToNullableSet(trainRaceIds), ToNullableSet(trainRaceIds));
             TrainingDataset.PreparedDataset validationPrepared;
             if (validationRaceIds.Count > 0)
             {
-                validationPrepared = PrepareDataset(validationRaceIds, trainRaceIds);
+                validationPrepared = PrepareDataset(ToNullableSet(validationRaceIds), ToNullableSet(trainRaceIds));
             }
             else
             {
@@ -883,11 +897,11 @@ namespace HorseRacingML.ML
             if (validationRaceIds is null)
                 throw new ArgumentNullException(nameof(validationRaceIds));
 
-            var trainingPrepared = PrepareDataset(trainingRaceIds, trainingRaceIds, includeIdentifiers);
+            var trainingPrepared = PrepareDataset(ToNullableSet(trainingRaceIds), ToNullableSet(trainingRaceIds), includeIdentifiers);
             PreparedDataset validationPrepared;
             if (validationRaceIds.Count > 0)
             {
-                validationPrepared = PrepareDataset(validationRaceIds, trainingRaceIds, includeIdentifiers: includeIdentifiers);
+                validationPrepared = PrepareDataset(ToNullableSet(validationRaceIds), ToNullableSet(trainingRaceIds), includeIdentifiers: includeIdentifiers);
             }
             else
             {
