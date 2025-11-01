@@ -545,8 +545,8 @@ namespace HorseRacingML.ML
                     row["DistanceMissing"] = distanceMissing;
                     row["DistanceTextMissing"] = distanceTextMissing;
                     row["RaceDate"] = normalizedRaceDate;
-                    bool backBookMissing = row["BackBookPercentage"] == null;
-                    bool layBookMissing = row["LayBookPercentage"] == null;
+                    bool backBookMissing = !row.TryGetValue("BackBookPercentage", out var backBookObj) || backBookObj == null;
+                    bool layBookMissing = !row.TryGetValue("LayBookPercentage", out var layBookObj) || layBookObj == null;
                     row["BackBookPercentageMissing"] = backBookMissing;
                     row["LayBookPercentageMissing"] = layBookMissing;
                     row["RaceMetadataMissing"] = classMissing || goingMissing ||
