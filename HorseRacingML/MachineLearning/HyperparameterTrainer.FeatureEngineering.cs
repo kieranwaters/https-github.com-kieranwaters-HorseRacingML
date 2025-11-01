@@ -199,7 +199,88 @@ namespace HorseRacingML.ML
 
                 return text.Trim();
             }
-            private static float ClampNormalizedPosition(float value)
+            private static void GroupNormalizedAction(
+                IEnumerable<Dictionary<string, object?>> rows,
+                string key,
+                Action<string, IReadOnlyList<Dictionary<string, object?>>> action,
+                Func<string?, string?>? normalizer = null)
+            {
+                if (rows is null)
+                {
+                    return;
+                }
+
+                if (string.IsNullOrWhiteSpace(key))
+                {
+                    throw new ArgumentException("Key cannot be null or whitespace.", nameof(key));
+                }
+
+                if (action is null)
+                {
+                    throw new ArgumentNullException(nameof(action));
+                }
+
+                normalizer ??= RacingRepository.NormalizeHistoricalNameKey;
+                var groups = new Dictionary<string, List<Dictionary<string, object?>>>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var row in rows)
+                {
+                    if (row is null)
+                    {
+                        continue;
+                    }
+
+                    if (!row.TryGetValue(key, out var value) || value is null)
+                    {
+                        continue;
+                    }
+
+                    var raw = NormalizeStringValue(value);
+                    if (string.IsNullOrWhiteSpace(raw))
+                    {
+                        continue;
+                    }
+
+                    var normalized = normalizer(raw);
+                    if (string.IsNullOrWhiteSpace(normalized))
+                    {
+                        continue;
+                    }
+
+                    if (!groups.TryGetValue(normalized, out var list))
+                    {
+                        list = new List<Dictionary<string, object?>>();
+                        groups[normalized] = list;
+                    }
+
+                    list.Add(row);
+                }
+
+                foreach (var (normalized, groupRows) in groups)
+                {
+                    if (groupRows.Count == 0)
+                    {
+                        continue;
+                    }
+
+                    action(normalized, groupRows);
+                }
+            }
+
+            private static void GroupNormalizedAction(
+                IEnumerable<Dictionary<string, object?>> rows,
+                string key,
+                Action<IReadOnlyList<Dictionary<string, object?>>> action,
+                Func<string?, string?>? normalizer = null)
+            {
+                if (action is null)
+                {
+                    throw new ArgumentNullException(nameof(action));
+                }
+
+                GroupNormalizedAction(rows, key, (_, groupedRows) => action(groupedRows), normalizer);
+            }
+            public static float ClampNormalizedPosition(float value)
             {
                 if (float.IsNaN(value))
                 {
