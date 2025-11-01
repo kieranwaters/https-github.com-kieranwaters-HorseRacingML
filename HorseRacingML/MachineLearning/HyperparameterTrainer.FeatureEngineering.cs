@@ -430,173 +430,185 @@ namespace HorseRacingML.ML
                 foreach (var row in rows)
                 {
                     int horseId = PreparedDataset.GetRequiredInt32(row, "HorseId");
-                        DateTime date = (DateTime)row["RaceDate"];
+                    DateTime date = (DateTime)row["RaceDate"];
                     var normalizedRaceDate = date.Date;
+
                     if (TryGetTimeOfDay(row, out var timeOfDay))
-                        {
-                            float minutes = (float)timeOfDay.TotalMinutes;
-                            float timeAngle = 2f * MathF.PI * minutes / (24f * 60f);
-                            row["TimeOfDaySin"] = MathF.Sin(timeAngle);
-                            row["TimeOfDayCos"] = MathF.Cos(timeAngle);
-                        row["RaceDate"] = normalizedRaceDate;
+                    {
+                        float minutes = (float)timeOfDay.TotalMinutes;
+                        float timeAngle = 2f * MathF.PI * minutes / (24f * 60f);
+                        row["TimeOfDaySin"] = MathF.Sin(timeAngle);
+                        row["TimeOfDayCos"] = MathF.Cos(timeAngle);
                     }
-                        else
+                    else
+                    {
+                        row["TimeOfDaySin"] = 0f;
+                        row["TimeOfDayCos"] = 0f;
+                    }
+
+                    int month = date.Month;
+                    float monthAngle = 2f * MathF.PI * month / 12f;
+                    row["RaceMonthSin"] = MathF.Sin(monthAngle);
+                    row["RaceMonthCos"] = MathF.Cos(monthAngle);
+
+                    int dayOfWeek = (int)date.DayOfWeek;
+                    float dowAngle = 2f * MathF.PI * dayOfWeek / 7f;
+                    row["RaceDayOfWeekSin"] = MathF.Sin(dowAngle);
+                    row["RaceDayOfWeekCos"] = MathF.Cos(dowAngle);
+                    row["IsWeekend"] = date.DayOfWeek == DayOfWeek.Saturday || date.DayOfWeek == DayOfWeek.Sunday;
+
+                    int season = (month % 12) / 3;
+                    float seasonAngle = 2f * MathF.PI * season / 4f;
+                    row["SeasonSin"] = MathF.Sin(seasonAngle);
+                    row["SeasonCos"] = MathF.Cos(seasonAngle);
+
+                    row.Remove("RaceMonth");
+                    row.Remove("RaceDayOfWeek");
+                    row.Remove("Season");
+                    row.Remove("ActualOff");
+                    row.Remove("ScheduledOff");
+                    row.Remove("RaceDate");
+
+                    short? finish = row["FinishPos"] != null ? (short?)Convert.ToInt16(row["FinishPos"]) : null;
+                    int raceId = PreparedDataset.GetRequiredInt32(row, "RaceId");
+                    int runnerCount = row.TryGetValue("RunnerCount", out var runnerCountObj) &&
+                                      PreparedDataset.TryConvertToInt32(runnerCountObj, out var runnerValue)
+                        ? runnerValue
+                        : raceStat.RunnerCount;
+                    int? trainerId = row.TryGetValue("TrainerId", out var tObj) &&
+                                     PreparedDataset.TryConvertToInt32(tObj, out var trainerValue)
+                        ? trainerValue
+                        : (int?)null;
+                    int? jockeyId = row.TryGetValue("JockeyId", out var jObj) &&
+                                    PreparedDataset.TryConvertToInt32(jObj, out var jockeyValue)
+                        ? jockeyValue
+                        : (int?)null;
+
+                    int? classValue = row.TryGetValue("Class", out var classObj) &&
+                                      PreparedDataset.TryConvertToInt32(classObj, out var parsedClass)
+                        ? parsedClass
+                        : (int?)null;
+                    bool classMissing = !classValue.HasValue;
+                    int classVal = classValue ?? 0;
+                    row["ClassMissing"] = classMissing;
+
+                    bool ratingMissing = !(row.TryGetValue("OfficialRating", out var ratingObj) && ratingObj != null);
+                    float rating = ratingMissing ? raceStat.AvgRating : Convert.ToSingle(ratingObj);
+                    row["RatingMissing"] = ratingMissing;
+
+                    if ((ratingMissing && (rating <= 0f || float.IsNaN(rating))) ||
+                        (!ratingMissing && (float.IsNaN(rating) || rating <= 0f)))
+                    {
+                        var classBaseline = ResolveClassRatingBaseline(classValue);
+                        if (classBaseline.HasValue)
                         {
-                            row["TimeOfDaySin"] = 0f;
-                            row["TimeOfDayCos"] = 0f;
-
-                            int month = date.Month;
-                            float monthAngle = 2f * MathF.PI * month / 12f;
-                            row["RaceMonthSin"] = MathF.Sin(monthAngle);
-                            row["RaceMonthCos"] = MathF.Cos(monthAngle);
-
-                            int dayOfWeek = (int)date.DayOfWeek;
-                            float dowAngle = 2f * MathF.PI * dayOfWeek / 7f;
-                            row["RaceDayOfWeekSin"] = MathF.Sin(dowAngle);
-                            row["RaceDayOfWeekCos"] = MathF.Cos(dowAngle);
-                            row["IsWeekend"] = date.DayOfWeek == DayOfWeek.Saturday || date.DayOfWeek == DayOfWeek.Sunday;
-                            int season = (month % 12) / 3;
-                            float seasonAngle = 2f * MathF.PI * season / 4f;
-                            row["SeasonSin"] = MathF.Sin(seasonAngle);
-                            row["SeasonCos"] = MathF.Cos(seasonAngle);
-
-                            row.Remove("RaceMonth");
-                            row.Remove("RaceDayOfWeek");
-                            row.Remove("Season");
-                            row.Remove("ActualOff");
-                            row.Remove("ScheduledOff");
-                            row.Remove("RaceDate");
-                            short? finish = row["FinishPos"] != null ? (short?)Convert.ToInt16(row["FinishPos"]) : null;
-                            int raceId = PreparedDataset.GetRequiredInt32(row, "RaceId");
-                            int runnerCount = row.TryGetValue("RunnerCount", out var runnerCountObj) &&
-                                                PreparedDataset.TryConvertToInt32(runnerCountObj, out var runnerValue)
-                                ? runnerValue
-                            : raceStat.RunnerCount;
-                            int? trainerId = row.TryGetValue("TrainerId", out var tObj) &&
-                                              PreparedDataset.TryConvertToInt32(tObj, out var trainerValue)
-                                ? trainerValue
-                                : (int?)null;
-                            int? jockeyId = row.TryGetValue("JockeyId", out var jObj) &&
-                                             PreparedDataset.TryConvertToInt32(jObj, out var jockeyValue)
-                                ? jockeyValue
-                            : (int?)null;
-
-                            int? classValue = row.TryGetValue("Class", out var classObj) &&
-                                PreparedDataset.TryConvertToInt32(classObj, out var parsedClass)
-                                    ? parsedClass
-                                    : (int?)null;
-                            bool classMissing = !classValue.HasValue;
-                            int classVal = classValue ?? 0;
-                            row["ClassMissing"] = classMissing;
-                        if ((ratingMissing && (rating <= 0f || float.IsNaN(rating))) ||
-                                (!ratingMissing && (float.IsNaN(rating) || rating <= 0f)))
-                        {
-                            var classBaseline = ResolveClassRatingBaseline(classValue);
-                            if (classBaseline.HasValue)
-                            {
-                                rating = classBaseline.Value;
-                            }
+                            rating = classBaseline.Value;
                         }
+                    }
 
-                        row["RatingDiffFromField"] = rating - raceStat.AvgRating;
-                        string? goingValue = NormalizeStringValue(
-                                row.TryGetValue("Going", out var goingObj) ? goingObj : null);
-                            bool goingMissing = string.IsNullOrEmpty(goingValue);
-                            if (!goingMissing)
-                            {
-                                row["Going"] = goingValue;
-                            }
-                            row["GoingMissing"] = goingMissing;
-                            string going = goingValue ?? "Unknown";
+                    row["RatingDiffFromField"] = rating - raceStat.AvgRating;
 
-                            string? surfaceValue = NormalizeStringValue(
-                                row.TryGetValue("Surface", out var surfaceObj) ? surfaceObj : null);
-                            bool surfaceMissing = string.IsNullOrEmpty(surfaceValue);
-                            if (!surfaceMissing)
-                            {
-                                row["Surface"] = surfaceValue;
-                            }
-                            row["SurfaceMissing"] = surfaceMissing;
-                            string surface = surfaceValue ?? "Unknown";
+                    string? goingValue = NormalizeStringValue(
+                        row.TryGetValue("Going", out var goingObj) ? goingObj : null);
+                    bool goingMissing = string.IsNullOrEmpty(goingValue);
+                    if (!goingMissing)
+                    {
+                        row["Going"] = goingValue;
+                    }
+                    row["GoingMissing"] = goingMissing;
+                    string going = goingValue ?? "Unknown";
 
-                            string? distanceTextValue = NormalizeStringValue(
-                                row.TryGetValue("DistanceText", out var distanceTextObj) ? distanceTextObj : null);
-                            bool distanceTextMissing = string.IsNullOrEmpty(distanceTextValue);
-                            if (!distanceTextMissing)
-                            {
-                                row["DistanceText"] = distanceTextValue;
-                            }
+                    string? surfaceValue = NormalizeStringValue(
+                        row.TryGetValue("Surface", out var surfaceObj) ? surfaceObj : null);
+                    bool surfaceMissing = string.IsNullOrEmpty(surfaceValue);
+                    if (!surfaceMissing)
+                    {
+                        row["Surface"] = surfaceValue;
+                    }
+                    row["SurfaceMissing"] = surfaceMissing;
+                    string surface = surfaceValue ?? "Unknown";
 
-                            int? distanceYardsValue = row.TryGetValue("DistanceYards", out var distanceObj) &&
-                                PreparedDataset.TryConvertToInt32(distanceObj, out var parsedDistance)
-                                    ? parsedDistance
-                                    : (int?)null;
-                            bool distanceMissing = !distanceYardsValue.HasValue || distanceYardsValue.Value <= 0;
-                            int distanceYards = distanceYardsValue ?? 0;
-                            row["DistanceMissing"] = distanceMissing;
-                            row["DistanceTextMissing"] = distanceTextMissing;
-                        row["RaceDate"] = normalizedRaceDate;
-                        bool backBookMissing = row["BackBookPercentage"] == null;
-                            bool layBookMissing = row["LayBookPercentage"] == null;
-                            row["BackBookPercentageMissing"] = backBookMissing;
-                            row["LayBookPercentageMissing"] = layBookMissing;
-                            row["RaceMetadataMissing"] = classMissing || goingMissing ||
-                                surfaceMissing || distanceMissing || distanceTextMissing;
+                    string? distanceTextValue = NormalizeStringValue(
+                        row.TryGetValue("DistanceText", out var distanceTextObj) ? distanceTextObj : null);
+                    bool distanceTextMissing = string.IsNullOrEmpty(distanceTextValue);
+                    if (!distanceTextMissing)
+                    {
+                        row["DistanceText"] = distanceTextValue;
+                    }
 
-                            bool drawMissing = row["Draw"] == null;
-                            int draw = 0;
-                            if (!drawMissing)
-                            {
-                                if (!PreparedDataset.TryConvertToInt32(row["Draw"], out draw))
-                                {
-                                    drawMissing = true;
-                                }
-                            }
-                            row["DrawMissing"] = drawMissing;
+                    int? distanceYardsValue = row.TryGetValue("DistanceYards", out var distanceObj) &&
+                                             PreparedDataset.TryConvertToInt32(distanceObj, out var parsedDistance)
+                        ? parsedDistance
+                        : (int?)null;
+                    bool distanceMissing = !distanceYardsValue.HasValue || distanceYardsValue.Value <= 0;
+                    int distanceYards = distanceYardsValue ?? 0;
+                    row["DistanceMissing"] = distanceMissing;
+                    row["DistanceTextMissing"] = distanceTextMissing;
 
-                            float runnerSpeed = 0f;
+                    row["RaceDate"] = normalizedRaceDate;
 
-                            bool weightMissing = row["WeightLbs"] == null;
-                            float weight = weightMissing ? 0f : Convert.ToSingle(row["WeightLbs"]);
-                            row["WeightMissing"] = weightMissing;
+                    bool backBookMissing = row["BackBookPercentage"] == null;
+                    bool layBookMissing = row["LayBookPercentage"] == null;
+                    row["BackBookPercentageMissing"] = backBookMissing;
+                    row["LayBookPercentageMissing"] = layBookMissing;
+                    row["RaceMetadataMissing"] = classMissing || goingMissing ||
+                        surfaceMissing || distanceMissing || distanceTextMissing;
 
-                            bool ratingMissing = !(row.TryGetValue("OfficialRating", out var ratingObj) && ratingObj != null);
-                            float rating = ratingMissing ? raceStat.AvgRating : Convert.ToSingle(ratingObj);
-                            row["RatingMissing"] = ratingMissing;
-                            row["RelativeDraw"] = runnerCount > 0 ? (float)draw / runnerCount : 0f;
-                            int saddlecloth = 0;
-                            bool saddleclothMissing = !(row.TryGetValue("SaddleclothNumber", out var saddleclothObj) &&
-                                                         PreparedDataset.TryConvertToInt32(saddleclothObj, out saddlecloth));
-                            row["SaddleclothMissing"] = saddleclothMissing;
-                            row["SaddleclothRelative"] = !saddleclothMissing && runnerCount > 0 ? (float)saddlecloth / runnerCount : 0f;
-                            row["SaddleclothDiffFromMean"] = !saddleclothMissing && raceStat.HasSaddleclothStats
-                                ? saddlecloth - raceStat.AvgSaddlecloth
-                                : 0f;
-                            row["WeightDiffFromMean"] = weight - raceStat.AvgWeight;
-                            bool hasWeightStats = raceStat.HasWeightStats;
-                            row["IsTopWeight"] = !weightMissing && hasWeightStats && Math.Abs(weight - raceStat.MaxWeight) < 0.001f;
-                            row["IsBottomWeight"] = !weightMissing && hasWeightStats && Math.Abs(weight - raceStat.MinWeight) < 0.001f;
-                            row["FieldRatingStdDev"] = raceStat.StdRating;
-                            row["PurseLevel"] = raceStat.TotalPurse;
-                            int age = row.TryGetValue("Age", out var ageObj) && PreparedDataset.TryConvertToInt32(ageObj, out var ageValue)
-                                ? ageValue
-                                : 0;
-                            if (!row.TryGetValue("Age", out var existingAge) || existingAge is null)
-                            {
-                                row["Age"] = age;
-                            }
-                            row["AgeRelative"] = age - raceStat.AvgAge;
-                            var horseClassKey = (horseId, classVal);
-                            if (!_horseClassStats.TryGetValue(horseClassKey, out var horseClassStat))
-                                horseClassStat = (0, 0, 0f, 0f);
-                            row["ClassWinRate"] = classMissing
-                                 ? 0f
-                                 : _trainer.SmoothedWinRate(horseClassStat.wins, horseClassStat.starts);
-                            row["ClassAvgNorm"] = !classMissing && horseClassStat.starts > 0
-                                ? horseClassStat.sumNorm / horseClassStat.starts
-                                : 0f;
-                            row["LastClassNormPos"] = classMissing ? 0f : horseClassStat.lastNorm;
-                            float? trainerWinRateValue = ResolveFloat(row, "TrainerWinRate");
+                    bool drawMissing = row["Draw"] == null;
+                    int draw = 0;
+                    if (!drawMissing)
+                    {
+                        if (!PreparedDataset.TryConvertToInt32(row["Draw"], out draw))
+                        {
+                            drawMissing = true;
+                        }
+                    }
+                    row["DrawMissing"] = drawMissing;
+
+                    float runnerSpeed = 0f;
+
+                    bool weightMissing = row["WeightLbs"] == null;
+                    float weight = weightMissing ? 0f : Convert.ToSingle(row["WeightLbs"]);
+                    row["WeightMissing"] = weightMissing;
+
+                    row["RelativeDraw"] = runnerCount > 0 ? (float)draw / runnerCount : 0f;
+                    int saddlecloth = 0;
+                    bool saddleclothMissing = !(row.TryGetValue("SaddleclothNumber", out var saddleclothObj) &&
+                                                 PreparedDataset.TryConvertToInt32(saddleclothObj, out saddlecloth));
+                    row["SaddleclothMissing"] = saddleclothMissing;
+                    row["SaddleclothRelative"] = !saddleclothMissing && runnerCount > 0
+                        ? (float)saddlecloth / runnerCount
+                        : 0f;
+                    row["SaddleclothDiffFromMean"] = !saddleclothMissing && raceStat.HasSaddleclothStats
+                        ? saddlecloth - raceStat.AvgSaddlecloth
+                        : 0f;
+                    row["WeightDiffFromMean"] = weight - raceStat.AvgWeight;
+                    bool hasWeightStats = raceStat.HasWeightStats;
+                    row["IsTopWeight"] = !weightMissing && hasWeightStats && Math.Abs(weight - raceStat.MaxWeight) < 0.001f;
+                    row["IsBottomWeight"] = !weightMissing && hasWeightStats && Math.Abs(weight - raceStat.MinWeight) < 0.001f;
+                    row["FieldRatingStdDev"] = raceStat.StdRating;
+                    row["PurseLevel"] = raceStat.TotalPurse;
+                    int age = row.TryGetValue("Age", out var ageObj) && PreparedDataset.TryConvertToInt32(ageObj, out var ageValue)
+                        ? ageValue
+                        : 0;
+                    if (!row.TryGetValue("Age", out var existingAge) || existingAge is null)
+                    {
+                        row["Age"] = age;
+                    }
+                    row["AgeRelative"] = age - raceStat.AvgAge;
+                    var horseClassKey = (horseId, classVal);
+                    if (!_horseClassStats.TryGetValue(horseClassKey, out var horseClassStat))
+                    {
+                        horseClassStat = (0, 0, 0f, 0f);
+                    }
+                    row["ClassWinRate"] = classMissing
+                        ? 0f
+                        : _trainer.SmoothedWinRate(horseClassStat.wins, horseClassStat.starts);
+                    row["ClassAvgNorm"] = !classMissing && horseClassStat.starts > 0
+                        ? horseClassStat.sumNorm / horseClassStat.starts
+                        : 0f;
+                    row["LastClassNormPos"] = classMissing ? 0f : horseClassStat.lastNorm;
+                    float? trainerWinRateValue = ResolveFloat(row, "TrainerWinRate");
                             float? trainerSurfaceAvg = ResolveFloat(row, "TrainerSurfaceAvgNorm");
                             float? trainerGoingAvg = ResolveFloat(row, "TrainerGoingAvgNorm");
                             float? trainerAvgNorm = trainerSurfaceAvg ?? trainerGoingAvg;
@@ -1603,7 +1615,7 @@ namespace HorseRacingML.ML
                                 raceRow["RaceAvgSpeedLast5"] = 0f;
                             }
                         TrimRunnerRow(raceRow, _preserveKeys);
-                    }
+                    
                     }
                 }
             }
