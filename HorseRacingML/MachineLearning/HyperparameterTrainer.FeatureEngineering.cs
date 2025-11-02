@@ -4980,6 +4980,31 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
             ISet<int?>? stateRaceWhitelist = null,
             bool includeIdentifiers = false)
         {
+            var cacheKey = PreparedDatasetCacheKey.Create(includeRaceIds, stateRaceWhitelist, includeIdentifiers);
+
+            lock (_preparedDatasetCacheLock)
+            {
+                if (_preparedDatasetCache.TryGetValue(cacheKey, out var cached))
+                {
+                    return cached;
+                }
+            }
+
+            var prepared = CreatePreparedDataset(includeRaceIds, stateRaceWhitelist, includeIdentifiers);
+
+            lock (_preparedDatasetCacheLock)
+            {
+                _preparedDatasetCache[cacheKey] = prepared;
+            }
+
+            return prepared;
+        }
+
+        protected virtual PreparedDataset CreatePreparedDataset(
+            ISet<int?>? includeRaceIds,
+            ISet<int?>? stateRaceWhitelist,
+            bool includeIdentifiers)
+        {
             var state = new FeatureEngineeringState(this);
             return state.PrepareDataset(includeRaceIds, stateRaceWhitelist, includeIdentifiers);
         }

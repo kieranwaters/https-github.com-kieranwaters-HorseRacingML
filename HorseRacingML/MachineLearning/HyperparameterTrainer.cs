@@ -7,6 +7,7 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
+using System.Collections.Generic;
 using Tensorflow;
 using Tensorflow.NumPy;
 using static Tensorflow.Binding;
@@ -28,6 +29,8 @@ namespace HorseRacingML.ML
         private readonly float _winRateAlpha;
         private readonly float _winRateBeta;
         private IRacingRepository? _racingRepository;
+        private readonly object _preparedDatasetCacheLock = new();
+        private readonly Dictionary<PreparedDatasetCacheKey, PreparedDataset> _preparedDatasetCache = new();
 
         public HyperparameterTrainer(IConfiguration configuration, IRacingRepository? racingRepository = null)
         {
@@ -60,7 +63,43 @@ namespace HorseRacingML.ML
             public IReadOnlyList<RunnerExample> ValidationExamples { get; init; } = Array.Empty<RunnerExample>();
             public IReadOnlyList<FeatureCorrelation> FeatureCorrelations { get; init; } = Array.Empty<FeatureCorrelation>();
         }
+        private sealed record PreparedDatasetCacheKey(
+            string IncludeRaceIdsSignature,
+            string StateWhitelistSignature,
+            bool IncludeIdentifiers)
+        {
+            public static PreparedDatasetCacheKey Create(
+                ISet<int?>? includeRaceIds,
+                ISet<int?>? stateRaceWhitelist,
+                bool includeIdentifiers)
+            {
+                static string BuildSignature(ISet<int?>? source, string label)
+                {
+                    if (source is null)
+                    {
+                        return string.Concat(label, ":*");
+                    }
 
+                    if (source.Count == 0)
+                    {
+                        return string.Concat(label, ":");
+                    }
+
+                    var values = source
+                        .Where(v => v.HasValue)
+                        .Select(v => v.Value)
+                        .OrderBy(v => v)
+                        .ToArray();
+
+                    return string.Concat(label, ":", string.Join(',', values));
+                }
+
+                return new PreparedDatasetCacheKey(
+                    BuildSignature(includeRaceIds, nameof(includeRaceIds)),
+                    BuildSignature(stateRaceWhitelist, nameof(stateRaceWhitelist)),
+                    includeIdentifiers);
+            }
+        }
         public sealed class FeatureCorrelation
         {
             public string FeatureKey { get; init; } = string.Empty;
@@ -499,7 +538,7 @@ namespace HorseRacingML.ML
                         param.BatchSize,
                         "Batch size must be greater than zero.");
                 }
-
+                int evaluationInterval = Math.Max(1, param.Epochs / 5);
                 for (int epoch = 0; epoch < param.Epochs; epoch++)
                 {
                     var indices = new int[trainFeatures.Count];
@@ -540,9 +579,17 @@ namespace HorseRacingML.ML
                         sess.run(optimizer, new FeedItem(x, batchX), new FeedItem(y, batchY));
                     }
 
-                    var epochLoss = ComputeDatasetMetrics(trainFeatureTensor, trainLabelTensor, epochPredBuffer, trainLabels.Length);
-                    var epochAcc = trainLabels.Length > 0 ? ComputeWinnerAccuracy(trainRaceIds, epochPredBuffer, trainLabels) : 0;
-                    Console.WriteLine($"Epoch {epoch + 1}/{param.Epochs} - loss: {epochLoss:F4} - winner acc: {epochAcc:F4}");
+                    bool shouldEvaluate = (epoch + 1) % evaluationInterval == 0 && epoch < param.Epochs - 1;
+                    if (shouldEvaluate)
+                    {
+                        var epochLoss = ComputeDatasetMetrics(trainFeatureTensor, trainLabelTensor, epochPredBuffer, trainLabels.Length);
+                        var epochAcc = trainLabels.Length > 0 ? ComputeWinnerAccuracy(trainRaceIds, epochPredBuffer, trainLabels) : 0;
+                        Console.WriteLine($"Epoch {epoch + 1}/{param.Epochs} - loss: {epochLoss:F4} - winner acc: {epochAcc:F4}");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"Epoch {epoch + 1}/{param.Epochs} completed (evaluation deferred).");
+                    }
                 }
 
                 trainLoss = ComputeDatasetMetrics(trainFeatureTensor, trainLabelTensor, trainPreds, trainLabels.Length);
