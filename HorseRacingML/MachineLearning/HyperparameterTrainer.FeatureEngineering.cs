@@ -1815,7 +1815,7 @@ namespace HorseRacingML.ML
                     maxSaddle,
                     weightValues.Count > 0);
             }
-            public static float? TestParseDistanceBeaten(string text)
+            internal static float? TestParseDistanceBeaten(string text)
             {
                 return ParseDistanceBeaten(text);
             }
@@ -4985,7 +4985,10 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
             var state = new FeatureEngineeringState(this);
             return state.PrepareDataset(includeRaceIds, stateRaceWhitelist, includeIdentifiers);
         }
-
+        public static float? TestParseDistanceBeaten(string text)
+        {
+            return FeatureEngineeringState.TestParseDistanceBeaten(text);
+        }
         public virtual PreparedRace? PrepareUpcomingRace(UpcomingRace upcoming, IReadOnlyList<RunnerFlow> flows)
         {
             var results = PrepareUpcomingRaces(new[] { (upcoming, flows) });
