@@ -818,6 +818,7 @@ namespace HorseRacingML.Scraping
         }
         public DayReportViewModel GenerateDayReport(RacingRepository repo, HyperparameterTrainer trainer)
         {
+            Console.WriteLine("[DayReport][Stage] Starting day report generation and AI probability calculation pipeline.");
             ReturnToPrimaryWindow();
             UpdateActiveScheduleRegion(CaptureActiveScheduleRegion());
             if (!HasCapturedRaceGoing())
@@ -831,9 +832,12 @@ namespace HorseRacingML.Scraping
 
             using (repo.BeginDayReportScope())
             {
+                Console.WriteLine("[DayReport][Stage] Initializing temporary storage and resolving bankroll configuration.");
                 repo.ClearDayReportTables();
                 bankroll = GetEffectiveBankroll();
+                Console.WriteLine($"[DayReport][Stage] Effective bankroll resolved: {bankroll:F2}.");
                 var settings = _automationSettings.GetSnapshot();
+                Console.WriteLine("[DayReport][Stage] Building market scraper and loading automation settings.");
                 var scraper = new BetfairMarketScraper(
                     repo,
                     trainer,
@@ -843,15 +847,25 @@ namespace HorseRacingML.Scraping
                     GetRaceGoingSnapshot(),
                     scheduleRegion: GetActiveScheduleRegion(),
                     raceGoingByVenueLookup: GetRaceGoingByVenueSnapshot());
+                Console.WriteLine("[DayReport][Stage] Scraping open race tabs and executing AI probability calculations.");
                 var races = scraper.ScrapeOpenRaceTabsForReport(_driver);
+                Console.WriteLine($"[DayReport][Stage] Scrape complete; {races.Count} race(s) captured for the day report.");
                 orderedRaces = races
                     .OrderBy(r => GetRaceScheduleSortKey(r))
                     .ThenBy(r => r.RaceTitle ?? string.Empty, StringComparer.OrdinalIgnoreCase)
                     .ThenBy(r => r.MarketId, StringComparer.Ordinal)
                     .ToList();
+                Console.WriteLine("[DayReport][Stage] Race ordering finalized; assembling final report view model.");
                 hyperparameters = scraper.LoadedHyperparameters;
                 ReturnToPrimaryWindow();
             }
+
+            if (hyperparameters != null)
+            {
+                Console.WriteLine("[DayReport][Stage] AI hyperparameters loaded and attached to the report.");
+            }
+
+            Console.WriteLine("[DayReport][Stage] Day report generation complete.");
 
             return new DayReportViewModel
             {

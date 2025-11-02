@@ -29,7 +29,9 @@ namespace HorseRacingML.Scraping
             {
                 return;
             }
+            Console.WriteLine($"[DayReport][Stage] Populating AI winner probabilities for {raceList.Count} race(s).");
             ResetUpcomingRaceLookupCache();
+            var processedRaceCount = 0;
             foreach (var race in raceList)
             {
                 if (race == null)
@@ -142,7 +144,9 @@ namespace HorseRacingML.Scraping
                         Console.WriteLine("\t[DayReport] Kelly fraction unavailable; stake not suggested.");
                     }
                 }
+                processedRaceCount++;
             }
+            Console.WriteLine($"[DayReport][Stage] Winner probability population complete ({processedRaceCount} race(s) processed).");
         }
 
         private FeatureLookup LoadFeatureLookup(

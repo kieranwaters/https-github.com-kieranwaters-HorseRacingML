@@ -2615,6 +2615,7 @@ namespace HorseRacingML.Scraping
                     EnsureDistanceBeatenFromNumeric(featureVector, flow);
                     EnsureWinningTimeFromRace(featureVector, flow);
                     EnsureSpeedMetrics(featureVector);
+                    PopulateHistoricalSpeedWindows(featureVector, flow);
                     EnsureHasLastWinFlag(featureVector);
                     Console.WriteLine(
                         "\t\t[FeaturePopulation] Historical backfill remained incomplete; continuing with available data.");
@@ -2630,6 +2631,7 @@ namespace HorseRacingML.Scraping
                 EnsureDistanceBeatenFromNumeric(featureVector, flow);
                 EnsureWinningTimeFromRace(featureVector, flow);
                 EnsureSpeedMetrics(featureVector);
+                PopulateHistoricalSpeedWindows(featureVector, flow);
                 EnsureDistanceChangeFromLast(
                     featureVector,
                     flow,
@@ -4775,6 +4777,218 @@ namespace HorseRacingML.Scraping
             {
                 var identifier = DescribeRunner(flow);
                 Console.Error.WriteLine($"\t\tFailed to resolve fallback winning time for {identifier}: {ex.Message}");
+            }
+        }
+        private IReadOnlyList<HorseSpeedEntry> ResolveRunnerSpeedEntries(
+            Dictionary<string, object?> featureVector,
+            RunnerFlow flow)
+        {
+            int? horseId = null;
+
+            if (featureVector != null && featureVector.TryGetValue("HorseId", out var horseObj))
+            {
+                horseId = TryConvertToInt32(horseObj);
+            }
+
+            if (!horseId.HasValue && flow?.FeatureValues != null &&
+                flow.FeatureValues.TryGetValue("HorseId", out var flowHorseObj))
+            {
+                horseId = TryConvertToInt32(flowHorseObj);
+            }
+
+            horseId = NormalizeHorseIdentifier(horseId);
+
+            string? horseName = flow?.HorseName;
+            if (string.IsNullOrWhiteSpace(horseName) &&
+                featureVector != null &&
+                featureVector.TryGetValue("HorseName", out var horseNameObj) &&
+                horseNameObj is string horseNameStr)
+            {
+                horseName = horseNameStr;
+            }
+
+            if (!horseId.HasValue && string.IsNullOrWhiteSpace(horseName))
+            {
+                return Array.Empty<HorseSpeedEntry>();
+            }
+
+            DateTime? raceDate = flow?.RaceDate;
+            if (!raceDate.HasValue && featureVector != null &&
+                featureVector.TryGetValue("RaceDate", out var raceDateObj))
+            {
+                raceDate = raceDateObj switch
+                {
+                    DateTime dt => dt,
+                    DateTimeOffset dto => dto.DateTime,
+                    _ => (DateTime?)null
+                };
+            }
+
+            var cacheKey = (horseId, NormalizeHorseNameKeyForCache(horseName), raceDate?.Date);
+            if (_runnerSpeedCache.TryGetValue(cacheKey, out var cached) && cached != null)
+            {
+                return cached;
+            }
+
+            IReadOnlyList<HorseSpeedEntry> resolved;
+
+            try
+            {
+                var windowSize = PerformanceWindowSizes.Length > 0
+                    ? PerformanceWindowSizes.Max()
+                    : 0;
+
+                if (windowSize <= 0)
+                {
+                    resolved = Array.Empty<HorseSpeedEntry>();
+                }
+                else
+                {
+                    resolved = _repo.GetRecentHorseSpeedEntries(
+                        horseName,
+                        horseId,
+                        raceDate,
+                        windowSize) ?? Array.Empty<HorseSpeedEntry>();
+                }
+            }
+            catch (Exception ex)
+            {
+                var identifier = DescribeRunner(flow);
+                Console.Error.WriteLine(
+                    $"\t\tFailed to resolve historical speed entries for {identifier}: {ex.Message}");
+                resolved = Array.Empty<HorseSpeedEntry>();
+            }
+
+            var list = resolved as List<HorseSpeedEntry> ?? resolved.ToList();
+            _runnerSpeedCache[cacheKey] = list;
+
+            return list;
+        }
+
+        private void PopulateHistoricalSpeedWindows(
+            Dictionary<string, object?> featureVector,
+            RunnerFlow flow)
+        {
+            if (featureVector == null)
+            {
+                return;
+            }
+
+            var missingSpeedWindows = new List<int>();
+            var missingDiffWindows = new List<int>();
+
+            foreach (var window in PerformanceWindowSizes)
+            {
+                if (!TryGetMeaningfulValue(featureVector, $"AvgSpeedLast{window}", out _))
+                {
+                    missingSpeedWindows.Add(window);
+                }
+
+                if (!TryGetMeaningfulValue(featureVector, $"AvgSpeedDiffLast{window}", out _))
+                {
+                    missingDiffWindows.Add(window);
+                }
+            }
+
+            if (missingSpeedWindows.Count == 0 && missingDiffWindows.Count == 0)
+            {
+                return;
+            }
+
+            var entries = ResolveRunnerSpeedEntries(featureVector, flow);
+            if (entries.Count == 0)
+            {
+                return;
+            }
+
+            var speedSamples = new List<float>(entries.Count);
+            var diffSamples = new List<float>(entries.Count);
+
+            foreach (var entry in entries)
+            {
+                if (!entry.DistanceYards.HasValue || entry.DistanceYards.Value <= 0)
+                {
+                    continue;
+                }
+
+                if (!entry.WinningTimeMilliseconds.HasValue || entry.WinningTimeMilliseconds.Value <= 0)
+                {
+                    continue;
+                }
+
+                var distance = (float)entry.DistanceYards.Value;
+                var winningMs = (float)entry.WinningTimeMilliseconds.Value;
+
+                if (distance <= 0f || winningMs <= 0f)
+                {
+                    continue;
+                }
+
+                var raceSpeed = distance / winningMs;
+                var runnerTime = winningMs;
+
+                if (entry.DistanceBeatenLengths.HasValue)
+                {
+                    runnerTime += (float)entry.DistanceBeatenLengths.Value * MsPerLength;
+                }
+
+                if (runnerTime <= 0f)
+                {
+                    continue;
+                }
+
+                var runnerSpeed = distance / runnerTime;
+                if (float.IsNaN(runnerSpeed) || float.IsInfinity(runnerSpeed) || runnerSpeed <= 0f)
+                {
+                    continue;
+                }
+
+                speedSamples.Add(runnerSpeed);
+
+                var diff = runnerSpeed - raceSpeed;
+                if (!float.IsNaN(diff) && !float.IsInfinity(diff))
+                {
+                    diffSamples.Add(diff);
+                }
+            }
+
+            if (speedSamples.Count == 0 && diffSamples.Count == 0)
+            {
+                return;
+            }
+
+            foreach (var window in missingSpeedWindows)
+            {
+                var count = Math.Min(window, speedSamples.Count);
+                if (count <= 0)
+                {
+                    continue;
+                }
+
+                var average = speedSamples.Take(count).Average();
+                if (float.IsNaN(average) || float.IsInfinity(average) || average <= 0f)
+                {
+                    continue;
+                }
+
+                featureVector[$"AvgSpeedLast{window}"] = average;
+            }
+
+            foreach (var window in missingDiffWindows)
+            {
+                var count = Math.Min(window, diffSamples.Count);
+                if (count <= 0)
+                {
+                    continue;
+                }
+
+                var average = diffSamples.Take(count).Average();
+                if (float.IsNaN(average) || float.IsInfinity(average))
+                {
+                    continue;
+                }
+
+                featureVector[$"AvgSpeedDiffLast{window}"] = average;
             }
         }
         private void EnsureSpeedMetrics(Dictionary<string, object?> featureVector)

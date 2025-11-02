@@ -67,12 +67,14 @@ namespace HorseRacingML.Scraping
             var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10)); // short explicit wait
             var handles = handlesToProcess?.ToList() ?? driver.WindowHandles.ToList(); // collect tab handles
             var orderedHandles = OrderHandlesByScheduledStart(driver, handles);
+            Console.WriteLine($"[DayReport][Stage] Preparing to process {orderedHandles.Count} open tab(s) for the day report.");
             var weightPath = ResolveAiWeightPath(); // resolve AI weights path
             _loadedHyperparameters = null;
             AIOddsCalculator? aiCalculator = null;
             _neuralFeatureKeys = null;
             if (_computeAiProbabilities)
             {
+                Console.WriteLine("[DayReport][Stage] Initializing AI odds calculator and loading model weights.");
                 if (File.Exists(weightPath))
                 {
                     var info = new FileInfo(weightPath); // file info for logging
@@ -102,11 +104,13 @@ namespace HorseRacingML.Scraping
             var result = new BetfairScrapeResult(); // aggregate result
             var recommendations = new List<BetRecommendation>(); // all bet recs
             var processedMarketIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
+            var totalHandles = orderedHandles.Count;
+            var handleIndex = 0;
             foreach (var handle in orderedHandles)
             {
+                handleIndex++;
                 driver.SwitchTo().Window(handle); // switch tab
-                Console.WriteLine($"Processing tab: {driver.Url}"); // log url
+                Console.WriteLine($"[DayReport][Stage] [{handleIndex}/{totalHandles}] Processing tab: {driver.Url}"); // log url
                 var raceUrl = driver.Url;
                 if (!driver.Url.Contains("/horse-racing/", StringComparison.OrdinalIgnoreCase))
                 {
@@ -974,7 +978,7 @@ namespace HorseRacingML.Scraping
 
                 result.Recommendations.AddRange(recommendations.OrderByDescending(r => r.Differential).ThenByDescending(r => r.KellyFraction)); // finalize ordering
             }
-
+            Console.WriteLine("[DayReport][Stage] Completed scraping and AI evaluation for all open race tabs.");
             return result; // done
         }
     }
