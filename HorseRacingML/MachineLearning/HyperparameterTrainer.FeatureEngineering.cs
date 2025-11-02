@@ -3078,7 +3078,8 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
                 }
 
                 var horseIdArray = horseIds.Where(id => !cachedResults.ContainsKey(id)).ToArray();
-                const int batchSize = 1500;
+                const int batchSize = 500;
+                const int commandTimeoutSeconds = 3600;
                 DateTime? maxRaceDateExclusive = identitySummary.MaxRaceDate?.Date.AddDays(1);
                 if (horseIdArray.Length > 0)
                 {
@@ -3118,7 +3119,7 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
                             {
                                 HorseIds = batch,
                                 MaxRaceDateExclusive = maxRaceDateExclusive
-                            }).ToList();
+                            }, commandTimeout: commandTimeoutSeconds).ToList();
 
                             foreach (var row in rows)
                             {
