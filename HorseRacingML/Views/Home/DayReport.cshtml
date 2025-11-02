@@ -409,8 +409,24 @@
 }
 else
 {
-    for (var raceIndex = 0; raceIndex < Model.Races.Count; raceIndex++)
+    var sequentialIndex = 0;
+    <div id="dayReportSequentialRoot" data-total-races="@Model.Races.Count">
+        <div id="raceSequentialProgress" class="alert alert-info d-flex align-items-center gap-2 mb-4" role="status">
+            <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+            <div>
+                <strong>Processing races…</strong>
+                <span class="ms-2" id="raceSequentialProgressCount"></span>
+            </div>
+            <button type="button" class="btn btn-outline-secondary btn-sm ms-auto" id="raceSequentialRevealAllButton">
+                Show all now
+            </button>
+        </div>
+        <div id="raceCardsContainer" data-sequential-delay="200"></div>
+        <div id="raceCardsStaging" class="d-none">
+    @for (var raceIndex = 0; raceIndex < Model.Races.Count; raceIndex++)
     {
+        sequentialIndex++;
+    
         var race = Model.Races[raceIndex];
         var raceTitle = string.IsNullOrWhiteSpace(race.RaceTitle)
             ? "Unknown Race"
@@ -468,7 +484,7 @@ else
             : string.Empty;
 var raceRegion = DetermineRaceRegion(race.VenueCountry);
 
-        <div class="card mb-4 race-card" data-market-id="@race.MarketId" data-race-start="@raceStartIso" data-region="@raceRegion">
+                <div class="card mb-4 race-card sequential-pending" data-market-id="@race.MarketId" data-race-start="@raceStartIso" data-region="@raceRegion" data-sequential-index="@sequentialIndex" data-sequential-pending="true">
             <div class="card-header bg-light">
                 <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
                     <div>
@@ -508,7 +524,6 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                             class="btn btn-sm btn-outline-secondary refresh-market-only-btn"
                             data-market-id="@race.MarketId"
                             data-race-url="@race.RaceUrl"
-                                data-current-going="@goingText"
                             data-current-going="@goingText"
                             @(string.IsNullOrWhiteSpace(race.RaceUrl) ? "disabled" : string.Empty)>
                             Refresh market odds
@@ -1348,6 +1363,8 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
             </div>
         </div>
     }
+        </div>
+    </div>
 }
 <div class="modal fade" id="historicalRacesModal" tabindex="-1" aria-labelledby="historicalRacesModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-xl modal-dialog-scrollable">
@@ -1373,6 +1390,7 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
             const regionSelect = document.getElementById('dayReportRegionSelect');
             const initialRegionInput = document.getElementById('dayReportInitialRegion');
             const regionButtons = Array.from(document.querySelectorAll('.region-filter-btn'));
+            const getActiveRaceCards = () => Array.from(document.querySelectorAll('.race-card')).filter(card => card.dataset.sequentialPending !== 'true');
             const initialRegionValue = (initialRegionInput?.value ?? '').trim();
             if (regionSelect && initialRegionValue.length > 0) {
                 regionSelect.value = initialRegionValue;
@@ -1395,7 +1413,7 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
 
             const filterRacesByRegion = (region) => {
                 const normalized = (region ?? '').trim().toLowerCase();
-                const raceCards = document.querySelectorAll('.race-card');
+                const raceCards = getActiveRaceCards();
                 raceCards.forEach(card => {
                     const cardRegion = (card.dataset.region ?? '').trim().toLowerCase();
                     const shouldShow = normalized.length === 0 || normalized === 'all' || cardRegion === normalized;
@@ -1408,7 +1426,7 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
             };
 
             const openVisibleRaceDetails = () => {
-                const raceCards = document.querySelectorAll('.race-card');
+                const raceCards = getActiveRaceCards();
                 raceCards.forEach(card => {
                     if (card.classList.contains('d-none')) {
                         return;
@@ -1565,7 +1583,7 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
             if (removePastRacesButton) {
                 removePastRacesButton.addEventListener('click', () => {
                     const now = new Date();
-                    const raceCards = document.querySelectorAll('.race-card');
+                    const raceCards = getActiveRaceCards();
                     raceCards.forEach(card => {
                         const raw = card.dataset.raceStart ?? '';
                         const start = parseDateFromAttribute(raw);
@@ -3722,9 +3740,18 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                 updateStakeDisplays();
             };
 
-            const marketRefreshButtons = document.querySelectorAll('.refresh-market-only-btn');
-            if (marketRefreshButtons.length > 0) {
-                marketRefreshButtons.forEach(button => {
+            const bindMarketRefreshButtons = (root = document) => {
+                if (!root || typeof root.querySelectorAll !== 'function') {
+                    return;
+                }
+
+                const buttons = root.querySelectorAll('.refresh-market-only-btn');
+                buttons.forEach(button => {
+                    if (!button || button.dataset.marketRefreshBound === '1') {
+                        return;
+                    }
+
+                    button.dataset.marketRefreshBound = '1';
                     button.addEventListener('click', async () => {
                         if (button.disabled) {
                             return;
@@ -3814,11 +3841,21 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                         }
                     });
                 });
-            }
+             };
 
-            const refreshButtons = document.querySelectorAll('.refresh-race-btn');
-            if (refreshButtons.length > 0) {
-                refreshButtons.forEach(button => {
+            const bindFullRefreshButtons = (root = document) => {
+                if (!root || typeof root.querySelectorAll !== 'function') {
+                    return;
+                }
+
+                const buttons = root.querySelectorAll('.refresh-race-btn');
+                buttons.forEach(button => {
+                    if (!button || button.dataset.fullRefreshBound === '1') {
+                        return;
+                    }
+
+
+            button.dataset.fullRefreshBound = '1';
                     button.addEventListener('click', async () => {
                         if (button.disabled) {
                             return;
@@ -3912,10 +3949,166 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                         }
                     });
                 });
-            }
+            };
+
+            const startSequentialRaceDisplay = () => {
+                const sequentialRoot = document.getElementById('dayReportSequentialRoot');
+                const sequentialContainer = document.getElementById('raceCardsContainer');
+                const sequentialStaging = document.getElementById('raceCardsStaging');
+                const sequentialProgress = document.getElementById('raceSequentialProgress');
+                const sequentialCount = document.getElementById('raceSequentialProgressCount');
+                const revealAllButton = document.getElementById('raceSequentialRevealAllButton');
+
+                if (!sequentialContainer || !sequentialStaging) {
+                    if (sequentialProgress) {
+                        sequentialProgress.classList.add('d-none');
+                    }
+                    if (revealAllButton) {
+                        revealAllButton.classList.add('d-none');
+                    }
+                    return;
+                }
+
+                const pendingCards = Array.from(sequentialStaging.querySelectorAll('.race-card'));
+                const total = pendingCards.length;
+                const prefersReducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+                const configuredDelayRaw = sequentialContainer.dataset.sequentialDelay ?? sequentialRoot?.dataset.sequentialDelay;
+                const parsedDelay = Number.parseInt(configuredDelayRaw ?? '', 10);
+                const baseDelay = Number.isFinite(parsedDelay) && parsedDelay >= 0 ? parsedDelay : 200;
+                const revealDelay = prefersReducedMotion ? 0 : baseDelay;
+
+                const state = {
+                    pending: pendingCards,
+                    total,
+                    revealed: 0,
+                    timerId: null,
+                    cancelled: false
+                };
+
+                const updateProgress = () => {
+                    if (!sequentialProgress) {
+                        return;
+                    }
+
+                    if (state.total === 0 || state.revealed >= state.total) {
+                        sequentialProgress.classList.add('d-none');
+                        return;
+                    }
+
+                    sequentialProgress.classList.remove('d-none');
+                    if (sequentialCount) {
+                        sequentialCount.textContent = `${state.revealed} of ${state.total} displayed`;
+                    }
+                };
+
+                const applyActiveRegion = () => {
+                    const currentRegion = (regionSelect?.value ?? '').trim();
+                    if (currentRegion.length > 0) {
+                        filterRacesByRegion(currentRegion);
+                    } else {
+                        filterRacesByRegion('GB & IRE');
+                    }
+                };
+
+                const finalize = () => {
+                    if (state.timerId !== null) {
+                        window.clearTimeout(state.timerId);
+                        state.timerId = null;
+                    }
+                    state.pending.length = 0;
+                    state.revealed = state.total;
+                    if (sequentialProgress) {
+                        if (sequentialCount) {
+                            sequentialCount.textContent = `${state.total} of ${state.total} displayed`;
+                        }
+                        sequentialProgress.classList.add('d-none');
+                    }
+                    if (revealAllButton) {
+                        revealAllButton.disabled = true;
+                        revealAllButton.classList.add('d-none');
+                    }
+                };
+
+                const revealCard = (card) => {
+                    if (!card) {
+                        return;
+                    }
+
+                    sequentialContainer.appendChild(card);
+                    card.dataset.sequentialPending = 'false';
+                    card.classList.remove('sequential-pending');
+                    state.revealed += 1;
+                    applyActiveRegion();
+                    updateStakeDisplays();
+                    updateProgress();
+                };
+
+                const revealAllPending = () => {
+                    while (state.pending.length > 0) {
+                        const card = state.pending.shift();
+                        revealCard(card);
+                    }
+                    finalize();
+                };
+
+                const revealNext = () => {
+                    if (state.pending.length === 0) {
+                        finalize();
+                        return;
+                    }
+
+                    const card = state.pending.shift();
+                    revealCard(card);
+
+                    if (state.pending.length === 0 || state.cancelled) {
+                        finalize();
+                        return;
+                    }
+
+                    if (revealDelay > 0) {
+                        state.timerId = window.setTimeout(revealNext, revealDelay);
+                    } else {
+                        revealNext();
+                    }
+                };
+
+                if (revealAllButton) {
+                    revealAllButton.addEventListener('click', () => {
+                        if (state.timerId !== null) {
+                            window.clearTimeout(state.timerId);
+                            state.timerId = null;
+                        }
+                        state.cancelled = true;
+                        revealAllPending();
+                    });
+                }
+
+                if (state.total === 0) {
+                    if (sequentialProgress) {
+                        sequentialProgress.classList.add('d-none');
+                    }
+                    if (revealAllButton) {
+                        revealAllButton.classList.add('d-none');
+                    }
+                    return;
+                }
+
+                updateProgress();
+
+                if (revealDelay <= 0 || state.total === 1) {
+                    revealAllPending();
+                    return;
+                }
+
+                revealNext();
+            };
+
             bindOddsInputs(document);
             bindHistoricalRaceButtons(document);
             bindApplyMarketButtons(document);
+            bindMarketRefreshButtons(document);
+            bindFullRefreshButtons(document);
+            startSequentialRaceDisplay();
             updateStakeDisplays();
         })();
     </script>
