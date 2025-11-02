@@ -1023,7 +1023,39 @@ private void ProcessDeferredRaceEvaluations(
             {
                 return;
             }
+            pendingEvaluations.Sort((left, right) =>
+            {
+                if (ReferenceEquals(left, right))
+                {
+                    return 0;
+                }
 
+                if (left is null)
+                {
+                    return 1;
+                }
+
+                if (right is null)
+                {
+                    return -1;
+                }
+
+                var scheduleComparison = GetPendingEvaluationSortKey(left).CompareTo(GetPendingEvaluationSortKey(right));
+                if (scheduleComparison != 0)
+                {
+                    return scheduleComparison;
+                }
+
+                var titleComparison = StringComparer.OrdinalIgnoreCase.Compare(
+                    left.Title ?? string.Empty,
+                    right.Title ?? string.Empty);
+                if (titleComparison != 0)
+                {
+                    return titleComparison;
+                }
+
+                return StringComparer.Ordinal.Compare(left.MarketId ?? string.Empty, right.MarketId ?? string.Empty);
+            });
             if (_computeAiProbabilities && aiCalculator != null)
             {
                 PreloadFeatureLookupsForBatch(pendingEvaluations);
@@ -1283,7 +1315,62 @@ private void ProcessDeferredRaceEvaluations(
                 result.Recommendations.AddRange(raceRecommendations.OrderByDescending(r => r.Differential).ThenByDescending(r => r.KellyFraction));
             }
         }
+        private static DateTime GetPendingEvaluationSortKey(PendingRaceEvaluation? evaluation)
+        {
+            if (evaluation == null)
+            {
+                return DateTime.MaxValue;
+            }
 
+            var schedule = GetPendingEvaluationScheduleDateTime(evaluation);
+            if (!schedule.HasValue)
+            {
+                return DateTime.MaxValue;
+            }
+
+            var value = schedule.Value;
+            if (value.Kind == DateTimeKind.Unspecified)
+            {
+                value = DateTime.SpecifyKind(value, DateTimeKind.Utc);
+            }
+            else if (value.Kind != DateTimeKind.Utc)
+            {
+                value = value.ToUniversalTime();
+            }
+
+            return value;
+        }
+
+        private static DateTime? GetPendingEvaluationScheduleDateTime(PendingRaceEvaluation evaluation)
+        {
+            if (evaluation == null)
+            {
+                return null;
+            }
+
+            if (evaluation.RaceDate.HasValue)
+            {
+                var date = evaluation.RaceDate.Value;
+                if (evaluation.OffTime.HasValue)
+                {
+                    return date.Date.Add(evaluation.OffTime.Value);
+                }
+
+                return date;
+            }
+
+            if (evaluation.OffTime.HasValue)
+            {
+                return evaluation.EffectiveRaceDate.Date.Add(evaluation.OffTime.Value);
+            }
+
+            if (evaluation.EffectiveRaceDate != default)
+            {
+                return evaluation.EffectiveRaceDate;
+            }
+
+            return null;
+        }
         private void PreloadFeatureLookupsForBatch(List<PendingRaceEvaluation> pendingEvaluations)
         {
             if (pendingEvaluations == null || pendingEvaluations.Count == 0)

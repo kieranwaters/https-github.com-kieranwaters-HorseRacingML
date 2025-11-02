@@ -189,7 +189,9 @@ namespace HorseRacingML.Scraping
             {
                 CacheUpcomingRace(persistedUpcoming);
             }
-
+            Console.WriteLine(
+                $"    Feature lookup initiated for upcoming race {upcoming.MarketId ?? marketId ?? "<unknown>"}; " +
+                $"persisted metadata accepted={persistedAccepted}.");
             lock (_featureLookupCacheLock)
             {
                 if (_featureLookupCache.TryGetValue(cacheKey, out var cachedLookup))
@@ -210,11 +212,18 @@ namespace HorseRacingML.Scraping
                         _preloadedPreparedRaces.Remove(cacheKey);
                     }
                 }
-
+                Console.WriteLine(
+                            $"  Consumed preloaded synthetic feature rows for upcoming race {upcoming.MarketId ?? marketId ?? "<unknown>"}.");
                 if (prepared == null)
                 {
+                    Console.WriteLine(
+                        $"  Generating synthetic feature rows for upcoming race {upcoming.MarketId ?? marketId ?? "<unknown>"} via trainer.");
                     var preparedResults = _trainer.PrepareUpcomingRaces(new[] { (upcoming, flows) });
                     prepared = preparedResults.Count > 0 ? preparedResults[0] : null;
+                    Console.WriteLine(
+                        prepared != null
+                            ? $"  Trainer returned synthetic feature rows for upcoming race {upcoming.MarketId ?? marketId ?? "<unknown>"}; row count={prepared.Rows.Count}."
+                            : $"  Trainer returned no synthetic feature rows for upcoming race {upcoming.MarketId ?? marketId ?? "<unknown>"}.");
                 }
                 if (prepared == null)
                 {
