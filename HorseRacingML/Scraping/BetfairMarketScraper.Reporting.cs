@@ -164,13 +164,111 @@ namespace HorseRacingML.Scraping
             IReadOnlyList<RunnerFlow> flows,
             UpcomingRace? persistedUpcoming)
         {
-            if (!raceDate.HasValue)
+            if (!TryResolveUpcomingForLookup(
+                    raceDate,
+                    raceTitle,
+                    venueName,
+                    venueCountry,
+                    scheduledOff,
+                    raceDetails,
+                    raceType,
+                    going,
+                    backBookPercentage,
+                    layBookPercentage,
+                    marketId,
+                    flows,
+                    persistedUpcoming,
+                    out var upcoming,
+                    out var cacheKey,
+                    out var persistedAccepted))
             {
                 return FeatureLookup.Empty;
             }
 
-            UpcomingRace? upcoming = null;
-            var persistedAccepted = false;
+            if (persistedAccepted && persistedUpcoming != null)
+            {
+                CacheUpcomingRace(persistedUpcoming);
+            }
+
+            lock (_featureLookupCacheLock)
+            {
+                if (_featureLookupCache.TryGetValue(cacheKey, out var cachedLookup))
+                {
+                    Console.WriteLine($"  Using cached synthetic feature rows for upcoming race {upcoming.MarketId ?? marketId ?? "<unknown>"}.");
+                    return cachedLookup;
+                }
+            }
+
+            try
+            {
+                PreparedRace? prepared = null;
+                lock (_featureLookupCacheLock)
+                {
+                    if (_preloadedPreparedRaces.TryGetValue(cacheKey, out var preloaded))
+                    {
+                        prepared = preloaded;
+                        _preloadedPreparedRaces.Remove(cacheKey);
+                    }
+                }
+
+                if (prepared == null)
+                {
+                    var preparedResults = _trainer.PrepareUpcomingRaces(new[] { (upcoming, flows) });
+                    prepared = preparedResults.Count > 0 ? preparedResults[0] : null;
+                }
+                if (prepared == null)
+                {
+                    Console.WriteLine("\tSynthetic feature preparation for upcoming race returned no rows.");
+                    lock (_featureLookupCacheLock)
+                    {
+                        _featureLookupCache[cacheKey] = FeatureLookup.Empty;
+                    }
+
+                    return FeatureLookup.Empty;
+                }
+
+                Console.WriteLine($"  Loaded synthetic feature rows for upcoming race {upcoming.MarketId}; runner count={prepared.Rows.Count}.");
+                var lookup = FeatureLookup.FromPreparedRace(prepared);
+                lock (_featureLookupCacheLock)
+                {
+                    _featureLookupCache[cacheKey] = lookup;
+                }
+
+                return lookup;
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"      Failed to build synthetic feature vector for upcoming race {upcoming.MarketId}:{ex.Message}");
+                return FeatureLookup.Empty;
+            }
+        }
+
+        private bool TryResolveUpcomingForLookup(
+            DateTime? raceDate,
+            string? raceTitle,
+            string? venueName,
+            string? venueCountry,
+            TimeSpan? scheduledOff,
+            string? raceDetails,
+            string? raceType,
+            string? going,
+            decimal? backBookPercentage,
+            decimal? layBookPercentage,
+            string? marketId,
+            IReadOnlyList<RunnerFlow> flows,
+            UpcomingRace? persistedUpcoming,
+            out UpcomingRace? upcoming,
+            out RacePreparationKey cacheKey,
+            out bool persistedAccepted)
+        {
+            cacheKey = default;
+            persistedAccepted = false;
+            upcoming = null;
+
+            if (!raceDate.HasValue)
+            {
+                return false;
+            }
 
             if (persistedUpcoming != null)
             {
@@ -178,7 +276,7 @@ namespace HorseRacingML.Scraping
                 {
                     upcoming = persistedUpcoming;
                     persistedAccepted = true;
-                    CacheUpcomingRace(persistedUpcoming);
+                    Console.WriteLine("    Using persisted upcoming race metadata for feature preparation.");
                 }
                 else
                 {
@@ -221,6 +319,11 @@ namespace HorseRacingML.Scraping
                     if (byMetadata != null)
                     {
                         upcoming = byMetadata;
+                        Console.WriteLine($"    Located UpcomingRaces row by metadata search: UpcomingRaceId={byMetadata.UpcomingRaceId}, MarketId={byMetadata.MarketId ?? "<null>"}.");
+                    }
+                    else
+                    {
+                        Console.WriteLine("    No UpcomingRaces row matched metadata search.");
                     }
                 }
                 catch (Exception ex)
@@ -237,6 +340,7 @@ namespace HorseRacingML.Scraping
 
             if (upcoming == null)
             {
+                Console.WriteLine("    Attempting to build synthetic upcoming race metadata for feature preparation.");
                 upcoming = BuildSyntheticUpcomingRace(
                     raceDate.Value,
                     raceTitle,
@@ -254,55 +358,19 @@ namespace HorseRacingML.Scraping
                 if (upcoming == null)
                 {
                     Console.WriteLine(" Unable to create synthetic upcoming race metadata; feature lookup aborted.");
-                    return FeatureLookup.Empty;
+                    return false;
                 }
 
                 Console.WriteLine("     Constructed synthetic upcoming race metadata for feature synthesis.");
             }
-            var cacheKey = new RacePreparationKey(
+
+            cacheKey = new RacePreparationKey(
                 upcoming.RaceDate.Date,
                 upcoming.Title ?? raceTitle,
                 upcoming.VenueName ?? venueName,
                 upcoming.VenueCountry ?? venueCountry);
 
-            lock (_featureLookupCacheLock)
-            {
-                if (_featureLookupCache.TryGetValue(cacheKey, out var cachedLookup))
-                {
-                    Console.WriteLine($"  Using cached synthetic feature rows for upcoming race {upcoming.MarketId ?? marketId ?? "<unknown>"}.");
-                    return cachedLookup;
-                }
-            }
-
-            try
-            {
-                var preparedResults = _trainer.PrepareUpcomingRaces(new[] { (upcoming, flows) });
-                var prepared = preparedResults.Count > 0 ? preparedResults[0] : null;
-                if (prepared == null)
-                {
-                    Console.WriteLine("\tSynthetic feature preparation for upcoming race returned no rows.");
-                    lock (_featureLookupCacheLock)
-                    {
-                        _featureLookupCache[cacheKey] = FeatureLookup.Empty;
-                    }
-
-                    return FeatureLookup.Empty;
-                }
-
-                Console.WriteLine($"  Loaded synthetic feature rows for upcoming race {upcoming.MarketId}; runner count={prepared.Rows.Count}.");
-                var lookup = FeatureLookup.FromPreparedRace(prepared);
-                lock (_featureLookupCacheLock)
-                {
-                    _featureLookupCache[cacheKey] = lookup;
-                }
-
-                return lookup;
-            }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine($"      Failed to build synthetic feature vector for upcoming race {upcoming.MarketId}:{ex.Message}");
-                return FeatureLookup.Empty;
-            }
+            return true;
         }
 
         private FeatureLookup BuildFallbackFeatureLookup(

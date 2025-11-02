@@ -10,6 +10,7 @@ using System.Text.Json;
 using System.Collections.Generic;
 using Tensorflow;
 using Tensorflow.NumPy;
+using System.Threading.Tasks;
 using static Tensorflow.Binding;
 using static Tensorflow.TensorShapeProto.Types;
 using PreparedDataset = HorseRacingML.ML.HyperparameterTrainer.TrainingDataset.PreparedDataset;

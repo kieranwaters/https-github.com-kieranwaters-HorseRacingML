@@ -8,6 +8,8 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Text.RegularExpressions;
 using System.Linq;
+using PreparedDataset = HorseRacingML.ML.HyperparameterTrainer.TrainingDataset.PreparedDataset;
+using PreparedRace = HorseRacingML.ML.HyperparameterTrainer.TrainingDataset.PreparedDataset.PreparedRace;
 
 namespace HorseRacingML.Scraping
 {
@@ -27,6 +29,7 @@ namespace HorseRacingML.Scraping
         private static IReadOnlyList<string>? _neuralFeatureKeys;
         private readonly Dictionary<RacePreparationKey, FeatureLookup> _featureLookupCache = new();
         private readonly Dictionary<RacePreparationKey, string?> _featureLookupErrorCache = new();
+        private readonly Dictionary<RacePreparationKey, PreparedRace> _preloadedPreparedRaces = new();
         private readonly object _featureLookupCacheLock = new();
         private readonly Dictionary<string, HandleScheduleMetadata> _handleScheduleCache = new(StringComparer.Ordinal);
         private readonly object _handleScheduleCacheLock = new();
@@ -206,6 +209,25 @@ namespace HorseRacingML.Scraping
             public DateTime SortKey { get; }
             public string? Url { get; }
             public DateTime CapturedUtc { get; }
+        }
+        private sealed class PendingRaceEvaluation
+        {
+            public string MarketId { get; init; } = string.Empty;
+            public string? Title { get; init; }
+            public string? VenueName { get; init; }
+            public string? VenueCountry { get; init; }
+            public DateTime? RaceDate { get; init; }
+            public DateTime EffectiveRaceDate { get; init; }
+            public TimeSpan? OffTime { get; init; }
+            public string? CleanedRaceDetails { get; init; }
+            public string? RaceTypeText { get; init; }
+            public string? Going { get; init; }
+            public decimal? BackBookPercentage { get; init; }
+            public decimal? LayBookPercentage { get; init; }
+            public string? RaceUrl { get; init; }
+            public UpcomingRace? PersistedUpcoming { get; init; }
+            public List<RunnerFlow> Flows { get; init; } = new();
+            public int RunnerCount { get; init; }
         }
 
         private readonly struct UpcomingRaceLookupKey : IEquatable<UpcomingRaceLookupKey>

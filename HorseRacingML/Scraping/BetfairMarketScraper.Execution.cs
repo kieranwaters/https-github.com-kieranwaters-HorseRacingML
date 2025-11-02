@@ -1,7 +1,9 @@
 ﻿using HorseRacingML.Data;
 using HorseRacingML.ML;
 using HorseRacingML.Models;
+using HorseRacingML.Scraping;
 using HorseRacingML.Services;
+using OneOf.Types;
 using OpenQA.Selenium;
 using OpenQA.Selenium.Support.UI;
 using System;
@@ -9,6 +11,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace HorseRacingML.Scraping
 {
@@ -100,10 +103,12 @@ namespace HorseRacingML.Scraping
             lock (_featureLookupCacheLock)
             {
                 _featureLookupCache.Clear();
+                _preloadedPreparedRaces.Clear();
             }
             var result = new BetfairScrapeResult(); // aggregate result
             var recommendations = new List<BetRecommendation>(); // all bet recs
             var processedMarketIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var pendingEvaluations = executeBets ? null : new List<PendingRaceEvaluation>();
             var totalHandles = orderedHandles.Count;
             var handleIndex = 0;
             foreach (var handle in orderedHandles)
@@ -367,7 +372,7 @@ namespace HorseRacingML.Scraping
                             resolvedGoing = persistedUpcoming.Going.Trim();
                             goingSource = "upcoming race record";
                             goingDisplay = string.IsNullOrWhiteSpace(resolvedGoing) ? "<null>" : resolvedGoing;
-                            
+
                         }
                     }
                     catch (Exception ex)
@@ -738,7 +743,29 @@ namespace HorseRacingML.Scraping
                 }
 
                 var effectiveRaceDate = parsedRaceDate ?? DateTime.Today;
-
+                if (!executeBets)
+                {
+                    pendingEvaluations!.Add(new PendingRaceEvaluation
+                    {
+                        MarketId = marketId,
+                        Title = trimmedTitle ?? title,
+                        VenueName = trimmedVenueName ?? venueName,
+                        VenueCountry = trimmedVenueCountry ?? venueCountry,
+                        RaceDate = parsedRaceDate?.Date,
+                        EffectiveRaceDate = effectiveRaceDate,
+                        OffTime = offTime,
+                        CleanedRaceDetails = cleanedRaceDetails,
+                        RaceTypeText = raceTypeText,
+                        Going = resolvedGoing,
+                        BackBookPercentage = backBookPercentage,
+                        LayBookPercentage = layBookPercentage,
+                        RaceUrl = raceUrl,
+                        PersistedUpcoming = persistedUpcoming,
+                        Flows = flows,
+                        RunnerCount = rows.Count
+                    });
+                    continue;
+                }
                 if (_computeAiProbabilities && aiCalculator != null)
                 {
                     PopulateFeatureVectors(
@@ -792,46 +819,43 @@ namespace HorseRacingML.Scraping
 
                     if (evaluationCandidates.Count > 0)
                     {
-                        foreach (var rf in evaluationCandidates)
-                        {
-                            var rfIdentifier = DescribeRunner(rf);
-                            try
+                        Parallel.ForEach(
+                            evaluationCandidates,
+                            rf =>
                             {
-                                var probability = aiCalculator.CalculateOdds(rf); // compute AI odds
-                                if (double.IsFinite(probability) && probability > 0 && probability <= 1)
+                                var rfIdentifier = DescribeRunner(rf);
+                                try
                                 {
-                                    rf.AiOdds = probability;
+                                    var probability = aiCalculator.CalculateOdds(rf); // compute AI odds
+                                    if (double.IsFinite(probability) && probability > 0 && probability <= 1)
+                                    {
+                                        rf.AiOdds = probability;
+                                        rf.AiProbabilityMarketDerived = false;
+                                        rf.AiProbabilityFallbackReason = null;
+                                    }
+                                    else
+                                    {
+                                        rf.AiOdds = null;
+                                        rf.AiProbabilityMarketDerived = false;
+                                        rf.AiProbabilityFallbackReason = null;
+                                        var probabilityText = double.IsFinite(probability)
+                                            ? probability.ToString("0.####", CultureInfo.InvariantCulture)
+                                            : "non-finite";
+                                        Console.WriteLine($"            Discarding non-positive AI probability {probabilityText} for {rfIdentifier}; treating as missing.");
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    rf.AiOdds = null; // set null on fail
                                     rf.AiProbabilityMarketDerived = false;
                                     rf.AiProbabilityFallbackReason = null;
+                                    rf.AiProbabilityClampedToMarket = false;
+                                    rf.AiProbabilityClampTarget = null;
+                                    Console.Error.WriteLine($"  Failed to calculate AI odds for runner {rfIdentifier} in market {marketId}: {ex.Message}"); // log
                                 }
-                                else
-                                {
-                                    rf.AiOdds = null;
-                                    rf.AiProbabilityMarketDerived = false;
-                                    rf.AiProbabilityFallbackReason = null;
-                                    var probabilityText = double.IsFinite(probability)
-                                        ? probability.ToString("0.####", CultureInfo.InvariantCulture)
-                                        : "non-finite";
-                                    Console.WriteLine($"            Discarding non-positive AI probability {probabilityText} for {rfIdentifier}; treating as missing.");
-                                }
-                            }
-                            catch (Exception ex)
-                            {
-                                rf.AiOdds = null; // set null on fail
-                                rf.AiProbabilityMarketDerived = false;
-                                rf.AiProbabilityFallbackReason = null;
-                                rf.AiProbabilityClampedToMarket = false;
-                                rf.AiProbabilityClampTarget = null;
-                                Console.Error.WriteLine($"  Failed to calculate AI odds for runner {rfIdentifier} in market {marketId}: {ex.Message}"); // log
-                            }
 
-                            if (!rf.AiOdds.HasValue)
-                            {
-                                continue;
-                            }
-                        }
+                            });
                     }
-
                     foreach (var rf in flowsSnapshot)
                     {
                         if (!flows.Contains(rf))
@@ -978,8 +1002,357 @@ namespace HorseRacingML.Scraping
 
                 result.Recommendations.AddRange(recommendations.OrderByDescending(r => r.Differential).ThenByDescending(r => r.KellyFraction)); // finalize ordering
             }
+            if (pendingEvaluations != null && pendingEvaluations.Count > 0)
+            {
+                ProcessDeferredRaceEvaluations(pendingEvaluations, aiCalculator, captureReport, result, recommendations);
+            }
             Console.WriteLine("[DayReport][Stage] Completed scraping and AI evaluation for all open race tabs.");
             return result; // done
         }
     }
-}
+
+private void ProcessDeferredRaceEvaluations(
+            List<PendingRaceEvaluation> pendingEvaluations,
+            AIOddsCalculator? aiCalculator,
+            bool captureReport,
+            BetfairScrapeResult result,
+            List<BetRecommendation> recommendations)
+        {
+            if (pendingEvaluations == null || pendingEvaluations.Count == 0)
+            {
+                return;
+            }
+
+            if (_computeAiProbabilities && aiCalculator != null)
+            {
+                PreloadFeatureLookupsForBatch(pendingEvaluations);
+            }
+
+            foreach (var evaluation in pendingEvaluations)
+            {
+                var flows = evaluation.Flows;
+                if (flows == null || flows.Count == 0)
+                {
+                    Console.WriteLine($"\tNo runners captured for deferred market {evaluation.MarketId}; skipping.");
+                    continue;
+                }
+
+                Console.WriteLine($"\t[Deferred] Processing cached market {evaluation.MarketId} with {flows.Count} runner(s).");
+
+                if (_computeAiProbabilities && aiCalculator != null)
+                {
+                    PopulateFeatureVectors(
+                        evaluation.EffectiveRaceDate,
+                        evaluation.Title,
+                        evaluation.VenueName,
+                        evaluation.VenueCountry,
+                        evaluation.OffTime,
+                        evaluation.CleanedRaceDetails,
+                        evaluation.RaceTypeText,
+                        evaluation.Going,
+                        evaluation.BackBookPercentage,
+                        evaluation.LayBookPercentage,
+                        evaluation.MarketId,
+                        flows,
+                        evaluation.RunnerCount,
+                        persistedUpcoming: evaluation.PersistedUpcoming);
+
+                    var flowsSnapshot = flows.ToList();
+                    var hasAnyBackPrice = flowsSnapshot.Any(f => f.BackPrice1.HasValue);
+                    var evaluationCandidates = new List<RunnerFlow>();
+
+                    foreach (var rf in flowsSnapshot)
+                    {
+                        if (rf == null)
+                        {
+                            continue;
+                        }
+
+                        var rfIdentifier = DescribeRunner(rf);
+
+                        if (hasAnyBackPrice && !rf.BackPrice1.HasValue)
+                        {
+                            Console.WriteLine($"            [Deferred] No back price available for {rfIdentifier}; assuming non-runner and excluding from analysis.");
+                            flows.Remove(rf);
+                            continue;
+                        }
+
+                        if (rf.FeatureValues != null && !rf.FeatureValues.ContainsKey("RunnerCount") && evaluation.RunnerCount > 0)
+                        {
+                            rf.FeatureValues["RunnerCount"] = evaluation.RunnerCount;
+                        }
+
+                        if (rf.FeatureValues != null)
+                        {
+                            if (rf.BackPrice1.HasValue) { rf.FeatureValues["BackPrice1"] = rf.BackPrice1.Value; }
+                            if (rf.BackPrice2.HasValue) { rf.FeatureValues["BackPrice2"] = rf.BackPrice2.Value; }
+                            if (rf.BackPrice3.HasValue) { rf.FeatureValues["BackPrice3"] = rf.BackPrice3.Value; }
+                            if (rf.LayPrice1.HasValue) { rf.FeatureValues["LayPrice1"] = rf.LayPrice1.Value; }
+                            if (rf.LayPrice2.HasValue) { rf.FeatureValues["LayPrice2"] = rf.LayPrice2.Value; }
+                            if (rf.LayPrice3.HasValue) { rf.FeatureValues["LayPrice3"] = rf.LayPrice3.Value; }
+                        }
+
+                        rf.AiProbabilityClampedToMarket = false;
+                        rf.AiProbabilityClampTarget = null;
+                        rf.AiProbabilityMarketDerived = false;
+                        rf.AiProbabilityFallbackReason = null;
+                        evaluationCandidates.Add(rf);
+                    }
+
+                    if (evaluationCandidates.Count > 0)
+                    {
+                        Parallel.ForEach(
+                            evaluationCandidates,
+                            rf =>
+                            {
+                                var rfIdentifier = DescribeRunner(rf);
+                                try
+                                {
+                                    var probability = aiCalculator.CalculateOdds(rf);
+                                    if (double.IsFinite(probability) && probability > 0 && probability <= 1)
+                                    {
+                                        rf.AiOdds = probability;
+                                        rf.AiProbabilityMarketDerived = false;
+                                        rf.AiProbabilityFallbackReason = null;
+                                    }
+                                    else
+                                    {
+                                        rf.AiOdds = null;
+                                        rf.AiProbabilityMarketDerived = false;
+                                        rf.AiProbabilityFallbackReason = null;
+                                        var probabilityText = double.IsFinite(probability)
+                                            ? probability.ToString("0.####", CultureInfo.InvariantCulture)
+                                            : "non-finite";
+                                        Console.WriteLine($"            [Deferred] Discarding non-positive AI probability {probabilityText} for {rfIdentifier}; treating as missing.");
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    rf.AiOdds = null;
+                                    rf.AiProbabilityMarketDerived = false;
+                                    rf.AiProbabilityFallbackReason = null;
+                                    rf.AiProbabilityClampedToMarket = false;
+                                    rf.AiProbabilityClampTarget = null;
+                                    Console.Error.WriteLine($"  [Deferred] Failed to calculate AI odds for runner {rfIdentifier} in market {evaluation.MarketId}: {ex.Message}");
+                                }
+                            });
+                    }
+
+                    foreach (var rf in flowsSnapshot)
+                    {
+                        if (!flows.Contains(rf))
+                        {
+                            continue;
+                        }
+
+                        var rfIdentifier = DescribeRunner(rf);
+                        string aiText;
+                        if (rf.AiOdds.HasValue)
+                        {
+                            var rawProbability = rf.AiOdds.Value;
+                            aiText = rawProbability.ToString("0.####", CultureInfo.InvariantCulture);
+                            if (rawProbability > 0 && rawProbability < 1e-3)
+                            {
+                                var scientific = rawProbability.ToString("0.###E+0", CultureInfo.InvariantCulture);
+                                aiText = $"{aiText} (~{scientific})";
+                            }
+                        }
+                        else
+                        {
+                            aiText = "null";
+                        }
+
+                        var backText = rf.BackPrice1.HasValue
+                            ? rf.BackPrice1.Value.ToString("0.##", CultureInfo.InvariantCulture)
+                            : "null";
+
+                        Console.WriteLine($"\t[Deferred] Runner snapshot {rfIdentifier}: back1={backText}, aiProbabilityRaw={aiText}");
+
+                        if (!rf.AiOdds.HasValue)
+                        {
+                            Console.WriteLine($"\t\t[Deferred] AI probability missing for {rfIdentifier}; downstream filters will treat this runner as zero edge.");
+                        }
+
+                        if (!rf.BackPrice1.HasValue)
+                        {
+                            Console.WriteLine($"\t\t[Deferred] No back price available for {rfIdentifier}; cannot compare against market probability.");
+                        }
+                    }
+
+                    var validAiBefore = flows
+                        .Where(f => f.AiOdds.HasValue && double.IsFinite(f.AiOdds.Value) && f.AiOdds.Value >= 0)
+                        .Select(f => f.AiOdds!.Value)
+                        .ToList();
+
+                    var missingAiCount = flows.Count - validAiBefore.Count;
+                    if (validAiBefore.Count == 0)
+                    {
+                        Console.WriteLine($"\t[Deferred] AI probability summary before normalization for market {evaluation.MarketId}: no valid AI probabilities; missing={missingAiCount}.");
+                    }
+                    else
+                    {
+                        var sumProb = validAiBefore.Sum();
+                        var minProb = validAiBefore.Min();
+                        var maxProb = validAiBefore.Max();
+                        Console.WriteLine($"\t[Deferred] AI probability summary before normalization for market {evaluation.MarketId}: valid={validAiBefore.Count}, missing={missingAiCount}, sum={sumProb.ToString("0.####", CultureInfo.InvariantCulture)}, min={minProb.ToString("0.####", CultureInfo.InvariantCulture)}, max={maxProb.ToString("0.####", CultureInfo.InvariantCulture)}");
+                    }
+
+                    NormalizeAiOdds(flows, _useMarketFallbackForAiDegeneracy);
+                    ApplyMarketFallbackForUnmatchedRunners(flows);
+                }
+                else
+                {
+                    var flowsSnapshot = flows.ToList();
+                    var hasAnyBackPrice = flowsSnapshot.Any(f => f.BackPrice1.HasValue);
+
+                    foreach (var rf in flowsSnapshot)
+                    {
+                        if (rf == null)
+                        {
+                            continue;
+                        }
+
+                        var rfIdentifier = DescribeRunner(rf);
+
+                        if (hasAnyBackPrice && !rf.BackPrice1.HasValue)
+                        {
+                            Console.WriteLine($"            [Deferred] No back price available for {rfIdentifier}; assuming non-runner and excluding from analysis.");
+                            flows.Remove(rf);
+                        }
+                    }
+                }
+
+                if (captureReport)
+                {
+                    var report = BuildRaceReport(
+                        evaluation.MarketId,
+                        evaluation.Title,
+                        evaluation.VenueName,
+                        evaluation.VenueCountry,
+                        evaluation.EffectiveRaceDate,
+                        evaluation.OffTime,
+                        evaluation.CleanedRaceDetails,
+                        evaluation.RaceTypeText,
+                        evaluation.Going,
+                        evaluation.BackBookPercentage,
+                        evaluation.LayBookPercentage,
+                        evaluation.RaceUrl,
+                        flows);
+
+                    result.Races.Add(report);
+                }
+
+                var raceRecommendations = CreateRecommendations(
+                        flows,
+                        evaluation.MarketId,
+                        evaluation.Title,
+                        evaluation.VenueName,
+                        evaluation.EffectiveRaceDate,
+                        executeBets: false)
+                    .OrderByDescending(r => r.Differential)
+                    .ThenByDescending(r => r.KellyFraction)
+                    .ToList();
+
+                if (raceRecommendations.Count > 0)
+                {
+                    Console.WriteLine("\t[Deferred] Report mode: positive expected value runner(s) identified; skipping bet execution.");
+                }
+                else
+                {
+                    Console.WriteLine($"\t[Deferred] No positive value opportunity identified for market {evaluation.MarketId}.");
+                }
+
+                try
+                {
+                    lock (_repoLock)
+                    {
+                        _repo.InsertRunnerFlows(flows);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    foreach (var inner in flows)
+                    {
+                        var innerIdentifier = DescribeRunner(inner);
+                        Console.Error.WriteLine($"\t[Deferred] InsertRunnerFlow failed for market {evaluation.MarketId}, runner {innerIdentifier}: {ex.Message}");
+                    }
+                }
+
+                recommendations.AddRange(raceRecommendations);
+                result.Recommendations.AddRange(raceRecommendations.OrderByDescending(r => r.Differential).ThenByDescending(r => r.KellyFraction));
+            }
+        }
+
+        private void PreloadFeatureLookupsForBatch(List<PendingRaceEvaluation> pendingEvaluations)
+        {
+            if (pendingEvaluations == null || pendingEvaluations.Count == 0)
+            {
+                return;
+            }
+
+            var trainerRequests = new List<(RacePreparationKey Key, UpcomingRace Upcoming, IReadOnlyList<RunnerFlow> Flows)>();
+
+            foreach (var evaluation in pendingEvaluations)
+            {
+                if (evaluation.Flows == null || evaluation.Flows.Count == 0)
+                {
+                    continue;
+                }
+
+                if (!TryResolveUpcomingForLookup(
+                        evaluation.RaceDate,
+                        evaluation.Title,
+                        evaluation.VenueName,
+                        evaluation.VenueCountry,
+                        evaluation.OffTime,
+                        evaluation.CleanedRaceDetails,
+                        evaluation.RaceTypeText,
+                        evaluation.Going,
+                        evaluation.BackBookPercentage,
+                        evaluation.LayBookPercentage,
+                        evaluation.MarketId,
+                        evaluation.Flows,
+                        evaluation.PersistedUpcoming,
+                        out var upcoming,
+                        out var cacheKey,
+                        out var persistedAccepted))
+                {
+                    continue;
+                }
+
+                if (persistedAccepted && evaluation.PersistedUpcoming != null)
+                {
+                    CacheUpcomingRace(evaluation.PersistedUpcoming);
+                }
+
+                trainerRequests.Add((cacheKey, upcoming, evaluation.Flows));
+            }
+
+            if (trainerRequests.Count == 0)
+            {
+                return;
+            }
+
+            var requestPayload = trainerRequests
+                .Select(entry => (entry.Upcoming, entry.Flows))
+                .ToList();
+
+            var preparedResults = _trainer.PrepareUpcomingRaces(requestPayload);
+
+            lock (_featureLookupCacheLock)
+            {
+                for (var i = 0; i < trainerRequests.Count; i++)
+                {
+                    var prepared = preparedResults.Count > i ? preparedResults[i] : null;
+                    if (prepared != null)
+                    {
+                        _preloadedPreparedRaces[trainerRequests[i].Key] = prepared;
+                    }
+                    else
+                    {
+                        _preloadedPreparedRaces.Remove(trainerRequests[i].Key);
+                    }
+                }
+            }
+        }
+    } }
