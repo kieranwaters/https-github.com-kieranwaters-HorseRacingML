@@ -1009,7 +1009,8 @@ namespace HorseRacingML.Scraping
             Console.WriteLine("[DayReport][Stage] Completed scraping and AI evaluation for all open race tabs.");
             return result; // done
         }
-    }
+    
+
 
 private void ProcessDeferredRaceEvaluations(
             List<PendingRaceEvaluation> pendingEvaluations,
