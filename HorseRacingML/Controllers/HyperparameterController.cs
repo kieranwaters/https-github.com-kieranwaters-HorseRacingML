@@ -238,6 +238,29 @@ namespace HorseRacingML.Controllers
 
             return View(viewModel);
         }
+        [HttpGet]
+        public IActionResult TestAI(
+            [FromQuery(Name = "units")] int? requestedUnits,
+            [FromQuery(Name = "dropout")] double? requestedDropout,
+            [FromQuery(Name = "layers")] int? requestedLayers,
+            [FromQuery(Name = "learningRate")] double? requestedLearningRate,
+            [FromQuery(Name = "epochs")] int? requestedEpochs,
+            [FromQuery(Name = "batchSize")] int? requestedBatchSize,
+            [FromQuery(Name = "folds")] int? requestedFolds)
+        {
+            var viewModel = new AITestResultViewModel
+            {
+                RequestedUnits = requestedUnits,
+                RequestedDropout = requestedDropout,
+                RequestedLayers = requestedLayers,
+                RequestedLearningRate = requestedLearningRate,
+                RequestedEpochs = requestedEpochs,
+                RequestedBatchSize = requestedBatchSize,
+                RequestedFolds = requestedFolds
+            };
+
+            return View(viewModel);
+        }
         [HttpPost]
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> TestAI(AITestResultViewModel request)

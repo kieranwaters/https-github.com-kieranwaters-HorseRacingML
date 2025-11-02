@@ -44,6 +44,55 @@ namespace HorseRacingML.ML
         private const int TrainerJockeyRecentDays = 180;
         private const float TypicalRestDays = 30f;
         private const float MsPerLength = 200f;
+        private static readonly Regex DistanceHyphenBetweenDigitsRegex =
+            new(@"(?<=\d)-(?=\d)", RegexOptions.Compiled);
+        private static readonly char[] DistanceTokenSeparators =
+        {
+            ' ',
+            '\t',
+            '+',
+            '\u00A0'
+        };
+        private static readonly char[] DistanceTokenTrimChars =
+        {
+            ',',
+            '.',
+            ';',
+            ':',
+            '!',
+            '?',
+            '"',
+            '\'',
+            '(',
+            ')',
+            '[',
+            ']',
+            '{',
+            '}'
+        };
+        private static readonly IReadOnlyDictionary<string, float> DistanceTokenValues =
+            new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["nse"] = 0.05f,
+                ["nose"] = 0.05f,
+                ["ns"] = 0.05f,
+                ["shd"] = 0.1f,
+                ["sht-hd"] = 0.1f,
+                ["short-head"] = 0.1f,
+                ["shorthead"] = 0.1f,
+                ["hd"] = 0.2f,
+                ["head"] = 0.2f,
+                ["snk"] = 0.25f,
+                ["short-neck"] = 0.25f,
+                ["shortneck"] = 0.25f,
+                ["nk"] = 0.3f,
+                ["neck"] = 0.3f,
+                ["dht"] = 0f,
+                ["dh"] = 0f,
+                ["dead-heat"] = 0f,
+                ["deadheat"] = 0f,
+                ["dist"] = 30f
+            };
         private static readonly Regex HorseNameBracketTextRegex =
             new Regex("\\s*\\([^\\)]*\\)|\\s*\\[[^\\]]*\\]", RegexOptions.Compiled);
         private static readonly Regex UpcomingClassRegex =
@@ -425,6 +474,14 @@ namespace HorseRacingML.ML
                             beatenLengths = parsed.Value;
                             distanceKnown = true;
                         }
+                    }
+                    if (!distanceKnown &&
+                        runnerRow.TryGetValue("FinishPos", out var finishObj) &&
+                        PreparedDataset.TryConvertToInt32(finishObj, out var finishValue) &&
+                        finishValue == 1)
+                    {
+                        distanceKnown = true;
+                        beatenLengths = 0f;
                     }
                     runnerRow["DistanceBeatenKnown"] = distanceKnown;
                     runnerRow["DistanceBeatenLengths"] = beatenLengths;
@@ -1779,43 +1836,97 @@ namespace HorseRacingML.ML
             private static float? ParseDistanceBeaten(string text)
             {
                 if (string.IsNullOrWhiteSpace(text))
-                    return null;
-                text = text.Trim().ToLowerInvariant();
-                var map = new Dictionary<string, float>
-            {
-                {"nse", 0.05f},
-                {"nose", 0.05f},
-                {"shd", 0.1f},
-                {"sht-hd", 0.1f},
-                {"hd", 0.2f},
-                {"snk", 0.25f},
-                {"nk", 0.3f},
-                {"dist", 30f}
-            };
-                if (map.TryGetValue(text, out var val))
-                    return val;
-                text = text.Replace("¼", ".25").Replace("½", ".5").Replace("¾", ".75");
-                double total = 0;
-                foreach (var part in text.Split(new[] { ' ', '+' }, StringSplitOptions.RemoveEmptyEntries))
                 {
-                    if (double.TryParse(part, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var num))
+                    return null;
+                }
+
+                var lowered = text.Trim().ToLowerInvariant();
+                if (DistanceTokenValues.TryGetValue(lowered, out var directValue))
+                {
+                    return directValue;
+                }
+
+                lowered = lowered.Replace('\u00A0', ' ');
+                lowered = lowered.Replace("¼", ".25").Replace("½", ".5").Replace("¾", ".75");
+                lowered = lowered.Replace("short head", "short-head");
+                lowered = lowered.Replace("short neck", "short-neck");
+                lowered = lowered.Replace("dead heat", "dead-heat");
+                lowered = DistanceHyphenBetweenDigitsRegex.Replace(lowered, " ");
+
+                static string TrimTrailingLetters(string value)
+                {
+                    var end = value.Length;
+                    while (end > 0 && char.IsLetter(value[end - 1]))
                     {
-                        total += num;
+                        end--;
                     }
-                    else if (part.Contains('/'))
+
+                    return end == value.Length ? value : value[..end];
+                }
+
+                double total = 0d;
+                var hasValue = false;
+
+                foreach (var rawToken in lowered.Split(DistanceTokenSeparators, StringSplitOptions.RemoveEmptyEntries))
+                {
+                    var token = rawToken.Trim(DistanceTokenTrimChars);
+                    if (token.Length == 0)
                     {
-                        var frac = part.Split('/');
+                        continue;
+                    }
+
+                    if (DistanceTokenValues.TryGetValue(token, out var mappedValue))
+                    {
+                        total += mappedValue;
+                        hasValue = true;
+                        continue;
+                    }
+
+                    var numericCandidate = TrimTrailingLetters(token);
+                    if (numericCandidate.Length == 0)
+                    {
+                        continue;
+                    }
+
+                    if (DistanceTokenValues.TryGetValue(numericCandidate, out mappedValue))
+                    {
+                        total += mappedValue;
+                        hasValue = true;
+                        continue;
+                    }
+
+                    if (numericCandidate.Contains('/'))
+                    {
+                        var frac = numericCandidate.Split('/');
                         if (frac.Length == 2 &&
-                            double.TryParse(frac[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) &&
-                            double.TryParse(frac[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var d) &&
-                            d != 0)
+                            double.TryParse(frac[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var numerator) &&
+                            double.TryParse(frac[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var denominator) &&
+                            denominator != 0d)
                         {
-                            total += n / d;
+                            total += numerator / denominator;
+                            hasValue = true;
                         }
+
+                        continue;
+                    }
+
+                    if (double.TryParse(numericCandidate, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var number))
+                    {
+                        total += number;
+                        hasValue = true;
                     }
                 }
-                return total > 0 ? (float)total : (float?)null;
+
+                if (!hasValue)
+                {
+                    return null;
+                }
+
+                return (float)total;
             }
+
+            internal static float? TestParseDistanceBeatenInternal(string text)
+                => ParseDistanceBeaten(text);
 
             private float SmoothedWinRate(int wins, int starts)
                 => _trainer.ComputeSmoothedWinRate(wins, starts);
@@ -4297,6 +4408,8 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
                     selected.Average(h => h.Speed),
                     selected.Average(h => h.SpeedDiff));
             }
+            internal static float? TestParseDistanceBeaten(string text)
+                => FeatureEngineeringState.TestParseDistanceBeatenInternal(text);
             private static int? ResolveUpcomingRaceClass(UpcomingRace? upcoming, RunnerFlow? flow)
             {
                 if (flow?.FeatureValues != null &&
