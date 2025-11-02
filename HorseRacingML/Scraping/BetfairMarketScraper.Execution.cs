@@ -1249,7 +1249,7 @@ private void ProcessDeferredRaceEvaluations(
                         evaluation.Title,
                         evaluation.VenueName,
                         evaluation.EffectiveRaceDate,
-                        executeBets: false)
+                        applyKellyDampener: false)
                     .OrderByDescending(r => r.Differential)
                     .ThenByDescending(r => r.KellyFraction)
                     .ToList();
