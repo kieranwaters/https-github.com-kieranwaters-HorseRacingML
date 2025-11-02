@@ -277,7 +277,8 @@ namespace HorseRacingML.Scraping
             RacingRepository repo,
             HyperparameterTrainer trainer,
             bool includeAiProbabilities = true,
-            bool refreshBankrollFromPage = true)
+            bool refreshBankrollFromPage = true,
+            bool requireLogin = true)
         {
             {
                 if (string.IsNullOrWhiteSpace(raceUrl))
@@ -305,7 +306,10 @@ namespace HorseRacingML.Scraping
                     originalUrl = null;
                 }
 
-                await LoginAsync();
+                if (requireLogin)
+                {
+                    await LoginAsync();
+                }
 
                 var priorHandles = _driver.WindowHandles.ToList();
                 var priorHandleSet = new HashSet<string>(priorHandles);

@@ -609,7 +609,8 @@ namespace HorseRacingML.Controllers
                     _repository,
                     trainer,
                     includeAiProbabilities: false,
-                    refreshBankrollFromPage: false);
+                    refreshBankrollFromPage: false,
+                    requireLogin: false);
                 if (refreshed == null)
                 {
                     return NotFound(new { success = false, message = "Unable to refresh market data for the selected race." });
