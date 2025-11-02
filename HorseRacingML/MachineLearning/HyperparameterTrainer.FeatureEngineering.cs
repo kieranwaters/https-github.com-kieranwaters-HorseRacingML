@@ -1815,7 +1815,10 @@ namespace HorseRacingML.ML
                     maxSaddle,
                     weightValues.Count > 0);
             }
-
+            public static float? TestParseDistanceBeaten(string text)
+            {
+                return ParseDistanceBeaten(text);
+            }
             private readonly record struct RaceStats(
                        int RunnerCount,
                        float AvgDraw,
