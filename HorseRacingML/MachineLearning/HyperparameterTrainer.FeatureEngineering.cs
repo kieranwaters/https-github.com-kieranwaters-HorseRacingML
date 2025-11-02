@@ -4411,8 +4411,6 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
                     selected.Average(h => h.Speed),
                     selected.Average(h => h.SpeedDiff));
             }
-            internal static float? TestParseDistanceBeaten(string text)
-                => FeatureEngineeringState.TestParseDistanceBeatenInternal(text);
             private static int? ResolveUpcomingRaceClass(UpcomingRace? upcoming, RunnerFlow? flow)
             {
                 if (flow?.FeatureValues != null &&
