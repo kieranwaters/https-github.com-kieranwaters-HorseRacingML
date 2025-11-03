@@ -3175,8 +3175,8 @@ const typeAttr = (el.getAttribute('type') || '').toLowerCase();
                 }
 
                 const double absoluteFloor = 1e-4;
-                const double uniformShareFraction = 0.05;
-                const double marketProbabilityFraction = 0.1;
+                const double uniformShareFraction = 0.005;
+                const double marketProbabilityFraction = 0.001;
 
                 var normalizedProbability = flow.AiOdds.Value;
                 var thresholds = new List<string>();
