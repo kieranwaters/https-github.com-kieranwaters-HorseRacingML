@@ -1391,6 +1391,12 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
             const initialRegionInput = document.getElementById('dayReportInitialRegion');
             const regionButtons = Array.from(document.querySelectorAll('.region-filter-btn'));
             const getActiveRaceCards = () => Array.from(document.querySelectorAll('.race-card')).filter(card => card.dataset.sequentialPending !== 'true');
+            const MARKET_INPUT_HANDLER_FLAG = '__hrmlMarketOddsHandler';
+            const LAY_INPUT_HANDLER_FLAG = '__hrmlLayOddsHandler';
+            const APPLY_MARKET_HANDLER_FLAG = '__hrmlApplyMarketHandler';
+            const HISTORICAL_BUTTON_HANDLER_FLAG = '__hrmlHistoricalButton';
+            const MARKET_REFRESH_HANDLER_FLAG = '__hrmlMarketRefreshHandler';
+            const FULL_REFRESH_HANDLER_FLAG = '__hrmlFullRefreshHandler';
             const initialRegionValue = (initialRegionInput?.value ?? '').trim();
             if (regionSelect && initialRegionValue.length > 0) {
                 regionSelect.value = initialRegionValue;
@@ -2016,10 +2022,15 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                 }
 
                 buttons.forEach(button => {
-                    if (!button || button.dataset.historicalBound === '1') {
+                    if (!button) {
                         return;
                     }
 
+                    if (button[HISTORICAL_BUTTON_HANDLER_FLAG]) {
+                        return;
+                    }
+
+                    button[HISTORICAL_BUTTON_HANDLER_FLAG] = true;
                     button.dataset.historicalBound = '1';
                     button.addEventListener('click', handleHistoricalRacesClick);
                 });
@@ -2369,9 +2380,15 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
 
                 const inputs = root.querySelectorAll('.market-odds-input');
                 inputs.forEach(input => {
-                    if (!input || input.dataset.marketHandlerAttached === 'true') {
+                    if (!input) {
                         return;
                     }
+
+                    if (input[MARKET_INPUT_HANDLER_FLAG]) {
+                        return;
+                    }
+
+                    input[MARKET_INPUT_HANDLER_FLAG] = true;
 
                     input.dataset.marketHandlerAttached = 'true';
                     const row = input.closest('tr');
@@ -2398,10 +2415,15 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                 }
 
                 const inputs = root.querySelectorAll('.lay-odds-input');
-                inputs.forEach(input => {
-                    if (!input || input.dataset.layHandlerAttached === 'true') {
+                if (!input) {
                         return;
                     }
+
+                    if (input[LAY_INPUT_HANDLER_FLAG]) {
+                        return;
+                    }
+
+                    input[LAY_INPUT_HANDLER_FLAG] = true;
 
                     input.dataset.layHandlerAttached = 'true';
                     const row = input.closest('tr');
@@ -2644,9 +2666,11 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                         button.disabled = true;
                     }
 
-                    if (button.dataset.marketHandlerAttached === 'true') {
+                    if (button[APPLY_MARKET_HANDLER_FLAG]) {
                         return;
                     }
+
+                    button[APPLY_MARKET_HANDLER_FLAG] = true;
 
                     button.dataset.marketHandlerAttached = 'true';
                     button.addEventListener('click', () => {
@@ -3747,9 +3771,15 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
 
                 const buttons = root.querySelectorAll('.refresh-market-only-btn');
                 buttons.forEach(button => {
-                    if (!button || button.dataset.marketRefreshBound === '1') {
+                    if (!button) {
                         return;
                     }
+
+                    if (button[MARKET_REFRESH_HANDLER_FLAG]) {
+                        return;
+                    }
+
+                    button[MARKET_REFRESH_HANDLER_FLAG] = true;
 
                     button.dataset.marketRefreshBound = '1';
                     button.addEventListener('click', async () => {
@@ -3848,14 +3878,17 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                     return;
                 }
 
-                const buttons = root.querySelectorAll('.refresh-race-btn');
-                buttons.forEach(button => {
-                    if (!button || button.dataset.fullRefreshBound === '1') {
+            buttons.forEach(button => {
+                    if (!button) {
                         return;
                     }
 
+                    if (button[FULL_REFRESH_HANDLER_FLAG]) {
+                        return;
+                    }
 
-            button.dataset.fullRefreshBound = '1';
+                    button[FULL_REFRESH_HANDLER_FLAG] = true;
+                    button.dataset.fullRefreshBound = '1';
                     button.addEventListener('click', async () => {
                         if (button.disabled) {
                             return;
