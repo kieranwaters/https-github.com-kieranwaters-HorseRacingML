@@ -740,12 +740,15 @@ else
                                 ? runner.MarketDecimalOdds.Value.ToString("0.########", CultureInfo.InvariantCulture)
                                 : string.Empty;
                                 var aiProbabilitySourceAttr = displayAiFromMarket ? "market" : "model";
-                                <tr class="@rowClass"
-                                    data-horse-name="@horseNameAttr"
-                                    data-ai-probability="@aiProbabilityAttr"
-                                    data-market-probability="@marketProbabilityAttr"
-                                    data-market-odds="@marketOddsAttr"
-                                    data-ai-probability-source="@aiProbabilitySourceAttr">
+                                        <tr class="@rowClass"
+                                            data-horse-name="@horseNameAttr"
+                                            data-ai-probability="@aiProbabilityAttr"
+                                            data-market-probability="@marketProbabilityAttr"
+                                            data-market-odds="@marketOddsAttr"
+                                            data-ai-probability-source="@aiProbabilitySourceAttr"
+                                            data-kelly="@((runner.KellyFraction ?? 0).ToString("0.################", CultureInfo.InvariantCulture))"
+                                            data-lay-kelly="@((runner.LayKellyFraction ?? 0).ToString("0.################", CultureInfo.InvariantCulture))">
+
                                     <td>@cloth</td>
                                     <td>@draw</td>
                                     <td>
@@ -2587,16 +2590,7 @@ else
                     delete row.dataset.displayedDifferential;
                 }
 
-                const edgeCell = row.querySelector('.edge-cell');
-                if (edgeCell) {
-                    if (marketProbability > 0) {
-                        const diffPercent = (safeProbability - marketProbability) * 100;
-                        const diffText = formatPercentage(diffPercent);
-                        edgeCell.textContent = diffText ?? '-';
-                    } else {
-                        edgeCell.textContent = '-';
-                    }
-                }
+                const edgeCell = row.querySelector('.edge-cell'); if (edgeCell) { const kBack = Number.parseFloat(row.dataset.kelly ?? ''); const kLay = Number.parseFloat(row.dataset.layKelly ?? ''); const useLay = Number.isFinite(kLay) && kLay > 0 && (!(Number.isFinite(kBack) && kBack > 0)); const diff = useLay ? (marketProbability - safeProbability) : (safeProbability - marketProbability); const diffText = formatPercentage(diff * 100); edgeCell.textContent = (marketProbability > 0) ? (diffText ?? '-') : '-'; } // useLay -> positive edge for lays; else -> positive edge for backs
             };
 
             const refreshRowAiProbabilityDisplay = (row) => {
