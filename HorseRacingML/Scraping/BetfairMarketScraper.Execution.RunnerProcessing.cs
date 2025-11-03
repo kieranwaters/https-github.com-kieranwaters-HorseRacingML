@@ -4879,16 +4879,35 @@ namespace HorseRacingML.Scraping
 
             foreach (var window in PerformanceWindowSizes)
             {
-                if (!TryGetMeaningfulValue(featureVector, $"AvgSpeedLast{window}", out _))
+                var speedKey = $"AvgSpeedLast{window}";
+                if (!TryGetMeaningfulValue(featureVector, speedKey, out var speedValue))
                 {
                     missingSpeedWindows.Add(window);
                 }
+                else
+                {
+                    var converted = TryConvertToSingle(speedValue);
+                    if (!converted.HasValue || converted.Value <= 0f)
+                    {
+                        missingSpeedWindows.Add(window);
+                    }
+                }
 
-                if (!TryGetMeaningfulValue(featureVector, $"AvgSpeedDiffLast{window}", out _))
+                var diffKey = $"AvgSpeedDiffLast{window}";
+                if (!TryGetMeaningfulValue(featureVector, diffKey, out var diffValue))
                 {
                     missingDiffWindows.Add(window);
                 }
+                else
+                {
+                    var converted = TryConvertToSingle(diffValue);
+                    if (!converted.HasValue || Math.Abs(converted.Value) <= 1e-6f)
+                    {
+                        missingDiffWindows.Add(window);
+                    }
+                }
             }
+
 
             if (missingSpeedWindows.Count == 0 && missingDiffWindows.Count == 0)
             {

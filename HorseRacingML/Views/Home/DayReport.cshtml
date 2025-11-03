@@ -2415,7 +2415,8 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                 }
 
                 const inputs = root.querySelectorAll('.lay-odds-input');
-                if (!input) {
+                inputs.forEach(input => {
+                    if (!input) {
                         return;
                     }
 
