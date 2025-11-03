@@ -298,11 +298,10 @@
         </a>
         <button type="button" id="removePastRacesButton" class="btn btn-outline-danger">Remove past races</button>
         <button type="button" id="saveReportButton" class="btn btn-outline-primary">Save Report</button>
+    </div>
 </div>
-        @if (!string.IsNullOrEmpty(filterSummary))
-{
-    <div class="alert alert-secondary">@filterSummary</div>
-}
+
+@if (!string.IsNullOrEmpty(filterSummary))
     {
     <div class="alert alert-secondary">@filterSummary</div>
     }
@@ -409,7 +408,9 @@
 }
 else
 {
-    var sequentialIndex = 0;
+        @{
+        var sequentialIndex = 0;
+    }
     <div id="dayReportSequentialRoot" data-total-races="@Model.Races.Count">
         <div id="raceSequentialProgress" class="alert alert-info d-flex align-items-center gap-2 mb-4" role="status">
             <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
@@ -482,7 +483,9 @@ else
         var raceStartIso = raceStart.HasValue
             ? raceStart.Value.ToString("o", CultureInfo.InvariantCulture)
             : string.Empty;
-var raceRegion = DetermineRaceRegion(race.VenueCountry);
+@{
+            var raceRegion = DetermineRaceRegion(race.VenueCountry);
+        }
 
                 <div class="card mb-4 race-card sequential-pending" data-market-id="@race.MarketId" data-race-start="@raceStartIso" data-region="@raceRegion" data-sequential-index="@sequentialIndex" data-sequential-pending="true">
             <div class="card-header bg-light">
@@ -1397,6 +1400,37 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
             const HISTORICAL_BUTTON_HANDLER_FLAG = '__hrmlHistoricalButton';
             const MARKET_REFRESH_HANDLER_FLAG = '__hrmlMarketRefreshHandler';
             const FULL_REFRESH_HANDLER_FLAG = '__hrmlFullRefreshHandler';
+            const suppressWebGlContextRequests = () => {
+                const CanvasConstructor = window.HTMLCanvasElement;
+                if (!CanvasConstructor || !CanvasConstructor.prototype) {
+                    return;
+                }
+
+                const prototype = CanvasConstructor.prototype;
+                if (prototype.__hrmlPatchedWebGlContext) {
+                    return;
+                }
+
+                const originalGetContext = prototype.getContext;
+                if (typeof originalGetContext !== 'function') {
+                    return;
+                }
+
+                const blockedContexts = new Set(['webgl', 'webgl2', 'experimental-webgl']);
+
+                prototype.getContext = function (type, ...args) {
+                    const contextId = typeof type === 'string' ? type.toLowerCase() : type;
+                    if (typeof contextId === 'string' && blockedContexts.has(contextId)) {
+                        return null;
+                    }
+
+                    return Reflect.apply(originalGetContext, this, [type, ...args]);
+                };
+
+                prototype.__hrmlPatchedWebGlContext = true;
+            };
+
+            suppressWebGlContextRequests();
             const initialRegionValue = (initialRegionInput?.value ?? '').trim();
             if (regionSelect && initialRegionValue.length > 0) {
                 regionSelect.value = initialRegionValue;
@@ -2414,13 +2448,17 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                     return;
                 }
 
-                const inputs = root.querySelectorAll('.lay-odds-input');
+                if (!root || typeof root.querySelectorAll !== 'function') {
+                    return;
+                }
+
+                const inputs = Array.from(root.querySelectorAll('.lay-odds-input'));
+                if (inputs.length === 0) {
+                    return;
+                }
+
                 inputs.forEach(input => {
                     if (!input) {
-                        return;
-                    }
-
-                    if (input[LAY_INPUT_HANDLER_FLAG]) {
                         return;
                     }
 
@@ -3879,7 +3917,12 @@ var raceRegion = DetermineRaceRegion(race.VenueCountry);
                     return;
                 }
 
-            buttons.forEach(button => {
+            const buttons = root.querySelectorAll('.refresh-race-btn');
+                if (!buttons || buttons.length === 0) {
+                    return;
+                }
+
+                buttons.forEach(button => {
                     if (!button) {
                         return;
                     }
