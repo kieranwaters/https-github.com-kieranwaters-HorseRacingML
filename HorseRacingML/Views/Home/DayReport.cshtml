@@ -408,9 +408,7 @@
 }
 else
 {
-        @{
-        var sequentialIndex = 0;
-    }
+ var sequentialIndex = 0;
     <div id="dayReportSequentialRoot" data-total-races="@Model.Races.Count">
         <div id="raceSequentialProgress" class="alert alert-info d-flex align-items-center gap-2 mb-4" role="status">
             <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
@@ -483,9 +481,8 @@ else
         var raceStartIso = raceStart.HasValue
             ? raceStart.Value.ToString("o", CultureInfo.InvariantCulture)
             : string.Empty;
-@{
             var raceRegion = DetermineRaceRegion(race.VenueCountry);
-        }
+        
 
                 <div class="card mb-4 race-card sequential-pending" data-market-id="@race.MarketId" data-race-start="@raceStartIso" data-region="@raceRegion" data-sequential-index="@sequentialIndex" data-sequential-pending="true">
             <div class="card-header bg-light">
