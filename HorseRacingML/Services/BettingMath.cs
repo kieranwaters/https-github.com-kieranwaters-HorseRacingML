@@ -108,11 +108,15 @@ namespace HorseRacingML.Services
                 return 0m;
             }
 
-            var fraction = 1.0 - (probability * layDecimalOdds);
-            if (!double.IsFinite(fraction))
+            var p = probability;
+            var q = 1.0 - p;
+            var b = layDecimalOdds;
+            if (b <= 1.0)
             {
                 return 0m;
             }
+
+            var fraction = (q - (p / (b - 1.0))) / q;
 
             var result = (decimal)fraction;
             if (result <= 0m)
