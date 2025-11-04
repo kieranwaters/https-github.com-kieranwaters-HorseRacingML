@@ -2777,111 +2777,98 @@ else
 
                 return fraction;
             };
-            const updateStakeDisplays = () => {
+            //
+           const updateStakeDisplays = () => {
                 const stakeElements = document.querySelectorAll('.stake-value');
+                const reportBankroll = Number.parseFloat(bankrollInput?.dataset.reportBankroll ?? '');
                 stakeElements.forEach(element => {
-                    const stakeTypeRaw = element.dataset.stakeType ?? '';
-                    const stakeType = stakeTypeRaw === 'lay' ? 'lay' : stakeTypeRaw === 'none' ? 'none' : 'back';
-                    const originalText = element.dataset.originalText ?? '';
-                    const defaultStakeValue = Number.parseFloat(element.dataset.defaultStake ?? '');
-                    const baseKellyFraction = Number.parseFloat(element.dataset.kellyFraction ?? '');
-                    const layOdds = Number.parseFloat(element.dataset.layOdds ?? '');
-                    const originalLayOdds = Number.parseFloat(element.dataset.originalLayOdds ?? '');
-
                     const row = element.closest('tr');
-                    const aiProbability = row ? parseProbabilityAttribute(row.dataset.aiProbability) : 0;
-                    const marketOdds = row ? Number.parseFloat(row.dataset.marketOdds ?? '') : NaN;
-
-                    let effectiveKellyFraction = Number.isFinite(baseKellyFraction) && baseKellyFraction > 0
-                        ? baseKellyFraction
-                        : 0;
-
-                    if (stakeType === 'back') {
-                        const computedKelly = calculateBackKellyFraction(aiProbability, marketOdds);
-                        if (computedKelly > 0) {
-                            effectiveKellyFraction = computedKelly;
-                        }
-                    } else if (stakeType === 'lay') {
-                        const computedKelly = calculateLayKellyFractionFromOdds(aiProbability, layOdds);
-                        if (computedKelly > 0) {
-                            effectiveKellyFraction = computedKelly;
-                        }
+                    if (!row) {
+                        return;
                     }
-
+                    const originalStakeType = element.dataset.stakeType ?? 'none';
+                    const originalText = element.dataset.originalText ?? '-';
+                    const defaultStakeValue = Number.parseFloat(element.dataset.defaultStake ?? '');
+                    const originalBackKelly = Number.parseFloat(row.dataset.kelly ?? '');
+                    const originalLayKelly = Number.parseFloat(row.dataset.layKelly ?? '');
+                    const originalLayOdds = Number.parseFloat(element.dataset.originalLayOdds ?? '');
+                    const aiProbability = parseProbabilityAttribute(row.dataset.aiProbability);
+                    const marketOdds = Number.parseFloat(row.dataset.marketOdds ?? '');
+                    const layOdds = Number.parseFloat(element.dataset.layOdds ?? '');
+                    const kellyCell = row.querySelector('.kelly-cell');
+                    const computedBackKelly = calculateBackKellyFraction(aiProbability, marketOdds);
+                    const computedLayKelly = calculateLayKellyFractionFromOdds(aiProbability, layOdds);
+                    let effectiveStakeType = 'none';
+                    let effectiveKellyFraction = 0;
+                    if (computedBackKelly > 0) {
+                        effectiveStakeType = 'back';
+                        effectiveKellyFraction = computedBackKelly;
+                    } else if (computedLayKelly > 0) {
+                        effectiveStakeType = 'lay';
+                        effectiveKellyFraction = computedLayKelly;
+                    }
                     let impliedBankroll = NaN;
-                    if (stakeType === 'lay') {
-                        const baseLayOdds = Number.isFinite(originalLayOdds) && originalLayOdds > 1
-                            ? originalLayOdds
-                            : (Number.isFinite(layOdds) && layOdds > 1 ? layOdds : NaN);
-                        if (Number.isFinite(baseLayOdds) && baseLayOdds > 1 && Number.isFinite(baseKellyFraction) && baseKellyFraction > 0 && Number.isFinite(defaultStakeValue) && defaultStakeValue > 0) {
-                            impliedBankroll = (defaultStakeValue * (baseLayOdds - 1)) / baseKellyFraction;
+                    if (originalStakeType === 'lay') {
+                        const baseLayOdds = Number.isFinite(originalLayOdds) && originalLayOdds > 1 ?
+                            originalLayOdds :
+                            (Number.isFinite(layOdds) && layOdds > 1 ? layOdds : NaN);
+                        if (Number.isFinite(baseLayOdds) &&
+                            baseLayOdds > 1 &&
+                            Number.isFinite(originalLayKelly) &&
+                            originalLayKelly > 0 &&
+                            Number.isFinite(defaultStakeValue) &&
+                            defaultStakeValue > 0) {
+                            impliedBankroll = (defaultStakeValue * (baseLayOdds - 1)) / originalLayKelly;
                         }
-                    } else if (Number.isFinite(baseKellyFraction) && baseKellyFraction > 0 && Number.isFinite(defaultStakeValue) && defaultStakeValue > 0) {
-                        impliedBankroll = defaultStakeValue / baseKellyFraction;
-                    }
-
-                    let recommendedStake = NaN;
-                    if (Number.isFinite(impliedBankroll) && impliedBankroll > 0 && Number.isFinite(effectiveKellyFraction) && effectiveKellyFraction > 0) {
-                        if (stakeType === 'lay') {
-                            if (Number.isFinite(layOdds) && layOdds > 1) {
-                                recommendedStake = (impliedBankroll * effectiveKellyFraction) / (layOdds - 1);
-                            }
-                        } else {
-                            recommendedStake = impliedBankroll * effectiveKellyFraction;
+                    } else if (originalStakeType === 'back') {
+                        if (Number.isFinite(originalBackKelly) &&
+                            originalBackKelly > 0 &&
+                            Number.isFinite(defaultStakeValue) &&
+                            defaultStakeValue > 0) {
+                            impliedBankroll = defaultStakeValue / originalBackKelly;
                         }
                     }
                     let stake = NaN;
-
-                    if (customStakeAmount !== null && stakeType !== 'none') {
+                    const bankroll = customKellyBankroll ?? impliedBankroll ?? reportBankroll ?? null;
+                    if (customStakeAmount !== null && effectiveStakeType !== 'none') {
                         stake = customStakeAmount;
-                    } else if (customKellyBankroll !== null && stakeType !== 'none') {
-                        if (Number.isFinite(effectiveKellyFraction) && effectiveKellyFraction > 0) {
-                            if (stakeType === 'lay') {
-                                if (Number.isFinite(layOdds) && layOdds > 1) {
-                                    const liability = customKellyBankroll * effectiveKellyFraction;
-                                    stake = liability / (layOdds - 1);
-                                }
-                            } else {
-                                stake = customKellyBankroll * effectiveKellyFraction;
+                    } else if (bankroll !== null &&
+                        Number.isFinite(bankroll) &&
+                        bankroll > 0 &&
+                        effectiveKellyFraction > 0) {
+                        if (effectiveStakeType === 'lay') {
+                            if (Number.isFinite(layOdds) && layOdds > 1) {
+                                const liability = bankroll * effectiveKellyFraction;
+                                stake = liability / (layOdds - 1);
                             }
-                        }
-                    } else if (Number.isFinite(recommendedStake) && recommendedStake > 0) {
-                        stake = recommendedStake;
-                    } else if (Number.isFinite(defaultStakeValue) && defaultStakeValue > 0) {
-                        stake = defaultStakeValue;
-                    }
-
-                    if (stakeType !== 'none' && row) {
-                        const kellyCell = row.querySelector('.kelly-cell');
-                        if (kellyCell) {
-                            const kellyText = formatKellyPercent(effectiveKellyFraction);
-                            if (stakeType === 'lay') {
-                                kellyCell.textContent = kellyText ? `Lay ${kellyText}` : 'Lay -';
-                            } else {
-                                kellyCell.textContent = kellyText ?? '-';
-                            }
+                        } else {
+                            stake = bankroll * effectiveKellyFraction;
                         }
                     }
-
+                    if (kellyCell) {
+                        const kellyText = formatKellyPercent(effectiveKellyFraction);
+                        if (effectiveStakeType === 'lay') {
+                            kellyCell.textContent = kellyText ? `Lay ${kellyText}` : 'Lay -';
+                        } else {
+                            kellyCell.textContent = kellyText ?? '-';
+                        }
+                    }
                     if (Number.isFinite(stake) && stake > 0) {
                         let adjustedStake = stake;
                         if (Number.isFinite(stakeDampener) && stakeDampener > 0) {
-                            adjustedStake = adjustedStake / stakeDampener;
+                            adjustedStake /= stakeDampener;
                         }
-
                         if (adjustedStake > 0) {
-                            const formatted = formatStakeDisplay(adjustedStake, stakeType);
+                            const formatted = formatStakeDisplay(adjustedStake, effectiveStakeType);
                             if (formatted) {
                                 element.textContent = formatted;
                                 return;
                             }
                         }
                     }
-
-                    element.textContent = originalText && originalText.trim().length > 0 ? originalText : '-';
+                    element.textContent = originalText && originalText.trim() !== '-' ? originalText : '-';
                 });
             };
-
             const setCustomKellyBankroll = (value) => {
                 if (Number.isFinite(value) && value > 0) {
                     customKellyBankroll = value;
