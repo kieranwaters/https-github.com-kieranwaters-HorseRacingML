@@ -542,13 +542,23 @@ namespace HorseRacingML.ML
                 }
                 var trainDataset = tf.data.Dataset.from_tensor_slices((trainFeatureTensor, trainLabelTensor));
                 trainDataset = trainDataset.shuffle(buffer_size: trainFeatures.Count).batch(param.BatchSize);
+                var iterator = trainDataset.make_initializable_iterator();
+                var next_element = iterator.get_next();
                 int evaluationInterval = Math.Max(1, param.Epochs / 5);
                 for (int epoch = 0; epoch < param.Epochs; epoch++)
                 {
-                    foreach (var batch in trainDataset)
+                    sess.run(iterator.initializer);
+                    while (true)
                     {
-                        var (batch_x, batch_y) = ((NDArray, NDArray))batch;
-                        sess.run(optimizer, new FeedItem(x, batch_x), new FeedItem(y, batch_y));
+                        try
+                        {
+                            var (batch_x, batch_y) = sess.run((next_element.Item1, next_element.Item2));
+                            sess.run(optimizer, new FeedItem(x, batch_x), new FeedItem(y, batch_y));
+                        }
+                        catch (OutOfRangeError)
+                        {
+                            break;
+                        }
                     }
 
                     bool shouldEvaluate = (epoch + 1) % evaluationInterval == 0 && epoch < param.Epochs - 1;
