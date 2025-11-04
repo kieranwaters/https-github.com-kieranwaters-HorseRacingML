@@ -542,8 +542,6 @@ namespace HorseRacingML.ML
                 }
                 var trainDataset = tf.data.Dataset.from_tensor_slices((trainFeatureTensor, trainLabelTensor));
                 trainDataset = trainDataset.shuffle(buffer_size: trainFeatures.Count).batch(param.BatchSize);
-                var iterator = trainDataset.make_initializable_iterator();
-                var (next_x, next_y) = iterator.get_next();
                 int evaluationInterval = Math.Max(1, param.Epochs / 5);
                 for (int epoch = 0; epoch < param.Epochs; epoch++)
                 {
