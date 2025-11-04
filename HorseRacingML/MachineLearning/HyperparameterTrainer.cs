@@ -547,19 +547,9 @@ namespace HorseRacingML.ML
                 int evaluationInterval = Math.Max(1, param.Epochs / 5);
                 for (int epoch = 0; epoch < param.Epochs; epoch++)
                 {
-                    sess.run(iterator.initializer);
-
-                    while (true)
+                    foreach (var (batch_x, batch_y) in trainDataset)
                     {
-                        try
-                        {
-                            var (batch_x_np, batch_y_np) = sess.run((next_x, next_y));
-                            sess.run(optimizer, new FeedItem(x, batch_x_np), new FeedItem(y, batch_y_np));
-                        }
-                        catch (OutOfRangeError)
-                        {
-                            break; // End of epoch
-                        }
+                        sess.run(optimizer, new FeedItem(x, batch_x), new FeedItem(y, batch_y));
                     }
 
                     bool shouldEvaluate = (epoch + 1) % evaluationInterval == 0 && epoch < param.Epochs - 1;
