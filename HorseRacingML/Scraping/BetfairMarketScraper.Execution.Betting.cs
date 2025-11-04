@@ -227,7 +227,7 @@ namespace HorseRacingML.Scraping
                 }
 
                 var kellyFraction = CalculateKellyFraction(aiProbability, (double)decimalOdds);
-                if (applyKellyDampener && _kellyDampener != 1m)
+                if (applyKellyDampener && _kellyDampener > 1m)
                 {
                     kellyFraction /= _kellyDampener;
                 }

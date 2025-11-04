@@ -94,7 +94,7 @@ namespace HorseRacingML.Services
             }
 
             stake = decimal.Round(stake, 2, MidpointRounding.ToZero);
-            if (stake < 1m)
+            if (stake < 0.01m)
             {
                 return 0m;
             }
