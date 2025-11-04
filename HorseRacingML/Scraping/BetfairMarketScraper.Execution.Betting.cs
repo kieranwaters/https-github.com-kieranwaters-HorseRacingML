@@ -922,6 +922,10 @@ namespace HorseRacingML.Scraping
             }
 
             var capped = raw.Value;
+            if (_kellyDampener > 1m)
+            {
+                capped /= _kellyDampener;
+            }
             if (capped > bankroll)
             {
                 capped = bankroll;
