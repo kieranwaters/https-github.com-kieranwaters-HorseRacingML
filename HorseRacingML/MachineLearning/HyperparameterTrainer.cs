@@ -545,8 +545,9 @@ namespace HorseRacingML.ML
                 int evaluationInterval = Math.Max(1, param.Epochs / 5);
                 for (int epoch = 0; epoch < param.Epochs; epoch++)
                 {
-                    foreach (var (batch_x, batch_y) in trainDataset)
+                    foreach (var batch in trainDataset)
                     {
+                        var (batch_x, batch_y) = ((NDArray, NDArray))batch;
                         sess.run(optimizer, new FeedItem(x, batch_x), new FeedItem(y, batch_y));
                     }
 
