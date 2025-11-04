@@ -8,6 +8,7 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using Tensorflow;
 using Tensorflow.NumPy;
 using System.Threading.Tasks;
@@ -337,7 +338,7 @@ namespace HorseRacingML.ML
 
             if (trainFeatures.Count > 0)
             {
-                for (int j = 0; j < featureCount; j++)
+                Parallel.For(0, featureCount, j =>
                 {
                     double sum = 0;
                     foreach (var feature in trainFeatures)
@@ -345,9 +346,9 @@ namespace HorseRacingML.ML
                         sum += feature[j];
                     }
                     means[j] = (float)(sum / trainFeatures.Count);
-                }
+                });
 
-                for (int j = 0; j < featureCount; j++)
+                Parallel.For(0, featureCount, j =>
                 {
                     double variance = 0;
                     foreach (var feature in trainFeatures)
@@ -360,7 +361,7 @@ namespace HorseRacingML.ML
                     {
                         stdDevs[j] = 1f;
                     }
-                }
+                });
             }
             else
             {
@@ -373,13 +374,13 @@ namespace HorseRacingML.ML
 
             void Normalize(IList<float[]> data)
             {
-                foreach (var arr in data)
+                Parallel.ForEach(data, arr =>
                 {
                     for (int i = 0; i < featureCount; i++)
                     {
                         arr[i] = (arr[i] - means[i]) / stdDevs[i];
                     }
-                }
+                });
             }
 
             Normalize(trainFeatures);
@@ -498,13 +499,13 @@ namespace HorseRacingML.ML
 
             void Denormalize(IList<float[]> data)
             {
-                foreach (var arr in data)
+                Parallel.ForEach(data, arr =>
                 {
                     for (int i = 0; i < featureCount; i++)
                     {
                         arr[i] = arr[i] * stdDevs[i] + means[i];
                     }
-                }
+                });
             }
 
             double ComputeBrier(float[] preds, float[] labels)
@@ -539,45 +540,26 @@ namespace HorseRacingML.ML
                         param.BatchSize,
                         "Batch size must be greater than zero.");
                 }
+                var trainDataset = tf.data.Dataset.from_tensor_slices((trainFeatureTensor, trainLabelTensor));
+                trainDataset = trainDataset.shuffle(buffer_size: trainFeatures.Count).batch(param.BatchSize);
+                var iterator = trainDataset.make_initializable_iterator();
+                var (next_x, next_y) = iterator.get_next();
                 int evaluationInterval = Math.Max(1, param.Epochs / 5);
                 for (int epoch = 0; epoch < param.Epochs; epoch++)
                 {
-                    var indices = new int[trainFeatures.Count];
-                    for (int i = 0; i < indices.Length; i++)
-                    {
-                        indices[i] = i;
-                    }
-                    for (int i = indices.Length - 1; i > 0; i--)
-                    {
-                        int j = rnd.Next(i + 1);
-                        (indices[i], indices[j]) = (indices[j], indices[i]);
-                    }
-                    for (int start = 0; start < indices.Length; start += param.BatchSize)
-                    {
-                        int batchCount = Math.Min(param.BatchSize, indices.Length - start);
-                        if (batchCount <= 0)
-                        {
-                            continue;
-                        }
+                    sess.run(iterator.initializer);
 
-                        var batchIdx = new int[batchCount];
-                        Array.Copy(indices, start, batchIdx, 0, batchCount);
-                        var batchFeatures = new List<float[]>(batchCount);
-                        var batchLabels = new float[batchCount];
-                        for (int b = 0; b < batchCount; b++)
+                    while (true)
+                    {
+                        try
                         {
-                            int dataIndex = batchIdx[b];
-                            batchFeatures.Add(trainFeatures[dataIndex]);
-                            batchLabels[b] = trainLabels[dataIndex];
+                            var (batch_x_np, batch_y_np) = sess.run((next_x, next_y));
+                            sess.run(optimizer, new FeedItem(x, batch_x_np), new FeedItem(y, batch_y_np));
                         }
-
-                        var batchX = Tensorflow.NumPy.np.array(
-                            BuildFeatureMatrix(batchFeatures, featureCount),
-                            dtype: tf.float32);
-                        var batchY = Tensorflow.NumPy.np.array(
-                            BuildLabelMatrix(batchLabels),
-                            dtype: tf.float32);
-                        sess.run(optimizer, new FeedItem(x, batchX), new FeedItem(y, batchY));
+                        catch (OutOfRangeError)
+                        {
+                            break; // End of epoch
+                        }
                     }
 
                     bool shouldEvaluate = (epoch + 1) % evaluationInterval == 0 && epoch < param.Epochs - 1;
@@ -810,46 +792,28 @@ namespace HorseRacingML.ML
                 Console.WriteLine("[TrainAI] Skipping feature correlation computation because neither predictions nor labels provided variance.");
             }
 
-            var correlations = new List<FeatureCorrelation>();
-            int offset = 0;
-
-            int totalDimensions = 0;
-            foreach (var featureKey in featureKeys)
-            {
-                if (featureDimensions.TryGetValue(featureKey, out var featureDim) && featureDim > 0)
-                {
-                    totalDimensions += featureDim;
-                }
-            }
-
+            var correlations = new ConcurrentBag<FeatureCorrelation>();
+            int totalDimensions = featureKeys.Sum(key => featureDimensions.TryGetValue(key, out var dim) ? dim : 0);
             Console.WriteLine($"[TrainAI] Computing feature correlations for {featureKeys.Count} feature keys spanning {totalDimensions} dimensions using {exampleCount} examples.");
 
-            int featureIndex = 0;
-            int processedDimensions = 0;
-            int lastLoggedDimensions = 0;
-            int lastLoggedFeatureIndex = 0;
-            const int dimensionLogInterval = 50;
-            const int featureLogInterval = 10;
-
-            void LogProgress(bool force = false)
+            var featureOffsets = new Dictionary<string, int>();
+            int currentOffset = 0;
+            foreach (var featureKey in featureKeys)
             {
-                if (force ||
-                    processedDimensions - lastLoggedDimensions >= dimensionLogInterval ||
-                    featureIndex - lastLoggedFeatureIndex >= featureLogInterval)
+                featureOffsets[featureKey] = currentOffset;
+                if (featureDimensions.TryGetValue(featureKey, out var dim))
                 {
-                    Console.WriteLine($"[TrainAI] Correlation progress: {featureIndex}/{featureKeys.Count} features, {processedDimensions}/{totalDimensions} dimensions analyzed.");
-                    lastLoggedDimensions = processedDimensions;
-                    lastLoggedFeatureIndex = featureIndex;
+                    currentOffset += dim;
                 }
             }
 
-            foreach (var featureKey in featureKeys)
+            Parallel.ForEach(featureKeys, featureKey =>
             {
-                featureIndex++;
                 if (!featureDimensions.TryGetValue(featureKey, out var dim) || dim <= 0)
                 {
-                    continue;
+                    return;
                 }
+                int offset = featureOffsets[featureKey];
 
                 string[]? categories = null;
                 if (stringMaps.TryGetValue(featureKey, out var map) && map.Count > 0)
@@ -925,19 +889,12 @@ namespace HorseRacingML.ML
                         Dimension = dimensionLabel,
                         Correlation = corr
                     });
-                processedDimensions++;
-                        LogProgress();
-                    }
-
-                offset += dim;
-                    LogProgress();
                 }
+            });
 
-                LogProgress(force: true);
-                Console.WriteLine($"[TrainAI] Feature correlation computation complete. Generated {correlations.Count} correlation entries.");
-
-                return correlations;
-            }
+            Console.WriteLine($"[TrainAI] Feature correlation computation complete. Generated {correlations.Count} correlation entries.");
+            return correlations.ToList();
+        }
         public TrainingDataset LoadTrainingDataset(ISet<int> trainingRaceIds, ISet<int> validationRaceIds, bool includeIdentifiers = false)
         {
             if (trainingRaceIds is null)
