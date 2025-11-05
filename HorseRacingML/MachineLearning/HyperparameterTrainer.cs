@@ -409,6 +409,9 @@ namespace HorseRacingML.ML
                 }
                 return matrix;
             }
+            static float[,] BuildFeatureBatch(List<float[]> source, int[] idx, int featureCount) { var m = new float[idx.Length, featureCount]; for (int r = 0; r < idx.Length; r++) { var row = source[idx[r]]; for (int c = 0; c < featureCount; c++) { m[r, c] = row[c]; } } return m; } // builds X batch from List<float[]> 
+            static float[,] BuildLabelBatch(float[] labels, int[] idx) { var m = new float[idx.Length, 1]; for (int r = 0; r < idx.Length; r++) { m[r, 0] = labels[idx[r]]; } return m; } // builds y batch from float[]
+
 
             var trainFeatureTensor = Tensorflow.NumPy.np.array(
                 BuildFeatureMatrix(trainFeatures, featureCount),
@@ -540,28 +543,29 @@ namespace HorseRacingML.ML
                         param.BatchSize,
                         "Batch size must be greater than zero.");
                 }
-                var trainDataset = tf.data.Dataset.from_tensor_slices((trainFeatureTensor, trainLabelTensor));
-                trainDataset = trainDataset.shuffle(buffer_size: trainFeatures.Count).batch(param.BatchSize);
-                var iterator = trainDataset.make_initializable_iterator();
-                var next_element = iterator.get_next();
                 int evaluationInterval = Math.Max(1, param.Epochs / 5);
+                // Replace the dataset creation + foreach loop with this manual mini-batch loop:
+                int n = trainLabels.Length; // uses existing labels
                 for (int epoch = 0; epoch < param.Epochs; epoch++)
                 {
-                    sess.run(iterator.initializer);
-                    while (true)
+                    var indices = Enumerable.Range(0, n).ToArray(); // shuffle indices
+                    for (int i = n - 1; i > 0; i--) { int j = rnd.Next(i + 1); (indices[i], indices[j]) = (indices[j], indices[i]); } // Fisher-Yates
+
+                    for (int start = 0; start < n; start += param.BatchSize)
                     {
-                        try
-                        {
-                            var (batch_x, batch_y) = sess.run((next_element.Item1, next_element.Item2));
-                            sess.run(optimizer, new FeedItem(x, batch_x), new FeedItem(y, batch_y));
-                        }
-                        catch (OutOfRangeError)
-                        {
-                            break;
-                        }
+                        int end = Math.Min(start + param.BatchSize, n);
+                        var batchIndices = indices.Skip(start).Take(end - start).ToArray();
+
+                        var fx = BuildFeatureBatch(trainFeatures, batchIndices, featureCount); // stage X in a 2D float[,] 
+                        var ly = BuildLabelBatch(trainLabels, batchIndices); // stage y in a 2D float[,] 
+                        var batch_x = np.array(fx, dtype: tf.float32); // convert to NDArray for TF feed 
+                        var batch_y = np.array(ly, dtype: tf.float32); // convert to NDArray for TF feed
+
+
+                        sess.run(optimizer, new FeedItem(x, batch_x), new FeedItem(y, batch_y)); // step
                     }
 
-                    bool shouldEvaluate = (epoch + 1) % evaluationInterval == 0 && epoch < param.Epochs - 1;
+                    bool shouldEvaluate = (epoch + 1) % evaluationInterval == 0 && epoch < param.Epochs - 1; // reuse the one declared above
                     if (shouldEvaluate)
                     {
                         var epochLoss = ComputeDatasetMetrics(trainFeatureTensor, trainLabelTensor, epochPredBuffer, trainLabels.Length);
@@ -573,7 +577,6 @@ namespace HorseRacingML.ML
                         Console.WriteLine($"Epoch {epoch + 1}/{param.Epochs} completed (evaluation deferred).");
                     }
                 }
-
                 trainLoss = ComputeDatasetMetrics(trainFeatureTensor, trainLabelTensor, trainPreds, trainLabels.Length);
                 valLoss = ComputeDatasetMetrics(valFeatureTensor, valLabelTensor, valPreds, valLabels.Length);
                 trainBrier = ComputeBrier(trainPreds, trainLabels);
