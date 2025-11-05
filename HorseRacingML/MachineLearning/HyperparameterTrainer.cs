@@ -546,7 +546,9 @@ namespace HorseRacingML.ML
                 int n = trainLabels.Length;
                 if (n > 0)
                 {
-                    var trainDataset = tf.data.Dataset.from_tensor_slices((trainFeatureTensor, trainLabelTensor));
+                    var featuresDataset = tf.data.Dataset.from_tensor_slices(tf.constant(trainFeatureTensor));
+                    var labelsDataset = tf.data.Dataset.from_tensor_slices(tf.constant(trainLabelTensor));
+                    var trainDataset = tf.data.Dataset.zip(featuresDataset, labelsDataset);
                     int evaluationInterval = Math.Max(1, param.Epochs / 5);
                     for (int epoch = 0; epoch < param.Epochs; epoch++)
                     {
