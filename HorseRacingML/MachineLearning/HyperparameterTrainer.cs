@@ -543,38 +543,31 @@ namespace HorseRacingML.ML
                         param.BatchSize,
                         "Batch size must be greater than zero.");
                 }
-                int evaluationInterval = Math.Max(1, param.Epochs / 5);
-                // Replace the dataset creation + foreach loop with this manual mini-batch loop:
-                int n = trainLabels.Length; // uses existing labels
-                for (int epoch = 0; epoch < param.Epochs; epoch++)
+                int n = trainLabels.Length;
+                if (n > 0)
                 {
-                    var indices = Enumerable.Range(0, n).ToArray(); // shuffle indices
-                    for (int i = n - 1; i > 0; i--) { int j = rnd.Next(i + 1); (indices[i], indices[j]) = (indices[j], indices[i]); } // Fisher-Yates
-
-                    for (int start = 0; start < n; start += param.BatchSize)
+                    var trainDataset = tf.data.Dataset.from_tensor_slices((trainFeatureTensor, trainLabelTensor));
+                    int evaluationInterval = Math.Max(1, param.Epochs / 5);
+                    for (int epoch = 0; epoch < param.Epochs; epoch++)
                     {
-                        int end = Math.Min(start + param.BatchSize, n);
-                        var batchIndices = indices.Skip(start).Take(end - start).ToArray();
+                        var epochDataset = trainDataset.shuffle(buffer_size: n).batch(param.BatchSize);
 
-                        var fx = BuildFeatureBatch(trainFeatures, batchIndices, featureCount); // stage X in a 2D float[,] 
-                        var ly = BuildLabelBatch(trainLabels, batchIndices); // stage y in a 2D float[,] 
-                        var batch_x = np.array(fx, dtype: tf.float32); // convert to NDArray for TF feed 
-                        var batch_y = np.array(ly, dtype: tf.float32); // convert to NDArray for TF feed
+                        foreach (var (batch_x, batch_y) in epochDataset)
+                        {
+                            sess.run(optimizer, new FeedItem(x, batch_x), new FeedItem(y, batch_y));
+                        }
 
-
-                        sess.run(optimizer, new FeedItem(x, batch_x), new FeedItem(y, batch_y)); // step
-                    }
-
-                    bool shouldEvaluate = (epoch + 1) % evaluationInterval == 0 && epoch < param.Epochs - 1; // reuse the one declared above
-                    if (shouldEvaluate)
-                    {
-                        var epochLoss = ComputeDatasetMetrics(trainFeatureTensor, trainLabelTensor, epochPredBuffer, trainLabels.Length);
-                        var epochAcc = trainLabels.Length > 0 ? ComputeWinnerAccuracy(trainRaceIds, epochPredBuffer, trainLabels) : 0;
-                        Console.WriteLine($"Epoch {epoch + 1}/{param.Epochs} - loss: {epochLoss:F4} - winner acc: {epochAcc:F4}");
-                    }
-                    else
-                    {
-                        Console.WriteLine($"Epoch {epoch + 1}/{param.Epochs} completed (evaluation deferred).");
+                        bool shouldEvaluate = (epoch + 1) % evaluationInterval == 0 && epoch < param.Epochs - 1;
+                        if (shouldEvaluate)
+                        {
+                            var epochLoss = ComputeDatasetMetrics(trainFeatureTensor, trainLabelTensor, epochPredBuffer, n);
+                            var epochAcc = ComputeWinnerAccuracy(trainRaceIds, epochPredBuffer, trainLabels);
+                            Console.WriteLine($"Epoch {epoch + 1}/{param.Epochs} - loss: {epochLoss:F4} - winner acc: {epochAcc:F4}");
+                        }
+                        else
+                        {
+                            Console.WriteLine($"Epoch {epoch + 1}/{param.Epochs} completed (evaluation deferred).");
+                        }
                     }
                 }
                 trainLoss = ComputeDatasetMetrics(trainFeatureTensor, trainLabelTensor, trainPreds, trainLabels.Length);
