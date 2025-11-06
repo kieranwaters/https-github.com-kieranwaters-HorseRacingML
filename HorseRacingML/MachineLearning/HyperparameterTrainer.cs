@@ -34,6 +34,8 @@ namespace HorseRacingML.ML
         private IRacingRepository? _racingRepository;
         private readonly object _preparedDatasetCacheLock = new();
         private readonly Dictionary<PreparedDatasetCacheKey, PreparedDataset> _preparedDatasetCache = new();
+        private readonly object _featureMetadataCacheLock = new();
+        private readonly Dictionary<(bool IncludeIdentifiers, string RaceSignature), DatasetFeatureMetadata> _featureMetadataCache = new();
 
         public HyperparameterTrainer(IConfiguration configuration, IRacingRepository? racingRepository = null)
         {
@@ -69,12 +71,14 @@ namespace HorseRacingML.ML
         private sealed record PreparedDatasetCacheKey(
             string IncludeRaceIdsSignature,
             string StateWhitelistSignature,
-            bool IncludeIdentifiers)
+            bool IncludeIdentifiers,
+            bool ApplyRepositoryBackfills)
         {
             public static PreparedDatasetCacheKey Create(
                 ISet<int?>? includeRaceIds,
                 ISet<int?>? stateRaceWhitelist,
-                bool includeIdentifiers)
+                bool includeIdentifiers,
+                bool applyRepositoryBackfills)
             {
                 static string BuildSignature(ISet<int?>? source, string label)
                 {
@@ -100,7 +104,8 @@ namespace HorseRacingML.ML
                 return new PreparedDatasetCacheKey(
                     BuildSignature(includeRaceIds, nameof(includeRaceIds)),
                     BuildSignature(stateRaceWhitelist, nameof(stateRaceWhitelist)),
-                    includeIdentifiers);
+                    includeIdentifiers,
+                    applyRepositoryBackfills);
             }
         }
         public sealed class FeatureCorrelation
@@ -116,7 +121,7 @@ namespace HorseRacingML.ML
         {
             var prepared = PrepareDataset(includeRaceIds: null, stateRaceWhitelist: null, includeIdentifiers: includeIdentifiers);
             var emptyValidation = new PreparedDataset(new List<PreparedRace>());
-            return BuildTrainingDataset(prepared, emptyValidation);
+            return BuildTrainingDataset(prepared, emptyValidation, includeIdentifiers);
         }
 
         public TrainingResult Train(MLParameter param, int foldIndex, int foldCount, bool persistWeights = true)
@@ -207,7 +212,8 @@ namespace HorseRacingML.ML
         }
         private TrainingDataset BuildTrainingDataset(
         PreparedDataset trainingPrepared,
-        PreparedDataset validationPrepared)
+        PreparedDataset validationPrepared,
+        bool includeIdentifiers = false)
         {
             if (trainingPrepared is null)
                 throw new ArgumentNullException(nameof(trainingPrepared));
@@ -219,7 +225,16 @@ namespace HorseRacingML.ML
                 ? trainingPrepared.Rows.ToList()
                 : metadataSource.Rows.ToList();
 
-            var metadata = BuildFeatureMetadata(metadataSource, metadataRows);
+            var signature = BuildRaceSignature(trainingPrepared.Races.Concat(validationPrepared.Races));
+            DatasetFeatureMetadata metadata;
+            lock (_featureMetadataCacheLock)
+            {
+                if (!_featureMetadataCache.TryGetValue((includeIdentifiers, signature), out metadata))
+                {
+                    metadata = BuildFeatureMetadata(metadataSource, metadataRows);
+                    _featureMetadataCache[(includeIdentifiers, signature)] = metadata;
+                }
+            }
             int featureCount = metadata.FeatureCount;
             Console.WriteLine($"[AI] Prepared training dataset with {featureCount} features derived from {metadata.FeatureKeys.Count} source columns.");
             var trainRaces = EncodeRaces(trainingPrepared.Races, metadata.FeatureKeys, metadata.FeatureDimensions, metadata.StringMaps);
@@ -236,7 +251,22 @@ namespace HorseRacingML.ML
 
             return new TrainingDataset(trainRaces, validationRaces, metadata.FeatureKeys, metadata.FeatureDimensions, metadata.StringMaps, normalization);
         }
+        private static string BuildRaceSignature(IEnumerable<PreparedRace> races)
+        {
+            if (races is null)
+            {
+                return string.Empty;
+            }
 
+            var ids = races
+                .Where(r => r is not null)
+                .Select(r => r!.RaceId)
+                .Distinct()
+                .OrderBy(id => id)
+                .ToArray();
+
+            return ids.Length == 0 ? string.Empty : string.Join(',', ids);
+        }
         public TrainingResult Train(MLParameter param, TrainingDataset.PreparedDataset dataset, int foldIndex, int foldCount, bool persistWeights = true)
         {
             if (dataset is null)
@@ -271,18 +301,26 @@ namespace HorseRacingML.ML
                 .Select(r => r.RaceId)
                 .ToHashSet();
 
-            var trainingPrepared = PrepareDataset(ToNullableSet(trainRaceIds), ToNullableSet(trainRaceIds));
-            TrainingDataset.PreparedDataset validationPrepared;
-            if (validationRaceIds.Count > 0)
-            {
-                validationPrepared = PrepareDataset(ToNullableSet(validationRaceIds), ToNullableSet(trainRaceIds));
-            }
-            else
-            {
-                validationPrepared = new TrainingDataset.PreparedDataset(new List<TrainingDataset.PreparedDataset.PreparedRace>());
-            }
+            var combinedRaceIds = new HashSet<int>(trainRaceIds);
+            combinedRaceIds.UnionWith(validationRaceIds);
 
-            var trainingDataset = BuildTrainingDataset(trainingPrepared, validationPrepared);
+            var combinedPrepared = PrepareDataset(
+                ToNullableSet(combinedRaceIds),
+                ToNullableSet(trainRaceIds));
+
+            var trainingPrepared = new TrainingDataset.PreparedDataset(
+                combinedPrepared.Races
+                    .Where(r => trainRaceIds.Contains(r.RaceId))
+                    .ToList());
+
+            var validationPrepared = validationRaceIds.Count > 0
+                ? new TrainingDataset.PreparedDataset(
+                    combinedPrepared.Races
+                        .Where(r => validationRaceIds.Contains(r.RaceId))
+                        .ToList())
+                : new TrainingDataset.PreparedDataset(new List<TrainingDataset.PreparedDataset.PreparedRace>());
+
+            var trainingDataset = BuildTrainingDataset(trainingPrepared, validationPrepared, includeIdentifiers: false);
             return Train(param, foldIndex, foldCount, trainingDataset, persistWeights);
         }
         public TrainingResult Train(MLParameter param, int foldIndex, int foldCount, TrainingDataset dataset, bool persistWeights = true)
@@ -938,18 +976,27 @@ namespace HorseRacingML.ML
             if (validationRaceIds is null)
                 throw new ArgumentNullException(nameof(validationRaceIds));
 
-            var trainingPrepared = PrepareDataset(ToNullableSet(trainingRaceIds), ToNullableSet(trainingRaceIds), includeIdentifiers);
-            PreparedDataset validationPrepared;
-            if (validationRaceIds.Count > 0)
-            {
-                validationPrepared = PrepareDataset(ToNullableSet(validationRaceIds), ToNullableSet(trainingRaceIds), includeIdentifiers: includeIdentifiers);
-            }
-            else
-            {
-                validationPrepared = new PreparedDataset(new List<PreparedRace>());
-            }
+            var combinedRaceIds = new HashSet<int>(trainingRaceIds);
+            combinedRaceIds.UnionWith(validationRaceIds);
 
-            return BuildTrainingDataset(trainingPrepared, validationPrepared);
+            var combinedPrepared = PrepareDataset(
+                ToNullableSet(combinedRaceIds),
+                ToNullableSet(trainingRaceIds),
+                includeIdentifiers);
+
+            var trainingPrepared = new PreparedDataset(
+                combinedPrepared.Races
+                    .Where(r => trainingRaceIds.Contains(r.RaceId))
+                    .ToList());
+
+            var validationPrepared = validationRaceIds.Count > 0
+                ? new PreparedDataset(
+                    combinedPrepared.Races
+                        .Where(r => validationRaceIds.Contains(r.RaceId))
+                        .ToList())
+                : new PreparedDataset(new List<PreparedRace>());
+
+            return BuildTrainingDataset(trainingPrepared, validationPrepared, includeIdentifiers);
         }
         public HyperparameterSummary? LoadPersistedHyperparameters()
         {

@@ -2098,14 +2098,24 @@ namespace HorseRacingML.ML
             public PreparedDataset PrepareDataset(
                 ISet<int?>? includeRaceIds = null,
                 ISet<int?>? stateRaceWhitelist = null,
-                bool includeIdentifiers = false)
+                bool includeIdentifiers = false,
+                bool applyRepositoryBackfills = true)
             {
                 using var conn = new SqlConnection(_trainer._connectionString);
                 conn.Open();
 
                 var includeRaceIdSet = ToNonNullableSet(includeRaceIds);
                 var stateRaceWhitelistSet = ToNonNullableSet(stateRaceWhitelist);
+                var requiredRaceIds = new HashSet<int>();
+                if (includeRaceIdSet is not null)
+                {
+                    requiredRaceIds.UnionWith(includeRaceIdSet);
+                }
 
+                if (stateRaceWhitelistSet is not null)
+                {
+                    requiredRaceIds.UnionWith(stateRaceWhitelistSet);
+                }
                 var raceColumns = PreparedDataset.LoadColumnNames(conn, "Race");
                 var runnerColumns = PreparedDataset.LoadColumnNames(conn, "RunnerResult");
                 string scheduledOffColumn = raceColumns.Contains("ScheduledOff")
@@ -2139,7 +2149,17 @@ namespace HorseRacingML.ML
                 string openingFractionColumn = SelectColumn(runnerColumns, "rr", "OpeningFraction", "nvarchar(50)");
                 string touchedHighColumn = SelectColumn(runnerColumns, "rr", "TouchedHighFraction", "nvarchar(50)");
                 string touchedLowColumn = SelectColumn(runnerColumns, "rr", "TouchedLowFraction", "nvarchar(50)");
+                var filters = new List<string>();
+                var parameters = new DynamicParameters();
+                if (requiredRaceIds.Count > 0)
+                {
+                    parameters.Add("FilteredRaceIds", requiredRaceIds.ToArray());
+                    filters.Add("r.RaceId IN @FilteredRaceIds");
+                }
 
+                string whereClause = filters.Count > 0
+                    ? string.Concat(" WHERE ", string.Join(" AND ", filters))
+                    : string.Empty;
                 var sql = $@"SELECT c.Name AS CourseName,
                                h.Name AS HorseName,
                                j.Name AS JockeyName,
@@ -2184,6 +2204,7 @@ namespace HorseRacingML.ML
                         LEFT JOIN Horse h ON rr.HorseId = h.HorseId
                         LEFT JOIN Trainer t ON rr.TrainerId = t.TrainerId
                         LEFT JOIN Jockey j ON rr.JockeyId = j.JockeyId
+                        {whereClause}
                         ORDER BY r.RaceDate, r.RaceId, rr.RunnerResultId";
 
                 ISet<string>? identifierKeys = null;
@@ -2243,7 +2264,7 @@ namespace HorseRacingML.ML
                         includedRunnerRows += rows.Count;
                     }
                 }
-                foreach (var record in conn.Query(sql, commandTimeout: 600000000, buffered: false))
+                foreach (var record in conn.Query(sql, parameters, commandTimeout: 600000000, buffered: false))
                 {
                     var source = (IDictionary<string, object?>)record;
                     var row = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
@@ -2264,7 +2285,7 @@ namespace HorseRacingML.ML
                     }
 
                     currentRows.Add(row);
-                    //FinalizeRace(currentRows, currentRaceId.Value);
+                    totalRunnerRows++;
                     currentRaceId = raceId;
                 }
 
@@ -2275,7 +2296,34 @@ namespace HorseRacingML.ML
                 Console.WriteLine(
                     $"[TrainAI] Raw data streaming complete. Feature engineering ran for {processedRaceCount} races ({includedRaceCount} included) across {totalRunnerRows:N0} runner rows.");
 
-                ApplyRepositoryBackfills(races, includeIdentifiers);
+                if (applyRepositoryBackfills)
+                {
+                    ApplyRepositoryBackfills(races, includeIdentifiers);
+                }
+                else if (!includeIdentifiers)
+                {
+                    foreach (var race in races)
+                    {
+                        var rows = race?.Rows;
+                        if (rows is null)
+                        {
+                            continue;
+                        }
+
+                        foreach (var row in rows)
+                        {
+                            if (row is null)
+                            {
+                                continue;
+                            }
+
+                            foreach (var key in BackfillRequiredKeys)
+                            {
+                                row.Remove(key);
+                            }
+                        }
+                    }
+                }
 
                 Console.WriteLine(
                     $"[TrainAI] Dataset preparation finished. {races.Count} races ready ({includedRunnerRows:N0} runner rows retained).");
@@ -4978,9 +5026,10 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
         public virtual PreparedDataset PrepareDataset(
             ISet<int?>? includeRaceIds = null,
             ISet<int?>? stateRaceWhitelist = null,
-            bool includeIdentifiers = false)
+         bool includeIdentifiers = false,
+            bool applyRepositoryBackfills = true)
         {
-            var cacheKey = PreparedDatasetCacheKey.Create(includeRaceIds, stateRaceWhitelist, includeIdentifiers);
+            var cacheKey = PreparedDatasetCacheKey.Create(includeRaceIds, stateRaceWhitelist, includeIdentifiers, applyRepositoryBackfills);
 
             lock (_preparedDatasetCacheLock)
             {
@@ -4990,7 +5039,7 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
                 }
             }
 
-            var prepared = CreatePreparedDataset(includeRaceIds, stateRaceWhitelist, includeIdentifiers);
+            var prepared = CreatePreparedDataset(includeRaceIds, stateRaceWhitelist, includeIdentifiers, applyRepositoryBackfills);
 
             lock (_preparedDatasetCacheLock)
             {
@@ -5003,10 +5052,11 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
         protected virtual PreparedDataset CreatePreparedDataset(
             ISet<int?>? includeRaceIds,
             ISet<int?>? stateRaceWhitelist,
-            bool includeIdentifiers)
+            bool includeIdentifiers,
+            bool applyRepositoryBackfills)
         {
             var state = new FeatureEngineeringState(this);
-            return state.PrepareDataset(includeRaceIds, stateRaceWhitelist, includeIdentifiers);
+            return state.PrepareDataset(includeRaceIds, stateRaceWhitelist, includeIdentifiers, applyRepositoryBackfills);
         }
         public static float? TestParseDistanceBeaten(string text)
         {

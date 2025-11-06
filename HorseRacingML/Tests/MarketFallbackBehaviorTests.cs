@@ -1382,7 +1382,8 @@ namespace HorseRacingML.Tests
             public override PreparedDataset PrepareDataset(
                 ISet<int?>? includeRaceIds = null,
                  ISet<int?>? stateRaceWhitelist = null,
-                 bool includeIdentifiers = false)
+                bool includeIdentifiers = false,
+                bool applyRepositoryBackfills = true)
             {
                 return new PreparedDataset(new List<PreparedRace>());
             }
