@@ -2243,7 +2243,7 @@ namespace HorseRacingML.ML
                         includedRunnerRows += rows.Count;
                     }
                 }
-                foreach (var record in conn.Query(sql, commandTimeout: 6000, buffered: false))
+                foreach (var record in conn.Query(sql, commandTimeout: 600000000, buffered: false))
                 {
                     var source = (IDictionary<string, object?>)record;
                     var row = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);

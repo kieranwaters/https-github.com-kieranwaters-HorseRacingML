@@ -9,6 +9,7 @@ using System.Text;
 using System.Text.Json;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
+using System;
 using Tensorflow;
 using Tensorflow.NumPy;
 using System.Threading.Tasks;
@@ -409,9 +410,38 @@ namespace HorseRacingML.ML
                 }
                 return matrix;
             }
-            static float[,] BuildFeatureBatch(List<float[]> source, int[] idx, int featureCount) { var m = new float[idx.Length, featureCount]; for (int r = 0; r < idx.Length; r++) { var row = source[idx[r]]; for (int c = 0; c < featureCount; c++) { m[r, c] = row[c]; } } return m; } // builds X batch from List<float[]> 
-            static float[,] BuildLabelBatch(float[] labels, int[] idx) { var m = new float[idx.Length, 1]; for (int r = 0; r < idx.Length; r++) { m[r, 0] = labels[idx[r]]; } return m; } // builds y batch from float[]
+            static float[,] BuildFeatureBatch(List<float[]> source, ReadOnlySpan<int> idx, int featureCount)
+            {
+                var matrix = new float[idx.Length, featureCount];
+                for (int r = 0; r < idx.Length; r++)
+                {
+                    var row = source[idx[r]];
+                    for (int c = 0; c < featureCount; c++)
+                    {
+                        matrix[r, c] = row[c];
+                    }
+                }
+                return matrix;
+            }
 
+            static float[,] BuildLabelBatch(float[] labels, ReadOnlySpan<int> idx)
+            {
+                var matrix = new float[idx.Length, 1];
+                for (int r = 0; r < idx.Length; r++)
+                {
+                    matrix[r, 0] = labels[idx[r]];
+                }
+                return matrix;
+            }
+
+            static void Shuffle(int[] values, Random random)
+            {
+                for (int i = values.Length - 1; i > 0; i--)
+                {
+                    int j = random.Next(i + 1);
+                    (values[i], values[j]) = (values[j], values[i]);
+                }
+            }
 
             var trainFeatureTensor = Tensorflow.NumPy.np.array(
                 BuildFeatureMatrix(trainFeatures, featureCount),
@@ -546,17 +576,26 @@ namespace HorseRacingML.ML
                 int n = trainLabels.Length;
                 if (n > 0)
                 {
-                    var featuresDataset = tf.data.Dataset.from_tensor_slices(tf.constant(trainFeatureTensor));
-                    var labelsDataset = tf.data.Dataset.from_tensor_slices(tf.constant(trainLabelTensor));
-                    var trainDataset = tf.data.Dataset.zip(featuresDataset, labelsDataset);
+                    var indices = Enumerable.Range(0, n).ToArray();
                     int evaluationInterval = Math.Max(1, param.Epochs / 5);
                     for (int epoch = 0; epoch < param.Epochs; epoch++)
                     {
-                        var epochDataset = trainDataset.shuffle(buffer_size: n).batch(param.BatchSize);
+                        Shuffle(indices, rnd);
 
-                        foreach (var (batch_x, batch_y) in epochDataset)
+                        for (int start = 0; start < n; start += param.BatchSize)
                         {
-                            sess.run(optimizer, new FeedItem(x, batch_x), new FeedItem(y, batch_y));
+                            int batchCount = Math.Min(param.BatchSize, n - start);
+                            var batchIndices = indices.AsSpan(start, batchCount);
+                            using var batchFeatures = Tensorflow.NumPy.np.array(
+                                BuildFeatureBatch(trainFeatures, batchIndices, featureCount),
+                                dtype: tf.float32);
+                            using var batchLabels = Tensorflow.NumPy.np.array(
+                                BuildLabelBatch(trainLabels, batchIndices),
+                                dtype: tf.float32);
+
+                            sess.run(optimizer,
+                                new FeedItem(x, batchFeatures),
+                                new FeedItem(y, batchLabels));
                         }
 
                         bool shouldEvaluate = (epoch + 1) % evaluationInterval == 0 && epoch < param.Epochs - 1;
