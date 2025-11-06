@@ -496,7 +496,8 @@ namespace HorseRacingML.Controllers
                 Epochs = parameter.Epochs,
                 BatchSize = parameter.BatchSize,
                 Folds = parameter.Folds,
-                Fold = parameter.Fold
+                Fold = parameter.Fold,
+                EnableFeatureCorrelations = parameter.EnableFeatureCorrelations
             };
             viewModel.TrainAccuracy = result.TrainAccuracy;
             viewModel.TrainLoss = result.TrainLoss;

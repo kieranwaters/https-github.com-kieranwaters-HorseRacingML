@@ -36,7 +36,8 @@ namespace HorseRacingML.ML
         private readonly Dictionary<PreparedDatasetCacheKey, PreparedDataset> _preparedDatasetCache = new();
         private readonly object _featureMetadataCacheLock = new();
         private readonly Dictionary<(bool IncludeIdentifiers, string RaceSignature), DatasetFeatureMetadata> _featureMetadataCache = new();
-
+        private readonly object _normalizationCacheLock = new();
+        private readonly Dictionary<string, NormalizationParameters> _normalizationCache = new(StringComparer.Ordinal);
         public HyperparameterTrainer(IConfiguration configuration, IRacingRepository? racingRepository = null)
         {
             if (configuration is null)
@@ -240,16 +241,17 @@ namespace HorseRacingML.ML
             var trainRaces = EncodeRaces(trainingPrepared.Races, metadata.FeatureKeys, metadata.FeatureDimensions, metadata.StringMaps);
             var validationRaces = EncodeRaces(validationPrepared.Races, metadata.FeatureKeys, metadata.FeatureDimensions, metadata.StringMaps);
 
-            var normalization = new NormalizationParameters
+            var normalizationKey = BuildNormalizationCacheKey(includeIdentifiers, signature);
+            var normalization = GetNormalizationParameters(normalizationKey, featureCount, out var loadedFromCache);
+            if (loadedFromCache)
             {
-                Mean = new float[featureCount],
-                StdDev = new float[featureCount]
-            };
+                Console.WriteLine($"[AI] Using cached normalization statistics for dataset key '{normalizationKey}'.");
+            }
 
             var mapPath = Path.Combine(AppContext.BaseDirectory, "string_maps.json");
             File.WriteAllText(mapPath, JsonSerializer.Serialize(metadata.StringMaps));
 
-            return new TrainingDataset(trainRaces, validationRaces, metadata.FeatureKeys, metadata.FeatureDimensions, metadata.StringMaps, normalization);
+            return new TrainingDataset(trainRaces, validationRaces, metadata.FeatureKeys, metadata.FeatureDimensions, metadata.StringMaps, normalization, normalizationKey);
         }
         private static string BuildRaceSignature(IEnumerable<PreparedRace> races)
         {
@@ -266,6 +268,84 @@ namespace HorseRacingML.ML
                 .ToArray();
 
             return ids.Length == 0 ? string.Empty : string.Join(',', ids);
+        }
+        private static string BuildNormalizationCacheKey(bool includeIdentifiers, string raceSignature)
+        {
+            var signature = string.IsNullOrEmpty(raceSignature) ? "*" : raceSignature;
+            var identifierPart = includeIdentifiers ? "id:1" : "id:0";
+            return string.Concat(identifierPart, '|', signature);
+        }
+        private static NormalizationParameters CloneNormalization(NormalizationParameters source)
+        {
+            if (source is null)
+            {
+                throw new ArgumentNullException(nameof(source));
+            }
+
+            return new NormalizationParameters
+            {
+                Mean = source.Mean is null ? Array.Empty<float>() : (float[])source.Mean.Clone(),
+                StdDev = source.StdDev is null ? Array.Empty<float>() : (float[])source.StdDev.Clone()
+            };
+        }
+        private NormalizationParameters GetNormalizationParameters(string cacheKey, int featureCount, out bool fromCache)
+        {
+            fromCache = false;
+            if (!string.IsNullOrEmpty(cacheKey))
+            {
+                lock (_normalizationCacheLock)
+                {
+                    if (_normalizationCache.TryGetValue(cacheKey, out var cached) &&
+                        cached.Mean.Length == featureCount &&
+                        cached.StdDev.Length == featureCount)
+                    {
+                        fromCache = true;
+                        Console.WriteLine($"[AI] Loaded cached normalization for key '{cacheKey}'.");
+                        return CloneNormalization(cached);
+                    }
+                }
+            }
+
+            return new NormalizationParameters
+            {
+                Mean = new float[featureCount],
+                StdDev = new float[featureCount]
+            };
+        }
+        private void CacheNormalization(string cacheKey, NormalizationParameters normalization)
+        {
+            if (string.IsNullOrEmpty(cacheKey) || normalization is null)
+            {
+                return;
+            }
+
+            lock (_normalizationCacheLock)
+            {
+                _normalizationCache[cacheKey] = CloneNormalization(normalization);
+            }
+        }
+        private static bool HasComputedNormalization(float[] means, float[] stdDevs, int featureCount)
+        {
+            if (means is null || stdDevs is null)
+            {
+                return false;
+            }
+
+            if (means.Length != featureCount || stdDevs.Length != featureCount)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < stdDevs.Length; i++)
+            {
+                float value = stdDevs[i];
+                if (value <= 0f || float.IsNaN(value) || float.IsInfinity(value))
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
         public TrainingResult Train(MLParameter param, TrainingDataset.PreparedDataset dataset, int foldIndex, int foldCount, bool persistWeights = true)
         {
@@ -353,63 +433,79 @@ namespace HorseRacingML.ML
             var valLabels = valExamples.Select(r => r.Label).ToArray();
             var valRaceIds = valExamples.Select(r => r.RaceId).ToArray();
 
-            var means = dataset.Normalization.Mean;
-            if (means.Length != featureCount)
-            {
-                means = new float[featureCount];
-                dataset.Normalization.Mean = means;
-            }
-            else
-            {
-                Array.Clear(means, 0, featureCount);
-            }
+            var normalizationKey = dataset.NormalizationCacheKey;
+            var means = dataset.Normalization.Mean ?? Array.Empty<float>();
+            var stdDevs = dataset.Normalization.StdDev ?? Array.Empty<float>();
+            bool reuseNormalization = HasComputedNormalization(means, stdDevs, featureCount);
 
-            var stdDevs = dataset.Normalization.StdDev;
-            if (stdDevs.Length != featureCount)
+            if (!reuseNormalization)
             {
-                stdDevs = new float[featureCount];
-                dataset.Normalization.StdDev = stdDevs;
-            }
-            else
-            {
-                Array.Clear(stdDevs, 0, featureCount);
-            }
-
-            if (trainFeatures.Count > 0)
-            {
-                Parallel.For(0, featureCount, j =>
+                if (means.Length != featureCount)
                 {
-                    double sum = 0;
-                    foreach (var feature in trainFeatures)
-                    {
-                        sum += feature[j];
-                    }
-                    means[j] = (float)(sum / trainFeatures.Count);
-                });
-
-                Parallel.For(0, featureCount, j =>
+                    means = new float[featureCount];
+                    dataset.Normalization.Mean = means;
+                }
+                else
                 {
-                    double variance = 0;
-                    foreach (var feature in trainFeatures)
+                    Array.Clear(means, 0, featureCount);
+                }
+
+                if (stdDevs.Length != featureCount)
+                {
+                    stdDevs = new float[featureCount];
+                    dataset.Normalization.StdDev = stdDevs;
+                }
+                else
+                {
+                    Array.Clear(stdDevs, 0, featureCount);
+                }
+
+                if (trainFeatures.Count > 0)
+                {
+                    Parallel.For(0, featureCount, j =>
                     {
-                        double diff = feature[j] - means[j];
-                        variance += diff * diff;
-                    }
-                    stdDevs[j] = (float)Math.Sqrt(variance / trainFeatures.Count);
-                    if (stdDevs[j] == 0f)
+                        double sum = 0;
+                        foreach (var feature in trainFeatures)
+                        {
+                            sum += feature[j];
+                        }
+                        means[j] = (float)(sum / trainFeatures.Count);
+                    });
+
+                    Parallel.For(0, featureCount, j =>
+                    {
+                        double variance = 0;
+                        foreach (var feature in trainFeatures)
+                        {
+                            double diff = feature[j] - means[j];
+                            variance += diff * diff;
+                        }
+                        stdDevs[j] = (float)Math.Sqrt(variance / trainFeatures.Count);
+                        if (stdDevs[j] == 0f)
+                        {
+                            stdDevs[j] = 1f;
+                        }
+                    });
+                }
+                else
+                {
+                    Array.Clear(means, 0, featureCount);
+                    for (int j = 0; j < featureCount; j++)
                     {
                         stdDevs[j] = 1f;
                     }
-                });
+                }
+
+                CacheNormalization(normalizationKey, dataset.Normalization);
             }
             else
             {
-                Array.Clear(means, 0, featureCount);
-                for (int j = 0; j < featureCount; j++)
-                {
-                    stdDevs[j] = 1f;
-                }
+                Console.WriteLine($"[AI] Reusing cached normalization statistics for key '{normalizationKey}'.");
             }
+
+            means = dataset.Normalization.Mean;
+            stdDevs = dataset.Normalization.StdDev;
+
 
             void Normalize(IList<float[]> data)
             {
@@ -661,13 +757,20 @@ namespace HorseRacingML.ML
                 var correlationPreds = useValidationCorrelations ? valPreds : trainPreds;
                 var correlationLabels = useValidationCorrelations ? valLabels : trainLabels;
 
-                featureCorrelations = ComputeFeatureCorrelations(
-                    correlationFeatures,
-                    correlationPreds,
-                    correlationLabels,
-                    dataset.FeatureKeys,
-                    dataset.FeatureDimensions,
-                    dataset.StringMaps);
+                if (param.EnableFeatureCorrelations)
+                {
+                    featureCorrelations = ComputeFeatureCorrelations(
+                        correlationFeatures,
+                        correlationPreds,
+                        correlationLabels,
+                        dataset.FeatureKeys,
+                        dataset.FeatureDimensions,
+                        dataset.StringMaps);
+                }
+                else
+                {
+                    Console.WriteLine("[TrainAI] Skipping feature correlation computation because it was disabled for this run.");
+                }
             }
             catch (Exception ex)
             {

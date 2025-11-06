@@ -21,6 +21,7 @@ namespace HorseRacingML.Models
         public int BatchSize { get; set; }
         [Required]
         public int Folds { get; set; }
+        public bool EnableFeatureCorrelations { get; set; } = true;
         public double? TrainAccuracy { get; set; }
         public double? ValidationAccuracy { get; set; }
         public double? ValidationLoss { get; set; }

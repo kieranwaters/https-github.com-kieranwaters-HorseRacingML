@@ -24,7 +24,8 @@ namespace HorseRacingML.ML
                 List<string> featureKeys,
                 Dictionary<string, int> featureDimensions,
                 Dictionary<string, Dictionary<string, int>> stringMaps,
-                NormalizationParameters normalization)
+                NormalizationParameters normalization,
+                string normalizationCacheKey)
             {
                 TrainingRaces = trainingRaces ?? throw new ArgumentNullException(nameof(trainingRaces));
                 ValidationRaces = validationRaces ?? throw new ArgumentNullException(nameof(validationRaces));
@@ -32,6 +33,7 @@ namespace HorseRacingML.ML
                 FeatureDimensions = featureDimensions ?? throw new ArgumentNullException(nameof(featureDimensions));
                 StringMaps = stringMaps ?? throw new ArgumentNullException(nameof(stringMaps));
                 Normalization = normalization ?? throw new ArgumentNullException(nameof(normalization));
+                NormalizationCacheKey = normalizationCacheKey ?? string.Empty;
 
                 Races = TrainingRaces.Concat(ValidationRaces).ToList();
                 FeatureCount = featureDimensions.Values.Sum();
@@ -45,6 +47,7 @@ namespace HorseRacingML.ML
             public Dictionary<string, Dictionary<string, int>> StringMaps { get; }
             public NormalizationParameters Normalization { get; }
             public int FeatureCount { get; }
+            public string NormalizationCacheKey { get; }
 
             public class PreparedDataset
             {
