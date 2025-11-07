@@ -61,12 +61,14 @@ namespace HorseRacingML.Controllers
                     modelIndex++;
                     Console.WriteLine($"[Hyperparameter] Starting model {modelIndex}/{parameters.Count} (layers: {model.Layers}, units: {model.Units}, dropout: {model.Dropout}, lr: {model.LearningRate}).");
 
-                    if (model.Folds <= 0)
+                    var foldCount = model.Folds;
+                    if (foldCount <= 0)
                     {
-                        Console.WriteLine($"[Hyperparameter] Skipped storing results for model {modelIndex} due to invalid fold count {model.Folds}.");
-                        continue;
+                        foldCount = 1;
+                        Console.WriteLine($"[Hyperparameter]  Fold count was not specified or invalid. Defaulting to {foldCount} for model {modelIndex}.");
                     }
 
+                    model.Folds = foldCount;
                     model.RunDate = DateTime.UtcNow;
 
                     double totalTrainAccuracy = 0;

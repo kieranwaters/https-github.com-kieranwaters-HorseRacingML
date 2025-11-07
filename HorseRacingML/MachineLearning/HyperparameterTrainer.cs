@@ -717,7 +717,6 @@ namespace HorseRacingML.ML
                 if (n > 0)
                 {
                     var indices = Enumerable.Range(0, n).ToArray();
-                    int evaluationInterval = Math.Max(1, param.Epochs / 5);
                     for (int epoch = 0; epoch < param.Epochs; epoch++)
                     {
                         Shuffle(indices, rnd);
@@ -738,17 +737,9 @@ namespace HorseRacingML.ML
                                 new FeedItem(y, batchLabels));
                         }
 
-                        bool shouldEvaluate = (epoch + 1) % evaluationInterval == 0 && epoch < param.Epochs - 1;
-                        if (shouldEvaluate)
-                        {
-                            var epochLoss = ComputeDatasetMetrics(trainFeatureTensor, trainLabelTensor, epochPredBuffer, n);
-                            var epochAcc = ComputeWinnerAccuracy(trainRaceIds, epochPredBuffer, trainLabels);
-                            Console.WriteLine($"Epoch {epoch + 1}/{param.Epochs} - loss: {epochLoss:F4} - winner acc: {epochAcc:F4}");
-                        }
-                        else
-                        {
-                            Console.WriteLine($"Epoch {epoch + 1}/{param.Epochs} completed (evaluation deferred).");
-                        }
+                        var epochLoss = ComputeDatasetMetrics(trainFeatureTensor, trainLabelTensor, epochPredBuffer, n);
+                        var epochAcc = ComputeWinnerAccuracy(trainRaceIds, epochPredBuffer, trainLabels);
+                        Console.WriteLine($"Epoch {epoch + 1}/{param.Epochs} - loss: {epochLoss:F4} - winner acc: {epochAcc:F4}");
                     }
                 }
                 trainLoss = ComputeDatasetMetrics(trainFeatureTensor, trainLabelTensor, trainPreds, trainLabels.Length);
@@ -767,6 +758,9 @@ namespace HorseRacingML.ML
 
                 trainAcc = trainPreds.Length > 0 ? ComputeWinnerAccuracy(trainRaceIds, trainPreds, trainLabels) : 0;
                 valAcc = hasValidationExamples && valPreds.Length > 0 ? ComputeWinnerAccuracy(valRaceIds, valPreds, valLabels) : 0;
+                var epochLoss = ComputeDatasetMetrics(trainFeatureTensor, trainLabelTensor, epochPredBuffer, n);
+                var epochAcc = ComputeWinnerAccuracy(trainRaceIds, epochPredBuffer, trainLabels);
+                Console.WriteLine($"Epoch {epoch + 1}/{param.Epochs} - loss: {epochLoss:F4} - winner acc: {epochAcc:F4}");
                 bool useValidationCorrelations = hasValidationExamples && valFeatures.Count > 0 && valPreds.Length > 0;
                 var correlationFeatures = useValidationCorrelations ? valFeatures : trainFeatures;
                 var correlationPreds = useValidationCorrelations ? valPreds : trainPreds;
