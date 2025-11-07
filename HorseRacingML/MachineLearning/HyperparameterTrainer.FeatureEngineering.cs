@@ -5055,18 +5055,39 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
             }
         }
         public virtual PreparedDataset PrepareDataset(
-            ISet<int?>? includeRaceIds = null,
-            ISet<int?>? stateRaceWhitelist = null,
-         bool includeIdentifiers = false,
-            bool applyRepositoryBackfills = true)
+           ISet<int?>? includeRaceIds = null,
+           ISet<int?>? stateRaceWhitelist = null,
+        bool includeIdentifiers = false,
+           bool applyRepositoryBackfills = true)
         {
             var cacheKey = PreparedDatasetCacheKey.Create(includeRaceIds, stateRaceWhitelist, includeIdentifiers, applyRepositoryBackfills);
 
             lock (_preparedDatasetCacheLock)
             {
-                if (_preparedDatasetCache.TryGetValue(cacheKey, out var cached))
+                if (_preparedDatasetCache.TryGetValue(cacheKey, out var cachedReference) &&
+                    cachedReference.TryGetTarget(out var cached))
                 {
                     return cached;
+                }
+
+                if (_preparedDatasetCache.Count > 0)
+                {
+                    var expiredKeys = new List<PreparedDatasetCacheKey>();
+                    foreach (var pair in _preparedDatasetCache)
+                    {
+                        if (!pair.Value.TryGetTarget(out _))
+                        {
+                            expiredKeys.Add(pair.Key);
+                        }
+                    }
+
+                    if (expiredKeys.Count > 0)
+                    {
+                        foreach (var key in expiredKeys)
+                        {
+                            _preparedDatasetCache.Remove(key);
+                        }
+                    }
                 }
             }
 
@@ -5074,12 +5095,11 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
 
             lock (_preparedDatasetCacheLock)
             {
-                _preparedDatasetCache[cacheKey] = prepared;
+                _preparedDatasetCache[cacheKey] = new WeakReference<PreparedDataset>(prepared);
             }
 
             return prepared;
         }
-
         protected virtual PreparedDataset CreatePreparedDataset(
             ISet<int?>? includeRaceIds,
             ISet<int?>? stateRaceWhitelist,

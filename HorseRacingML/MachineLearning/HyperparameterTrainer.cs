@@ -33,7 +33,7 @@ namespace HorseRacingML.ML
         private readonly float _winRateBeta;
         private IRacingRepository? _racingRepository;
         private readonly object _preparedDatasetCacheLock = new();
-        private readonly Dictionary<PreparedDatasetCacheKey, PreparedDataset> _preparedDatasetCache = new();
+        private readonly Dictionary<PreparedDatasetCacheKey, WeakReference<PreparedDataset>> _preparedDatasetCache = new();
         private readonly object _featureMetadataCacheLock = new();
         private readonly Dictionary<(bool IncludeIdentifiers, string RaceSignature), DatasetFeatureMetadata> _featureMetadataCache = new();
         private readonly object _normalizationCacheLock = new();
