@@ -2151,9 +2151,9 @@ namespace HorseRacingML.ML
                 string touchedLowColumn = SelectColumn(runnerColumns, "rr", "TouchedLowFraction", "nvarchar(50)");
                 var filters = new List<string>();
                 var parameters = new DynamicParameters();
-                if (requiredRaceIds.Count > 0)
+                bool filterByRaceIds = requiredRaceIds.Count > 0;
+                if (filterByRaceIds)
                 {
-                    parameters.Add("FilteredRaceIds", requiredRaceIds.ToArray());
                     filters.Add("r.RaceId IN @FilteredRaceIds");
                 }
 
@@ -2264,29 +2264,60 @@ namespace HorseRacingML.ML
                         includedRunnerRows += rows.Count;
                     }
                 }
-                foreach (var record in conn.Query(sql, parameters, commandTimeout: 600000000, buffered: false))
+                void ProcessRecords(IEnumerable<dynamic> records)
                 {
-                    var source = (IDictionary<string, object?>)record;
-                    var row = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
-                    foreach (var kvp in source)
+                    foreach (var record in records)
                     {
-                        row[kvp.Key] = NormalizeDbValue(kvp.Value);
-                    }
+                        var source = (IDictionary<string, object?>)record;
+                        var row = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+                        foreach (var kvp in source)
+                        {
+                            row[kvp.Key] = NormalizeDbValue(kvp.Value);
+                        }
 
-                    if (!PreparedDataset.TryGetRequiredInt32(row, "RaceId", out var raceId))
+                        if (!PreparedDataset.TryGetRequiredInt32(row, "RaceId", out var raceId))
+                        {
+                            continue;
+                        }
+
+                        if (currentRaceId.HasValue && raceId != currentRaceId.Value)
+                        {
+                            FinalizeRace(currentRows, currentRaceId.Value);
+                            currentRows = new List<Dictionary<string, object?>>();
+                        }
+
+                        currentRows.Add(row);
+                        totalRunnerRows++;
+                        currentRaceId = raceId;
+                    }
+                }
+
+                const int filteredRaceIdChunkSize = 2000;
+                if (!filterByRaceIds || requiredRaceIds.Count <= filteredRaceIdChunkSize)
+                {
+                    if (filterByRaceIds)
                     {
-                        continue;
+                        var chunkParameters = new DynamicParameters(parameters);
+                        chunkParameters.Add("FilteredRaceIds", requiredRaceIds.ToArray());
+                        ProcessRecords(conn.Query(sql, chunkParameters, commandTimeout: 600000000, buffered: false));
                     }
-
-                    if (currentRaceId.HasValue && raceId != currentRaceId.Value)
+                    else
                     {
-                        FinalizeRace(currentRows, currentRaceId.Value);
-                        currentRows = new List<Dictionary<string, object?>>();
+                        ProcessRecords(conn.Query(sql, parameters, commandTimeout: 600000000, buffered: false));
                     }
-
-                    currentRows.Add(row);
-                    totalRunnerRows++;
-                    currentRaceId = raceId;
+                }
+                else
+                {
+                    var raceIdList = requiredRaceIds.ToList();
+                    raceIdList.Sort();
+                    for (var offset = 0; offset < raceIdList.Count; offset += filteredRaceIdChunkSize)
+                    {
+                        var chunkLength = Math.Min(filteredRaceIdChunkSize, raceIdList.Count - offset);
+                        var chunk = raceIdList.GetRange(offset, chunkLength).ToArray();
+                        var chunkParameters = new DynamicParameters(parameters);
+                        chunkParameters.Add("FilteredRaceIds", chunk);
+                        ProcessRecords(conn.Query(sql, chunkParameters, commandTimeout: 600000000, buffered: false));
+                    }
                 }
 
                 if (currentRaceId.HasValue && currentRows.Count > 0)
