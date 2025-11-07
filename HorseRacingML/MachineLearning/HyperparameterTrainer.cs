@@ -583,12 +583,18 @@ namespace HorseRacingML.ML
             var trainLabelTensor = Tensorflow.NumPy.np.array(
                 BuildLabelMatrix(trainLabels),
                 dtype: tf.float32);
-            var valFeatureTensor = Tensorflow.NumPy.np.array(
-                BuildFeatureMatrix(valFeatures, featureCount),
-                dtype: tf.float32);
-            var valLabelTensor = Tensorflow.NumPy.np.array(
-                BuildLabelMatrix(valLabels),
-                dtype: tf.float32);
+            bool hasValidationExamples = valExamples.Count > 0 && valLabels.Length > 0;
+            NDArray? valFeatureTensor = null;
+            NDArray? valLabelTensor = null;
+            if (hasValidationExamples)
+            {
+                valFeatureTensor = Tensorflow.NumPy.np.array(
+                    BuildFeatureMatrix(valFeatures, featureCount),
+                    dtype: tf.float32);
+                valLabelTensor = Tensorflow.NumPy.np.array(
+                    BuildLabelMatrix(valLabels),
+                    dtype: tf.float32);
+            }
             var graph = tf.Graph().as_default();
 
             var x = tf.placeholder(tf.float32, shape: new TensorShape(-1, featureCount), name: "x");
@@ -746,13 +752,22 @@ namespace HorseRacingML.ML
                     }
                 }
                 trainLoss = ComputeDatasetMetrics(trainFeatureTensor, trainLabelTensor, trainPreds, trainLabels.Length);
-                valLoss = ComputeDatasetMetrics(valFeatureTensor, valLabelTensor, valPreds, valLabels.Length);
                 trainBrier = ComputeBrier(trainPreds, trainLabels);
-                valBrier = ComputeBrier(valPreds, valLabels);
+                if (hasValidationExamples && valFeatureTensor is not null && valLabelTensor is not null)
+                {
+                    valLoss = ComputeDatasetMetrics(valFeatureTensor, valLabelTensor, valPreds, valLabels.Length);
+                    valBrier = ComputeBrier(valPreds, valLabels);
+                }
+                else
+                {
+                    Array.Clear(valPreds, 0, valPreds.Length);
+                    valLoss = 0;
+                    valBrier = 0;
+                }
 
                 trainAcc = trainPreds.Length > 0 ? ComputeWinnerAccuracy(trainRaceIds, trainPreds, trainLabels) : 0;
-                valAcc = valPreds.Length > 0 ? ComputeWinnerAccuracy(valRaceIds, valPreds, valLabels) : 0;
-                bool useValidationCorrelations = valFeatures.Count > 0 && valPreds.Length > 0;
+                valAcc = hasValidationExamples && valPreds.Length > 0 ? ComputeWinnerAccuracy(valRaceIds, valPreds, valLabels) : 0;
+                bool useValidationCorrelations = hasValidationExamples && valFeatures.Count > 0 && valPreds.Length > 0;
                 var correlationFeatures = useValidationCorrelations ? valFeatures : trainFeatures;
                 var correlationPreds = useValidationCorrelations ? valPreds : trainPreds;
                 var correlationLabels = useValidationCorrelations ? valLabels : trainLabels;
