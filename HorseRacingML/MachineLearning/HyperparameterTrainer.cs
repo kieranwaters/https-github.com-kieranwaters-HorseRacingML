@@ -3,6 +3,7 @@ using HorseRacingML.Models;
 using HorseRacingML.Models;
 using Microsoft.Data.SqlClient;
 using OpenQA.Selenium.BiDi.Script;
+using Microsoft.Extensions.Configuration;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Text;
