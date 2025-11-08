@@ -363,10 +363,15 @@ namespace HorseRacingML.Controllers
             static bool HasValidLayers(int layers) => MLParameterValidator.EnsureLayers(layers, int.MinValue) == layers;
             static bool HasValidLearningRate(double learningRate) => !double.IsNaN(MLParameterValidator.EnsureLearningRate(learningRate, double.NaN));
             static bool HasValidPositive(int value) => MLParameterValidator.EnsurePositive(value, int.MinValue) == value;
+            static bool TryNormalizeBatchSize(int value, out int normalized)
+            {
+                normalized = MLParameterValidator.EnsureBatchSize(value, fallback: 0);
+                return normalized > 0;
+            }
 
             bool unitsValid = !requestedUnits.HasValue || HasValidUnits(requestedUnits.Value);
             bool layersValid = !requestedLayers.HasValue || HasValidLayers(requestedLayers.Value);
-
+            int normalizedBatchSize = 0;
             var invalidHyperparameters = new List<string>();
             if (!unitsValid)
             {
@@ -399,7 +404,7 @@ namespace HorseRacingML.Controllers
                 invalidHyperparameters.Add("Epochs");
             }
 
-            if (requestedBatchSize.HasValue && !HasValidPositive(requestedBatchSize.Value))
+            if (requestedBatchSize.HasValue && !TryNormalizeBatchSize(requestedBatchSize.Value, out normalizedBatchSize))
             {
                 invalidHyperparameters.Add("Batch size");
             }
@@ -456,7 +461,7 @@ namespace HorseRacingML.Controllers
                 !HasValidLayers(requestedLayers.Value) ||
                 !HasValidLearningRate(requestedLearningRate.Value) ||
                 !HasValidPositive(requestedEpochs.Value) ||
-                !HasValidPositive(requestedBatchSize.Value) ||
+                !TryNormalizeBatchSize(requestedBatchSize.Value, out normalizedBatchSize) ||
                 !HasValidPositive(requestedFolds.Value))
             {
                 viewModel.Message = "One or more hyperparameter values are invalid. Please correct them and try again.";
@@ -467,12 +472,17 @@ namespace HorseRacingML.Controllers
                 viewModel.Message = "Units per layer must be positive when more than zero layers are requested.";
                 return View(viewModel);
             }
+            var batchSize = normalizedBatchSize;
+            string? batchSizeAdjustmentMessage = null;
+            if (batchSize < requestedBatchSize.Value)
+            {
+                batchSizeAdjustmentMessage = $"Batch size reduced to {batchSize} to respect the maximum of {MLParameterValidator.MaxBatchSize}.";
+            }
             var units = requestedUnits.Value;
             var dropout = requestedDropout.Value;
             var layers = requestedLayers.Value;
             var learningRate = requestedLearningRate.Value;
             var epochs = requestedEpochs.Value;
-            var batchSize = requestedBatchSize.Value;
             var folds = requestedFolds.Value;
             var parameter = new MLParameter
             {
@@ -509,7 +519,10 @@ namespace HorseRacingML.Controllers
             viewModel.ValidationBrier = result.ValidationBrier;
             viewModel.ValidationRaceCount = dataset.ValidationRaces.Count;
             viewModel.TrainingRaceCount = dataset.TrainingRaces.Count;
-            viewModel.Message = $"Validation accuracy over {viewModel.ValidationRaceCount} races: {result.ValidationAccuracy:P2}.";
+            var accuracyMessage = $"Validation accuracy over {viewModel.ValidationRaceCount} races: {result.ValidationAccuracy:P2}.";
+            viewModel.Message = batchSizeAdjustmentMessage is null
+                ? accuracyMessage
+                : string.Concat(batchSizeAdjustmentMessage, " ", accuracyMessage);
 
             var raceSummaries = _repository.GetRaceSummaries(result.ValidationRaceIds);
             viewModel.Simulation = RunValidationSimulation(result, raceSummaries, startingBankroll);

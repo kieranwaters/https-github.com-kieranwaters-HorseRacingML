@@ -116,6 +116,24 @@ namespace HorseRacingML.ML
             public double Correlation { get; init; }
             public IReadOnlyList<RunnerExample> ValidationExamples { get; init; } = Array.Empty<RunnerExample>();
         }
+        private static void NormalizeBatchSize(MLParameter param)
+        {
+            if (param is null)
+            {
+                throw new ArgumentNullException(nameof(param));
+            }
+
+            var normalized = MLParameterValidator.EnsureBatchSize(param.BatchSize, fallback: 0);
+            if (normalized <= 0)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(param.BatchSize),
+                    param.BatchSize,
+                    "Batch size must be greater than zero.");
+            }
+
+            param.BatchSize = normalized;
+        }
 
 
         public TrainingDataset LoadTrainingDataset(bool includeIdentifiers = false)
@@ -127,6 +145,7 @@ namespace HorseRacingML.ML
 
         public TrainingResult Train(MLParameter param, int foldIndex, int foldCount, bool persistWeights = true)
         {
+            NormalizeBatchSize(param);
             var dataset = LoadTrainingDataset(includeIdentifiers: true);
             return Train(param, foldIndex, foldCount, dataset, persistWeights);
         }
@@ -351,7 +370,7 @@ namespace HorseRacingML.ML
         {
             if (dataset is null)
                 throw new ArgumentNullException(nameof(dataset));
-
+            NormalizeBatchSize(param);
             int totalRaces = dataset.Races.Count;
             if (foldCount <= 0)
                 throw new ArgumentOutOfRangeException(nameof(foldCount));
@@ -407,7 +426,7 @@ namespace HorseRacingML.ML
         {
             if (dataset is null)
                 throw new ArgumentNullException(nameof(dataset));
-
+            NormalizeBatchSize(param);
             var gpus = tf.config.list_physical_devices("GPU");
             if (gpus.Length > 0)
             {
@@ -706,13 +725,6 @@ namespace HorseRacingML.ML
 
             try
             {
-                if (param.BatchSize <= 0)
-                {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(param.BatchSize),
-                        param.BatchSize,
-                        "Batch size must be greater than zero.");
-                }
                 int n = trainLabels.Length;
                 if (n > 0)
                 {
@@ -758,9 +770,6 @@ namespace HorseRacingML.ML
 
                 trainAcc = trainPreds.Length > 0 ? ComputeWinnerAccuracy(trainRaceIds, trainPreds, trainLabels) : 0;
                 valAcc = hasValidationExamples && valPreds.Length > 0 ? ComputeWinnerAccuracy(valRaceIds, valPreds, valLabels) : 0;
-                var epochLoss = ComputeDatasetMetrics(trainFeatureTensor, trainLabelTensor, epochPredBuffer, n);
-                var epochAcc = ComputeWinnerAccuracy(trainRaceIds, epochPredBuffer, trainLabels);
-                Console.WriteLine($"Epoch {epoch + 1}/{param.Epochs} - loss: {epochLoss:F4} - winner acc: {epochAcc:F4}");
                 bool useValidationCorrelations = hasValidationExamples && valFeatures.Count > 0 && valPreds.Length > 0;
                 var correlationFeatures = useValidationCorrelations ? valFeatures : trainFeatures;
                 var correlationPreds = useValidationCorrelations ? valPreds : trainPreds;

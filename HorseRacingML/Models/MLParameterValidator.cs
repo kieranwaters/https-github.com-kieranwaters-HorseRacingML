@@ -6,7 +6,7 @@ namespace HorseRacingML.Models
     {
         private const int MaxUnits = 4096;
         private const int MaxLayers = 12;
-
+        public const int MaxBatchSize = 8192;
         public static int EnsureUnits(int? units, int fallback)
         {
             if (units.HasValue)
@@ -68,6 +68,19 @@ namespace HorseRacingML.Models
             if (value.HasValue && value.Value > 0)
             {
                 return value.Value;
+            }
+
+            return fallback;
+        }
+        public static int EnsureBatchSize(int? batchSize, int fallback)
+        {
+            if (batchSize.HasValue)
+            {
+                var value = batchSize.Value;
+                if (value > 0)
+                {
+                    return Math.Min(value, MaxBatchSize);
+                }
             }
 
             return fallback;
