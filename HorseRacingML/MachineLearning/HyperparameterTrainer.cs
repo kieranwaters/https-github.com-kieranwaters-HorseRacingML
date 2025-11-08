@@ -12,6 +12,7 @@ using System.Collections.Concurrent;
 using System;
 using Tensorflow;
 using Tensorflow.NumPy;
+using System.IO;
 using System.Threading.Tasks;
 using static Tensorflow.Binding;
 using static Tensorflow.TensorShapeProto.Types;
@@ -268,9 +269,41 @@ namespace HorseRacingML.ML
             }
 
             var mapPath = Path.Combine(AppContext.BaseDirectory, "string_maps.json");
-            File.WriteAllText(mapPath, JsonSerializer.Serialize(metadata.StringMaps));
+            var serializedMaps = JsonSerializer.Serialize(metadata.StringMaps);
+            WriteTextIfChanged(mapPath, serializedMaps);
 
             return new TrainingDataset(trainRaces, validationRaces, metadata.FeatureKeys, metadata.FeatureDimensions, metadata.StringMaps, normalization, normalizationKey);
+        }
+        private static void WriteTextIfChanged(string path, string content)
+        {
+            if (string.IsNullOrEmpty(path))
+            {
+                throw new ArgumentException("Path must be provided.", nameof(path));
+            }
+
+            content ??= string.Empty;
+
+            try
+            {
+                if (File.Exists(path))
+                {
+                    var existing = File.ReadAllText(path);
+                    if (string.Equals(existing, content, StringComparison.Ordinal))
+                    {
+                        return;
+                    }
+                }
+            }
+            catch (IOException)
+            {
+                // If the read fails we still attempt to write the fresh content below.
+            }
+            catch (UnauthorizedAccessException)
+            {
+                // If we cannot read the existing file, fall back to writing the new content.
+            }
+
+            File.WriteAllText(path, content);
         }
         private static string BuildRaceSignature(IEnumerable<PreparedRace> races)
         {
@@ -400,24 +433,26 @@ namespace HorseRacingML.ML
                 .Select(r => r.RaceId)
                 .ToHashSet();
 
-            var combinedRaceIds = new HashSet<int>(trainRaceIds);
-            combinedRaceIds.UnionWith(validationRaceIds);
+            var trainingRaces = new List<PreparedRace>();
+            var validationRaces = new List<PreparedRace>();
 
-            var combinedPrepared = PrepareDataset(
-                ToNullableSet(combinedRaceIds),
-                ToNullableSet(trainRaceIds));
+            foreach (var race in dataset.Races)
+            {
+                if (trainRaceIds.Contains(r.RaceId))
+                {
+                    trainingRaces.Add(race);
+                }
+                else if (validationRaceIds.Contains(r.RaceId))
+                {
+                    validationRaces.Add(race);
+                }
+            }
 
-            var trainingPrepared = new TrainingDataset.PreparedDataset(
-                combinedPrepared.Races
-                    .Where(r => trainRaceIds.Contains(r.RaceId))
-                    .ToList());
+            var trainingPrepared = new TrainingDataset.PreparedDataset(trainingRaces);
 
             var validationPrepared = validationRaceIds.Count > 0
-                ? new TrainingDataset.PreparedDataset(
-                    combinedPrepared.Races
-                        .Where(r => validationRaceIds.Contains(r.RaceId))
-                        .ToList())
-                : new TrainingDataset.PreparedDataset(new List<TrainingDataset.PreparedDataset.PreparedRace>());
+                ? new TrainingDataset.PreparedDataset(validationRaces)
+                : new TrainingDataset.PreparedDataset(new List<PreparedRace>());
 
             var trainingDataset = BuildTrainingDataset(trainingPrepared, validationPrepared, includeIdentifiers: false);
             return Train(param, foldIndex, foldCount, trainingDataset, persistWeights);
@@ -444,13 +479,14 @@ namespace HorseRacingML.ML
                     .ToList();
 
                 int featureCount = dataset.FeatureCount;
-            var trainFeatures = trainExamples.Select(r => r.Features).ToList();
+            var trainFeatures = trainExamples.Select(r => (float[])r.Features.Clone()).ToList();
             var trainLabels = trainExamples.Select(r => r.Label).ToArray();
             var trainRaceIds = trainExamples.Select(r => r.RaceId).ToArray();
 
-            var valFeatures = valExamples.Select(r => r.Features).ToList();
+            var valFeatures = valExamples.Select(r => (float[])r.Features.Clone()).ToList();
             var valLabels = valExamples.Select(r => r.Label).ToArray();
             var valRaceIds = valExamples.Select(r => r.RaceId).ToArray();
+            bool restoreFeatureState = false;
 
             var normalizationKey = dataset.NormalizationCacheKey;
             var means = dataset.Normalization.Mean ?? Array.Empty<float>();
@@ -563,30 +599,6 @@ namespace HorseRacingML.ML
                 }
                 return matrix;
             }
-            static float[,] BuildFeatureBatch(List<float[]> source, ReadOnlySpan<int> idx, int featureCount)
-            {
-                var matrix = new float[idx.Length, featureCount];
-                for (int r = 0; r < idx.Length; r++)
-                {
-                    var row = source[idx[r]];
-                    for (int c = 0; c < featureCount; c++)
-                    {
-                        matrix[r, c] = row[c];
-                    }
-                }
-                return matrix;
-            }
-
-            static float[,] BuildLabelBatch(float[] labels, ReadOnlySpan<int> idx)
-            {
-                var matrix = new float[idx.Length, 1];
-                for (int r = 0; r < idx.Length; r++)
-                {
-                    matrix[r, 0] = labels[idx[r]];
-                }
-                return matrix;
-            }
-
             static void Shuffle(int[] values, Random random)
             {
                 for (int i = values.Length - 1; i > 0; i--)
@@ -648,7 +660,8 @@ namespace HorseRacingML.ML
             sess.run(tf.global_variables_initializer());
 
             var normPath = Path.Combine(AppContext.BaseDirectory, "normalization.json");
-            File.WriteAllText(normPath, JsonSerializer.Serialize(dataset.Normalization));
+            var normalizationJson = JsonSerializer.Serialize(dataset.Normalization);
+            WriteTextIfChanged(normPath, normalizationJson);
 
             var trainPreds = new float[trainLabels.Length];
             var valPreds = new float[valLabels.Length];
@@ -729,6 +742,7 @@ namespace HorseRacingML.ML
                 if (n > 0)
                 {
                     var indices = Enumerable.Range(0, n).ToArray();
+                    var batchIndexBuffer = new int[param.BatchSize];
                     for (int epoch = 0; epoch < param.Epochs; epoch++)
                     {
                         Shuffle(indices, rnd);
@@ -737,12 +751,11 @@ namespace HorseRacingML.ML
                         {
                             int batchCount = Math.Min(param.BatchSize, n - start);
                             var batchIndices = indices.AsSpan(start, batchCount);
-                            using var batchFeatures = Tensorflow.NumPy.np.array(
-                                BuildFeatureBatch(trainFeatures, batchIndices, featureCount),
-                                dtype: tf.float32);
-                            using var batchLabels = Tensorflow.NumPy.np.array(
-                                BuildLabelBatch(trainLabels, batchIndices),
-                                dtype: tf.float32);
+                            batchIndices.CopyTo(batchIndexBuffer);
+                            var batchIndexArray = batchIndexBuffer.AsSpan(0, batchCount).ToArray();
+                            using var batchIndexTensor = Tensorflow.NumPy.np.array(batchIndexArray, dtype: tf.int32);
+                            using var batchFeatures = trainFeatureTensor[batchIndexTensor];
+                            using var batchLabels = trainLabelTensor[batchIndexTensor];
 
                             sess.run(optimizer,
                                 new FeedItem(x, batchFeatures),
@@ -797,8 +810,11 @@ namespace HorseRacingML.ML
             }
             finally
             {
-                Denormalize(trainFeatures);
-                Denormalize(valFeatures);
+                if (restoreFeatureState)
+                {
+                    Denormalize(trainFeatures);
+                    Denormalize(valFeatures);
+                }
             }
             var hiddenLayers = new List<LayerWeights>();
             foreach (var (wVar, bVar) in hiddenWeightVars.Zip(hiddenBiasVars, (wVar, bVar) => (wVar, bVar)))
