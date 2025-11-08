@@ -439,11 +439,11 @@ namespace HorseRacingML.ML
 
             foreach (var race in dataset.Races)
             {
-                if (trainRaceIds.Contains(r.RaceId))
+                if (trainRaceIds.Contains(race.RaceId))
                 {
                     trainingRaces.Add(race);
                 }
-                else if (validationRaceIds.Contains(r.RaceId))
+                else if (validationRaceIds.Contains(race.RaceId))
                 {
                     validationRaces.Add(race);
                 }
