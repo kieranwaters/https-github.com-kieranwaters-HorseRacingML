@@ -747,8 +747,8 @@ namespace HorseRacingML.ML
                 int n = trainLabels.Length;
                 if (n > 0)
                 {
-                    double bestValLoss = double.MaxValue;
-                    int patience = 5;
+                    bestValLoss = double.MaxValue;
+                    patience = 5;
                     int wait = 0;
                     var indices = Enumerable.Range(0, n).ToArray();
                     var batchIndexBuffer = new int[param.BatchSize];
