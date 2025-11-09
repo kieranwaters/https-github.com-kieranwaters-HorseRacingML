@@ -659,7 +659,8 @@ namespace HorseRacingML.ML
             var rnd = new Random();
             using var sess = tf.Session(graph);
             sess.run(tf.global_variables_initializer());
-
+            var allVariables = hiddenWeightVars.Concat(hiddenBiasVars).Concat(new[] { wOut, bOut }).ToList();
+            var bestWeights = new List<NDArray>();
             var normPath = Path.Combine(AppContext.BaseDirectory, "normalization.json");
             var normalizationJson = JsonSerializer.Serialize(dataset.Normalization);
             WriteTextIfChanged(normPath, normalizationJson);
@@ -742,6 +743,9 @@ namespace HorseRacingML.ML
                 int n = trainLabels.Length;
                 if (n > 0)
                 {
+                    double bestValLoss = double.MaxValue;
+                    int patience = 5;
+                    int wait = 0;
                     var indices = Enumerable.Range(0, n).ToArray();
                     var batchIndexBuffer = new int[param.BatchSize];
                     for (int epoch = 0; epoch < param.Epochs; epoch++)
@@ -765,43 +769,79 @@ namespace HorseRacingML.ML
 
                         var epochLoss = ComputeDatasetMetrics(trainFeatureTensor, trainLabelTensor, epochPredBuffer, n);
                         var epochAcc = ComputeWinnerAccuracy(trainRaceIds, epochPredBuffer, trainLabels);
-                        Console.WriteLine($"Epoch {epoch + 1}/{param.Epochs} - loss: {epochLoss:F4} - winner acc: {epochAcc:F4}");
+                        double currentValLoss = 0;
+                        if (hasValidationExamples && valFeatureTensor is not null && valLabelTensor is not null)
+                        {
+                            currentValLoss = ComputeDatasetMetrics(valFeatureTensor, valLabelTensor, valPreds, valLabels.Length);
+                            Console.WriteLine($"Epoch {epoch + 1}/{param.Epochs} - loss: {epochLoss:F4} - winner acc: {epochAcc:F4} - val_loss: {currentValLoss:F4}");
+                            if (currentValLoss < bestValLoss)
+                            {
+                                bestValLoss = currentValLoss;
+                                wait = 0;
+                                bestWeights.Clear();
+                                foreach (var variable in allVariables)
+                                {
+                                    bestWeights.Add(sess.run(variable));
+                                }
+                            }
+                            else
+                            {
+                                wait++;
+                                if (wait >= patience)
+                                {
+                                    Console.WriteLine($"Early stopping at epoch {epoch + 1}");
+                                    break;
+                                }
+                            }
+                        }
+                        else
+                        {
+                            Console.WriteLine($"Epoch {epoch + 1}/{param.Epochs} - loss: {epochLoss:F4} - winner acc: {epochAcc:F4}");
+                        }
                     }
-                }
-                trainLoss = ComputeDatasetMetrics(trainFeatureTensor, trainLabelTensor, trainPreds, trainLabels.Length);
-                trainBrier = ComputeBrier(trainPreds, trainLabels);
-                if (hasValidationExamples && valFeatureTensor is not null && valLabelTensor is not null)
-                {
-                    valLoss = ComputeDatasetMetrics(valFeatureTensor, valLabelTensor, valPreds, valLabels.Length);
-                    valBrier = ComputeBrier(valPreds, valLabels);
-                }
-                else
-                {
-                    Array.Clear(valPreds, 0, valPreds.Length);
-                    valLoss = 0;
-                    valBrier = 0;
-                }
 
-                trainAcc = trainPreds.Length > 0 ? ComputeWinnerAccuracy(trainRaceIds, trainPreds, trainLabels) : 0;
-                valAcc = hasValidationExamples && valPreds.Length > 0 ? ComputeWinnerAccuracy(valRaceIds, valPreds, valLabels) : 0;
-                bool useValidationCorrelations = hasValidationExamples && valFeatures.Count > 0 && valPreds.Length > 0;
-                var correlationFeatures = useValidationCorrelations ? valFeatures : trainFeatures;
-                var correlationPreds = useValidationCorrelations ? valPreds : trainPreds;
-                var correlationLabels = useValidationCorrelations ? valLabels : trainLabels;
+                    if (hasValidationExamples && bestWeights.Count > 0)
+                    {
+                        for (int i = 0; i < allVariables.Count; i++)
+                        {
+                            sess.run(allVariables[i].assign(bestWeights[i]));
+                        }
+                    }
+                    trainLoss = ComputeDatasetMetrics(trainFeatureTensor, trainLabelTensor, trainPreds, trainLabels.Length);
+                    trainBrier = ComputeBrier(trainPreds, trainLabels);
+                    if (hasValidationExamples && valFeatureTensor is not null && valLabelTensor is not null)
+                    {
+                        valLoss = ComputeDatasetMetrics(valFeatureTensor, valLabelTensor, valPreds, valLabels.Length);
+                        valBrier = ComputeBrier(valPreds, valLabels);
+                    }
+                    else
+                    {
+                        Array.Clear(valPreds, 0, valPreds.Length);
+                        valLoss = 0;
+                        valBrier = 0;
+                    }
 
-                if (param.EnableFeatureCorrelations)
-                {
-                    featureCorrelations = ComputeFeatureCorrelations(
-                        correlationFeatures,
-                        correlationPreds,
-                        correlationLabels,
-                        dataset.FeatureKeys,
-                        dataset.FeatureDimensions,
-                        dataset.StringMaps);
-                }
-                else
-                {
-                    Console.WriteLine("[TrainAI] Skipping feature correlation computation because it was disabled for this run.");
+                    trainAcc = trainPreds.Length > 0 ? ComputeWinnerAccuracy(trainRaceIds, trainPreds, trainLabels) : 0;
+                    valAcc = hasValidationExamples && valPreds.Length > 0 ? ComputeWinnerAccuracy(valRaceIds, valPreds, valLabels) : 0;
+                    bool useValidationCorrelations = hasValidationExamples && valFeatures.Count > 0 && valPreds.Length > 0;
+                    var correlationFeatures = useValidationCorrelations ? valFeatures : trainFeatures;
+                    var correlationPreds = useValidationCorrelations ? valPreds : trainPreds;
+                    var correlationLabels = useValidationCorrelations ? valLabels : trainLabels;
+
+                    if (param.EnableFeatureCorrelations)
+                    {
+                        featureCorrelations = ComputeFeatureCorrelations(
+                            correlationFeatures,
+                            correlationPreds,
+                            correlationLabels,
+                            dataset.FeatureKeys,
+                            dataset.FeatureDimensions,
+                            dataset.StringMaps);
+                    }
+                    else
+                    {
+                        Console.WriteLine("[TrainAI] Skipping feature correlation computation because it was disabled for this run.");
+                    }
                 }
             }
             catch (Exception ex)
