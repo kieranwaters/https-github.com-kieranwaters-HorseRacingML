@@ -28,6 +28,6 @@ namespace HorseRacingML.Models
         public int SelectedValidationMonths { get; set; } = 1;
         public decimal StartingBankroll { get; set; } = 100m;
         public ValidationSimulationResult? Simulation { get; set; }
-        public bool HasResult => ValidationAccuracy.HasValue;
+        public bool HasResult => ValidationAccuracy.HasValue || ValidationLoss.HasValue;
     }
 }
