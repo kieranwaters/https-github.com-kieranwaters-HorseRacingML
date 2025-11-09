@@ -735,6 +735,10 @@ namespace HorseRacingML.ML
             double valBrier = 0;
             double trainAcc = 0;
             double valAcc = 0;
+            double bestValLoss = double.MaxValue;
+            int patience = 10;
+            int patienceCounter = 0;
+            string? bestModelPath = null;
             List<FeatureCorrelation> featureCorrelations = new();
             HyperparameterStarted(param, trainLabels.Length, valLabels.Length, featureCount);
 
@@ -769,29 +773,30 @@ namespace HorseRacingML.ML
 
                         var epochLoss = ComputeDatasetMetrics(trainFeatureTensor, trainLabelTensor, epochPredBuffer, n);
                         var epochAcc = ComputeWinnerAccuracy(trainRaceIds, epochPredBuffer, trainLabels);
-                        double currentValLoss = 0;
-                        if (hasValidationExamples && valFeatureTensor is not null && valLabelTensor is not null)
+
+                        if (hasValidationExamples && valFeatureTensor != null && valLabelTensor != null)
                         {
-                            currentValLoss = ComputeDatasetMetrics(valFeatureTensor, valLabelTensor, valPreds, valLabels.Length);
-                            Console.WriteLine($"Epoch {epoch + 1}/{param.Epochs} - loss: {epochLoss:F4} - winner acc: {epochAcc:F4} - val_loss: {currentValLoss:F4}");
-                            if (currentValLoss < bestValLoss)
+                            var epochValLoss = ComputeDatasetMetrics(valFeatureTensor, valLabelTensor, valPreds, valLabels.Length);
+                            var epochValAcc = ComputeWinnerAccuracy(valRaceIds, valPreds, valLabels);
+                            Console.WriteLine($"Epoch {epoch + 1}/{param.Epochs} - loss: {epochLoss:F4} - winner acc: {epochAcc:F4} - val_loss: {epochValLoss:F4} - val_acc: {epochValAcc:F4}");
+
+                            if (epochValLoss < bestValLoss)
                             {
-                                bestValLoss = currentValLoss;
-                                wait = 0;
-                                bestWeights.Clear();
-                                foreach (var variable in allVariables)
-                                {
-                                    bestWeights.Add(sess.run(variable));
-                                }
+                                bestValLoss = epochValLoss;
+                                patienceCounter = 0;
+                                bestModelPath = Path.GetTempFileName();
+                                var saver = tf.train.Saver();
+                                saver.save(sess, bestModelPath);
                             }
                             else
                             {
-                                wait++;
-                                if (wait >= patience)
-                                {
-                                    Console.WriteLine($"Early stopping at epoch {epoch + 1}");
-                                    break;
-                                }
+                                patienceCounter++;
+                            }
+
+                            if (patienceCounter >= patience)
+                            {
+                                Console.WriteLine("Early stopping due to no improvement in validation loss.");
+                                break;
                             }
                         }
                         else
@@ -855,6 +860,12 @@ namespace HorseRacingML.ML
                 {
                     Denormalize(trainFeatures);
                     Denormalize(valFeatures);
+                }
+                if (bestModelPath != null && File.Exists(bestModelPath))
+                {
+                    var saver = tf.train.Saver();
+                    saver.restore(sess, bestModelPath);
+                    File.Delete(bestModelPath);
                 }
             }
             var hiddenLayers = new List<LayerWeights>();
