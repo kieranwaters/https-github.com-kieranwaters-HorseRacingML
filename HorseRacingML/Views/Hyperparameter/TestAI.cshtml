@@ -131,6 +131,10 @@
                 <dd class="col-sm-8">@Model.ValidationBrier?.ToString("F4")</dd>
                 <dt class="col-sm-4">Training Brier score</dt>
                 <dd class="col-sm-8">@Model.TrainBrier?.ToString("F4")</dd>
+                <dt class="col-sm-4">Validation Focal loss</dt>
+                <dd class="col-sm-8">@Model.ValidationFocalLoss?.ToString("F4")</dd>
+                <dt class="col-sm-4">Training Focal loss</dt>
+                <dd class="col-sm-8">@Model.TrainFocalLoss?.ToString("F4")</dd>
             </dl>
 
             @if (Model.ParameterUsed != null)

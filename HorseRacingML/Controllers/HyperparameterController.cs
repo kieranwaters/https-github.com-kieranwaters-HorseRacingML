@@ -74,9 +74,11 @@ namespace HorseRacingML.Controllers
                     double totalTrainAccuracy = 0;
                     double totalTrainLoss = 0;
                     double totalTrainBrier = 0;
+                    double totalTrainFocalLoss = 0;
                     double totalValidationAccuracy = 0;
                     double totalValidationLoss = 0;
                     double totalValidationBrier = 0;
+                    double totalValidationFocalLoss = 0;
 
                     for (int i = 0; i < model.Folds; i++)
                     {
@@ -87,9 +89,11 @@ namespace HorseRacingML.Controllers
                         totalTrainAccuracy += result.TrainAccuracy;
                         totalTrainLoss += result.TrainLoss;
                         totalTrainBrier += result.TrainBrier;
+                        totalTrainFocalLoss += result.TrainFocalLoss;
                         totalValidationAccuracy += result.ValidationAccuracy;
                         totalValidationLoss += result.ValidationLoss;
                         totalValidationBrier += result.ValidationBrier;
+                        totalValidationFocalLoss += result.ValidationFocalLoss;
 
                         if (model.Folds > 1)
                         {
@@ -107,9 +111,11 @@ namespace HorseRacingML.Controllers
                                 TrainAccuracy = result.TrainAccuracy,
                                 TrainLoss = result.TrainLoss,
                                 TrainBrier = result.TrainBrier,
+                                TrainFocalLoss = result.TrainFocalLoss,
                                 ValidationAccuracy = result.ValidationAccuracy,
                                 ValidationLoss = result.ValidationLoss,
-                                ValidationBrier = result.ValidationBrier
+                                ValidationBrier = result.ValidationBrier,
+                                ValidationFocalLoss = result.ValidationFocalLoss
                             };
 
                             _repository.InsertMLParameter(foldModel);
@@ -203,9 +209,11 @@ namespace HorseRacingML.Controllers
                     model.TrainAccuracy = result.TrainAccuracy;
                     model.TrainLoss = result.TrainLoss;
                     model.TrainBrier = result.TrainBrier;
+                    model.TrainFocalLoss = result.TrainFocalLoss;
                     model.ValidationAccuracy = result.ValidationAccuracy;
                     model.ValidationLoss = result.ValidationLoss;
                     model.ValidationBrier = result.ValidationBrier;
+                    model.ValidationFocalLoss = result.ValidationFocalLoss;
 
                     _repository.InsertMLParameter(model);
 
@@ -514,9 +522,11 @@ namespace HorseRacingML.Controllers
             viewModel.TrainAccuracy = result.TrainAccuracy;
             viewModel.TrainLoss = result.TrainLoss;
             viewModel.TrainBrier = result.TrainBrier;
+            viewModel.TrainFocalLoss = result.TrainFocalLoss;
             viewModel.ValidationAccuracy = result.ValidationAccuracy;
             viewModel.ValidationLoss = result.ValidationLoss;
             viewModel.ValidationBrier = result.ValidationBrier;
+            viewModel.ValidationFocalLoss = result.ValidationFocalLoss;
             viewModel.ValidationRaceCount = dataset.ValidationRaces.Count;
             viewModel.TrainingRaceCount = dataset.TrainingRaces.Count;
             var accuracyMessage = $"Validation accuracy over {viewModel.ValidationRaceCount} races: {result.ValidationAccuracy:P2}.";

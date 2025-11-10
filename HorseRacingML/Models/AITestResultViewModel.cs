@@ -26,6 +26,8 @@ namespace HorseRacingML.Models
         public int? RequestedFolds { get; set; }
         [Range(1, 24, ErrorMessage = "Please choose between 1 and 24 months.")]
         public int SelectedValidationMonths { get; set; } = 1;
+        public double? TrainFocalLoss { get; set; }
+        public double? ValidationFocalLoss { get; set; }
         public decimal StartingBankroll { get; set; } = 100m;
         public ValidationSimulationResult? Simulation { get; set; }
         public bool HasResult => ValidationAccuracy.HasValue || ValidationLoss.HasValue;

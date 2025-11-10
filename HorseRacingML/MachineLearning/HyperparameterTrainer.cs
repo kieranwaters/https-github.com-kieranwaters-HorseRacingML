@@ -59,9 +59,11 @@ namespace HorseRacingML.ML
             public double TrainAccuracy { get; init; }
             public double TrainLoss { get; init; }
             public double TrainBrier { get; init; }
+            public double TrainFocalLoss { get; init; }
             public double ValidationAccuracy { get; init; }
             public double ValidationLoss { get; init; }
             public double ValidationBrier { get; init; }
+            public double ValidationFocalLoss { get; init; }
             public IReadOnlyList<float> TrainingPredictions { get; init; } = Array.Empty<float>();
             public IReadOnlyList<float> TrainingLabels { get; init; } = Array.Empty<float>();
             public IReadOnlyList<int> TrainingRaceIds { get; init; } = Array.Empty<int>();
@@ -653,7 +655,8 @@ namespace HorseRacingML.ML
             var bOut = tf.Variable(tf.zeros(1), name: "bOut");
             var logits = tf.matmul(layer, wOut) + bOut;
             var loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels: y, logits: logits));
-            var optimizer = tf.train.AdamOptimizer((float)param.LearningRate).minimize(loss);
+            var focalLoss = tf.reduce_mean(SigmoidFocalLoss(y, logits));
+            var optimizer = tf.train.AdamOptimizer((float)param.LearningRate).minimize(focalLoss);
 
             var prediction = tf.sigmoid(logits);
             var rnd = new Random();
@@ -669,18 +672,19 @@ namespace HorseRacingML.ML
             var valPreds = new float[valLabels.Length];
             var epochPredBuffer = new float[trainLabels.Length];
 
-            double ComputeDatasetMetrics(NDArray featureTensor, NDArray labelTensor, float[] preds, int count)
+            (double loss, double focalLoss) ComputeDatasetMetrics(NDArray featureTensor, NDArray labelTensor, float[] preds, int count)
             {
                 if (preds.Length != count)
                     throw new ArgumentException("Prediction buffer size must match example count.", nameof(preds));
 
                 if (count == 0)
                 {
-                    return 0;
+                    return (0, 0);
                 }
 
                 const int evalBatchSize = 8192;
                 double weightedLoss = 0;
+                double weightedFocalLoss = 0;
                 int totalExamples = 0;
 
                 for (int start = 0; start < count; start += evalBatchSize)
@@ -690,18 +694,20 @@ namespace HorseRacingML.ML
                     var featureSlice = featureTensor[new Slice(start, start + batchCount), Slice.All];
                     var labelSlice = labelTensor[new Slice(start, start + batchCount), Slice.All];
 
-                    var results = sess.run(new[] { loss, prediction },
+                    var results = sess.run(new[] { loss, focalLoss, prediction },
                         new FeedItem(x, featureSlice),
                         new FeedItem(y, labelSlice));
 
                     var chunkLoss = results[0].ToArray<float>()[0];
-                    var chunkPreds = results[1].ToArray<float>();
+                    var chunkFocalLoss = results[1].ToArray<float>()[0];
+                    var chunkPreds = results[2].ToArray<float>();
                     Array.Copy(chunkPreds, 0, preds, start, batchCount);
                     weightedLoss += chunkLoss * batchCount;
+                    weightedFocalLoss += chunkFocalLoss * batchCount;
                     totalExamples += batchCount;
                 }
 
-                return totalExamples > 0 ? weightedLoss / totalExamples : 0;
+                return totalExamples > 0 ? (weightedLoss / totalExamples, weightedFocalLoss / totalExamples) : (0, 0);
             }
 
             void Denormalize(IList<float[]> data)
@@ -733,6 +739,8 @@ namespace HorseRacingML.ML
             double valLoss = 0;
             double trainBrier = 0;
             double valBrier = 0;
+            double trainFocalLoss = 0;
+            double valFocalLoss = 0;
             double trainAcc = 0;
             double valAcc = 0;
             double bestValLoss = double.MaxValue;
@@ -771,14 +779,14 @@ namespace HorseRacingML.ML
                                 new FeedItem(y, batchLabels));
                         }
 
-                        var epochLoss = ComputeDatasetMetrics(trainFeatureTensor, trainLabelTensor, epochPredBuffer, n);
+                        (var epochLoss, var epochFocalLoss) = ComputeDatasetMetrics(trainFeatureTensor, trainLabelTensor, epochPredBuffer, n);
                         var epochAcc = ComputeWinnerAccuracy(trainRaceIds, epochPredBuffer, trainLabels);
 
                         if (hasValidationExamples && valFeatureTensor != null && valLabelTensor != null)
                         {
-                            var epochValLoss = ComputeDatasetMetrics(valFeatureTensor, valLabelTensor, valPreds, valLabels.Length);
+                            (var epochValLoss, var epochValFocalLoss) = ComputeDatasetMetrics(valFeatureTensor, valLabelTensor, valPreds, valLabels.Length);
                             var epochValAcc = ComputeWinnerAccuracy(valRaceIds, valPreds, valLabels);
-                            Console.WriteLine($"Epoch {epoch + 1}/{param.Epochs} - loss: {epochLoss:F4} - winner acc: {epochAcc:F4} - val_loss: {epochValLoss:F4} - val_acc: {epochValAcc:F4}");
+                            Console.WriteLine($"Epoch {epoch + 1}/{param.Epochs} - loss: {epochLoss:F4} - focal_loss: {epochFocalLoss:F4} - winner acc: {epochAcc:F4} - val_loss: {epochValLoss:F4} - val_focal_loss: {epochValFocalLoss:F4} - val_acc: {epochValAcc:F4}");
 
                             if (epochValLoss < bestValLoss)
                             {
@@ -812,11 +820,12 @@ namespace HorseRacingML.ML
                             sess.run(allVariables[i].assign(bestWeights[i]));
                         }
                     }
-                    trainLoss = ComputeDatasetMetrics(trainFeatureTensor, trainLabelTensor, trainPreds, trainLabels.Length);
+                    (trainLoss, trainFocalLoss) = ComputeDatasetMetrics(trainFeatureTensor, trainLabelTensor, trainPreds, trainLabels.Length);
                     trainBrier = ComputeBrier(trainPreds, trainLabels);
+
                     if (hasValidationExamples && valFeatureTensor is not null && valLabelTensor is not null)
                     {
-                        valLoss = ComputeDatasetMetrics(valFeatureTensor, valLabelTensor, valPreds, valLabels.Length);
+                        (valLoss, valFocalLoss) = ComputeDatasetMetrics(valFeatureTensor, valLabelTensor, valPreds, valLabels.Length);
                         valBrier = ComputeBrier(valPreds, valLabels);
                     }
                     else
@@ -824,6 +833,7 @@ namespace HorseRacingML.ML
                         Array.Clear(valPreds, 0, valPreds.Length);
                         valLoss = 0;
                         valBrier = 0;
+                        valFocalLoss = 0;
                     }
 
                     trainAcc = trainPreds.Length > 0 ? ComputeWinnerAccuracy(trainRaceIds, trainPreds, trainLabels) : 0;
@@ -952,15 +962,17 @@ namespace HorseRacingML.ML
                     // Updating the legacy path is best-effort only.
                 }
                 }
-            HyperparameterCompleted(param, trainAcc, valAcc, trainLoss, valLoss, trainBrier, valBrier);
+            HyperparameterCompleted(param, trainAcc, valAcc, trainLoss, valLoss, trainBrier, valBrier, trainFocalLoss, valFocalLoss);
             return new TrainingResult
             {
                 TrainAccuracy = trainAcc,
                 TrainLoss = trainLoss,
                 TrainBrier = trainBrier,
+                TrainFocalLoss = trainFocalLoss,
                 ValidationAccuracy = valAcc,
                 ValidationLoss = valLoss,
                 ValidationBrier = valBrier,
+                ValidationFocalLoss = valFocalLoss,
                 TrainingPredictions = Array.AsReadOnly(trainPreds),
                 TrainingLabels = Array.AsReadOnly(trainLabels),
                 TrainingRaceIds = Array.AsReadOnly(trainRaceIds),
@@ -1234,10 +1246,21 @@ namespace HorseRacingML.ML
                 featureCount);
         }
 
-        private static void HyperparameterCompleted(MLParameter param, double trainAccuracy, double validationAccuracy, double trainLoss, double validationLoss, double trainBrier, double validationBrier)
+        private static Tensor SigmoidFocalLoss(Tensor labels, Tensor logits, float alpha = 0.25f, float gamma = 2.0f)
+        {
+            var prob = tf.sigmoid(logits);
+            var ce = tf.nn.sigmoid_cross_entropy_with_logits(labels, logits);
+            var prob_t = (labels * prob) + ((1 - labels) * (1 - prob));
+            var loss = ce * tf.pow(1 - prob_t, gamma);
+            var alpha_t = (labels * alpha) + ((1 - labels) * (1 - alpha));
+            loss = alpha_t * loss;
+            return loss;
+        }
+
+        private static void HyperparameterCompleted(MLParameter param, double trainAccuracy, double validationAccuracy, double trainLoss, double validationLoss, double trainBrier, double validationBrier, double trainFocalLoss, double validationFocalLoss)
         {
             Console.WriteLine(
-                "[Hyperparameter] Training complete | layers: {0}, units: {1}, epochs: {2}, train acc: {3:F4}, val acc: {4:F4}, train loss: {5:F4}, val loss: {6:F4}, train brier: {7:F4}, val brier: {8:F4}",
+                "[Hyperparameter] Training complete | layers: {0}, units: {1}, epochs: {2}, train acc: {3:F4}, val acc: {4:F4}, train loss: {5:F4}, val loss: {6:F4}, train brier: {7:F4}, val brier: {8:F4}, train focal: {9:F4}, val focal: {10:F4}",
                 param.Layers,
                 param.Units,
                 param.Epochs,
@@ -1246,7 +1269,9 @@ namespace HorseRacingML.ML
                 trainLoss,
                 validationLoss,
                 trainBrier,
-                validationBrier);
+                validationBrier,
+                trainFocalLoss,
+                validationFocalLoss);
         }
         private static void HyperparameterFailed(MLParameter param, Exception exception)
         {
