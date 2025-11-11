@@ -837,6 +837,24 @@ namespace HorseRacingML.ML
                     foreach (var window in PerformanceWindows)
                     {
                         int count = Math.Min(window, history.Count);
+                        if (count > 0)
+                        {
+                            var recent = history.GetRange(history.Count - count, count);
+                            var surfaceSpeedRecent = recent.Where(h => h.Surface == surface && h.HasSpeed).ToList();
+                            row[$"AvgSpeedOnSurfaceLast{window}"] = surfaceSpeedRecent.Any() ? surfaceSpeedRecent.Average(h => h.Speed) : 0f;
+
+                            var goingSpeedRecent = recent.Where(h => h.Going == going && h.HasSpeed).ToList();
+                            row[$"AvgSpeedOnGoingLast{window}"] = goingSpeedRecent.Any() ? goingSpeedRecent.Average(h => h.Speed) : 0f;
+
+                            var bucketSpeedRecent = recent.Where(h => h.Bucket == bucket && h.HasSpeed).ToList();
+                            row[$"AvgSpeedAtDistanceBucketLast{window}"] = bucketSpeedRecent.Any() ? bucketSpeedRecent.Average(h => h.Speed) : 0f;
+                        }
+                        else
+                        {
+                            row[$"AvgSpeedOnSurfaceLast{window}"] = 0f;
+                            row[$"AvgSpeedOnGoingLast{window}"] = 0f;
+                            row[$"AvgSpeedAtDistanceBucketLast{window}"] = 0f;
+                        }
                         List<HistoryEntry> recent;
                         if (count > 0)
                         {
@@ -867,6 +885,13 @@ namespace HorseRacingML.ML
                             ? ComputeStandardDeviation(recentNorms)
                             : 0f;
                     }
+                    float winRateLast5 = row.ContainsKey("WinRateLast5") && row["WinRateLast5"] != null ? Convert.ToSingle(row["WinRateLast5"]) : 0f;
+                    row["WinRateRatioRelativeToField"] = raceStat.AvgWinRateLast5 > 0 ? winRateLast5 / raceStat.AvgWinRateLast5 : 0f;
+
+                    float avgSpeedLast5 = row.ContainsKey("AvgSpeedLast5") && row["AvgSpeedLast5"] != null ? Convert.ToSingle(row["AvgSpeedLast5"]) : 0f;
+                    row["SpeedRatioRelativeToField"] = raceStat.AvgSpeedLast5 > 0 ? avgSpeedLast5 / raceStat.AvgSpeedLast5 : 0f;
+                    row["SpeedZScore"] = raceStat.StdDevSpeedLast5 > 0 ? (avgSpeedLast5 - raceStat.AvgSpeedLast5) / raceStat.StdDevSpeedLast5 : 0f;
+
                     // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
                     // ✅ END: Horse history features — now always computed
 
@@ -1798,7 +1823,22 @@ namespace HorseRacingML.ML
                 float avgSaddle = saddleclothValues.Count > 0 ? saddleclothValues.Average() : 0f;
                 float minSaddle = saddleclothValues.Count > 0 ? saddleclothValues.Min() : 0f;
                 float maxSaddle = saddleclothValues.Count > 0 ? saddleclothValues.Max() : 0f;
-
+                var winRateLast5Values = rows.Select(r => r.ContainsKey("WinRateLast5") && r["WinRateLast5"] != null ? Convert.ToSingle(r["WinRateLast5"]) : 0f).ToList();
+                float avgWinRateLast5 = winRateLast5Values.Any() ? winRateLast5Values.Average() : 0f;
+                float stdDevWinRateLast5 = 0f;
+                if (winRateLast5Values.Count > 1)
+                {
+                    float variance = winRateLast5Values.Select(r => (r - avgWinRateLast5) * (r - avgWinRateLast5)).Average();
+                    stdDevWinRateLast5 = (float)Math.Sqrt(variance);
+                }
+                var speedLast5Values = rows.Select(r => r.ContainsKey("AvgSpeedLast5") && r["AvgSpeedLast5"] != null ? Convert.ToSingle(r["AvgSpeedLast5"]) : 0f).ToList();
+                float avgSpeedLast5 = speedLast5Values.Any() ? speedLast5Values.Average() : 0f;
+                float stdDevSpeedLast5 = 0f;
+                if (speedLast5Values.Count > 1)
+                {
+                    float variance = speedLast5Values.Select(r => (r - avgSpeedLast5) * (r - avgSpeedLast5)).Average();
+                    stdDevSpeedLast5 = (float)Math.Sqrt(variance);
+                }
                 return new RaceStats(
                     cnt,
                     avgDraw,
@@ -1813,7 +1853,11 @@ namespace HorseRacingML.ML
                     avgSaddle,
                     minSaddle,
                     maxSaddle,
-                    weightValues.Count > 0);
+                    weightValues.Count > 0,
+                    avgWinRateLast5,
+                    stdDevWinRateLast5,
+                    avgSpeedLast5,
+                    stdDevSpeedLast5);
             }
             internal static float? TestParseDistanceBeaten(string text)
             {
@@ -1833,7 +1877,11 @@ namespace HorseRacingML.ML
                        float AvgSaddlecloth,
                        float MinSaddlecloth,
                        float MaxSaddlecloth,
-                       bool HasWeightStats);
+                       bool HasWeightStats,
+                       float AvgWinRateLast5,
+                       float StdDevWinRateLast5,
+                       float AvgSpeedLast5,
+                       float StdDevSpeedLast5);
 
 
             private static float? ParseDistanceBeaten(string text)
