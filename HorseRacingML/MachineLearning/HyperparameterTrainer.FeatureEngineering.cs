@@ -599,6 +599,7 @@ namespace HorseRacingML.ML
                             : (int?)null;
                     bool distanceMissing = !distanceYardsValue.HasValue || distanceYardsValue.Value <= 0;
                     int distanceYards = distanceYardsValue ?? 0;
+                    string bucket = distanceMissing ? "Unknown" : DistanceBucket(distanceYards);
                     row["DistanceMissing"] = distanceMissing;
                     row["DistanceTextMissing"] = distanceTextMissing;
                     row["RaceDate"] = normalizedRaceDate;
@@ -837,9 +838,10 @@ namespace HorseRacingML.ML
                     foreach (var window in PerformanceWindows)
                     {
                         int count = Math.Min(window, history.Count);
+                        List<HistoryEntry> recent;
                         if (count > 0)
                         {
-                            var recent = history.GetRange(history.Count - count, count);
+                            recent = history.GetRange(history.Count - count, count);
                             var surfaceSpeedRecent = recent.Where(h => h.Surface == surface && h.HasSpeed).ToList();
                             row[$"AvgSpeedOnSurfaceLast{window}"] = surfaceSpeedRecent.Any() ? surfaceSpeedRecent.Average(h => h.Speed) : 0f;
 
@@ -848,17 +850,6 @@ namespace HorseRacingML.ML
 
                             var bucketSpeedRecent = recent.Where(h => h.Bucket == bucket && h.HasSpeed).ToList();
                             row[$"AvgSpeedAtDistanceBucketLast{window}"] = bucketSpeedRecent.Any() ? bucketSpeedRecent.Average(h => h.Speed) : 0f;
-                        }
-                        else
-                        {
-                            row[$"AvgSpeedOnSurfaceLast{window}"] = 0f;
-                            row[$"AvgSpeedOnGoingLast{window}"] = 0f;
-                            row[$"AvgSpeedAtDistanceBucketLast{window}"] = 0f;
-                        }
-                        List<HistoryEntry> recent;
-                        if (count > 0)
-                        {
-                            recent = history.GetRange(history.Count - count, count);
                             int wins = recent.Count(h => h.Finish == 1);
                             row[$"WinRateLast{window}"] = _trainer.SmoothedWinRate(wins, count);
                             row[$"AvgNormPosLast{window}"] = recent.Sum(h => h.NormFinish) / count;
@@ -866,6 +857,9 @@ namespace HorseRacingML.ML
                         }
                         else
                         {
+                            row[$"AvgSpeedOnSurfaceLast{window}"] = 0f;
+                            row[$"AvgSpeedOnGoingLast{window}"] = 0f;
+                            row[$"AvgSpeedAtDistanceBucketLast{window}"] = 0f;
                             recent = new List<HistoryEntry>();
                             row[$"WinRateLast{window}"] = _trainer.SmoothedWinRate(0, 0);
                             row[$"AvgNormPosLast{window}"] = 0f;
@@ -1066,8 +1060,6 @@ namespace HorseRacingML.ML
                         runnerSpeed = runnerTime > 0f ? distanceYards / runnerTime : 0f;
                     }
                     float speedDiff = hasRunnerSpeed ? runnerSpeed - raceSpeed : 0f;
-
-                    string bucket = distanceMissing ? "Unknown" : DistanceBucket(distanceYards);
                     row["DistanceBucket"] = bucket;
                     row[$"RelativeDraw_{bucket}"] = (float)row["RelativeDraw"];
 
