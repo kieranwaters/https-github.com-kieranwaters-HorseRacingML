@@ -842,10 +842,10 @@ namespace HorseRacingML.ML
                         if (count > 0)
                         {
                             recent = history.GetRange(history.Count - count, count);
-                            var surfaceSpeedRecent = recent.Where(h => h.Surface == surface && h.HasSpeed).ToList();
+                            var surfaceSpeedRecent = recent.Where(h => (surfaceMissing || h.Surface == surface) && h.HasSpeed).ToList();
                             row[$"AvgSpeedOnSurfaceLast{window}"] = surfaceSpeedRecent.Any() ? surfaceSpeedRecent.Average(h => h.Speed) : 0f;
 
-                            var goingSpeedRecent = recent.Where(h => h.Going == going && h.HasSpeed).ToList();
+                            var goingSpeedRecent = recent.Where(h => (goingMissing || h.Going == going) && h.HasSpeed).ToList();
                             row[$"AvgSpeedOnGoingLast{window}"] = goingSpeedRecent.Any() ? goingSpeedRecent.Average(h => h.Speed) : 0f;
 
                             var bucketSpeedRecent = recent.Where(h => h.Bucket == bucket && h.HasSpeed).ToList();
@@ -1093,13 +1093,13 @@ namespace HorseRacingML.ML
                         if (count > 0)
                         {
                             var recent = history.GetRange(history.Count - count, count);
-                            var goingRecent = recent.Where(h => h.Going == going).ToList();
+                            var goingRecent = recent.Where(h => goingMissing || h.Going == going).ToList();
                             row[$"GoingWinRateLast{window}"] = _trainer.SmoothedWinRate(goingRecent.Count(h => h.Finish == 1), goingRecent.Count);
                             row[$"GoingAvgNormLast{window}"] = goingRecent.Count > 0
                                 ? goingRecent.Sum(h => h.NormFinish) / goingRecent.Count
                                 : 0f;
 
-                            var surfaceRecent = recent.Where(h => h.Surface == surface).ToList();
+                            var surfaceRecent = recent.Where(h => surfaceMissing || h.Surface == surface).ToList();
                             row[$"SurfaceWinRateLast{window}"] = _trainer.SmoothedWinRate(surfaceRecent.Count(h => h.Finish == 1), surfaceRecent.Count);
                             row[$"SurfaceAvgNormLast{window}"] = surfaceRecent.Count > 0
                                 ? surfaceRecent.Sum(h => h.NormFinish) / surfaceRecent.Count
