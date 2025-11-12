@@ -646,7 +646,9 @@ namespace HorseRacingML.ML
                         row["Age"] = age;
                     }
                     row["AgeRelative"] = age - raceStat.AvgAge;
-
+                    int? currentWinningTimeMs = row.TryGetValue("WinningTimeMs", out var winningObj) && PreparedDataset.TryConvertToInt32(winningObj, out var winningValue)
+                        ? winningValue
+                        : (int?)null;
                     // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
                     // ✅ MOVED: Initialize and compute horse history features UNCONDITIONALLY
                     // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
@@ -1041,12 +1043,9 @@ namespace HorseRacingML.ML
                     row["GoingCourseAvgNorm"] = gcStats.starts > 0 ? gcStats.sumNorm / gcStats.starts : 0f;
                     row["LastGoingCourseNormPos"] = gcStats.lastNorm;
 
-                    int? winningMs = row.TryGetValue("WinningTimeMs", out var winningObj) && PreparedDataset.TryConvertToInt32(winningObj, out var winningValue)
-                        ? winningValue
-                        : (int?)null;
-                    bool winningTimeAvailable = winningMs.HasValue && winningMs.Value > 0;
+                    bool winningTimeAvailable = currentWinningTimeMs.HasValue && currentWinningTimeMs.Value > 0;
                     float raceSpeed = winningTimeAvailable && distanceYards > 0
-                        ? distanceYards / (float)winningMs.Value
+                        ? distanceYards / (float)currentWinningTimeMs!.Value
                         : 0f;
 
                     bool distanceBeatenKnown = row.TryGetValue("DistanceBeatenKnown", out var distanceKnownObj) &&
@@ -1056,7 +1055,7 @@ namespace HorseRacingML.ML
                     if (hasRunnerSpeed)
                     {
                         float beaten = Convert.ToSingle(row["DistanceBeatenLengths"]);
-                        float runnerTime = winningMs!.Value + beaten * MsPerLength;
+                        float runnerTime = currentWinningTimeMs!.Value + beaten * MsPerLength;
                         runnerSpeed = runnerTime > 0f ? distanceYards / runnerTime : 0f;
                     }
                     float speedDiff = hasRunnerSpeed ? runnerSpeed - raceSpeed : 0f;
@@ -1446,7 +1445,7 @@ namespace HorseRacingML.ML
                             weight,
                             hasRunnerSpeed,
                             winningTimeAvailable,
-                            winningTimeAvailable ? (float?)winningMs : null,
+                            winningTimeAvailable ? (float?)currentWinningTimeMs : null,
                             distanceMissing ? null : (float?)distanceYards));
 
                         if (history.Count > HistoryLength)
