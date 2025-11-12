@@ -519,32 +519,155 @@ namespace HorseRacingML.ML
                 foreach (var row in rows)
                 {
                     int horseId = PreparedDataset.GetRequiredInt32(row, "HorseId");
+                    DateTime date = (DateTime)row["RaceDate"];
+                    int? classValue = row.TryGetValue("Class", out var classObj) &&
+                        PreparedDataset.TryConvertToInt32(classObj, out var parsedClass)
+                            ? parsedClass
+                            : (int?)null;
+                    string? goingValue = NormalizeStringValue(
+                            row.TryGetValue("Going", out var goingObj) ? goingObj : null);
+                    bool goingMissing = string.IsNullOrEmpty(goingValue);
+                    string? surfaceValue = NormalizeStringValue(
+                        row.TryGetValue("Surface", out var surfaceObj) ? surfaceObj : null);
+                    bool surfaceMissing = string.IsNullOrEmpty(surfaceValue);
+                    int? distanceYardsValue = row.TryGetValue("DistanceYards", out var distanceObj) &&
+                        PreparedDataset.TryConvertToInt32(distanceObj, out var parsedDistance)
+                            ? parsedDistance
+                            : (int?)null;
+                    bool distanceMissing = !distanceYardsValue.HasValue || distanceYardsValue.Value <= 0;
+                    string bucket = distanceMissing ? "Unknown" : DistanceBucket(distanceYardsValue ?? 0);
+                    float rating = row.TryGetValue("OfficialRating", out var ratingObj) && ratingObj != null ? Convert.ToSingle(ratingObj) : 0f;
+                    int age = row.TryGetValue("Age", out var ageObj) && PreparedDataset.TryConvertToInt32(ageObj, out var ageValue)
+                        ? ageValue
+                        : 0;
                     if (!_horseHistory.TryGetValue(horseId, out var history))
                     {
                         history = new List<HistoryEntry>();
                         _horseHistory[horseId] = history;
                     }
+                    if (history.Count > 0)
+                    {
+                        var previous = history[^1];
+                        row["RaceSpeed"] = previous.HasWinningTime ? previous.RaceSpeed : 0f;
+                        row["RunnerSpeed"] = previous.HasSpeed ? previous.Speed : 0f;
+                        row["SpeedDiff"] = previous.HasSpeed ? previous.SpeedDiff : 0f;
+                        row["SpeedRatio"] = previous.HasSpeed && previous.RaceSpeed != 0f
+                            ? previous.Speed / previous.RaceSpeed
+                            : 0f;
+                        row["SpeedMissing"] = !previous.HasSpeed;
+                    }
+                    else
+                    {
+                        row["RaceSpeed"] = 0f;
+                        row["RunnerSpeed"] = 0f;
+                        row["SpeedDiff"] = 0f;
+                        row["SpeedRatio"] = 0f;
+                        row["SpeedMissing"] = true;
+                    }
+
+                    row["HistoricalDataMissing"] = history.Count == 0;
+                    row["RatingChangeFromLast"] = history.Count > 0 ? rating - history[^1].Rating : 0f;
+                    row["AgeProgression"] = history.Count > 0 ? age - history[^1].Age : 0f;
+                    row["WeightChangeFromLast"] = history.Count > 0 ? weight - history[^1].Weight : 0f;
+                    row["ClassChangeFromLast"] = history.Count > 0 && history[^1].RaceClass.HasValue && classValue.HasValue
+                        ? classValue.Value - history[^1].RaceClass!.Value
+                        : 0;
+                    row["DaysSinceLastRace"] = history.Count > 0 ? (float)(date - history[^1].Date).TotalDays : 0f;
+                    row["LastFinishPos"] = history.Count > 0 ? history[^1].Finish ?? 0 : 0;
+                    int lastWinIdx = history.FindLastIndex(h => h.Won);
+                    bool hasLastWin = lastWinIdx >= 0;
+                    row["HasLastWin"] = hasLastWin;
+                    if (hasLastWin)
+                    {
+                        row["DaysSinceLastWin"] = (float?)(date - history[lastWinIdx].Date).TotalDays;
+                        row["RacesSinceLastWin"] = history.Count - 1 - lastWinIdx;
+                    }
+                    else
+                    {
+                        row["DaysSinceLastWin"] = null;
+                        row["RacesSinceLastWin"] = null;
+                    }
+
+                    for (int i = 0; i < PastRaceCount; i++)
+                    {
+                        var key = $"Last{i + 1}NormPos";
+                        row[key] = i < history.Count
+                             ? history[history.Count - 1 - i].NormFinish
+                            : 0f;
+                    }
+
+                    int careerStarts = history.Count;
+                    int careerWins = history.Count(h => h.Won);
+                    row["CareerStarts"] = careerStarts;
+                    row["LifetimeWinRate"] = _trainer.SmoothedWinRate(careerWins, careerStarts);
+                    int lifetimeTop3 = history.Count(h => h.Finish.HasValue && h.Finish.Value > 0 && h.Finish.Value <= 3);
+                    int lifetimeTop5 = history.Count(h => h.Finish.HasValue && h.Finish.Value > 0 && h.Finish.Value <= 5);
+                    row["Top3RateLifetime"] = _trainer.SmoothedWinRate(lifetimeTop3, history.Count);
+                    row["Top5RateLifetime"] = _trainer.SmoothedWinRate(lifetimeTop5, history.Count);
+                    var lifetimeNorms = history
+                        .Where(h => h.Finish.HasValue && h.Finish.Value > 0)
+                        .Select(h => h.NormFinish)
+                        .ToList();
+                    row["NormFinishStdDevLifetime"] = lifetimeNorms.Count >= 2
+                        ? ComputeStandardDeviation(lifetimeNorms)
+                        : 0f;
 
                     foreach (var window in PerformanceWindows)
                     {
                         int count = Math.Min(window, history.Count);
+                        recent = history.GetRange(history.Count - count, count);
+                        var surfaceSpeedRecent = recent.Where(h => (surfaceMissing || h.Surface == surfaceValue) && h.HasSpeed).ToList();
+                        row[$"AvgSpeedOnSurfaceLast{window}"] = surfaceSpeedRecent.Any() ? surfaceSpeedRecent.Average(h => h.Speed) : 0f;
+
+                        var goingSpeedRecent = recent.Where(h => (goingMissing || h.Going == goingValue) && h.HasSpeed).ToList();
+                        row[$"AvgSpeedOnGoingLast{window}"] = goingSpeedRecent.Any() ? goingSpeedRecent.Average(h => h.Speed) : 0f;
+
+                        var bucketSpeedRecent = recent.Where(h => h.Bucket == bucket && h.HasSpeed).ToList();
+                        row[$"AvgSpeedAtDistanceBucketLast{window}"] = bucketSpeedRecent.Any() ? bucketSpeedRecent.Average(h => h.Speed) : 0f;
+                        int wins = recent.Count(h => h.Finish == 1);
+                        row[$"WinRateLast{window}"] = _trainer.SmoothedWinRate(wins, count);
+                        row[$"AvgNormPosLast{window}"] = recent.Sum(h => h.NormFinish) / count;
+                        row[$"AvgRatingLast{window}"] = recent.Sum(h => h.Rating) / count;
+                        List<HistoryEntry> recent;
                         if (count > 0)
                         {
-                            var recent = history.GetRange(history.Count - count, count);
                             var speedRecent = TakeRecentEntries(history, window, h => h.HasSpeed);
                             if (speedRecent.Count > 0)
                             {
                                 row[$"AvgSpeedLast{window}"] = speedRecent.Average(h => h.Speed);
+                                row[$"AvgSpeedDiffLast{window}"] = speedRecent.Average(h => h.SpeedDiff);
                             }
                             else
                             {
                                 row[$"AvgSpeedLast{window}"] = 0f;
+                                row[$"AvgSpeedDiffLast{window}"] = 0f;
                             }
                         }
                         else
                         {
+                            row[$"AvgSpeedOnSurfaceLast{window}"] = 0f;
+                            row[$"AvgSpeedOnGoingLast{window}"] = 0f;
+                            row[$"AvgSpeedAtDistanceBucketLast{window}"] = 0f;
+                            recent = new List<HistoryEntry>();
+                            row[$"WinRateLast{window}"] = _trainer.SmoothedWinRate(0, 0);
+                            row[$"AvgNormPosLast{window}"] = 0f;
+                            row[$"AvgRatingLast{window}"] = rating;
                             row[$"AvgSpeedLast{window}"] = 0f;
+                            row[$"AvgSpeedDiffLast{window}"] = 0f;
                         }
+
+                        int recentTop3 = recent.Count(h => h.Finish.HasValue && h.Finish.Value > 0 && h.Finish.Value <= 3);
+                        int recentTop5 = recent.Count(h => h.Finish.HasValue && h.Finish.Value > 0 && h.Finish.Value <= 5);
+                        row[$"Top3RateLast{window}"] = _trainer.SmoothedWinRate(recentTop3, count);
+                        row[$"Top5RateLast{window}"] = _trainer.SmoothedWinRate(recentTop5, count);
+
+                        var recentNorms = recent
+                            .Where(h => h.Finish.HasValue && h.Finish.Value > 0)
+                            .Select(h => h.NormFinish)
+                            .ToList();
+                        row[$"NormFinishStdDevLast{window}"] = recentNorms.Count >= 2
+                            ? ComputeStandardDeviation(recentNorms)
+                            : 0f;
                     }
                 }
 
@@ -553,7 +676,14 @@ namespace HorseRacingML.ML
                 // Purpose: Aggregate stats from all runners now that per-horse features are ready.
                 // =================================================================================
                 var raceStat = ComputeRaceStats(rows);
-
+                var tempWinningTimes = new Dictionary<int, int?>();
+                foreach (var row in rows)
+                {
+                    int horseId = PreparedDataset.GetRequiredInt32(row, "HorseId");
+                    tempWinningTimes[horseId] = row.TryGetValue("WinningTimeMs", out var winningObj) && PreparedDataset.TryConvertToInt32(winningObj, out var winningValue)
+                        ? winningValue
+                        : (int?)null;
+                }
                 // =================================================================================
                 // Stage 3: Main feature engineering loop
                 // Purpose: Compute all remaining features, including those relative to the field.
@@ -1284,17 +1414,6 @@ namespace HorseRacingML.ML
                         row[$"TrainerWinRateLast{TrainerJockeyRecentStarts}"] = _trainer.SmoothedWinRate(tWinsRecent, tCount);
                         row["TrainerWinRateRecentDays"] = _trainer.SmoothedWinRate(tRecent.Count(r => r.win), tRecent.Count);
                         row["TrainerWinRate"] = trainerDefaultWinRate;
-
-                        if (updateState)
-                        {
-                            trainerStat.Starts++;
-                            bool tWin = finish.HasValue && finish.Value == 1;
-                            if (tWin) trainerStat.Wins++;
-                            trainerStat.Recent.Enqueue((date, tWin));
-                            while (trainerStat.Recent.Count > TrainerJockeyRecentStarts)
-                                trainerStat.Recent.Dequeue();
-                            _trainerStats[trainerId.Value] = trainerStat;
-                        }
                     }
                     else
                     {
@@ -1391,17 +1510,6 @@ namespace HorseRacingML.ML
                         row[$"JockeyWinRateLast{TrainerJockeyRecentStarts}"] = _trainer.SmoothedWinRate(jWinsRecent, jCount);
                         row["JockeyWinRateRecentDays"] = _trainer.SmoothedWinRate(jRecent.Count(r => r.win), jRecent.Count);
                         row["JockeyWinRate"] = jockeyDefaultWinRate;
-
-                        if (updateState)
-                        {
-                            jockeyStat.Starts++;
-                            bool jWin = finish.HasValue && finish.Value == 1;
-                            if (jWin) jockeyStat.Wins++;
-                            jockeyStat.Recent.Enqueue((date, jWin));
-                            while (jockeyStat.Recent.Count > TrainerJockeyRecentStarts)
-                                jockeyStat.Recent.Dequeue();
-                            _jockeyStats[jockeyId.Value] = jockeyStat;
-                        }
                     }
                     else
                     {
@@ -1501,8 +1609,115 @@ namespace HorseRacingML.ML
                         row["TrainerJockeyCourseWinRate"] = trainerJockeyDefaultWinRate;
                     }
 
-                    if (updateState)
+                }
+
+                // =================================================================================
+                // Stage 4: State update loop
+                // Purpose: Update all historical stats after all features for the race are computed.
+                // =================================================================================
+                if (updateState)
+                {
+                    foreach (var row in rows)
                     {
+                        // =================================================================================
+                        // Stage 4.1: Re-fetch variables needed for state updates
+                        // =================================================================================
+                        int horseId = PreparedDataset.GetRequiredInt32(row, "HorseId");
+                        var history = _horseHistory[horseId];
+                        DateTime date = (DateTime)row["RaceDate"];
+                        short? finish = row["FinishPos"] != null ? (short?)Convert.ToInt16(row["FinishPos"]) : null;
+                        int runnerCount = row.TryGetValue("RunnerCount", out var runnerCountObj) &&
+                                            PreparedDataset.TryConvertToInt32(runnerCountObj, out var runnerValue)
+                            ? runnerValue
+                            : raceStat.RunnerCount;
+                        int? trainerId = row.TryGetValue("TrainerId", out var tObj) &&
+                                          PreparedDataset.TryConvertToInt32(tObj, out var trainerValue)
+                            ? trainerValue
+                            : (int?)null;
+                        int? jockeyId = row.TryGetValue("JockeyId", out var jObj) &&
+                                         PreparedDataset.TryConvertToInt32(jObj, out var jockeyValue)
+                            ? jockeyValue
+                            : (int?)null;
+                        int? classValue = row.TryGetValue("Class", out var classObj) &&
+                            PreparedDataset.TryConvertToInt32(classObj, out var parsedClass)
+                                ? parsedClass
+                                : (int?)null;
+                        bool classMissing = !classValue.HasValue;
+                        int classVal = classValue ?? 0;
+                        bool ratingMissing = !(row.TryGetValue("OfficialRating", out var ratingObj) && ratingObj != null);
+                        float rating = ratingMissing ? raceStat.AvgRating : Convert.ToSingle(ratingObj);
+                        if (!ratingMissing && (float.IsNaN(rating) || rating <= 0f))
+                        {
+                            ratingMissing = true;
+                            rating = raceStat.AvgRating;
+                        }
+                        if ((ratingMissing && (rating <= 0f || float.IsNaN(rating))) ||
+                                (!ratingMissing && (float.IsNaN(rating) || rating <= 0f)))
+                        {
+                            var classBaseline = ResolveClassRatingBaseline(classValue);
+                            if (classBaseline.HasValue)
+                            {
+                                rating = classBaseline.Value;
+                            }
+                            else if (!float.IsNaN(raceStat.AvgRating) && raceStat.AvgRating > 0f)
+                            {
+                                rating = raceStat.AvgRating;
+                            }
+                        }
+                        string? goingValue = NormalizeStringValue(
+                                row.TryGetValue("Going", out var goingObj) ? goingObj : null);
+                        bool goingMissing = string.IsNullOrEmpty(goingValue);
+                        string going = goingValue ?? "Unknown";
+                        string? surfaceValue = NormalizeStringValue(
+                            row.TryGetValue("Surface", out var surfaceObj) ? surfaceObj : null);
+                        bool surfaceMissing = string.IsNullOrEmpty(surfaceValue);
+                        string surface = surfaceValue ?? "Unknown";
+                        int? distanceYardsValue = row.TryGetValue("DistanceYards", out var distanceObj) &&
+                            PreparedDataset.TryConvertToInt32(distanceObj, out var parsedDistance)
+                                ? parsedDistance
+                                : (int?)null;
+                        bool distanceMissing = !distanceYardsValue.HasValue || distanceYardsValue.Value <= 0;
+                        int distanceYards = distanceYardsValue ?? 0;
+                        string bucket = distanceMissing ? "Unknown" : DistanceBucket(distanceYards);
+                        int age = row.TryGetValue("Age", out var ageObj) && PreparedDataset.TryConvertToInt32(ageObj, out var ageValue)
+                            ? ageValue
+                            : 0;
+                        float weight = row["WeightLbs"] == null ? 0f : Convert.ToSingle(row["WeightLbs"]);
+                        bool drawMissing = row["Draw"] == null;
+                        int draw = 0;
+                        if (!drawMissing)
+                        {
+                            if (!PreparedDataset.TryConvertToInt32(row["Draw"], out draw))
+                            {
+                                drawMissing = true;
+                            }
+                        }
+                        int courseId = row.TryGetValue("CourseId", out var courseObj) && PreparedDataset.TryConvertToInt32(courseObj, out var courseIdValue)
+                            ? courseIdValue
+                            : 0;
+
+                        int? currentWinningTimeMs = row.TryGetValue("WinningTimeMs", out var winningObj) && PreparedDataset.TryConvertToInt32(winningObj, out var winningValue)
+                            ? winningValue
+                            : (int?)null;
+                        bool winningTimeAvailable = currentWinningTimeMs.HasValue && currentWinningTimeMs.Value > 0;
+                        float raceSpeed = winningTimeAvailable && distanceYards > 0
+                            ? distanceYards / (float)currentWinningTimeMs!.Value
+                            : 0f;
+                        bool distanceBeatenKnown = row.TryGetValue("DistanceBeatenKnown", out var distanceKnownObj) &&
+                            distanceKnownObj is bool distanceKnownBool && distanceKnownBool;
+                        bool hasRunnerSpeed = winningTimeAvailable && distanceBeatenKnown;
+                        float runnerSpeed = 0f;
+                        if (hasRunnerSpeed)
+                        {
+                            float beaten = Convert.ToSingle(row["DistanceBeatenLengths"]);
+                            float runnerTime = currentWinningTimeMs!.Value + beaten * MsPerLength;
+                            runnerSpeed = runnerTime > 0f ? distanceYards / runnerTime : 0f;
+                        }
+                        float speedDiff = hasRunnerSpeed ? runnerSpeed - raceSpeed : 0f;
+
+                        // =================================================================================
+                        // Stage 4.2: Update horse, trainer, and jockey stats
+                        // =================================================================================
                         float normFinish = (finish.HasValue && runnerCount > 1)
                             ? (runnerCount - finish.Value) / (float)(runnerCount - 1)
                             : 0f;
@@ -1533,6 +1748,9 @@ namespace HorseRacingML.ML
 
                         if (!classMissing)
                         {
+                            var horseClassKey = (horseId, classVal);
+                            if (!_horseClassStats.TryGetValue(horseClassKey, out var horseClassStat))
+                                horseClassStat = (0, 0, 0f, 0f);
                             horseClassStat.starts++;
                             horseClassStat.sumNorm += normFinish;
                             if (finish.HasValue && finish.Value == 1) horseClassStat.wins++;
@@ -1540,26 +1758,15 @@ namespace HorseRacingML.ML
                             _horseClassStats[horseClassKey] = horseClassStat;
                         }
 
-                        if (hasTrainerClass)
-                        {
-                            trainerClassStat.starts++;
-                            trainerClassStat.sumNorm += normFinish;
-                            if (finish.HasValue && finish.Value == 1) trainerClassStat.wins++;
-                            trainerClassStat.lastNorm = normFinish;
-                            _trainerClassStats[trainerClassKey] = trainerClassStat;
-                        }
-
-                        if (hasJockeyClass)
-                        {
-                            jockeyClassStat.starts++;
-                            jockeyClassStat.sumNorm += normFinish;
-                            if (finish.HasValue && finish.Value == 1) jockeyClassStat.wins++;
-                            jockeyClassStat.lastNorm = normFinish;
-                            _jockeyClassStats[jockeyClassKey] = jockeyClassStat;
-                        }
-
                         if (!surfaceMissing)
                         {
+                            if (!_surfaceStats.TryGetValue(horseId, out var sDict))
+                            {
+                                sDict = new Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>(StringComparer.OrdinalIgnoreCase);
+                                _surfaceStats[horseId] = sDict;
+                            }
+                            if (!sDict.TryGetValue(surface, out var sStats))
+                                sStats = (0, 0, 0f, 0f);
                             sStats.starts++;
                             sStats.sumNorm += normFinish;
                             if (finish.HasValue && finish.Value == 1) sStats.wins++;
@@ -1569,12 +1776,27 @@ namespace HorseRacingML.ML
 
                         if (!goingMissing)
                         {
+                            if (!_goingStats.TryGetValue(horseId, out var gDict))
+                            {
+                                gDict = new Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>(StringComparer.OrdinalIgnoreCase);
+                                _goingStats[horseId] = gDict;
+                            }
+                            if (!gDict.TryGetValue(going, out var gStats))
+                                gStats = (0, 0, 0f, 0f);
                             gStats.starts++;
                             gStats.sumNorm += normFinish;
                             if (finish.HasValue && finish.Value == 1) gStats.wins++;
                             gStats.lastNorm = normFinish;
                             gDict[going] = gStats;
 
+                            string gcKey = going + "_" + courseId;
+                            if (!_goingCourseStats.TryGetValue(horseId, out var gcDict))
+                            {
+                                gcDict = new Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>(StringComparer.OrdinalIgnoreCase);
+                                _goingCourseStats[horseId] = gcDict;
+                            }
+                            if (!gcDict.TryGetValue(gcKey, out var gcStats))
+                                gcStats = (0, 0, 0f, 0f);
                             gcStats.starts++;
                             gcStats.sumNorm += normFinish;
                             if (finish.HasValue && finish.Value == 1) gcStats.wins++;
@@ -1582,6 +1804,13 @@ namespace HorseRacingML.ML
                             gcDict[gcKey] = gcStats;
                         }
 
+                        if (!_courseStats.TryGetValue(horseId, out var cDict))
+                        {
+                            cDict = new();
+                            _courseStats[horseId] = cDict;
+                        }
+                        if (!cDict.TryGetValue(courseId, out var cStats))
+                            cStats = (0, 0, 0f, 0f);
                         cStats.starts++;
                         cStats.sumNorm += normFinish;
                         if (finish.HasValue && finish.Value == 1) cStats.wins++;
@@ -1590,6 +1819,13 @@ namespace HorseRacingML.ML
 
                         if (!distanceMissing)
                         {
+                            if (!_distanceBucketStats.TryGetValue(horseId, out var dDict))
+                            {
+                                dDict = new Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>(StringComparer.OrdinalIgnoreCase);
+                                _distanceBucketStats[horseId] = dDict;
+                            }
+                            if (!dDict.TryGetValue(bucket, out var dStats))
+                                dStats = (0, 0, 0f, 0f);
                             dStats.starts++;
                             dStats.sumNorm += normFinish;
                             if (finish.HasValue && finish.Value == 1) dStats.wins++;
@@ -1607,6 +1843,7 @@ namespace HorseRacingML.ML
                                 _goingDistanceStats[updateKey] = updateStats;
                             }
 
+                            _horseDistanceAll.TryGetValue(horseId, out var allDist);
                             allDist.sum += distanceYards;
                             allDist.count++;
                             _horseDistanceAll[horseId] = allDist;
@@ -1614,19 +1851,97 @@ namespace HorseRacingML.ML
 
                             if (finish.HasValue && finish.Value == 1)
                             {
+                                _horseDistanceWins.TryGetValue(horseId, out var winDist);
                                 winDist.sum += distanceYards;
                                 winDist.count++;
+                                _horseDistanceWins[horseId] = winDist;
                             }
-                            _horseDistanceWins[horseId] = winDist;
                         }
 
+                        var drawKey = (courseId, bucket, draw);
+                        _drawStats.TryGetValue(drawKey, out var drawStat);
                         drawStat.starts++;
                         if (finish.HasValue && finish.Value == 1) drawStat.wins++;
                         _drawStats[drawKey] = drawStat;
 
+                        var baseKey = (courseId, bucket);
+                        _drawBaselineStats.TryGetValue(baseKey, out var baseStat);
                         baseStat.starts++;
                         if (finish.HasValue && finish.Value == 1) baseStat.wins++;
                         _drawBaselineStats[baseKey] = baseStat;
+
+
+                        if (trainerId.HasValue)
+                        {
+                            if (!_trainerStats.TryGetValue(trainerId.Value, out var trainerStat))
+                                trainerStat = new RollingStat();
+                            trainerStat.Starts++;
+                            bool tWin = finish.HasValue && finish.Value == 1;
+                            if (tWin) trainerStat.Wins++;
+                            trainerStat.Recent.Enqueue((date, tWin));
+                            while (trainerStat.Recent.Count > TrainerJockeyRecentStarts)
+                                trainerStat.Recent.Dequeue();
+                            _trainerStats[trainerId.Value] = trainerStat;
+
+                            if (!_trainerFinishHistory.TryGetValue(trainerId.Value, out var trainerHistory))
+                            {
+                                trainerHistory = new List<short?>();
+                                _trainerFinishHistory[trainerId.Value] = trainerHistory;
+                            }
+                            trainerHistory.Add(finish);
+                            if (trainerHistory.Count > 10)
+                            {
+                                trainerHistory.RemoveAt(0);
+                            }
+                        }
+
+                        if (jockeyId.HasValue)
+                        {
+                            if (!_jockeyStats.TryGetValue(jockeyId.Value, out var jockeyStat))
+                                jockeyStat = new RollingStat();
+                            jockeyStat.Starts++;
+                            bool jWin = finish.HasValue && finish.Value == 1;
+                            if (jWin) jockeyStat.Wins++;
+                            jockeyStat.Recent.Enqueue((date, jWin));
+                            while (jockeyStat.Recent.Count > TrainerJockeyRecentStarts)
+                                jockeyStat.Recent.Dequeue();
+                            _jockeyStats[jockeyId.Value] = jockeyStat;
+
+                            if (!_jockeyFinishHistory.TryGetValue(jockeyId.Value, out var jockeyHistory))
+                            {
+                                jockeyHistory = new List<short?>();
+                                _jockeyFinishHistory[jockeyId.Value] = jockeyHistory;
+                            }
+                            jockeyHistory.Add(finish);
+                            if (jockeyHistory.Count > 10)
+                            {
+                                jockeyHistory.RemoveAt(0);
+                            }
+                        }
+
+                        if (trainerId.HasValue && !classMissing)
+                        {
+                            var trainerClassKey = (trainerId.Value, classVal);
+                            if (!_trainerClassStats.TryGetValue(trainerClassKey, out var trainerClassStat))
+                                trainerClassStat = (0, 0, 0f, 0f);
+                            trainerClassStat.starts++;
+                            trainerClassStat.sumNorm += normFinish;
+                            if (finish.HasValue && finish.Value == 1) trainerClassStat.wins++;
+                            trainerClassStat.lastNorm = normFinish;
+                            _trainerClassStats[trainerClassKey] = trainerClassStat;
+                        }
+
+                        if (jockeyId.HasValue && !classMissing)
+                        {
+                            var jockeyClassKey = (jockeyId.Value, classVal);
+                            if (!_jockeyClassStats.TryGetValue(jockeyClassKey, out var jockeyClassStat))
+                                jockeyClassStat = (0, 0, 0f, 0f);
+                            jockeyClassStat.starts++;
+                            jockeyClassStat.sumNorm += normFinish;
+                            if (finish.HasValue && finish.Value == 1) jockeyClassStat.wins++;
+                            jockeyClassStat.lastNorm = normFinish;
+                            _jockeyClassStats[jockeyClassKey] = jockeyClassStat;
+                        }
 
                         if (trainerId.HasValue)
                         {
@@ -1639,6 +1954,7 @@ namespace HorseRacingML.ML
                                 if (finish.HasValue && finish.Value == 1) tsStats.wins++;
                                 tsStats.lastNorm = normFinish;
                                 tsDict[surface] = tsStats;
+                                _trainerSurfaceStats[trainerId.Value] = tsDict;
                             }
                             if (!goingMissing)
                             {
@@ -1649,6 +1965,7 @@ namespace HorseRacingML.ML
                                 if (finish.HasValue && finish.Value == 1) tgStats.wins++;
                                 tgStats.lastNorm = normFinish;
                                 tgDict[going] = tgStats;
+                                _trainerGoingStats[trainerId.Value] = tgDict;
                             }
                             if (!distanceMissing)
                             {
@@ -1659,6 +1976,7 @@ namespace HorseRacingML.ML
                                 if (finish.HasValue && finish.Value == 1) tdStats.wins++;
                                 tdStats.lastNorm = normFinish;
                                 tdDict[bucket] = tdStats;
+                                _trainerDistanceStats[trainerId.Value] = tdDict;
                             }
                             var tcKey = (trainerId.Value, courseId);
                             _trainerCourseStats.TryGetValue(tcKey, out var tcStat);
@@ -1678,6 +1996,7 @@ namespace HorseRacingML.ML
                                 if (finish.HasValue && finish.Value == 1) jsStats.wins++;
                                 jsStats.lastNorm = normFinish;
                                 jsDict[surface] = jsStats;
+                                _jockeySurfaceStats[jockeyId.Value] = jsDict;
                             }
                             if (!goingMissing)
                             {
@@ -1688,6 +2007,7 @@ namespace HorseRacingML.ML
                                 if (finish.HasValue && finish.Value == 1) jgStats.wins++;
                                 jgStats.lastNorm = normFinish;
                                 jgDict[going] = jgStats;
+                                _jockeyGoingStats[jockeyId.Value] = jgDict;
                             }
                             if (!distanceMissing)
                             {
@@ -1698,6 +2018,7 @@ namespace HorseRacingML.ML
                                 if (finish.HasValue && finish.Value == 1) jdStats.wins++;
                                 jdStats.lastNorm = normFinish;
                                 jdDict[bucket] = jdStats;
+                                _jockeyDistanceStats[jockeyId.Value] = jdDict;
                             }
                             if (!goingMissing && !distanceMissing)
                             {
@@ -1748,37 +2069,9 @@ namespace HorseRacingML.ML
                             if (finish.HasValue && finish.Value == 1) pairCourseStat.wins++;
                             _trainerJockeyCourseStats[pairCourseKey] = pairCourseStat;
                         }
-
-
-                        if (trainerId.HasValue)
-                        {
-                            if (!_trainerFinishHistory.TryGetValue(trainerId.Value, out var trainerHistory))
-                            {
-                                trainerHistory = new List<short?>();
-                                _trainerFinishHistory[trainerId.Value] = trainerHistory;
-                            }
-                            trainerHistory.Add(finish);
-                            if (trainerHistory.Count > 10)
-                            {
-                                trainerHistory.RemoveAt(0);
-                            }
-                        }
-
-                        if (jockeyId.HasValue)
-                        {
-                            if (!_jockeyFinishHistory.TryGetValue(jockeyId.Value, out var jockeyHistory))
-                            {
-                                jockeyHistory = new List<short?>();
-                                _jockeyFinishHistory[jockeyId.Value] = jockeyHistory;
-                            }
-                            jockeyHistory.Add(finish);
-                            if (jockeyHistory.Count > 10)
-                            {
-                                jockeyHistory.RemoveAt(0);
-                            }
-                        }
                     }
                 }
+
                 if (includeRace)
                 {
                     float ResolveRunnerSpeed(Dictionary<string, object?> row)
