@@ -930,6 +930,10 @@ namespace HorseRacingML.ML
                 {
                     var slotIndex = offset + i;
                     var label = BuildEncodedFeatureLabel(key, i, baseDim, dim, inverseMap, hasMissingIndicator);
+                    if (label.EndsWith("=__missing__", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
                     result.Add(new EncodedFeatureValue
                     {
                         Index = slotIndex,

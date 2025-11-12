@@ -1152,7 +1152,10 @@ namespace HorseRacingML.ML
                     {
                         dimensionLabel = d == 0 ? "Value" : "Missing";
                     }
-
+                    if (string.Equals(dimensionLabel, "Missing", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
                     if (string.IsNullOrEmpty(dimensionLabel))
                     {
                         dimensionLabel = $"Dim {d + 1}";
