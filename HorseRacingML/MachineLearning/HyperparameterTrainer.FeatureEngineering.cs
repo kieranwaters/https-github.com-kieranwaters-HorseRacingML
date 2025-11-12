@@ -1748,33 +1748,35 @@ namespace HorseRacingML.ML
                             if (finish.HasValue && finish.Value == 1) pairCourseStat.wins++;
                             _trainerJockeyCourseStats[pairCourseKey] = pairCourseStat;
                         }
-                    }
-                }
-                if (trainerId.HasValue)
-                {
-                    if (!_trainerFinishHistory.TryGetValue(trainerId.Value, out var trainerHistory))
-                    {
-                        trainerHistory = new List<short?>();
-                        _trainerFinishHistory[trainerId.Value] = trainerHistory;
-                    }
-                    trainerHistory.Add(finish);
-                    if (trainerHistory.Count > 10)
-                    {
-                        trainerHistory.RemoveAt(0);
-                    }
-                }
 
-                if (jockeyId.HasValue)
-                {
-                    if (!_jockeyFinishHistory.TryGetValue(jockeyId.Value, out var jockeyHistory))
-                    {
-                        jockeyHistory = new List<short?>();
-                        _jockeyFinishHistory[jockeyId.Value] = jockeyHistory;
-                    }
-                    jockeyHistory.Add(finish);
-                    if (jockeyHistory.Count > 10)
-                    {
-                        jockeyHistory.RemoveAt(0);
+
+                        if (trainerId.HasValue)
+                        {
+                            if (!_trainerFinishHistory.TryGetValue(trainerId.Value, out var trainerHistory))
+                            {
+                                trainerHistory = new List<short?>();
+                                _trainerFinishHistory[trainerId.Value] = trainerHistory;
+                            }
+                            trainerHistory.Add(finish);
+                            if (trainerHistory.Count > 10)
+                            {
+                                trainerHistory.RemoveAt(0);
+                            }
+                        }
+
+                        if (jockeyId.HasValue)
+                        {
+                            if (!_jockeyFinishHistory.TryGetValue(jockeyId.Value, out var jockeyHistory))
+                            {
+                                jockeyHistory = new List<short?>();
+                                _jockeyFinishHistory[jockeyId.Value] = jockeyHistory;
+                            }
+                            jockeyHistory.Add(finish);
+                            if (jockeyHistory.Count > 10)
+                            {
+                                jockeyHistory.RemoveAt(0);
+                            }
+                        }
                     }
                 }
                 if (includeRace)
