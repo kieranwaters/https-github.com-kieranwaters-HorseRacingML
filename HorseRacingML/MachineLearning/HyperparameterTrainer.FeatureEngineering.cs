@@ -512,7 +512,52 @@ namespace HorseRacingML.ML
                     runnerRow["DistanceBeatenKnown"] = distanceKnown;
                     runnerRow["DistanceBeatenLengths"] = beatenLengths;
                 }
+                // =================================================================================
+                // Stage 1: Pre-computation loop
+                // Purpose: Compute horse-specific historical features required for race-level stats.
+                // =================================================================================
+                foreach (var row in rows)
+                {
+                    int horseId = PreparedDataset.GetRequiredInt32(row, "HorseId");
+                    if (!_horseHistory.TryGetValue(horseId, out var history))
+                    {
+                        history = new List<HistoryEntry>();
+                        _horseHistory[horseId] = history;
+                    }
+
+                    foreach (var window in PerformanceWindows)
+                    {
+                        int count = Math.Min(window, history.Count);
+                        if (count > 0)
+                        {
+                            var recent = history.GetRange(history.Count - count, count);
+                            var speedRecent = TakeRecentEntries(history, window, h => h.HasSpeed);
+                            if (speedRecent.Count > 0)
+                            {
+                                row[$"AvgSpeedLast{window}"] = speedRecent.Average(h => h.Speed);
+                            }
+                            else
+                            {
+                                row[$"AvgSpeedLast{window}"] = 0f;
+                            }
+                        }
+                        else
+                        {
+                            row[$"AvgSpeedLast{window}"] = 0f;
+                        }
+                    }
+                }
+
+                // =================================================================================
+                // Stage 2: Compute race-level statistics
+                // Purpose: Aggregate stats from all runners now that per-horse features are ready.
+                // =================================================================================
                 var raceStat = ComputeRaceStats(rows);
+
+                // =================================================================================
+                // Stage 3: Main feature engineering loop
+                // Purpose: Compute all remaining features, including those relative to the field.
+                // =================================================================================
                 foreach (var row in rows)
                 {
                     int horseId = PreparedDataset.GetRequiredInt32(row, "HorseId");
@@ -1145,12 +1190,10 @@ namespace HorseRacingML.ML
                             var speedRecent = TakeRecentEntries(history, window, h => h.HasSpeed);
                             if (speedRecent.Count > 0)
                             {
-                                row[$"AvgSpeedLast{window}"] = speedRecent.Average(h => h.Speed);
                                 row[$"AvgSpeedDiffLast{window}"] = speedRecent.Average(h => h.SpeedDiff);
                             }
                             else
                             {
-                                row[$"AvgSpeedLast{window}"] = 0f;
                                 row[$"AvgSpeedDiffLast{window}"] = 0f;
                             }
                         }
@@ -1164,7 +1207,6 @@ namespace HorseRacingML.ML
                             row[$"CourseAvgNormLast{window}"] = 0f;
                             row[$"DistanceBucketWinRateLast{window}"] = _trainer.SmoothedWinRate(0, 0);
                             row[$"DistanceBucketAvgNormLast{window}"] = 0f;
-                            row[$"AvgSpeedLast{window}"] = 0f;
                             row[$"AvgSpeedDiffLast{window}"] = 0f;
                         }
                     }
