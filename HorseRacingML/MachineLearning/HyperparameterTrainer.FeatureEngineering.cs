@@ -204,7 +204,8 @@ namespace HorseRacingML.ML
             private readonly Dictionary<int, Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>> _jockeyGoingStats = new();
             private readonly Dictionary<int, Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>> _jockeyDistanceStats = new();
             private readonly Dictionary<(int jockeyId, string going, string bucket), (int starts, int wins, float sumNorm, float lastNorm)> _jockeyGoingDistanceStats = new();
-
+            private readonly Dictionary<int, List<short?>> _jockeyFinishHistory = new();
+            private readonly Dictionary<int, List<short?>> _trainerFinishHistory = new();
             public FeatureEngineeringState(HyperparameterTrainer trainer, ISet<string>? identifierKeys = null)
             {
                 _trainer = trainer ?? throw new ArgumentNullException(nameof(trainer));
@@ -240,6 +241,31 @@ namespace HorseRacingML.ML
                 }
 
                 return (float)Math.Sqrt(variance / values.Count);
+            }
+            private static int CalculateVolatility(IEnumerable<short?> finishPositions)
+            {
+                if (finishPositions == null)
+                {
+                    return 0;
+                }
+
+                var validFinishes = finishPositions.Where(fp => fp.HasValue).Select(fp => (float)fp.Value).ToList();
+                if (validFinishes.Count < 2)
+                {
+                    return 0;
+                }
+
+                float averageFinish = validFinishes.Average();
+                int shockResults = 0;
+                foreach (var finish in validFinishes)
+                {
+                    if (Math.Abs(finish - averageFinish) > 5)
+                    {
+                        shockResults++;
+                    }
+                }
+
+                return shockResults;
             }
             private static bool IsNullOrWhiteSpace(object? value)
             {
@@ -1382,7 +1408,19 @@ namespace HorseRacingML.ML
                     {
                         row["JockeyCourseWinRate"] = globalDefaultWinRate;
                     }
+                    if (!_trainerFinishHistory.TryGetValue(trainerId ?? 0, out var trainerHistory))
+                    {
+                        trainerHistory = new List<short?>();
+                    }
+                    row["TrainerVolatility"] = CalculateVolatility(trainerHistory);
 
+                    if (!_jockeyFinishHistory.TryGetValue(jockeyId ?? 0, out var jockeyHistory))
+                    {
+                        jockeyHistory = new List<short?>();
+                    }
+                    row["JockeyVolatility"] = CalculateVolatility(jockeyHistory);
+
+                    row["HorseVolatility"] = CalculateVolatility(history.TakeLast(10).Select(h => h.Finish));
                     float trainerJockeyDefaultWinRate = hasTrainerStat && hasJockeyStat
                         ? (trainerDefaultWinRate + jockeyDefaultWinRate) / 2f
                         : hasTrainerStat ? trainerDefaultWinRate
@@ -1670,7 +1708,33 @@ namespace HorseRacingML.ML
                         }
                     }
                 }
+                if (trainerId.HasValue)
+                {
+                    if (!_trainerFinishHistory.TryGetValue(trainerId.Value, out var trainerHistory))
+                    {
+                        trainerHistory = new List<short?>();
+                        _trainerFinishHistory[trainerId.Value] = trainerHistory;
+                    }
+                    trainerHistory.Add(finish);
+                    if (trainerHistory.Count > 10)
+                    {
+                        trainerHistory.RemoveAt(0);
+                    }
+                }
 
+                if (jockeyId.HasValue)
+                {
+                    if (!_jockeyFinishHistory.TryGetValue(jockeyId.Value, out var jockeyHistory))
+                    {
+                        jockeyHistory = new List<short?>();
+                        _jockeyFinishHistory[jockeyId.Value] = jockeyHistory;
+                    }
+                    jockeyHistory.Add(finish);
+                    if (jockeyHistory.Count > 10)
+                    {
+                        jockeyHistory.RemoveAt(0);
+                    }
+                }
                 if (includeRace)
                 {
                     float ResolveRunnerSpeed(Dictionary<string, object?> row)
