@@ -393,6 +393,30 @@ namespace HorseRacingML.ML
 
                 return Math.Clamp(value, -5f, 5f);
             }
+            internal static List<HistoryEntry> TakeRecentEntries(
+                List<HistoryEntry> history,
+                int desiredCount,
+                Func<HistoryEntry, bool> predicate)
+            {
+                var selected = new List<HistoryEntry>(desiredCount > 0 ? desiredCount : 0);
+
+                if (history == null || history.Count == 0 || desiredCount <= 0 || predicate == null)
+                {
+                    return selected;
+                }
+
+                for (int i = history.Count - 1; i >= 0 && selected.Count < desiredCount; i--)
+                {
+                    var candidate = history[i];
+                    if (predicate(candidate))
+                    {
+                        selected.Add(candidate);
+                    }
+                }
+
+                selected.Reverse();
+                return selected;
+            }
             private static float? CombineAverages(float? first, float? second)
             {
                 if (first.HasValue && second.HasValue)
@@ -432,30 +456,6 @@ namespace HorseRacingML.ML
                 {
                     return null;
                 }
-            }
-            internal static List<HistoryEntry> TakeRecentEntries(
-                List<HistoryEntry> history,
-                int desiredCount,
-                Func<HistoryEntry, bool> predicate)
-            {
-                var selected = new List<HistoryEntry>(desiredCount > 0 ? desiredCount : 0);
-
-                if (history == null || history.Count == 0 || desiredCount <= 0 || predicate == null)
-                {
-                    return selected;
-                }
-
-                for (int i = history.Count - 1; i >= 0 && selected.Count < desiredCount; i--)
-                {
-                    var candidate = history[i];
-                    if (predicate(candidate))
-                    {
-                        selected.Add(candidate);
-                    }
-                }
-
-                selected.Reverse();
-                return selected;
             }
             public void ProcessRace(List<Dictionary<string, object?>> rows, bool includeRace, bool updateState)
             {
@@ -619,16 +619,16 @@ namespace HorseRacingML.ML
                         List<HistoryEntry> recent;
                         if (count > 0)
                         {
+                            var surfaceSpeedRecent = TakeRecentEntries(history, window, h => (surfaceMissing || h.Surface == surfaceValue) && h.HasSpeed);
+                            row[$"AvgSpeedOnSurfaceLast{window}"] = surfaceSpeedRecent.Any() ? surfaceSpeedRecent.Average(h => h.Speed) : 0f;
+
+                            var goingSpeedRecent = TakeRecentEntries(history, window, h => (goingMissing || h.Going == goingValue) && h.HasSpeed);
+                            row[$"AvgSpeedOnGoingLast{window}"] = goingSpeedRecent.Any() ? goingSpeedRecent.Average(h => h.Speed) : 0f;
+
+                            var bucketSpeedRecent = TakeRecentEntries(history, window, h => h.Bucket == bucket && h.HasSpeed);
+                            row[$"AvgSpeedAtDistanceBucketLast{window}"] = bucketSpeedRecent.Any() ? bucketSpeedRecent.Average(h => h.Speed) : 0f;
                             recent = history.GetRange(history.Count - count, count);
-                        var surfaceSpeedRecent = recent.Where(h => (surfaceMissing || h.Surface == surfaceValue) && h.HasSpeed).ToList();
-                        row[$"AvgSpeedOnSurfaceLast{window}"] = surfaceSpeedRecent.Any() ? surfaceSpeedRecent.Average(h => h.Speed) : 0f;
-
-                        var goingSpeedRecent = recent.Where(h => (goingMissing || h.Going == goingValue) && h.HasSpeed).ToList();
-                        row[$"AvgSpeedOnGoingLast{window}"] = goingSpeedRecent.Any() ? goingSpeedRecent.Average(h => h.Speed) : 0f;
-
-                        var bucketSpeedRecent = recent.Where(h => h.Bucket == bucket && h.HasSpeed).ToList();
-                        row[$"AvgSpeedAtDistanceBucketLast{window}"] = bucketSpeedRecent.Any() ? bucketSpeedRecent.Average(h => h.Speed) : 0f;
-                        int wins = recent.Count(h => h.Finish == 1);
+                            int wins = recent.Count(h => h.Finish == 1);
                         row[$"WinRateLast{window}"] = _trainer.SmoothedWinRate(wins, count);
                         row[$"AvgNormPosLast{window}"] = recent.Sum(h => h.NormFinish) / count;
                         row[$"AvgRatingLast{window}"] = recent.Sum(h => h.Rating) / count;
@@ -1058,7 +1058,8 @@ namespace HorseRacingML.ML
                             int wins = recent.Count(h => h.Finish == 1);
                             row[$"WinRateLast{window}"] = _trainer.SmoothedWinRate(wins, count);
                             row[$"AvgNormPosLast{window}"] = recent.Sum(h => h.NormFinish) / count;
-                            row[$"AvgRatingLast{window}"] = recent.Sum(h => h.Rating) / count;
+                            var ratingsRecent = TakeRecentEntries(history, window, h => h.Rating > 0f);
+                            row[$"AvgRatingLast{window}"] = ratingsRecent.Any() ? ratingsRecent.Average(h => h.Rating) : rating;
                         }
                         else
                         {
@@ -1291,36 +1292,34 @@ namespace HorseRacingML.ML
 
                     foreach (var window in PerformanceWindows)
                     {
-                        int count = Math.Min(window, history.Count);
-                        if (count > 0)
+                        if (history.Count > 0)
                         {
-                            var recent = history.GetRange(history.Count - count, count);
-                            var goingRecent = recent.Where(h => goingMissing || h.Going == going).ToList();
+                            var goingRecent = TakeRecentEntries(history, window, h => goingMissing || h.Going == going);
                             row[$"GoingWinRateLast{window}"] = _trainer.SmoothedWinRate(goingRecent.Count(h => h.Finish == 1), goingRecent.Count);
-                            row[$"GoingAvgNormLast{window}"] = goingRecent.Count > 0
-                                ? goingRecent.Sum(h => h.NormFinish) / goingRecent.Count
+                            row[$"GoingAvgNormLast{window}"] = goingRecent.Any()
+                                ? goingRecent.Average(h => h.NormFinish)
                                 : 0f;
 
-                            var surfaceRecent = recent.Where(h => surfaceMissing || h.Surface == surface).ToList();
+                            var surfaceRecent = TakeRecentEntries(history, window, h => surfaceMissing || h.Surface == surface);
                             row[$"SurfaceWinRateLast{window}"] = _trainer.SmoothedWinRate(surfaceRecent.Count(h => h.Finish == 1), surfaceRecent.Count);
-                            row[$"SurfaceAvgNormLast{window}"] = surfaceRecent.Count > 0
-                                ? surfaceRecent.Sum(h => h.NormFinish) / surfaceRecent.Count
+                            row[$"SurfaceAvgNormLast{window}"] = surfaceRecent.Any()
+                                ? surfaceRecent.Average(h => h.NormFinish)
                                 : 0f;
 
-                            var courseRecent = recent.Where(h => h.CourseId == courseId).ToList();
+                            var courseRecent = TakeRecentEntries(history, window, h => h.CourseId == courseId);
                             row[$"CourseWinRateLast{window}"] = _trainer.SmoothedWinRate(courseRecent.Count(h => h.Finish == 1), courseRecent.Count);
-                            row[$"CourseAvgNormLast{window}"] = courseRecent.Count > 0
-                                ? courseRecent.Sum(h => h.NormFinish) / courseRecent.Count
+                            row[$"CourseAvgNormLast{window}"] = courseRecent.Any()
+                                ? courseRecent.Average(h => h.NormFinish)
                                 : 0f;
 
-                            var bucketRecent = recent.Where(h => h.Bucket == bucket).ToList();
+                            var bucketRecent = TakeRecentEntries(history, window, h => h.Bucket == bucket);
                             row[$"DistanceBucketWinRateLast{window}"] = _trainer.SmoothedWinRate(bucketRecent.Count(h => h.Finish == 1), bucketRecent.Count);
-                            row[$"DistanceBucketAvgNormLast{window}"] = bucketRecent.Count > 0
-                                ? bucketRecent.Sum(h => h.NormFinish) / bucketRecent.Count
+                            row[$"DistanceBucketAvgNormLast{window}"] = bucketRecent.Any()
+                                ? bucketRecent.Average(h => h.NormFinish)
                                 : 0f;
 
                             var speedRecent = TakeRecentEntries(history, window, h => h.HasSpeed);
-                            if (speedRecent.Count > 0)
+                            if (speedRecent.Any())
                             {
                                 row[$"AvgSpeedDiffLast{window}"] = speedRecent.Average(h => h.SpeedDiff);
                             }
