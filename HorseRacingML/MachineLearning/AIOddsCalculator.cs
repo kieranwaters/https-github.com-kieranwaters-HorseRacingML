@@ -34,7 +34,47 @@ namespace HorseRacingML.ML
         private static bool _gpuStatusLogged;
 
         private static readonly DateTime BaseDate = new DateTime(2005, 1, 1);
+        private static readonly int[] PerformanceWindows = { 1, 3, 5, 10, 15, 20, 25, 30, 50, 100 };
 
+        private void ExcludeFeaturesWithInsufficientData(Dictionary<string, object?> rawFeatures)
+        {
+            if (rawFeatures == null || !rawFeatures.TryGetValue("CareerStarts", out var careerStartsObj) || careerStartsObj == null)
+            {
+                return;
+            }
+
+            if (!int.TryParse(careerStartsObj.ToString(), out var careerStarts))
+            {
+                return;
+            }
+
+            foreach (var window in PerformanceWindows)
+            {
+                if (careerStarts < window)
+                {
+                    // Remove all features for this window size
+                    rawFeatures.Remove($"WinRateLast{window}");
+                    rawFeatures.Remove($"AvgNormPosLast{window}");
+                    rawFeatures.Remove($"AvgRatingLast{window}");
+                    rawFeatures.Remove($"AvgSpeedLast{window}");
+                    rawFeatures.Remove($"AvgSpeedDiffLast{window}");
+                    rawFeatures.Remove($"Top3RateLast{window}");
+                    rawFeatures.Remove($"Top5RateLast{window}");
+                    rawFeatures.Remove($"NormFinishStdDevLast{window}");
+                    rawFeatures.Remove($"AvgSpeedOnSurfaceLast{window}");
+                    rawFeatures.Remove($"AvgSpeedOnGoingLast{window}");
+                    rawFeatures.Remove($"AvgSpeedAtDistanceBucketLast{window}");
+                    rawFeatures.Remove($"GoingWinRateLast{window}");
+                    rawFeatures.Remove($"GoingAvgNormLast{window}");
+                    rawFeatures.Remove($"SurfaceWinRateLast{window}");
+                    rawFeatures.Remove($"SurfaceAvgNormLast{window}");
+                    rawFeatures.Remove($"CourseWinRateLast{window}");
+                    rawFeatures.Remove($"CourseAvgNormLast{window}");
+                    rawFeatures.Remove($"DistanceBucketWinRateLast{window}");
+                    rawFeatures.Remove($"DistanceBucketAvgNormLast{window}");
+                }
+            }
+        }
         private class WeightFile
         {
             public float Bias { get; set; }
@@ -113,6 +153,7 @@ namespace HorseRacingML.ML
             }
 
             Dictionary<string, object?> rawFeatures = BuildRawFeatureMap(flow);
+            ExcludeFeaturesWithInsufficientData(rawFeatures);
             if (markHistoricalDataMissing)
             {
                 rawFeatures["HistoricalDataMissing"] = true;
