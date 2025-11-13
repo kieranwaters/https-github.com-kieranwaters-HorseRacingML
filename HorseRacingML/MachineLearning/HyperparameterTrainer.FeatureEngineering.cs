@@ -742,6 +742,9 @@ namespace HorseRacingML.ML
                                      PreparedDataset.TryConvertToInt32(jObj, out var jockeyValue)
                         ? jockeyValue
                         : (int?)null;
+                    int courseId = row.TryGetValue("CourseId", out var courseObj) && PreparedDataset.TryConvertToInt32(courseObj, out var courseIdValue)
+                        ? courseIdValue
+                        : 0;
                     int? classValue = row.TryGetValue("Class", out var classObj) &&
                         PreparedDataset.TryConvertToInt32(classObj, out var parsedClass)
                             ? parsedClass
@@ -1236,11 +1239,6 @@ namespace HorseRacingML.ML
                     row["SurfaceWinRate"] = _trainer.SmoothedWinRate(sStats.wins, sStats.starts);
                     row["SurfaceAvgNorm"] = sStats.starts > 0 ? sStats.sumNorm / sStats.starts : 0f;
                     row["LastSurfaceNormPos"] = sStats.lastNorm;
-
-                    int courseId = row.TryGetValue("CourseId", out var courseObj) && PreparedDataset.TryConvertToInt32(courseObj, out var courseIdValue)
-                        ? courseIdValue
-                        : 0;
-
                     if (!_courseStats.TryGetValue(horseId, out var cDict))
                     {
                         cDict = new();
