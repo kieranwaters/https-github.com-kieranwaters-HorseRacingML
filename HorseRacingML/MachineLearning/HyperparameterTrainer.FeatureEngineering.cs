@@ -537,6 +537,7 @@ namespace HorseRacingML.ML
                     bool distanceMissing = !distanceYardsValue.HasValue || distanceYardsValue.Value <= 0;
                     string bucket = distanceMissing ? "Unknown" : DistanceBucket(distanceYardsValue ?? 0);
                     float rating = row.TryGetValue("OfficialRating", out var ratingObj) && ratingObj != null ? Convert.ToSingle(ratingObj) : 0f;
+                    float weight = row.TryGetValue("WeightLbs", out var weightObj) && weightObj != null ? Convert.ToSingle(weightObj) : 0f;
                     int age = row.TryGetValue("Age", out var ageObj) && PreparedDataset.TryConvertToInt32(ageObj, out var ageValue)
                         ? ageValue
                         : 0;
@@ -615,7 +616,10 @@ namespace HorseRacingML.ML
                     foreach (var window in PerformanceWindows)
                     {
                         int count = Math.Min(window, history.Count);
-                        recent = history.GetRange(history.Count - count, count);
+                        List<HistoryEntry> recent;
+                        if (count > 0)
+                        {
+                            recent = history.GetRange(history.Count - count, count);
                         var surfaceSpeedRecent = recent.Where(h => (surfaceMissing || h.Surface == surfaceValue) && h.HasSpeed).ToList();
                         row[$"AvgSpeedOnSurfaceLast{window}"] = surfaceSpeedRecent.Any() ? surfaceSpeedRecent.Average(h => h.Speed) : 0f;
 
@@ -628,9 +632,7 @@ namespace HorseRacingML.ML
                         row[$"WinRateLast{window}"] = _trainer.SmoothedWinRate(wins, count);
                         row[$"AvgNormPosLast{window}"] = recent.Sum(h => h.NormFinish) / count;
                         row[$"AvgRatingLast{window}"] = recent.Sum(h => h.Rating) / count;
-                        List<HistoryEntry> recent;
-                        if (count > 0)
-                        {
+                        
                             var speedRecent = TakeRecentEntries(history, window, h => h.HasSpeed);
                             if (speedRecent.Count > 0)
                             {
