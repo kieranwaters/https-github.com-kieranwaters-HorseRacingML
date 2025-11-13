@@ -132,7 +132,7 @@ namespace HorseRacingML.ML
             public Queue<(DateTime date, bool win)> Recent = new();
         }
 
-        private readonly record struct HistoryEntry(
+        public readonly record struct HistoryEntry(
             DateTime Date,
             float NormFinish,
             short? Finish,
@@ -170,7 +170,7 @@ namespace HorseRacingML.ML
             int RunnerResultId,
             short? OfficialRating,
             byte? Class);
-        private sealed class FeatureEngineeringState
+        public sealed class FeatureEngineeringState
         {
             private readonly HyperparameterTrainer _trainer;
             private readonly ISet<string>? _identifierKeys;
