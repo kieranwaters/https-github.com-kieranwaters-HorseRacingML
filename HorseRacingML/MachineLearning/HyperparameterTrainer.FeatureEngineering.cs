@@ -1698,9 +1698,7 @@ namespace HorseRacingML.ML
                             ? courseIdValue
                             : 0;
 
-                        int? currentWinningTimeMs = row.TryGetValue("WinningTimeMs", out var winningObj) && PreparedDataset.TryConvertToInt32(winningObj, out var winningValue)
-                            ? winningValue
-                            : (int?)null;
+                        int? currentWinningTimeMs = tempWinningTimes[horseId];
                         bool winningTimeAvailable = currentWinningTimeMs.HasValue && currentWinningTimeMs.Value > 0;
                         float raceSpeed = winningTimeAvailable && distanceYards > 0
                             ? distanceYards / (float)currentWinningTimeMs!.Value
