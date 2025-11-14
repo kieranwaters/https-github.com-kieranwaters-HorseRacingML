@@ -116,5 +116,46 @@ namespace HorseRacingML.Tests
             Assert.DoesNotContain("WinRateLast100", rawFeatures.Keys);
             Assert.DoesNotContain("AvgNormPosLast100", rawFeatures.Keys);
         }
+        [Fact]
+        public void ProcessRace_HandlesPulledUpOutcome()
+        {
+            // Arrange
+            var state = new HyperparameterTrainer.FeatureEngineeringState(_trainer);
+            var raceData = new List<Dictionary<string, object?>>
+            {
+                new()
+                {
+                    { "RaceId", 1 },
+                    { "HorseId", 1 },
+                    { "RaceDate", new DateTime(2023, 1, 1) },
+                    { "RunnerCount", 3 },
+                    { "FinishPos", null },
+                    { "OutcomeCode", "PU" }
+                },
+                new()
+                {
+                    { "RaceId", 1 },
+                    { "HorseId", 2 },
+                    { "RaceDate", new DateTime(2023, 1, 1) },
+                    { "RunnerCount", 3 },
+                    { "FinishPos", (short)1 }
+                },
+                new()
+                {
+                    { "RaceId", 1 },
+                    { "HorseId", 3 },
+                    { "RaceDate", new DateTime(2023, 1, 1) },
+                    { "RunnerCount", 3 },
+                    { "FinishPos", (short)2 }
+                }
+            };
+
+            // Act
+            state.ProcessRace(raceData, includeRace: true, updateState: true);
+
+            // Assert
+            var pulledUpHorse = raceData.First(r => (int)r["HorseId"] == 1);
+            Assert.Equal(4, pulledUpHorse["FinishPos"]);
+        }
     }
 }

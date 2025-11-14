@@ -567,7 +567,12 @@ namespace HorseRacingML.ML
                         row.Remove("ScheduledOff");
                         row["RaceDate"] = normalizedRaceDate;
                     }
-
+                    if (row.TryGetValue("OutcomeCode", out var outcomeCodeObj) &&
+                   outcomeCodeObj is string outcomeCode &&
+                   string.Equals(outcomeCode, "PU", StringComparison.OrdinalIgnoreCase))
+                    {
+                        row["FinishPos"] = raceStat.RunnerCount + 1;
+                    }
                     short? finish = row["FinishPos"] != null ? (short?)Convert.ToInt16(row["FinishPos"]) : null;
                     int raceId = PreparedDataset.GetRequiredInt32(row, "RaceId");
                     int runnerCount = row.TryGetValue("RunnerCount", out var runnerCountObj) &&
@@ -2340,7 +2345,6 @@ namespace HorseRacingML.ML
             "CourseId",
             "TrainerId",
             "JockeyId",
-            "OutcomeCode",
             "DistanceBeatenText",
             "SP_Fraction",
             "SP_Decimal",
