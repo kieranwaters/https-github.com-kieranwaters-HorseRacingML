@@ -366,83 +366,86 @@ namespace HorseRacingML.Controllers
             viewModel.RequestedEpochs = requestedEpochs;
             viewModel.RequestedBatchSize = requestedBatchSize;
             viewModel.RequestedFolds = requestedFolds;
-            static bool HasValidUnits(int units) => MLParameterValidator.EnsureUnits(units, int.MinValue) == units;
-            static bool HasValidDropout(double dropout) => !double.IsNaN(MLParameterValidator.EnsureDropout(dropout, double.NaN));
-            static bool HasValidLayers(int layers) => MLParameterValidator.EnsureLayers(layers, int.MinValue) == layers;
-            static bool HasValidLearningRate(double learningRate) => !double.IsNaN(MLParameterValidator.EnsureLearningRate(learningRate, double.NaN));
-            static bool HasValidPositive(int value) => MLParameterValidator.EnsurePositive(value, int.MinValue) == value;
-            static bool TryNormalizeBatchSize(int value, out int normalized)
+            if (!request.UseExistingWeights)
             {
-                normalized = MLParameterValidator.EnsureBatchSize(value, fallback: 0);
-                return normalized > 0;
-            }
+                static bool HasValidUnits(int units) => MLParameterValidator.EnsureUnits(units, int.MinValue) == units;
+                static bool HasValidDropout(double dropout) => !double.IsNaN(MLParameterValidator.EnsureDropout(dropout, double.NaN));
+                static bool HasValidLayers(int layers) => MLParameterValidator.EnsureLayers(layers, int.MinValue) == layers;
+                static bool HasValidLearningRate(double learningRate) => !double.IsNaN(MLParameterValidator.EnsureLearningRate(learningRate, double.NaN));
+                static bool HasValidPositive(int value) => MLParameterValidator.EnsurePositive(value, int.MinValue) == value;
+                static bool TryNormalizeBatchSize(int value, out int normalized)
+                {
+                    normalized = MLParameterValidator.EnsureBatchSize(value, fallback: 0);
+                    return normalized > 0;
+                }
 
-            bool unitsValid = !requestedUnits.HasValue || HasValidUnits(requestedUnits.Value);
-            bool layersValid = !requestedLayers.HasValue || HasValidLayers(requestedLayers.Value);
-            int normalizedBatchSize = 0;
-            var invalidHyperparameters = new List<string>();
-            if (!unitsValid)
-            {
-                invalidHyperparameters.Add("Units per layer");
-            }
+                bool unitsValid = !requestedUnits.HasValue || HasValidUnits(requestedUnits.Value);
+                bool layersValid = !requestedLayers.HasValue || HasValidLayers(requestedLayers.Value);
+                int normalizedBatchSize = 0;
+                var invalidHyperparameters = new List<string>();
+                if (!unitsValid)
+                {
+                    invalidHyperparameters.Add("Units per layer");
+                }
 
-            if (requestedDropout.HasValue && !HasValidDropout(requestedDropout.Value))
-            {
-                invalidHyperparameters.Add("Dropout");
-            }
+                if (requestedDropout.HasValue && !HasValidDropout(requestedDropout.Value))
+                {
+                    invalidHyperparameters.Add("Dropout");
+                }
 
-            if (!layersValid)
-            {
-                invalidHyperparameters.Add("Layers");
-            }
+                if (!layersValid)
+                {
+                    invalidHyperparameters.Add("Layers");
+                }
 
-            if (layersValid && requestedLayers.GetValueOrDefault() > 0 && (!requestedUnits.HasValue || requestedUnits.Value <= 0))
-            {
-                invalidHyperparameters.Add("Units per layer (must be positive when Layers > 0)");
-                unitsValid = false;
-            }
+                if (layersValid && requestedLayers.GetValueOrDefault() > 0 && (!requestedUnits.HasValue || requestedUnits.Value <= 0))
+                {
+                    invalidHyperparameters.Add("Units per layer (must be positive when Layers > 0)");
+                    unitsValid = false;
+                }
 
-            if (requestedLearningRate.HasValue && !HasValidLearningRate(requestedLearningRate.Value))
-            {
-                invalidHyperparameters.Add("Learning rate");
-            }
+                if (requestedLearningRate.HasValue && !HasValidLearningRate(requestedLearningRate.Value))
+                {
+                    invalidHyperparameters.Add("Learning rate");
+                }
 
-            if (requestedEpochs.HasValue && !HasValidPositive(requestedEpochs.Value))
-            {
-                invalidHyperparameters.Add("Epochs");
-            }
+                if (requestedEpochs.HasValue && !HasValidPositive(requestedEpochs.Value))
+                {
+                    invalidHyperparameters.Add("Epochs");
+                }
 
-            if (requestedBatchSize.HasValue && !TryNormalizeBatchSize(requestedBatchSize.Value, out normalizedBatchSize))
-            {
-                invalidHyperparameters.Add("Batch size");
-            }
+                if (requestedBatchSize.HasValue && !TryNormalizeBatchSize(requestedBatchSize.Value, out normalizedBatchSize))
+                {
+                    invalidHyperparameters.Add("Batch size");
+                }
 
-            if (requestedFolds.HasValue && !HasValidPositive(requestedFolds.Value))
-            {
-                invalidHyperparameters.Add("Folds");
-            }
+                if (requestedFolds.HasValue && !HasValidPositive(requestedFolds.Value))
+                {
+                    invalidHyperparameters.Add("Folds");
+                }
 
-            if (invalidHyperparameters.Count > 0)
-            {
-                var invalidList = string.Join(", ", invalidHyperparameters);
-                ModelState.AddModelError(string.Empty, $"The following hyperparameter values are invalid: {invalidList}. Please correct them and try again.");
-                return View(viewModel);
-            }
+                if (invalidHyperparameters.Count > 0)
+                {
+                    var invalidList = string.Join(", ", invalidHyperparameters);
+                    ModelState.AddModelError(string.Empty, $"The following hyperparameter values are invalid: {invalidList}. Please correct them and try again.");
+                    return View(viewModel);
+                }
 
 
-            bool hasRequestedHyperparameters =
-               requestedUnits.HasValue &&
-               requestedDropout.HasValue &&
-               requestedLayers.HasValue &&
-               requestedLearningRate.HasValue &&
-               requestedEpochs.HasValue &&
-               requestedBatchSize.HasValue &&
-               requestedFolds.HasValue;
+                bool hasRequestedHyperparameters =
+                   requestedUnits.HasValue &&
+                   requestedDropout.HasValue &&
+                   requestedLayers.HasValue &&
+                   requestedLearningRate.HasValue &&
+                   requestedEpochs.HasValue &&
+                   requestedBatchSize.HasValue &&
+                   requestedFolds.HasValue;
 
-            if (!hasRequestedHyperparameters)
-            {
-                viewModel.Message = "Please supply all hyperparameter values before running the AI test.";
-                return View(viewModel);
+                if (!hasRequestedHyperparameters)
+                {
+                    viewModel.Message = "Please supply all hyperparameter values before running the AI test.";
+                    return View(viewModel);
+                }
             }
 
             var validationRaceIds = _repository.GetRaceIdsBetweenDates(validationStart, validationEnd);
@@ -505,7 +508,7 @@ namespace HorseRacingML.Controllers
                 RunDate = DateTime.UtcNow
             };
 
-            ar result = new HyperparameterTrainer.TrainingResult();
+            var result = new HyperparameterTrainer.TrainingResult();
             if (request.UseExistingWeights)
             {
                 result = await Task.Run(() => _trainer.Evaluate(dataset));

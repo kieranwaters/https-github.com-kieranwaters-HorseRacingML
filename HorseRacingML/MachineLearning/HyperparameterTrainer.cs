@@ -234,6 +234,19 @@ namespace HorseRacingML.ML
 
             return _racingRepository;
         }
+        private static double ComputeBrier(float[] preds, float[] labels)
+        {
+            if (preds.Length == 0)
+                return 0;
+
+            double sum = 0;
+            for (int i = 0; i < preds.Length; i++)
+            {
+                double diff = preds[i] - labels[i];
+                sum += diff * diff;
+            }
+            return sum / preds.Length;
+        }
         private TrainingDataset BuildTrainingDataset(
         PreparedDataset trainingPrepared,
         PreparedDataset validationPrepared,
