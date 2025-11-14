@@ -1,8 +1,24 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 
 namespace HorseRacingML.Models
 {
+    public class RaceResultViewModel
+    {
+        public int RaceId { get; set; }
+        public string RaceTitle { get; set; }
+        public string PredictedWinner { get; set; }
+        public string ActualWinner { get; set; }
+        public bool IsCorrectPrediction { get; set; }
+    }
+
+    public class DayResultViewModel
+    {
+        public DateTime RaceDate { get; set; }
+        public List<RaceResultViewModel> Races { get; set; }
+    }
+
     public class AITestResultViewModel
     {
         public double? ValidationAccuracy { get; set; }
@@ -31,5 +47,7 @@ namespace HorseRacingML.Models
         public decimal StartingBankroll { get; set; } = 100m;
         public ValidationSimulationResult? Simulation { get; set; }
         public bool HasResult => ValidationAccuracy.HasValue || ValidationLoss.HasValue;
+        public bool UseExistingWeights { get; set; }
+        public List<DayResultViewModel> DailyResults { get; set; }
     }
 }

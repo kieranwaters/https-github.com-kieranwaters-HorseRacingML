@@ -505,7 +505,16 @@ namespace HorseRacingML.Controllers
                 RunDate = DateTime.UtcNow
             };
 
-            var result = await Task.Run(() => _trainer.Train(parameter, 0, 1, dataset, persistWeights: false));
+            var result = new HyperparameterTrainer.TrainingResult();
+            if (request.UseExistingWeights)
+            {
+                result = await Task.Run(() => _trainer.Evaluate(dataset));
+            }
+            else
+            {
+                result = await Task.Run(() => _trainer.Train(parameter, 0, 1, dataset, persistWeights: false));
+            }
+
             viewModel.ParameterUsed = new MLParameter
             {
                 RunDate = parameter.RunDate,
@@ -535,14 +544,15 @@ namespace HorseRacingML.Controllers
                 : string.Concat(batchSizeAdjustmentMessage, " ", accuracyMessage);
 
             var raceSummaries = _repository.GetRaceSummaries(result.ValidationRaceIds);
-            viewModel.Simulation = RunValidationSimulation(result, raceSummaries, startingBankroll);
+            viewModel.Simulation = RunValidationSimulation(result, raceSummaries, startingBankroll, viewModel);
 
             return View(viewModel);
         }
         private ValidationSimulationResult RunValidationSimulation(
             HyperparameterTrainer.TrainingResult result,
             IDictionary<int, RaceSummary> raceSummaries,
-            decimal startingBankroll)
+            decimal startingBankroll,
+            AITestResultViewModel viewModel)
         {
             raceSummaries ??= new Dictionary<int, RaceSummary>();
 
@@ -667,6 +677,39 @@ namespace HorseRacingML.Controllers
                     BankrollAfter = bankroll
                 });
             }
+            var dailyResults = new List<DayResultViewModel>();
+            var racesByDay = grouped.Select(raceGroup =>
+                {
+                    var raceId = raceGroup.Key;
+                    var raceSummary = raceSummaries.TryGetValue(raceId, out var summary) ? summary : null;
+                    var predictedWinner = raceGroup.OrderByDescending(r => r.Probability).First();
+                    var actualWinner = raceGroup.FirstOrDefault(r => r.Example.Label >= 0.5f);
+
+                    return new
+                    {
+                        RaceDate = raceSummary?.RaceDate ?? DateTime.MinValue,
+                        RaceResult = new RaceResultViewModel
+                        {
+                            RaceId = raceId,
+                            RaceTitle = raceSummary?.Title,
+                            PredictedWinner = predictedWinner.Example.HorseName,
+                            ActualWinner = actualWinner?.Example.HorseName,
+                            IsCorrectPrediction = predictedWinner.Example.HorseName == actualWinner?.Example.HorseName
+                        }
+                    };
+                })
+                .GroupBy(r => r.RaceDate.Date)
+                .OrderBy(g => g.Key);
+
+            foreach (var dayGroup in racesByDay)
+            {
+                dailyResults.Add(new DayResultViewModel
+                {
+                    RaceDate = dayGroup.Key,
+                    Races = dayGroup.Select(r => r.RaceResult).ToList()
+                });
+            }
+            viewModel.DailyResults = dailyResults;
 
             return new ValidationSimulationResult
             {
