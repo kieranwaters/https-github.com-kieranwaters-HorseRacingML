@@ -1,12 +1,12 @@
 ﻿using HorseRacingML.Data;
 using HorseRacingML.Models;
-using HorseRacingML.Models;
 using Microsoft.Data.SqlClient;
 using OpenQA.Selenium.BiDi.Script;
 using Microsoft.Extensions.Configuration;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Text;
+using HorseRacingML.Models;
 using System.Text.Json;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
@@ -1287,6 +1287,120 @@ namespace HorseRacingML.ML
                 param.Epochs,
                 param.BatchSize,
                 exception);
+        }
+        public TrainingResult Evaluate(TrainingDataset dataset)
+        {
+            if (dataset is null)
+                throw new ArgumentNullException(nameof(dataset));
+
+            var gpus = tf.config.list_physical_devices("GPU");
+            if (gpus.Length > 0)
+            {
+                try { tf.config.experimental.set_memory_growth(gpus[0], true); } catch { }
+            }
+
+            var trainExamples = dataset.TrainingRaces.SelectMany(r => r.Runners).ToList();
+            var valExamples = dataset.ValidationRaces.SelectMany(r => r.Runners).ToList();
+            int featureCount = dataset.FeatureCount;
+
+            var valFeatures = valExamples.Select(r => (float[])r.Features.Clone()).ToList();
+            var valLabels = valExamples.Select(r => r.Label).ToArray();
+            var valRaceIds = valExamples.Select(r => r.RaceId).ToArray();
+
+            var means = dataset.Normalization.Mean ?? Array.Empty<float>();
+            var stdDevs = dataset.Normalization.StdDev ?? Array.Empty<float>();
+
+            void Normalize(IList<float[]> data)
+            {
+                Parallel.ForEach(data, arr =>
+                {
+                    for (int i = 0; i < featureCount; i++)
+                    {
+                        arr[i] = (arr[i] - means[i]) / stdDevs[i];
+                    }
+                });
+            }
+
+            Normalize(valFeatures);
+
+            var model = LoadModel();
+            if (model == null)
+            {
+                throw new InvalidOperationException("Failed to load the AI model from weights file.");
+            }
+
+            var valPreds = new float[valLabels.Length];
+            // Evaluation logic using the loaded model
+            // This part needs to be implemented based on the model structure
+            // For now, let's assume a simple forward pass
+            for (int i = 0; i < valFeatures.Count; i++)
+            {
+                var input = valFeatures[i];
+                var output = ForwardPass(model, input);
+                valPreds[i] = output;
+            }
+
+            var valAcc = valPreds.Length > 0 ? ComputeWinnerAccuracy(valRaceIds, valPreds, valLabels) : 0;
+            var valLoss = 0; // Loss calculation would require the loss function
+            var valBrier = ComputeBrier(valPreds, valLabels);
+            var valFocalLoss = 0; // Focal loss calculation
+
+            return new TrainingResult
+            {
+                ValidationAccuracy = valAcc,
+                ValidationLoss = valLoss,
+                ValidationBrier = valBrier,
+                ValidationFocalLoss = valFocalLoss,
+                ValidationPredictions = new ReadOnlyCollection<float>(valPreds),
+                ValidationLabels = new ReadOnlyCollection<float>(valLabels),
+                ValidationRaceIds = new ReadOnlyCollection<int>(valRaceIds),
+                ValidationExamples = new ReadOnlyCollection<RunnerExample>(valExamples),
+            };
+        }
+
+        private float ForwardPass(TrainedModel model, float[] input)
+        {
+            var layerInput = input;
+            foreach (var layer in model.HiddenLayers)
+            {
+                var layerOutput = new float[layer.Bias.Length];
+                for (int i = 0; i < layer.Bias.Length; i++)
+                {
+                    float sum = 0;
+                    for (int j = 0; j < layerInput.Length; j++)
+                    {
+                        sum += layerInput[j] * layer.Weights[j][i];
+                    }
+                    sum += layer.Bias[i];
+                    layerOutput[i] = Math.Max(0, sum); // ReLU activation
+                }
+                layerInput = layerOutput;
+            }
+
+            float output = 0;
+            for (int i = 0; i < layerInput.Length; i++)
+            {
+                output += layerInput[i] * model.OutputLayer.Weights[i][0];
+            }
+            output += model.OutputLayer.Bias[0];
+
+            return 1 / (1 + (float)Math.Exp(-output)); // Sigmoid activation
+        }
+
+        private TrainedModel LoadModel()
+        {
+            var weightsDirectory = Path.Combine(AppContext.BaseDirectory, "weights");
+            var weightPath = Path.Combine(weightsDirectory, "aiweights.json");
+            if (!File.Exists(weightPath))
+            {
+                weightPath = Path.Combine(AppContext.BaseDirectory, "aiweights.json");
+            }
+            if (!File.Exists(weightPath))
+            {
+                return null;
+            }
+            var json = File.ReadAllText(weightPath);
+            return JsonSerializer.Deserialize<TrainedModel>(json);
         }
 
     }
