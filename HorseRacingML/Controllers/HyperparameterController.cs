@@ -505,7 +505,7 @@ namespace HorseRacingML.Controllers
                 RunDate = DateTime.UtcNow
             };
 
-            ar result = new HyperparameterTrainer.TrainingResult();
+            var result = new HyperparameterTrainer.TrainingResult();
             if (request.UseExistingWeights)
             {
                 result = await Task.Run(() => _trainer.Evaluate(dataset));
