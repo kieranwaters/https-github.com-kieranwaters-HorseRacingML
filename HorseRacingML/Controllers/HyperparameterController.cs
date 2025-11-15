@@ -1,14 +1,15 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using HorseRacingML.Data;
-using HorseRacingML.Models;
+﻿using HorseRacingML.Data;
 using HorseRacingML.ML;
+using HorseRacingML.Models;
 using HorseRacingML.Services;
-using System.Globalization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
+using System.Threading.Tasks;
+using static HorseRacingML.ML.HyperparameterTrainer;
 
 namespace HorseRacingML.Controllers
 {
@@ -389,12 +390,22 @@ namespace HorseRacingML.Controllers
                 viewModel.Message = "No training data is available outside the validation window.";
                 return View(viewModel);
             }
-            var dataset = _trainer.LoadTrainingDataset(new HashSet<int>(trainingRaceIds), new HashSet<int>(validationRaceIds), includeIdentifiers: true);
-            if (dataset.TrainingRaces.Count == 0)
+            TrainingDataset dataset;
+            if (request.UseExistingWeights)
             {
-                viewModel.Message = "The training dataset was empty after preparation.";
+                dataset = _trainer.LoadValidationDataset(new HashSet<int>(trainingRaceIds), new HashSet<int>(validationRaceIds), includeIdentifiers: true);
+            }
+            else
+            {
+                dataset = _trainer.LoadTrainingDataset(new HashSet<int>(trainingRaceIds), new HashSet<int>(validationRaceIds), includeIdentifiers: true);
+            }
+
+            if (dataset.ValidationRaces.Count == 0)
+            {
+                viewModel.Message = "The validation dataset was empty after preparation.";
                 return View(viewModel);
             }
+
 
             MLParameter parameter;
             string? batchSizeAdjustmentMessage = null;
@@ -404,17 +415,6 @@ namespace HorseRacingML.Controllers
             }
             else
             {
-                static bool HasValidUnits(int units) => MLParameterValidator.EnsureUnits(units, int.MinValue) == units;
-                static bool HasValidDropout(double dropout) => !double.IsNaN(MLParameterValidator.EnsureDropout(dropout, double.NaN));
-                static bool HasValidLayers(int layers) => MLParameterValidator.EnsureLayers(layers, int.MinValue) == layers;
-                static bool HasValidLearningRate(double learningRate) => !double.IsNaN(MLParameterValidator.EnsureLearningRate(learningRate, double.NaN));
-                static bool HasValidPositive(int value) => MLParameterValidator.EnsurePositive(value, int.MinValue) == value;
-                static bool TryNormalizeBatchSize(int value, out int normalized)
-                {
-                    normalized = MLParameterValidator.EnsureBatchSize(value, fallback: 0);
-                    return normalized > 0;
-                }
-
                 bool unitsValid = !requestedUnits.HasValue || HasValidUnits(requestedUnits.Value);
                 bool layersValid = !requestedLayers.HasValue || HasValidLayers(requestedLayers.Value);
                 int normalizedBatchSize = 0;

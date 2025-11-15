@@ -1186,6 +1186,47 @@ namespace HorseRacingML.ML
             Console.WriteLine($"[TrainAI] Feature correlation computation complete. Generated {correlations.Count} correlation entries.");
             return correlations.ToList();
         }
+        public TrainingDataset LoadValidationDataset(ISet<int> trainingRaceIdsForState, ISet<int> validationRaceIds, bool includeIdentifiers = false)
+        {
+            if (trainingRaceIdsForState is null)
+                throw new ArgumentNullException(nameof(trainingRaceIdsForState));
+            if (validationRaceIds is null)
+                throw new ArgumentNullException(nameof(validationRaceIds));
+
+            var model = LoadModel();
+            if (model == null)
+            {
+                throw new InvalidOperationException("Failed to load the AI model from weights file for validation.");
+            }
+
+            var validationPrepared = PrepareDataset(
+                ToNullableSet(validationRaceIds),
+                ToNullableSet(trainingRaceIdsForState),
+                includeIdentifiers,
+                applyRepositoryBackfills: false);
+
+            var emptyTraining = new PreparedDataset(new List<PreparedRace>());
+
+            var metadataSource = validationPrepared;
+            var metadataRows = metadataSource.Rows.ToList();
+
+            var signature = BuildRaceSignature(validationPrepared.Races);
+            DatasetFeatureMetadata metadata;
+            lock (_featureMetadataCacheLock)
+            {
+                if (!_featureMetadataCache.TryGetValue((includeIdentifiers, signature), out metadata))
+                {
+                    metadata = BuildFeatureMetadata(metadataSource, metadataRows);
+                    _featureMetadataCache[(includeIdentifiers, signature)] = metadata;
+                }
+            }
+
+            var validationRaces = EncodeRaces(validationPrepared.Races, metadata.FeatureKeys, metadata.FeatureDimensions, metadata.StringMaps);
+
+            var normalizationKey = BuildNormalizationCacheKey(includeIdentifiers, signature);
+
+            return new TrainingDataset(new List<RaceExample>(), validationRaces, metadata.FeatureKeys, metadata.FeatureDimensions, metadata.StringMaps, model.Normalization, normalizationKey);
+        }
         public TrainingDataset LoadTrainingDataset(ISet<int> trainingRaceIds, ISet<int> validationRaceIds, bool includeIdentifiers = false)
         {
             if (trainingRaceIds is null)
