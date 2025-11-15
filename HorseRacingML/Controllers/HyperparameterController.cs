@@ -675,7 +675,7 @@ namespace HorseRacingML.Controllers
                 .GroupBy(r =>
                 {
                     raceSummaries.TryGetValue(r.RaceId, out var summary);
-                    return summary?.RaceDate.Date ?? DateTime.MinValue.Date;
+                    return summary?.RaceDate?.Date ?? DateTime.MinValue.Date;
                 })
                 .OrderBy(g => g.Key)
                 .Select(g => new DayResultViewModel
