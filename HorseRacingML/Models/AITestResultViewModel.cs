@@ -11,6 +11,7 @@ namespace HorseRacingML.Models
         public string PredictedWinner { get; set; }
         public string ActualWinner { get; set; }
         public bool IsCorrectPrediction { get; set; }
+        public decimal Bankroll { get; set; }
     }
 
     public class DayResultViewModel
@@ -43,6 +44,8 @@ namespace HorseRacingML.Models
         public int SelectedValidationMonths { get; set; } = 1;
         public double? TrainFocalLoss { get; set; }
         public double? ValidationFocalLoss { get; set; }
+        [Range(1, 100, ErrorMessage = "Please choose a dampener between 1 and 100.")]
+        public int KellyDampener { get; set; } = 10;
         public decimal StartingBankroll { get; set; } = 100m;
         public ValidationSimulationResult? Simulation { get; set; }
         public bool HasResult => ValidationAccuracy.HasValue || ValidationLoss.HasValue;

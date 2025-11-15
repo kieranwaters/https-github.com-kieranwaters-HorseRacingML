@@ -573,138 +573,117 @@ namespace HorseRacingML.Controllers
             decimal totalStaked = 0m;
             int wins = 0;
             var bets = new List<ValidationBetResult>();
+            var dailyRaceResults = new List<RaceResultViewModel>();
 
-            var grouped = Enumerable.Range(0, examples.Count)
+            var allRaceData = Enumerable.Range(0, examples.Count)
                 .Select(i => new
                 {
                     RaceId = raceIds[i],
                     Example = examples[i],
                     Probability = Math.Clamp((double)predictions[i], 0d, 1d)
                 })
-                .GroupBy(x => x.RaceId);
-
-            foreach (var raceGroup in grouped)
-            {
-                if (bankroll <= 0m)
+                .GroupBy(x => x.RaceId)
+                .Select(g =>
                 {
-                    break;
-                }
-
-                var candidate = raceGroup
-                    .Select(entry =>
+                    raceSummaries.TryGetValue(g.Key, out var summary);
+                    return new
                     {
-                        if (!entry.Example.StartingPriceDecimal.HasValue || entry.Example.StartingPriceDecimal.Value <= 1m)
-                        {
-                            return null;
-                        }
+                        RaceGroup = g,
+                        RaceDate = summary?.RaceDate ?? DateTime.MinValue,
+                        Summary = summary
+                    };
+                })
+                .OrderBy(r => r.RaceDate);
 
-                        var decimalOdds = entry.Example.StartingPriceDecimal.Value;
-                        if (decimalOdds <= 1m)
-                        {
-                            return null;
-                        }
 
-                        var marketProbability = 1.0 / (double)decimalOdds;
-                        if (!double.IsFinite(marketProbability) || marketProbability <= 0)
-                        {
-                            return null;
-                        }
+            foreach (var race in allRaceData)
+            {
+                var raceGroup = race.RaceGroup;
+                var summary = race.Summary;
 
-                        var differential = entry.Probability - marketProbability;
-                        return new
-                        {
-                            entry.RaceId,
-                            entry.Example,
-                            entry.Probability,
-                            DecimalOdds = decimalOdds,
-                            MarketProbability = marketProbability,
-                            Differential = differential
-                        };
-                    })
-                    .Where(c => c != null && c.Differential > 0)
-                    .Select(c => c!)
-                    .OrderByDescending(c => c.Differential)
-                    .ThenByDescending(c => c.Probability)
+                var predictedWinner = raceGroup
+                    .OrderByDescending(r => r.Probability)
                     .FirstOrDefault();
 
-                if (candidate is null)
-                {
-                    continue;
-                }
-
-                var kellyFraction = BettingMath.CalculateKellyFraction(candidate.Probability, (double)candidate.DecimalOdds, _maxKellyFraction);
-                if (kellyFraction <= 0m)
-                {
-                    continue;
-                }
-
-                var stake = BettingMath.CalculateSequentialStake(bankroll, kellyFraction);
-                if (stake <= 0m)
-                {
-                    continue;
-                }
-
-                bankroll -= stake;
-                totalStaked += stake;
-
-                bool won = candidate.Example.Label >= 0.5f;
-                if (won)
-                {
-                    wins++;
-                    bankroll += stake * candidate.DecimalOdds;
-                }
-
-                raceSummaries.TryGetValue(candidate.RaceId, out var summary);
-                bets.Add(new ValidationBetResult
-                {
-                    RaceId = candidate.RaceId,
-                    RaceDate = summary?.RaceDate,
-                    RaceTitle = summary?.Title,
-                    CourseName = summary?.CourseName,
-                    HorseName = candidate.Example.HorseName,
-                    DecimalOdds = candidate.DecimalOdds,
-                    AiDecimalOdds = BettingMath.CalculateAiDecimalOdds(candidate.Probability),
-                    AiProbability = candidate.Probability,
-                    MarketProbability = candidate.MarketProbability,
-                    Differential = candidate.Differential,
-                    Stake = stake,
-                    Won = won,
-                    BankrollAfter = bankroll
-                });
-            }
-            var dailyResults = new List<DayResultViewModel>();
-            var racesByDay = grouped.Select(raceGroup =>
-            {
-                var raceId = raceGroup.Key;
-                var raceSummary = raceSummaries.TryGetValue(raceId, out var summary) ? summary : null;
-                var predictedWinner = raceGroup.OrderByDescending(r => r.Probability).First();
                 var actualWinner = raceGroup.FirstOrDefault(r => r.Example.Label >= 0.5f);
 
-                return new
-                {
-                    RaceDate = raceSummary?.RaceDate ?? DateTime.MinValue,
-                    RaceResult = new RaceResultViewModel
-                    {
-                        RaceId = raceId,
-                        RaceTitle = raceSummary?.Title,
-                        PredictedWinner = predictedWinner.Example.HorseName,
-                        ActualWinner = actualWinner?.Example.HorseName,
-                        IsCorrectPrediction = predictedWinner.Example.HorseName == actualWinner?.Example.HorseName
-                    }
-                };
-            })
-                .GroupBy(r => r.RaceDate.Date)
-                .OrderBy(g => g.Key);
+                var isCorrectPrediction = predictedWinner != null && actualWinner != null && predictedWinner.Example.HorseName == actualWinner.Example.HorseName;
 
-            foreach (var dayGroup in racesByDay)
-            {
-                dailyResults.Add(new DayResultViewModel
+                // A bet is only placed if the conditions are met.
+                // The bankroll progression, however, is continuous.
+                if (predictedWinner != null &&
+                    bankroll > 0m &&
+                    predictedWinner.Example.StartingPriceDecimal.HasValue &&
+                    predictedWinner.Example.StartingPriceDecimal.Value > 1m)
                 {
-                    RaceDate = dayGroup.Key,
-                    Races = dayGroup.Select(r => r.RaceResult).ToList()
+                    var decimalOdds = predictedWinner.Example.StartingPriceDecimal.Value;
+                    var probability = predictedWinner.Probability;
+
+                    var kellyFraction = BettingMath.CalculateKellyFraction(probability, (double)decimalOdds, _maxKellyFraction);
+
+                    if (viewModel.KellyDampener > 0)
+                    {
+                        kellyFraction /= viewModel.KellyDampener;
+                    }
+
+                    if (kellyFraction > 0m)
+                    {
+                        var stake = BettingMath.CalculateSequentialStake(bankroll, kellyFraction);
+                        if (stake > 0m)
+                        {
+                            bankroll -= stake;
+                            totalStaked += stake;
+
+                            if (isCorrectPrediction)
+                            {
+                                wins++;
+                                bankroll += stake * decimalOdds;
+                            }
+
+                            bets.Add(new ValidationBetResult
+                            {
+                                RaceId = raceGroup.Key,
+                                RaceDate = summary?.RaceDate,
+                                RaceTitle = summary?.Title,
+                                CourseName = summary?.CourseName,
+                                HorseName = predictedWinner.Example.HorseName,
+                                DecimalOdds = decimalOdds,
+                                AiDecimalOdds = BettingMath.CalculateAiDecimalOdds(probability),
+                                AiProbability = probability,
+                                MarketProbability = 1.0 / (double)decimalOdds,
+                                Differential = probability - (1.0 / (double)decimalOdds),
+                                Stake = stake,
+                                Won = isCorrectPrediction,
+                                BankrollAfter = bankroll
+                            });
+                        }
+                    }
+                }
+
+                dailyRaceResults.Add(new RaceResultViewModel
+                {
+                    RaceId = race.RaceGroup.Key,
+                    RaceTitle = race.Summary?.Title,
+                    PredictedWinner = predictedWinner?.Example.HorseName,
+                    ActualWinner = actualWinner?.Example.HorseName,
+                    IsCorrectPrediction = isCorrectPrediction,
+                    Bankroll = bankroll
                 });
             }
-            viewModel.DailyResults = dailyResults;
+
+            viewModel.DailyResults = dailyRaceResults
+                .GroupBy(r =>
+                {
+                    raceSummaries.TryGetValue(r.RaceId, out var summary);
+                    return summary?.RaceDate.Date ?? DateTime.MinValue.Date;
+                })
+                .OrderBy(g => g.Key)
+                .Select(g => new DayResultViewModel
+                {
+                    RaceDate = g.Key,
+                    Races = g.ToList()
+                })
+                .ToList();
             return new ValidationSimulationResult
             {
                 StartingBankroll = startingBankroll,
