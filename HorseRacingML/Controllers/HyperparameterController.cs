@@ -275,6 +275,16 @@ namespace HorseRacingML.Controllers
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> TestAI(AITestResultViewModel request)
         {
+            static bool HasValidUnits(int units) => MLParameterValidator.EnsureUnits(units, int.MinValue) == units;
+            static bool HasValidDropout(double dropout) => !double.IsNaN(MLParameterValidator.EnsureDropout(dropout, double.NaN));
+            static bool HasValidLayers(int layers) => MLParameterValidator.EnsureLayers(layers, int.MinValue) == layers;
+            static bool HasValidLearningRate(double learningRate) => !double.IsNaN(MLParameterValidator.EnsureLearningRate(learningRate, double.NaN));
+            static bool HasValidPositive(int value) => MLParameterValidator.EnsurePositive(value, int.MinValue) == value;
+            static bool TryNormalizeBatchSize(int value, out int normalized)
+            {
+                normalized = MLParameterValidator.EnsureBatchSize(value, fallback: 0);
+                return normalized > 0;
+            }
             int? ReadRequestedInt(int? current, string key)
             {
                 if (current.HasValue)
@@ -366,7 +376,33 @@ namespace HorseRacingML.Controllers
             viewModel.RequestedEpochs = requestedEpochs;
             viewModel.RequestedBatchSize = requestedBatchSize;
             viewModel.RequestedFolds = requestedFolds;
-            if (!request.UseExistingWeights)
+            var validationRaceIds = _repository.GetRaceIdsBetweenDates(validationStart, validationEnd);
+            if (validationRaceIds.Count == 0)
+            {
+                viewModel.Message = $"No races were found in the last {months} {monthLabel} to use for validation.";
+                return View(viewModel);
+            }
+
+            var trainingRaceIds = _repository.GetRaceIdsOutsideRange(validationStart, validationEnd);
+            if (trainingRaceIds.Count == 0)
+            {
+                viewModel.Message = "No training data is available outside the validation window.";
+                return View(viewModel);
+            }
+            var dataset = _trainer.LoadTrainingDataset(new HashSet<int>(trainingRaceIds), new HashSet<int>(validationRaceIds), includeIdentifiers: true);
+            if (dataset.TrainingRaces.Count == 0)
+            {
+                viewModel.Message = "The training dataset was empty after preparation.";
+                return View(viewModel);
+            }
+
+            MLParameter parameter;
+            string? batchSizeAdjustmentMessage = null;
+            if (request.UseExistingWeights)
+            {
+                parameter = new MLParameter();
+            }
+            else
             {
                 static bool HasValidUnits(int units) => MLParameterValidator.EnsureUnits(units, int.MinValue) == units;
                 static bool HasValidDropout(double dropout) => !double.IsNaN(MLParameterValidator.EnsureDropout(dropout, double.NaN));
@@ -401,7 +437,6 @@ namespace HorseRacingML.Controllers
                 if (layersValid && requestedLayers.GetValueOrDefault() > 0 && (!requestedUnits.HasValue || requestedUnits.Value <= 0))
                 {
                     invalidHyperparameters.Add("Units per layer (must be positive when Layers > 0)");
-                    unitsValid = false;
                 }
 
                 if (requestedLearningRate.HasValue && !HasValidLearningRate(requestedLearningRate.Value))
@@ -446,67 +481,25 @@ namespace HorseRacingML.Controllers
                     viewModel.Message = "Please supply all hyperparameter values before running the AI test.";
                     return View(viewModel);
                 }
-            }
 
-            var validationRaceIds = _repository.GetRaceIdsBetweenDates(validationStart, validationEnd);
-            if (validationRaceIds.Count == 0)
-            {
-                viewModel.Message = $"No races were found in the last {months} {monthLabel} to use for validation.";
-                return View(viewModel);
-            }
+                if (normalizedBatchSize < requestedBatchSize.Value)
+                {
+                    batchSizeAdjustmentMessage = $"Batch size reduced to {normalizedBatchSize} to respect the maximum of {MLParameterValidator.MaxBatchSize}.";
+                }
 
-            var trainingRaceIds = _repository.GetRaceIdsOutsideRange(validationStart, validationEnd);
-            if (trainingRaceIds.Count == 0)
-            {
-                viewModel.Message = "No training data is available outside the validation window.";
-                return View(viewModel);
+                parameter = new MLParameter
+                {
+                    Units = requestedUnits.Value,
+                    Dropout = requestedDropout.Value,
+                    Layers = requestedLayers.Value,
+                    LearningRate = requestedLearningRate.Value,
+                    Epochs = requestedEpochs.Value,
+                    BatchSize = normalizedBatchSize,
+                    Folds = requestedFolds.Value,
+                    Fold = null,
+                    RunDate = DateTime.UtcNow
+                };
             }
-            var dataset = _trainer.LoadTrainingDataset(new HashSet<int>(trainingRaceIds), new HashSet<int>(validationRaceIds), includeIdentifiers: true);
-            if (dataset.TrainingRaces.Count == 0)
-            {
-                viewModel.Message = "The training dataset was empty after preparation.";
-                return View(viewModel);
-            }
-            if (!HasValidUnits(requestedUnits.Value) ||
-                !HasValidDropout(requestedDropout.Value) ||
-                !HasValidLayers(requestedLayers.Value) ||
-                !HasValidLearningRate(requestedLearningRate.Value) ||
-                !HasValidPositive(requestedEpochs.Value) ||
-                !TryNormalizeBatchSize(requestedBatchSize.Value, out normalizedBatchSize) ||
-                !HasValidPositive(requestedFolds.Value))
-            {
-                viewModel.Message = "One or more hyperparameter values are invalid. Please correct them and try again.";
-                return View(viewModel);
-            }
-            if (requestedLayers.Value > 0 && requestedUnits.Value <= 0)
-            {
-                viewModel.Message = "Units per layer must be positive when more than zero layers are requested.";
-                return View(viewModel);
-            }
-            var batchSize = normalizedBatchSize;
-            string? batchSizeAdjustmentMessage = null;
-            if (batchSize < requestedBatchSize.Value)
-            {
-                batchSizeAdjustmentMessage = $"Batch size reduced to {batchSize} to respect the maximum of {MLParameterValidator.MaxBatchSize}.";
-            }
-            var units = requestedUnits.Value;
-            var dropout = requestedDropout.Value;
-            var layers = requestedLayers.Value;
-            var learningRate = requestedLearningRate.Value;
-            var epochs = requestedEpochs.Value;
-            var folds = requestedFolds.Value;
-            var parameter = new MLParameter
-            {
-                Units = units,
-                Dropout = dropout,
-                Layers = layers,
-                LearningRate = learningRate,
-                Epochs = epochs,
-                BatchSize = batchSize,
-                Folds = folds,
-                Fold = null,
-                RunDate = DateTime.UtcNow
-            };
 
             var result = new HyperparameterTrainer.TrainingResult();
             if (request.UseExistingWeights)
