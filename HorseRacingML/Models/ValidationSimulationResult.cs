@@ -32,7 +32,7 @@ namespace HorseRacingML.Models
         public double Differential { get; init; }
         public decimal Stake { get; init; }
         public bool Won { get; init; }
-        public decimal BankrollAfter { get; init; }
+        public decimal Bankroll { get; init; }
         public decimal Profit => Won ? Stake * (DecimalOdds - 1m) : -Stake;
     }
 }

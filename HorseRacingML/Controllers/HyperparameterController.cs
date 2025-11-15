@@ -670,10 +670,7 @@ namespace HorseRacingML.Controllers
                                 Differential = edge,
                                 Stake = stake,
                                 Won = isCorrectPrediction,
-                                Bankroll = bankrollBefore,
-                                Stake = stake,
-                                AiOdds = BettingMath.CalculateAiDecimalOdds(predictedWinner?.Probability ?? 0),
-                                BookmakerOdds = predictedWinner?.Example.StartingPriceDecimal ?? 0
+                                Bankroll = bankrollBefore
                             });
                         }
                     }
