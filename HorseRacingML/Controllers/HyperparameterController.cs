@@ -628,8 +628,11 @@ namespace HorseRacingML.Controllers
                 {
                     var decimalOdds = predictedWinner.Example.StartingPriceDecimal.Value;
                     var probability = predictedWinner.Probability;
+                    var marketProbability = 1.0 / (double)decimalOdds;
+                    var edge = probability - marketProbability;
 
-                    var kellyFraction = BettingMath.CalculateKellyFraction(probability, (double)decimalOdds, _maxKellyFraction);
+                    var kellyFraction = BettingMath.CalculateKellyFraction(edge, (double)decimalOdds, _maxKellyFraction);
+
 
                     if (viewModel.KellyDampener > 0)
                     {

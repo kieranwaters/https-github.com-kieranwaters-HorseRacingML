@@ -249,6 +249,8 @@
                                 <th scope="col">AI prob</th>
                                 <th scope="col">Market prob</th>
                                 <th scope="col">Differential</th>
+                                <th scope="col">Market Odds</th>
+                                <th scope="col">AI Odds</th>
                                 <th scope="col">Odds</th>
                                 <th scope="col">Stake</th>
                                 <th scope="col">Profit</th>
@@ -266,6 +268,8 @@
                                     <td>@bet.AiProbability.ToString("P2")</td>
                                     <td>@bet.MarketProbability.ToString("P2")</td>
                                     <td>@bet.Differential.ToString("P2")</td>
+                                    <td>@bet.DecimalOdds.ToString("0.00")</td>
+                                    <td>@bet.AiDecimalOdds.ToString("0.00")</td>
                                     <td>@bet.DecimalOdds.ToString("0.00")</td>
                                     <td>@bet.Stake.ToString("C")</td>
                                     <td class="@(bet.Profit >= 0 ? "text-success" : "text-danger")">@bet.Profit.ToString("C")</td>
