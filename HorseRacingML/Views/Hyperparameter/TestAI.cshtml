@@ -100,7 +100,9 @@
                             <th>Predicted Winner</th>
                             <th>Actual Winner</th>
                             <th>Result</th>
-                            <th>Bankroll</th>
+                            <th>Stake</th>
+                            <th>AI Odds</th>
+                            <th>Bookmaker Odds</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -112,6 +114,9 @@
                                 <td>@race.ActualWinner</td>
                                 <td>@(race.IsCorrectPrediction ? "Correct" : "Incorrect")</td>
                                 <td>@race.Bankroll.ToString("C")</td>
+                                <td>@race.Stake.ToString("C")</td>
+                                <td>@race.AiOdds.ToString("0.00")</td>
+                                <td>@race.BookmakerOdds.ToString("0.00")</td>
                             </tr>
                         }
                     </tbody>
@@ -252,6 +257,8 @@
                                 <th scope="col">Market Odds</th>
                                 <th scope="col">AI Odds</th>
                                 <th scope="col">Odds</th>
+                                <th scope="col">Market Odds</th>
+                                <th scope="col">AI Odds</th>
                                 <th scope="col">Stake</th>
                                 <th scope="col">Profit</th>
                                 <th scope="col">Bankroll after</th>

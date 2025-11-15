@@ -12,6 +12,9 @@ namespace HorseRacingML.Models
         public string ActualWinner { get; set; }
         public bool IsCorrectPrediction { get; set; }
         public decimal Bankroll { get; set; }
+        public decimal Stake { get; set; }
+        public decimal AiOdds { get; set; }
+        public decimal BookmakerOdds { get; set; }
     }
 
     public class DayResultViewModel

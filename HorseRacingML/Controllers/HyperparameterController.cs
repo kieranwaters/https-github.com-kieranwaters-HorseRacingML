@@ -576,6 +576,7 @@ namespace HorseRacingML.Controllers
             int wins = 0;
             var bets = new List<ValidationBetResult>();
             var dailyRaceResults = new List<RaceResultViewModel>();
+            decimal bankrollBefore = bankroll;
 
             var allRaceData = Enumerable.Range(0, examples.Count)
                 .Select(i => new
@@ -600,6 +601,7 @@ namespace HorseRacingML.Controllers
 
             foreach (var race in allRaceData)
             {
+                bankrollBefore = bankroll;
                 var raceGroup = race.RaceGroup;
                 var summary = race.Summary;
 
@@ -621,6 +623,7 @@ namespace HorseRacingML.Controllers
                 });
                 // A bet is only placed if the conditions are met.
                 // The bankroll progression, however, is continuous.
+                var stake = 0m;
                 if (predictedWinner != null &&
                     bankroll > 0m &&
                     predictedWinner.Example.StartingPriceDecimal.HasValue &&
@@ -641,7 +644,7 @@ namespace HorseRacingML.Controllers
 
                     if (kellyFraction > 0m)
                     {
-                        var stake = BettingMath.CalculateSequentialStake(bankroll, kellyFraction);
+                        stake = BettingMath.CalculateSequentialStake(bankroll, kellyFraction);
                         if (stake > 0m)
                         {
                             bankroll -= stake;
@@ -663,11 +666,14 @@ namespace HorseRacingML.Controllers
                                 DecimalOdds = decimalOdds,
                                 AiDecimalOdds = BettingMath.CalculateAiDecimalOdds(probability),
                                 AiProbability = probability,
-                                MarketProbability = 1.0 / (double)decimalOdds,
-                                Differential = probability - (1.0 / (double)decimalOdds),
+                                MarketProbability = marketProbability,
+                                Differential = edge,
                                 Stake = stake,
                                 Won = isCorrectPrediction,
-                                BankrollAfter = bankroll
+                                Bankroll = bankrollBefore,
+                                Stake = stake,
+                                AiOdds = BettingMath.CalculateAiDecimalOdds(predictedWinner?.Probability ?? 0),
+                                BookmakerOdds = predictedWinner?.Example.StartingPriceDecimal ?? 0
                             });
                         }
                     }
