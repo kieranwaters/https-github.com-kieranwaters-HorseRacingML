@@ -610,7 +610,15 @@ namespace HorseRacingML.Controllers
                 var actualWinner = raceGroup.FirstOrDefault(r => r.Example.Label >= 0.5f);
 
                 var isCorrectPrediction = predictedWinner != null && actualWinner != null && predictedWinner.Example.HorseName == actualWinner.Example.HorseName;
-
+                dailyRaceResults.Add(new RaceResultViewModel
+                {
+                    RaceId = race.RaceGroup.Key,
+                    RaceTitle = race.Summary?.Title,
+                    PredictedWinner = predictedWinner?.Example.HorseName,
+                    ActualWinner = actualWinner?.Example.HorseName,
+                    IsCorrectPrediction = isCorrectPrediction,
+                    Bankroll = bankroll
+                });
                 // A bet is only placed if the conditions are met.
                 // The bankroll progression, however, is continuous.
                 if (predictedWinner != null &&
@@ -661,16 +669,6 @@ namespace HorseRacingML.Controllers
                         }
                     }
                 }
-
-                dailyRaceResults.Add(new RaceResultViewModel
-                {
-                    RaceId = race.RaceGroup.Key,
-                    RaceTitle = race.Summary?.Title,
-                    PredictedWinner = predictedWinner?.Example.HorseName,
-                    ActualWinner = actualWinner?.Example.HorseName,
-                    IsCorrectPrediction = isCorrectPrediction,
-                    Bankroll = bankroll
-                });
             }
 
             viewModel.DailyResults = dailyRaceResults
