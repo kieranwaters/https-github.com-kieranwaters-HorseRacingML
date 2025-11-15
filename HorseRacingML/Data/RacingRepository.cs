@@ -1767,7 +1767,7 @@ SELECT CAST(SCOPE_IDENTITY() as int);";
             using var conn = OpenConnection();
             return conn.QuerySingle<int>(sql, param);
         }
-        public List<int> GetRaceIdsBetweenDates(DateTime startInclusive, DateTime endInclusive)
+        public List<int> GetRaceIdsBetweenDates(DateTime startInclusive, DateTime endInclusive, string country = null)
         {
             if (endInclusive < startInclusive)
             {
@@ -1775,14 +1775,20 @@ SELECT CAST(SCOPE_IDENTITY() as int);";
             }
 
             using var conn = OpenConnection();
-            const string sql = @"SELECT RaceId
-FROM Race
-WHERE RaceDate >= @Start AND RaceDate <= @End
-ORDER BY RaceDate, RaceId";
-            return conn.Query<int>(sql, new { Start = startInclusive, End = endInclusive }).ToList();
+            var sql = new StringBuilder(@"SELECT r.RaceId FROM Race r");
+            if (!string.IsNullOrEmpty(country))
+            {
+                sql.Append(" INNER JOIN Course c ON r.CourseId = c.CourseId WHERE c.Country = @Country AND");
+            }
+            else
+            {
+                sql.Append(" WHERE");
+            }
+            sql.Append(" r.RaceDate >= @Start AND r.RaceDate <= @End ORDER BY r.RaceDate, r.RaceId");
+            return conn.Query<int>(sql.ToString(), new { Start = startInclusive, End = endInclusive, Country = country }).ToList();
         }
 
-        public List<int> GetRaceIdsOutsideRange(DateTime startInclusive, DateTime endInclusive)
+        public List<int> GetRaceIdsOutsideRange(DateTime startInclusive, DateTime endInclusive, string country = null)
         {
             if (endInclusive < startInclusive)
             {
@@ -1790,11 +1796,24 @@ ORDER BY RaceDate, RaceId";
             }
 
             using var conn = OpenConnection();
-            const string sql = @"SELECT RaceId
-FROM Race
-WHERE RaceDate < @Start OR RaceDate > @End
-ORDER BY RaceDate, RaceId";
-            return conn.Query<int>(sql, new { Start = startInclusive, End = endInclusive }).ToList();
+            var sql = new StringBuilder(@"SELECT r.RaceId FROM Race r");
+            if (!string.IsNullOrEmpty(country))
+            {
+                sql.Append(" INNER JOIN Course c ON r.CourseId = c.CourseId WHERE c.Country = @Country AND");
+            }
+            else
+            {
+                sql.Append(" WHERE");
+            }
+            sql.Append(" (r.RaceDate < @Start OR r.RaceDate > @End) ORDER BY r.RaceDate, r.RaceId");
+            return conn.Query<int>(sql.ToString(), new { Start = startInclusive, End = endInclusive, Country = country }).ToList();
+        }
+
+        public IEnumerable<string> GetCountries()
+        {
+            using var conn = OpenConnection();
+            const string sql = @"SELECT DISTINCT Country FROM Course WHERE Country IS NOT NULL ORDER BY Country";
+            return conn.Query<string>(sql);
         }
         public IDictionary<int, RaceSummary> GetRaceSummaries(IEnumerable<int> raceIds)
         {

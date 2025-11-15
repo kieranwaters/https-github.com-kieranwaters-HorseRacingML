@@ -267,7 +267,8 @@ namespace HorseRacingML.Controllers
                 RequestedLearningRate = requestedLearningRate,
                 RequestedEpochs = requestedEpochs,
                 RequestedBatchSize = requestedBatchSize,
-                RequestedFolds = requestedFolds
+                RequestedFolds = requestedFolds,
+                Countries = _repository.GetCountries().ToList()
             };
 
             return View(viewModel);
@@ -377,14 +378,15 @@ namespace HorseRacingML.Controllers
             viewModel.RequestedEpochs = requestedEpochs;
             viewModel.RequestedBatchSize = requestedBatchSize;
             viewModel.RequestedFolds = requestedFolds;
-            var validationRaceIds = _repository.GetRaceIdsBetweenDates(validationStart, validationEnd);
+            viewModel.Countries = _repository.GetCountries().ToList();
+            var validationRaceIds = _repository.GetRaceIdsBetweenDates(validationStart, validationEnd, request.SelectedCountry);
             if (validationRaceIds.Count == 0)
             {
                 viewModel.Message = $"No races were found in the last {months} {monthLabel} to use for validation.";
                 return View(viewModel);
             }
 
-            var trainingRaceIds = _repository.GetRaceIdsOutsideRange(validationStart, validationEnd);
+            var trainingRaceIds = _repository.GetRaceIdsOutsideRange(validationStart, validationEnd, request.SelectedCountry);
             if (trainingRaceIds.Count == 0)
             {
                 viewModel.Message = "No training data is available outside the validation window.";
