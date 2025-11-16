@@ -125,7 +125,7 @@ namespace HorseRacingML.Tests
         {
             var repo = new StubRepository();
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), "model.path", bankroll: 25m, settings);
+            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), "model.path", 25m, settings);
 
             var flows = new List<RunnerFlow>
             {
@@ -171,7 +171,7 @@ namespace HorseRacingML.Tests
         {
             var repo = new StubRepository();
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), "model.path", bankroll: 25m, settings);
+            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), "model.path", 25m, settings);
 
             var flows = new List<RunnerFlow>
             {
@@ -208,7 +208,7 @@ namespace HorseRacingML.Tests
         {
             var repo = new StubRepository();
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), "model.path", bankroll: 25m, settings);
+            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), "model.path", 25m, settings);
 
             var flows = new List<RunnerFlow>
             {
@@ -242,7 +242,7 @@ namespace HorseRacingML.Tests
         {
             var repo = new StubRepository();
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), "model.path", bankroll: 25m, settings);
+            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), "model.path", 25m, settings);
 
             var encoded = new List<EncodedFeatureValue>
             {
@@ -398,7 +398,7 @@ namespace HorseRacingML.Tests
         {
             var repo = new StubRepository();
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), "model.path", bankroll: 25m, settings);
+            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), "model.path", 25m, settings);
 
             var featureVector = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
             {
@@ -473,7 +473,7 @@ namespace HorseRacingML.Tests
             };
 
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), "model.path", bankroll: 25m, settings);
+            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), "model.path", 25m, settings);
             var featureVector = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
             {
                 ["HorseId"] = 123,
@@ -509,7 +509,7 @@ namespace HorseRacingML.Tests
         {
             var repo = new StubRepository();
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), "model.path", bankroll: 25m, settings);
+            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), "model.path", 25m, settings);
 
             var flows = new List<RunnerFlow>
             {
@@ -552,7 +552,7 @@ namespace HorseRacingML.Tests
         {
             var repo = new StubRepository();
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), "model.path", bankroll: 50m, settings);
+            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), "model.path", 50m, settings);
 
             var flows = new List<RunnerFlow>
             {
@@ -590,7 +590,7 @@ namespace HorseRacingML.Tests
         {
             var repo = new StubRepository();
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), "model.path", bankroll: 50m, settings);
+            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), "model.path", 50m, settings);
 
             var flows = new List<RunnerFlow>
             {
@@ -626,7 +626,7 @@ namespace HorseRacingML.Tests
         {
             var repo = new StubRepository();
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), "model.path", bankroll: 25m, settings);
+            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), "model.path", 25m, settings);
 
             var featureVector = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
             var flow = new RunnerFlow
@@ -935,7 +935,7 @@ namespace HorseRacingML.Tests
         {
             var repo = new StubRepository();
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), "model.path", bankroll: 25m, settings);
+            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), "model.path", 25m, settings);
 
 
             scraper.TestSetNeuralFeatureKeys(new[] { "AvgRatingLast5", "Class" });
@@ -957,7 +957,7 @@ namespace HorseRacingML.Tests
         {
             var repo = new StubRepository();
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), "model.path", bankroll: 25m, settings);
+            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), "model.path", 25m, settings);
 
             scraper.TestSetNeuralFeatureKeys(new[] { "Age", "Class", "BackBookPercentage" });
 
@@ -981,7 +981,7 @@ namespace HorseRacingML.Tests
         {
             var repo = new StubRepository();
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), bankroll: 25m, settings);
+            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), "model.path", 25m, settings);
 
             scraper.TestSetNeuralFeatureKeys(new[]
             {
@@ -1014,7 +1014,7 @@ namespace HorseRacingML.Tests
         {
             var repo = new StubRepository();
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), "model.path", bankroll: 25m, settings);
+            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), "model.path", 25m, settings);
 
             scraper.TestSetNeuralFeatureKeys(null);
 
@@ -1033,7 +1033,7 @@ namespace HorseRacingML.Tests
         {
             var repo = new StubRepository();
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), "model.path", bankroll: 25m, settings);
+            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), "model.path", 25m, settings);
 
             scraper.TestSetNeuralFeatureKeys(new[] { "AvgRatingLast10" });
 
@@ -1053,7 +1053,7 @@ namespace HorseRacingML.Tests
         {
             var repo = new StubRepository();
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), "model.path", bankroll: 25m, settings);
+            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), "model.path", 25m, settings);
 
             scraper.TestSetNeuralFeatureKeys(new[] { "AvgRatingLast10" });
 
@@ -1073,7 +1073,7 @@ namespace HorseRacingML.Tests
         {
             var repo = new StubRepository();
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), "model.path", bankroll: 25m, settings);
+            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), "model.path", 25m, settings);
             try
             {
                 scraper.TestSetNeuralFeatureKeys(new[] { "AvgRatingLast5", "Class" });
@@ -1168,7 +1168,7 @@ namespace HorseRacingML.Tests
         {
             var repo = new StubRepository();
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), bankroll: 25m, settings);
+            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), "model.path", 25m, settings);
 
             scraper.TestSetNeuralFeatureKeys(new[]
             {

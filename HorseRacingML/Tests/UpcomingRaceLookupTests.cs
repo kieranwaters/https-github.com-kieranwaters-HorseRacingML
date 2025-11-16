@@ -184,7 +184,7 @@ namespace HorseRacingML.Tests
             var trainer = new FakeTrainer(configuration, preparedRace);
 
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, trainer, "model.path", bankroll: 100m, settings);
+            var scraper = new BetfairMarketScraper(repo, trainer, "model.path", 100m, settings);
             var flows = new List<RunnerFlow>
             {
                 new RunnerFlow
@@ -265,7 +265,7 @@ namespace HorseRacingML.Tests
             var trainer = new FallbackTrainer(configuration, preparedRace);
             var repo = new MinimalRacingRepository();
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, trainer, "model.path", bankroll: 20m, settings);
+            var scraper = new BetfairMarketScraper(repo, trainer, "model.path", 20m, settings);
             var flows = new List<RunnerFlow>
             {
                 new RunnerFlow
@@ -330,7 +330,7 @@ namespace HorseRacingML.Tests
                 LastDistanceResult = 2100
             };
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, trainer, "model.path", bankroll: 20m, settings);
+            var scraper = new BetfairMarketScraper(repo, trainer, "model.path", 20m, settings);
             var flows = new List<RunnerFlow>
             {
                 new RunnerFlow
@@ -422,7 +422,7 @@ namespace HorseRacingML.Tests
             var trainer = new BackfillTrainer(configuration, primaryRace, fallbackRace);
             var repo = new MinimalRacingRepository();
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, trainer, "model.path", bankroll: 15m, settings);
+            var scraper = new BetfairMarketScraper(repo, trainer, "model.path", 15m, settings);
             var flows = new List<RunnerFlow>
             {
                 new RunnerFlow
@@ -537,7 +537,7 @@ namespace HorseRacingML.Tests
                 WinningTimeLookupResult = 65432
             };
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, trainer, "model.path", bankroll: 20m, settings);
+            var scraper = new BetfairMarketScraper(repo, trainer, "model.path", 20m, settings);
             var flows = new List<RunnerFlow>
             {
                 new RunnerFlow
@@ -679,7 +679,7 @@ namespace HorseRacingML.Tests
             var trainer = new BackfillTrainer(configuration, primaryRace, fallbackRace);
             var repo = new MinimalRacingRepository();
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, trainer, "model.path", bankroll: 12m, settings);
+            var scraper = new BetfairMarketScraper(repo, trainer, "model.path", 12m, settings);
             var flows = new List<RunnerFlow>
             {
                 new RunnerFlow
@@ -749,7 +749,7 @@ namespace HorseRacingML.Tests
             var trainer = new BackfillTrainer(configuration, primaryRace, fallbackRace);
             var repo = new MinimalRacingRepository();
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, trainer, "model.path", bankroll: 9m, settings);
+            var scraper = new BetfairMarketScraper(repo, trainer, "model.path", 9m, settings);
             var flows = new List<RunnerFlow>
             {
                 new RunnerFlow
@@ -802,7 +802,7 @@ namespace HorseRacingML.Tests
             var trainer = new FakeTrainer(configuration, preparedRace);
             var repo = new MinimalRacingRepository();
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, trainer, bankroll: 15m, settings);
+            var scraper = new BetfairMarketScraper(repo, trainer, "model.path", 15m, settings);
             var flows = new List<RunnerFlow>
             {
                 new RunnerFlow
@@ -862,7 +862,7 @@ namespace HorseRacingML.Tests
                 DistanceBeatenResult = 2.75m
             };
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, trainer, bankroll: 11m, settings);
+            var scraper = new BetfairMarketScraper(repo, trainer, "model.path", 11m, settings);
             var flows = new List<RunnerFlow>
             {
                 new RunnerFlow
@@ -917,7 +917,7 @@ namespace HorseRacingML.Tests
             var trainer = new NeutralOverrideTrainer(configuration, fallbackRace);
             var repo = new MinimalRacingRepository();
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, trainer, bankroll: 10m, settings);
+            var scraper = new BetfairMarketScraper(repo, trainer, "model.path", 10m, settings);
             var flows = new List<RunnerFlow>
             {
                 new RunnerFlow
@@ -972,7 +972,7 @@ namespace HorseRacingML.Tests
                 DistanceBeatenResult = 3.25m
             };
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, trainer, bankroll: 9m, settings);
+            var scraper = new BetfairMarketScraper(repo, trainer, "model.path", 9m, settings);
             var flows = new List<RunnerFlow>
             {
                 new RunnerFlow
@@ -1033,7 +1033,7 @@ namespace HorseRacingML.Tests
             var trainer = new FallbackTrainer(configuration, preparedRace);
             var repo = new MinimalRacingRepository();
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, trainer, "model.path", bankroll: 9m, settings);
+            var scraper = new BetfairMarketScraper(repo, trainer, "model.path", 9m, settings);
 
             var flows = new List<RunnerFlow>
             {
@@ -1095,7 +1095,7 @@ new RunnerFlow { HorseName = "Alpha Runner" },
             var trainer = new FallbackTrainer(configuration, preparedRace);
             var repo = new MinimalRacingRepository();
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, trainer, "model.path", bankroll: 20m, settings);
+            var scraper = new BetfairMarketScraper(repo, trainer, "model.path", 20m, settings);
 
             var flows = new List<RunnerFlow>
             {
@@ -1187,7 +1187,7 @@ new RunnerFlow { HorseName = "Alpha Runner" },
             repo.RecentSpeedEntriesByHorse["Beta Runner"] = betaEntries;
 
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, trainer, bankroll: 20m, settings);
+            var scraper = new BetfairMarketScraper(repo, trainer, "model.path", 20m, settings);
 
             var flows = new List<RunnerFlow>
             {
@@ -1266,7 +1266,7 @@ new RunnerFlow { HorseName = "Alpha Runner" },
             var trainer = new FallbackTrainer(configuration, new PreparedRace(1, new List<Dictionary<string, object?>>()));
             var repo = new MinimalRacingRepository();
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, trainer, "model.path", bankroll: 11m, settings);
+            var scraper = new BetfairMarketScraper(repo, trainer, "model.path", 11m, settings);
 
             var flow = new RunnerFlow
             {
@@ -1316,7 +1316,7 @@ new RunnerFlow { HorseName = "Alpha Runner" },
             var repo = new MinimalRacingRepository();
             repo.RecentWinStatsByHorse["Alpha Runner"] = (2, 5);
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, trainer, "model.path", bankroll: 10m, settings);
+            var scraper = new BetfairMarketScraper(repo, trainer, "model.path", 10m, settings);
 
             var raceDate = new DateTime(2024, 10, 2);
             var flows = new List<RunnerFlow>
@@ -1383,7 +1383,7 @@ new RunnerFlow { HorseName = "Alpha Runner" },
             var trainer = new FallbackTrainer(configuration, preparedRace);
             var repo = new MinimalRacingRepository();
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, trainer, "model.path", bankroll: 20m, settings);
+            var scraper = new BetfairMarketScraper(repo, trainer, "model.path", 20m, settings);
 
             var flows = new List<RunnerFlow>
             {
@@ -1437,7 +1437,7 @@ new RunnerFlow { HorseName = "Alpha Runner" },
                 DistanceBeatenResult = 2.5m
             };
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, trainer, bankroll: 9m, settings);
+            var scraper = new BetfairMarketScraper(repo, trainer, "model.path", 9m, settings);
 
             var syntheticHorseId = unchecked((int)0x60000000) | 12345;
             var flows = new List<RunnerFlow>
@@ -1527,7 +1527,7 @@ new RunnerFlow { HorseName = "Alpha Runner" },
             var trainer = new BackfillTrainer(configuration, primaryRace, fallbackRace);
             var repo = new MinimalRacingRepository();
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, trainer, "model.path", bankroll: 15m, settings);
+            var scraper = new BetfairMarketScraper(repo, trainer, "model.path", 15m, settings);
             var flows = new List<RunnerFlow>
             {
                 new RunnerFlow
@@ -1603,7 +1603,7 @@ new RunnerFlow { HorseName = "Alpha Runner" },
                 var trainer = new FakeTrainer(configuration, upcomingRace: null);
                 var repo = new MinimalRacingRepository();
                 var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-                var scraper = new BetfairMarketScraper(repo, trainer, "model.path", bankroll: 25m, settings);
+                var scraper = new BetfairMarketScraper(repo, trainer, "model.path", 25m, settings);
                 var flows = new List<RunnerFlow>
             {
                 new RunnerFlow
@@ -1648,7 +1648,7 @@ new RunnerFlow { HorseName = "Alpha Runner" },
                 var trainer = new CountingTrainer(configuration);
                 var repo = new InMemoryRacingRepository();
                 var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-                var scraper = new BetfairMarketScraper(repo, trainer, bankroll: 25m, settings);
+                var scraper = new BetfairMarketScraper(repo, trainer, "model.path", 25m, settings);
                 var flows = new List<RunnerFlow>
             {
                 new RunnerFlow
@@ -1714,8 +1714,7 @@ new RunnerFlow { HorseName = "Alpha Runner" },
                 var trainer = new FakeTrainer(configuration, upcomingRace: null);
                 var repo = new InMemoryRacingRepository();
                 var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-                var scraper = new BetfairMarketScraper(repo, trainer, "model.path", bankroll: 10m, settings);
-
+                var scraper = new BetfairMarketScraper(repo, trainer, "model.path", 10m, settings);
                 var flows = new List<RunnerFlow>
             {
                 new RunnerFlow
