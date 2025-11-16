@@ -39,6 +39,7 @@ builder.Services.AddSingleton<AutomationSettingsService>();
 builder.Services.AddSingleton<HyperparameterTrainer>();
 builder.Services.AddSingleton<BetfairNavigationService>();
 builder.Services.AddTransient<RaceResultsScraper>();
+builder.Services.AddSingleton<AIOddsCalculator>();
 builder.Services.AddSingleton<ScrapingStatusService>();
 builder.Services.AddTransient<RaceDataScraper>();
 
