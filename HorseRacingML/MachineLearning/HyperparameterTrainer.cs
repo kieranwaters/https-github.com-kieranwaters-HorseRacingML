@@ -52,7 +52,8 @@ namespace HorseRacingML.ML
                 ?? throw new InvalidOperationException("Connection string 'HorseRacingDb' not found.");
             _winRateAlpha = configuration.GetValue<float>("WinRateAlpha", 1f);
             _winRateBeta = configuration.GetValue<float>("WinRateBeta", 2f);
-            _modelPath = configuration["ML:ModelPath"] ?? throw new InvalidOperationException("AI model path not configured.");
+            var modelPath = configuration["ML:ModelPath"] ?? throw new InvalidOperationException("AI model path not configured.");
+            _modelPath = Path.IsPathRooted(modelPath) ? modelPath : Path.Combine(AppContext.BaseDirectory, modelPath);
             _racingRepository = racingRepository;
 
         }
@@ -1448,6 +1449,10 @@ namespace HorseRacingML.ML
             }
             var json = File.ReadAllText(_modelPath);
             return JsonSerializer.Deserialize<TrainedModel>(json);
+        }
+        public bool IsModelPersisted()
+        {
+            return File.Exists(_modelPath);
         }
 
     }

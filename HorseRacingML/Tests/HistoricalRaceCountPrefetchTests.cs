@@ -28,7 +28,7 @@ namespace HorseRacingML.Tests
             };
 
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), bankroll: 100m, settings);
+            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), "test_model.path", 100m, settings);
             var flows = new List<RunnerFlow>
             {
                 new RunnerFlow { HorseName = "Alpha Runner" },
@@ -86,7 +86,7 @@ namespace HorseRacingML.Tests
             };
 
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), bankroll: 50m, settings);
+            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), "test_model.path", 50m, settings);
             var flows = new List<RunnerFlow>
             {
                 new RunnerFlow { HorseName = "Known Runner" },

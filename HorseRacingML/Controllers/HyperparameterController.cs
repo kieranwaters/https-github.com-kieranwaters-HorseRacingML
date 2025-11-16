@@ -398,6 +398,11 @@ namespace HorseRacingML.Controllers
             TrainingDataset dataset;
             if (request.UseExistingWeights)
             {
+                if (!_trainer.IsModelPersisted())
+                {
+                    viewModel.Message = "The AI model weights file (aiweights.json) was not found. Please train a model before running this test.";
+                    return View(viewModel);
+                }
                 dataset = _trainer.LoadValidationDataset(new HashSet<int>(trainingRaceIds), new HashSet<int>(validationRaceIds), includeIdentifiers: true);
             }
             else
