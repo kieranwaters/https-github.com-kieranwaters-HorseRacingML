@@ -57,10 +57,5 @@
 	<ItemGroup>
 	  <None Include="tests\HorseRacingML.Tests.csproj" />
 	</ItemGroup>
-	<ItemGroup>
-		<Content Include="weights\aiweights.json">
-			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-		</Content>
-	</ItemGroup>
 </Project>
 

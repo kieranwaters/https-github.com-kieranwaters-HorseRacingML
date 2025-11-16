@@ -572,10 +572,13 @@ namespace HorseRacingML.ML
             _legacyBias = 0d;
             _modelStatus = "AI model not initialized.";
             LogGpuStatus();
-            if (!File.Exists(path))
+
+            var modelPath = Path.IsPathRooted(path) ? path : Path.Combine(AppContext.BaseDirectory, path);
+
+            if (!File.Exists(modelPath))
             {
-                Console.Error.WriteLine($"[AI] Weight file not found at {path}; falling back to legacy logistic model.");
-                _modelStatus = $"Weight file not found at {path}; defaulting to zero-probability outputs.";
+                Console.Error.WriteLine($"[AI] Weight file not found at {modelPath}; falling back to legacy logistic model.");
+                _modelStatus = $"Weight file not found at {modelPath}; defaulting to zero-probability outputs.";
                 return;
             }
 
