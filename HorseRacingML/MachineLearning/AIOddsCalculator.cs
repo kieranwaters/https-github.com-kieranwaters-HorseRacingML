@@ -1335,7 +1335,43 @@ namespace HorseRacingML.ML
             }
             return result;
         }
+        public IReadOnlyList<RunnerProbability> CalculateProbabilities(IReadOnlyList<HyperparameterTrainer.RunnerExample> runners)
+        {
+            var results = new List<RunnerProbability>();
+            if (runners == null || runners.Count == 0)
+            {
+                return results;
+            }
 
+            double totalProbability = 0;
+            foreach (var runner in runners)
+            {
+                var flow = new RunnerFlow
+                {
+                    HorseId = runner.HorseId,
+                    HorseName = runner.HorseName,
+                    FeatureValues = runner.Features
+                };
+
+                var probability = CalculateOdds(flow);
+                totalProbability += probability;
+                results.Add(new RunnerProbability
+                {
+                    HorseId = runner.HorseId,
+                    Probability = (decimal)probability
+                });
+            }
+
+            if (totalProbability > 0)
+            {
+                foreach (var result in results)
+                {
+                    result.Probability /= (decimal)totalProbability;
+                }
+            }
+
+            return results;
+        }
         private static double[] ToDoubleArray(float[] source)
         {
             return source?.Select(f => (double)f).ToArray() ?? Array.Empty<double>();

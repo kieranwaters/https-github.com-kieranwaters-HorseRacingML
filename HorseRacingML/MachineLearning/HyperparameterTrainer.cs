@@ -1397,7 +1397,7 @@ namespace HorseRacingML.ML
             }
 
             Normalize(valFeatures);
-            ar valPreds = new float[valLabels.Length];
+            var valPreds = new float[valLabels.Length];
             var calculator = new AIOddsCalculator(Path.Combine(AppContext.BaseDirectory, "weights", "aiweights.json"));
 
             for (int i = 0; i < valFeatures.Count; i++)
