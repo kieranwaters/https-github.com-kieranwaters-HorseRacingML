@@ -581,7 +581,7 @@ namespace HorseRacingML.Controllers
             var dailyRaceResults = new List<RaceResultViewModel>();
             decimal bankrollBefore = bankroll;
 
-            var allRaceData = Enumerable.Range(0, examples.Length)
+            var allRaceData = Enumerable.Range(0, examples.Count)
                  .Select(i => new
                 {
                     RaceId = raceIds[i],

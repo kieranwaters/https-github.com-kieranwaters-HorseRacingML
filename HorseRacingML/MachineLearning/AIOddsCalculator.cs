@@ -1348,16 +1348,15 @@ namespace HorseRacingML.ML
             {
                 var flow = new RunnerFlow
                 {
-                    HorseId = runner.HorseId,
                     HorseName = runner.HorseName,
-                    FeatureValues = runner.Features
+                    FeatureValues = runner.Features.ToDictionary(f => f.ToString(), f => (object)f)
                 };
 
                 var probability = CalculateOdds(flow);
                 totalProbability += probability;
                 results.Add(new RunnerProbability
                 {
-                    HorseId = runner.HorseId,
+                    HorseId = runner.HorseId ?? 0,
                     Probability = (decimal)probability
                 });
             }
