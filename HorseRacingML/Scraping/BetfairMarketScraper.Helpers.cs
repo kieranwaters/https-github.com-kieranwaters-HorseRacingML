@@ -905,70 +905,9 @@ namespace HorseRacingML.Scraping
 
             return null;
         }
-        private static string ResolveAiWeightPath()
+        private string ResolveAiWeightPath()
         {
-            static IEnumerable<string> EnumerateCandidates()
-            {
-                static IEnumerable<string> ExpandDirectory(string? directory)
-                {
-                    if (string.IsNullOrWhiteSpace(directory))
-                    {
-                        yield break;
-                    }
-
-                    yield return Path.Combine(directory, "weights", "aiweights.json");
-                    yield return Path.Combine(directory, "aiweights.json");
-                }
-
-                var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-                foreach (var path in ExpandDirectory(AppContext.BaseDirectory))
-                {
-                    if (seen.Add(path))
-                    {
-                        yield return path;
-                    }
-                }
-
-                foreach (var path in ExpandDirectory(Directory.GetCurrentDirectory()))
-                {
-                    if (seen.Add(path))
-                    {
-                        yield return path;
-                    }
-                }
-
-                var current = AppContext.BaseDirectory;
-                for (var i = 0; i < 5 && !string.IsNullOrEmpty(current); i++)
-                {
-                    current = Path.GetDirectoryName(current?.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-                    if (string.IsNullOrEmpty(current))
-                    {
-                        break;
-                    }
-
-                    foreach (var path in ExpandDirectory(current))
-                    {
-                        if (seen.Add(path))
-                        {
-                            yield return path;
-                        }
-                    }
-                }
-            }
-
-            foreach (var candidate in EnumerateCandidates())
-            {
-                if (File.Exists(candidate))
-                {
-                    Console.WriteLine($"\tUsing AI weight file at {candidate}");
-                    return candidate;
-                }
-            }
-
-            var fallback = Path.Combine(AppContext.BaseDirectory, "weights", "aiweights.json");
-            Console.Error.WriteLine($"\tAI weight file not found; expected locations include {fallback}");
-            return fallback;
+            return _modelPath;
         }
         private void ApplyScrapedFeatureFallbacks(
             Dictionary<string, object?> featureVector,

@@ -39,7 +39,13 @@ builder.Services.AddSingleton<AutomationSettingsService>();
 builder.Services.AddSingleton<HyperparameterTrainer>();
 builder.Services.AddSingleton<BetfairNavigationService>();
 builder.Services.AddTransient<RaceResultsScraper>();
-builder.Services.AddSingleton<AIOddsCalculator>();
+builder.Services.AddSingleton<AIOddsCalculator>(sp =>
+{
+    var modelPath = builder.Configuration.GetValue<string>("ML:ModelPath");
+    if (string.IsNullOrEmpty(modelPath))
+        throw new Exception("AI model path not configured");
+    return new AIOddsCalculator(Path.Combine(AppContext.BaseDirectory, modelPath));
+});
 builder.Services.AddSingleton<ScrapingStatusService>();
 builder.Services.AddTransient<RaceDataScraper>();
 

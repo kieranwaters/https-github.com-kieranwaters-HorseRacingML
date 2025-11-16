@@ -21,7 +21,7 @@ namespace HorseRacingML.Tests
             var repo = new StubRepository();
             var trainer = new StubTrainer();
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, trainer, bankroll: 10m, settings);
+            var scraper = new BetfairMarketScraper(repo, trainer, "model.path", bankroll: 10m, settings);
 
             var flows = new List<RunnerFlow>
             {
@@ -67,7 +67,7 @@ namespace HorseRacingML.Tests
             var repo = new StubRepository();
             var trainer = new StubTrainer();
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, trainer, bankroll: 10m, settings);
+            var scraper = new BetfairMarketScraper(repo, trainer, "model.path", bankroll: 10m, settings);
 
             var flows = new List<RunnerFlow>
             {
@@ -106,8 +106,7 @@ namespace HorseRacingML.Tests
             var repo = new StubRepository();
             var trainer = new StubTrainer();
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, trainer, bankroll: 10m, settings);
-
+            var scraper = new BetfairMarketScraper(repo, trainer, "model.path", bankroll: 10m, settings);
             var flows = new List<RunnerFlow>
             {
                 new RunnerFlow
@@ -152,7 +151,7 @@ namespace HorseRacingML.Tests
             var repo = new StubRepository();
             var trainer = new StubTrainer();
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, trainer, bankroll: 10m, settings);
+            var scraper = new BetfairMarketScraper(repo, trainer, "model.path", bankroll: 10m, settings);
 
             var flows = new List<RunnerFlow>
             {
@@ -196,7 +195,7 @@ namespace HorseRacingML.Tests
             var repo = new StubRepository();
             var trainer = new StubTrainer();
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, trainer, bankroll: 10m, settings);
+            var scraper = new BetfairMarketScraper(repo, trainer, "model.path", bankroll: 10m, settings);
 
             var flows = new List<RunnerFlow>
             {
@@ -235,7 +234,7 @@ namespace HorseRacingML.Tests
             var repo = new StubRepository();
             var trainer = new StubTrainer();
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, trainer, bankroll: 10m, settings);
+            var scraper = new BetfairMarketScraper(repo, trainer, "model.path", bankroll: 10m, settings);
 
             var trainerSamples = new List<ParticipantHistoricalRaceSummary>
             {
@@ -328,7 +327,7 @@ namespace HorseRacingML.Tests
             var repo = new StubRepository();
             var trainer = new StubTrainer();
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, trainer, bankroll: 10m, settings);
+            var scraper = new BetfairMarketScraper(repo, trainer, "model.path", bankroll: 10m, settings);
 
             var flows = new List<RunnerFlow>
             {
@@ -376,7 +375,7 @@ namespace HorseRacingML.Tests
             var repo = new StubRepository();
             var trainer = new StubTrainer();
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, trainer, bankroll: 10m, settings);
+            var scraper = new BetfairMarketScraper(repo, trainer, "model.path", bankroll: 10m, settings);
 
             var flows = new List<RunnerFlow>
             {
@@ -427,7 +426,7 @@ namespace HorseRacingML.Tests
             var repo = new StubRepository();
             var trainer = new StubTrainer();
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.FixedAmount, null, 10m);
-            var scraper = new BetfairMarketScraper(repo, trainer, bankroll: 100m, settings);
+            var scraper = new BetfairMarketScraper(repo, trainer, "model.path", bankroll: 100m, settings);
 
             var flows = new List<RunnerFlow>
             {
@@ -816,7 +815,8 @@ namespace HorseRacingML.Tests
                 : base(new ConfigurationBuilder()
                     .AddInMemoryCollection(new Dictionary<string, string?>
                     {
-                        ["ConnectionStrings:HorseRacingDb"] = "Data Source=(localdb)\\MSSQLLocalDB;Initial Catalog=HorseRacingML;Integrated Security=True;Persist Security Info=False;Pooling=False;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Application Name=\"SQL Server Management Studio\";Command Timeout=30"
+                        ["ConnectionStrings:HorseRacingDb"] = "Data Source=(localdb)\\MSSQLLocalDB;Initial Catalog=HorseRacingML;Integrated Security=True;Persist Security Info=False;Pooling=False;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Application Name=\"SQL Server Management Studio\";Command Timeout=30",
+                        ["ML:ModelPath"] = "model.path"
                     })
                     .Build())
             {

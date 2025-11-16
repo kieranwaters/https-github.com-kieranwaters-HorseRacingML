@@ -40,6 +40,7 @@ namespace HorseRacingML.ML
         private readonly Dictionary<(bool IncludeIdentifiers, string RaceSignature), DatasetFeatureMetadata> _featureMetadataCache = new();
         private readonly object _normalizationCacheLock = new();
         private readonly Dictionary<string, NormalizationParameters> _normalizationCache = new(StringComparer.Ordinal);
+        private readonly string _modelPath;
         public HyperparameterTrainer(IConfiguration configuration, IRacingRepository? racingRepository = null)
         {
             if (configuration is null)
@@ -51,6 +52,7 @@ namespace HorseRacingML.ML
                 ?? throw new InvalidOperationException("Connection string 'HorseRacingDb' not found.");
             _winRateAlpha = configuration.GetValue<float>("WinRateAlpha", 1f);
             _winRateBeta = configuration.GetValue<float>("WinRateBeta", 2f);
+            _modelPath = configuration["ML:ModelPath"] ?? throw new InvalidOperationException("AI model path not configured.");
             _racingRepository = racingRepository;
 
         }
@@ -990,31 +992,16 @@ namespace HorseRacingML.ML
 
             if (persistWeights)
             {
-                var weightsDirectory = Path.Combine(AppContext.BaseDirectory, "weights");
-                var legacyWeightPath = Path.Combine(AppContext.BaseDirectory, "aiweights.json");
-                try
+                var weightsDirectory = Path.GetDirectoryName(_modelPath);
+                if (weightsDirectory != null)
                 {
                     Directory.CreateDirectory(weightsDirectory);
+                }
 
                     var options = new JsonSerializerOptions { WriteIndented = true };
                     var serialized = JsonSerializer.Serialize(model, options);
-                    var weightPath = Path.Combine(weightsDirectory, "aiweights.json");
-                    File.WriteAllText(weightPath, serialized);
-
-                    try
-                    {
-                        File.WriteAllText(legacyWeightPath, serialized);
-                    }
-                    catch
-                    {
-                        // Updating the legacy path is best-effort only.
-                    }
-                }
-                catch
-                {
-                    // Updating the legacy path is best-effort only.
-                }
-                }
+                File.WriteAllText(_modelPath, serialized);
+            }
             HyperparameterCompleted(param, trainAcc, valAcc, trainLoss, valLoss, trainBrier, valBrier, trainFocalLoss, valFocalLoss);
             return new TrainingResult
             {
@@ -1257,20 +1244,14 @@ namespace HorseRacingML.ML
         }
         public HyperparameterSummary? LoadPersistedHyperparameters()
         {
-            var weightDirectory = Path.Combine(AppContext.BaseDirectory, "weights");
-            var weightPath = Path.Combine(weightDirectory, "aiweights.json");
-            if (!File.Exists(weightPath))
+            if (!File.Exists(_modelPath))
             {
-                weightPath = Path.Combine(AppContext.BaseDirectory, "aiweights.json");
-                if (!File.Exists(weightPath))
-                {
-                    return null;
-                }
+                return null;
             }
 
             try
             {
-                var json = File.ReadAllText(weightPath);
+                var json = File.ReadAllText(_modelPath);
                 var model = JsonSerializer.Deserialize<TrainedModel>(json);
                 return model?.Hyperparameters;
             }
@@ -1398,7 +1379,7 @@ namespace HorseRacingML.ML
 
             Normalize(valFeatures);
             var valPreds = new float[valLabels.Length];
-            var calculator = new AIOddsCalculator(Path.Combine(AppContext.BaseDirectory, "weights", "aiweights.json"));
+            var calculator = new AIOddsCalculator(_modelPath);
 
             for (int i = 0; i < valFeatures.Count; i++)
             {
@@ -1461,17 +1442,11 @@ namespace HorseRacingML.ML
 
         private TrainedModel LoadModel()
         {
-            var weightsDirectory = Path.Combine(AppContext.BaseDirectory, "weights");
-            var weightPath = Path.Combine(weightsDirectory, "aiweights.json");
-            if (!File.Exists(weightPath))
-            {
-                weightPath = Path.Combine(AppContext.BaseDirectory, "aiweights.json");
-            }
-            if (!File.Exists(weightPath))
+            if (!File.Exists(_modelPath))
             {
                 return null;
             }
-            var json = File.ReadAllText(weightPath);
+            var json = File.ReadAllText(_modelPath);
             return JsonSerializer.Deserialize<TrainedModel>(json);
         }
 
