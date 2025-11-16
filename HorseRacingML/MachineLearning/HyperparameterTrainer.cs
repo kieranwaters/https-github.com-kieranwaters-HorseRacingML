@@ -170,25 +170,16 @@ namespace HorseRacingML.ML
 
             var emptyTraining = new PreparedDataset(new List<PreparedRace>());
 
-            var metadataSource = validationPrepared;
-            var metadataRows = metadataSource.Rows.ToList();
+            var featureKeys = model.Metadata.Keys;
+            var featureDimensions = model.Metadata.FeatureDimensions;
+            var stringMaps = model.Metadata.StringMaps;
+
+            var validationRaces = EncodeRaces(validationPrepared.Races, featureKeys, featureDimensions, stringMaps);
 
             var signature = BuildRaceSignature(validationPrepared.Races);
-            DatasetFeatureMetadata metadata;
-            lock (_featureMetadataCacheLock)
-            {
-                if (!_featureMetadataCache.TryGetValue((includeIdentifiers, signature), out metadata))
-                {
-                    metadata = BuildFeatureMetadata(metadataSource, metadataRows);
-                    _featureMetadataCache[(includeIdentifiers, signature)] = metadata;
-                }
-            }
-
-            var validationRaces = EncodeRaces(validationPrepared.Races, metadata.FeatureKeys, metadata.FeatureDimensions, metadata.StringMaps);
-
             var normalizationKey = BuildNormalizationCacheKey(includeIdentifiers, signature);
 
-            return new TrainingDataset(new List<RaceExample>(), validationRaces, metadata.FeatureKeys, metadata.FeatureDimensions, metadata.StringMaps, model.Normalization, normalizationKey);
+            return new TrainingDataset(new List<RaceExample>(), validationRaces, featureKeys, featureDimensions, stringMaps, model.Normalization, normalizationKey);
         }
         public TrainingResult Train(MLParameter param, int foldIndex, int foldCount, bool persistWeights = true)
         {
