@@ -5,6 +5,7 @@ using HorseRacingML.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using System;
+using HorseRacingML.Services;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -17,13 +18,15 @@ namespace HorseRacingML.Controllers
     {
         private readonly RacingRepository _repository;
         private readonly HyperparameterTrainer _trainer;
+        private readonly AIOddsCalculator _aiOddsCalculator;
 
         private readonly decimal? _maxKellyFraction;
 
-        public HyperparameterController(RacingRepository repository, HyperparameterTrainer trainer, IConfiguration configuration)
+        public HyperparameterController(RacingRepository repository, HyperparameterTrainer trainer, IConfiguration configuration, AIOddsCalculator aiOddsCalculator)
         {
             _repository = repository;
             _trainer = trainer;
+            _aiOddsCalculator = aiOddsCalculator;
             _maxKellyFraction = configuration.GetValue<decimal?>("Betting:MaxKellyFraction");
         }
 
@@ -578,12 +581,11 @@ namespace HorseRacingML.Controllers
             var dailyRaceResults = new List<RaceResultViewModel>();
             decimal bankrollBefore = bankroll;
 
-            var allRaceData = Enumerable.Range(0, examples.Count)
-                .Select(i => new
+            var allRaceData = Enumerable.Range(0, examples.Length)
+                 .Select(i => new
                 {
                     RaceId = raceIds[i],
-                    Example = examples[i],
-                    Probability = Math.Clamp((double)predictions[i], 0d, 1d)
+                    Example = examples[i]
                 })
                 .GroupBy(x => x.RaceId)
                 .Select(g =>
@@ -591,7 +593,7 @@ namespace HorseRacingML.Controllers
                     raceSummaries.TryGetValue(g.Key, out var summary);
                     return new
                     {
-                        RaceGroup = g,
+                        RaceGroup = g.ToList(),
                         RaceDate = summary?.RaceDate ?? DateTime.MinValue,
                         Summary = summary
                     };
@@ -605,36 +607,51 @@ namespace HorseRacingML.Controllers
                 var raceGroup = race.RaceGroup;
                 var summary = race.Summary;
 
-                var predictedWinner = raceGroup
-                    .OrderByDescending(r => r.Probability)
+                var runnersForOddsCalc = raceGroup.Select(r => r.Example).ToList();
+                var calculatedProbs = _aiOddsCalculator.CalculateProbabilities(runnersForOddsCalc);
+
+                var runnersWithProbs = raceGroup
+                    .Select(r => new
+                    {
+                        r.Example,
+                        CalculatedProbability = (double)(calculatedProbs
+                            .FirstOrDefault(p => p.HorseId == r.Example.HorseId)?.Probability ?? 0m)
+                    })
+                    .ToList();
+
+                var predictedWinnerDetails = runnersWithProbs
+                    .OrderByDescending(r => r.CalculatedProbability)
                     .FirstOrDefault();
 
-                var actualWinner = raceGroup.FirstOrDefault(r => r.Example.Label >= 0.5f);
+                var actualWinnerDetails = runnersWithProbs.FirstOrDefault(r => r.Example.Label >= 0.5f);
 
-                var isCorrectPrediction = predictedWinner != null && actualWinner != null && predictedWinner.Example.HorseName == actualWinner.Example.HorseName;
-                // A bet is only placed if the conditions are met.
-                // The bankroll progression, however, is continuous.
+                var isCorrectPrediction = predictedWinnerDetails != null && actualWinnerDetails != null &&
+                                          predictedWinnerDetails.Example.HorseId == actualWinnerDetails.Example.HorseId;
+
                 var stake = 0m;
                 var aiOdds = 0m;
                 var bookmakerOdds = 0m;
-                if (predictedWinner != null)
+
+                if (predictedWinnerDetails != null)
                 {
-                    bookmakerOdds = predictedWinner.Example.StartingPriceDecimal ?? 0m;
-                    aiOdds = BettingMath.CalculateAiDecimalOdds(predictedWinner.Probability);
+                    if (predictedWinnerDetails.Example.StartingPriceDecimal.HasValue)
+                    {
+                        bookmakerOdds = predictedWinnerDetails.Example.StartingPriceDecimal.Value;
+                    }
+                    aiOdds = BettingMath.CalculateAiDecimalOdds(predictedWinnerDetails.CalculatedProbability);
 
                     if (bankroll > 0m && bookmakerOdds > 1m)
                     {
-                        var probability = predictedWinner.Probability;
+                        var probability = predictedWinnerDetails.CalculatedProbability;
                         var marketProbability = 1.0 / (double)bookmakerOdds;
-                    var edge = probability - marketProbability;
+                        var edge = probability - marketProbability;
 
-                    var kellyFraction = BettingMath.CalculateKellyFraction(edge, (double)bookmakerOdds, _maxKellyFraction);
+                        var kellyFraction = BettingMath.CalculateKellyFraction(edge, (double)bookmakerOdds, _maxKellyFraction);
 
-
-                    if (viewModel.KellyDampener > 0)
-                    {
-                        kellyFraction /= viewModel.KellyDampener;
-                    }
+                        if (viewModel.KellyDampener > 0)
+                        {
+                            kellyFraction /= viewModel.KellyDampener;
+                        }
 
                         if (kellyFraction > 0m)
                         {
@@ -652,11 +669,11 @@ namespace HorseRacingML.Controllers
 
                                 bets.Add(new ValidationBetResult
                                 {
-                                    RaceId = raceGroup.Key,
+                                    RaceId = race.RaceGroup.First().RaceId,
                                     RaceDate = summary?.RaceDate,
                                     RaceTitle = summary?.Title,
                                     CourseName = summary?.CourseName,
-                                    HorseName = predictedWinner.Example.HorseName,
+                                    HorseName = predictedWinnerDetails.Example.HorseName,
                                     DecimalOdds = bookmakerOdds,
                                     AiDecimalOdds = aiOdds,
                                     AiProbability = probability,
@@ -670,12 +687,13 @@ namespace HorseRacingML.Controllers
                         }
                     }
                 }
+
                 dailyRaceResults.Add(new RaceResultViewModel
                 {
-                    RaceId = race.RaceGroup.Key,
-                    RaceTitle = race.Summary?.Title,
-                    PredictedWinner = predictedWinner?.Example.HorseName,
-                    ActualWinner = actualWinner?.Example.HorseName,
+                    RaceId = race.RaceGroup.First().RaceId,
+                    RaceTitle = summary?.Title,
+                    PredictedWinner = predictedWinnerDetails?.Example.HorseName,
+                    ActualWinner = actualWinnerDetails?.Example.HorseName,
                     IsCorrectPrediction = isCorrectPrediction,
                     Bankroll = bankrollBefore,
                     Stake = stake,

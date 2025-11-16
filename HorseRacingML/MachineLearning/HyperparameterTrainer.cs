@@ -1341,20 +1341,31 @@ namespace HorseRacingML.ML
                 param.BatchSize,
                 exception);
         }
+
         public TrainingResult Evaluate(TrainingDataset dataset)
         {
             if (dataset is null)
                 throw new ArgumentNullException(nameof(dataset));
+            var model = LoadModel();
+            if (model == null)
+            {
+                throw new InvalidOperationException("Failed to load the AI model from weights file.");
+            }
 
             var gpus = tf.config.list_physical_devices("GPU");
             if (gpus.Length > 0)
             {
                 try { tf.config.experimental.set_memory_growth(gpus[0], true); } catch { }
             }
-
-            var trainExamples = dataset.TrainingRaces.SelectMany(r => r.Runners).ToList();
             var valExamples = dataset.ValidationRaces.SelectMany(r => r.Runners).ToList();
             int featureCount = dataset.FeatureCount;
+            if (featureCount == 0)
+            {
+                return new TrainingResult
+                {
+                    ValidationExamples = new ReadOnlyCollection<RunnerExample>(valExamples)
+                };
+            }
 
             var valFeatures = valExamples.Select(r => (float[])r.Features.Clone()).ToList();
             var valLabels = valExamples.Select(r => r.Label).ToArray();
@@ -1362,35 +1373,44 @@ namespace HorseRacingML.ML
 
             var means = dataset.Normalization.Mean ?? Array.Empty<float>();
             var stdDevs = dataset.Normalization.StdDev ?? Array.Empty<float>();
-
+            if (means.Length != featureCount || stdDevs.Length != featureCount)
+            {
+                throw new InvalidOperationException("Normalization parameter dimensions do not match feature count.");
+            }
             void Normalize(IList<float[]> data)
             {
                 Parallel.ForEach(data, arr =>
                 {
                     for (int i = 0; i < featureCount; i++)
                     {
-                        arr[i] = (arr[i] - means[i]) / stdDevs[i];
+                        var std = stdDevs[i];
+                        if (Math.Abs(std) > 1e-8)
+                        {
+                            arr[i] = (arr[i] - means[i]) / std;
+                        }
+                        else
+                        {
+                            arr[i] = 0;
+                        }
                     }
                 });
             }
 
             Normalize(valFeatures);
+            ar valPreds = new float[valLabels.Length];
+            var calculator = new AIOddsCalculator(Path.Combine(AppContext.BaseDirectory, "weights", "aiweights.json"));
 
-            var model = LoadModel();
-            if (model == null)
-            {
-                throw new InvalidOperationException("Failed to load the AI model from weights file.");
-            }
-
-            var valPreds = new float[valLabels.Length];
-            // Evaluation logic using the loaded model
-            // This part needs to be implemented based on the model structure
-            // For now, let's assume a simple forward pass
             for (int i = 0; i < valFeatures.Count; i++)
             {
-                var input = valFeatures[i];
-                var output = ForwardPass(model, input);
-                valPreds[i] = output;
+                var runnerFlow = new RunnerFlow
+                {
+                    FeatureValues = new Dictionary<string, object?>()
+                };
+                for (int j = 0; j < dataset.FeatureKeys.Count; j++)
+                {
+                    runnerFlow.FeatureValues[dataset.FeatureKeys[j]] = valFeatures[i][j];
+                }
+                valPreds[i] = (float)calculator.CalculateOdds(runnerFlow);
             }
 
             var valAcc = valPreds.Length > 0 ? ComputeWinnerAccuracy(valRaceIds, valPreds, valLabels) : 0;
@@ -1410,7 +1430,6 @@ namespace HorseRacingML.ML
                 ValidationExamples = new ReadOnlyCollection<RunnerExample>(valExamples),
             };
         }
-
         private float ForwardPass(TrainedModel model, float[] input)
         {
             var layerInput = input;
