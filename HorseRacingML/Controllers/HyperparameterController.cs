@@ -617,15 +617,15 @@ namespace HorseRacingML.Controllers
                 var stake = 0m;
                 var aiOdds = 0m;
                 var bookmakerOdds = 0m;
-                if (predictedWinner != null &&
-                    bankroll > 0m &&
-                    predictedWinner.Example.StartingPriceDecimal.HasValue &&
-                    predictedWinner.Example.StartingPriceDecimal.Value > 1m)
+                if (predictedWinner != null)
                 {
-                    bookmakerOdds = predictedWinner.Example.StartingPriceDecimal.Value;
-                    var probability = predictedWinner.Probability;
-                    aiOdds = BettingMath.CalculateAiDecimalOdds(probability);
-                    var marketProbability = 1.0 / (double)bookmakerOdds;
+                    bookmakerOdds = predictedWinner.Example.StartingPriceDecimal ?? 0m;
+                    aiOdds = BettingMath.CalculateAiDecimalOdds(predictedWinner.Probability);
+
+                    if (bankroll > 0m && bookmakerOdds > 1m)
+                    {
+                        var probability = predictedWinner.Probability;
+                        var marketProbability = 1.0 / (double)bookmakerOdds;
                     var edge = probability - marketProbability;
 
                     var kellyFraction = BettingMath.CalculateKellyFraction(edge, (double)bookmakerOdds, _maxKellyFraction);
@@ -636,36 +636,37 @@ namespace HorseRacingML.Controllers
                         kellyFraction /= viewModel.KellyDampener;
                     }
 
-                    if (kellyFraction > 0m)
-                    {
-                        stake = BettingMath.CalculateSequentialStake(bankroll, kellyFraction);
-                        if (stake > 0m)
+                        if (kellyFraction > 0m)
                         {
-                            bankroll -= stake;
-                            totalStaked += stake;
-
-                            if (isCorrectPrediction)
+                            stake = BettingMath.CalculateSequentialStake(bankroll, kellyFraction);
+                            if (stake > 0m)
                             {
-                                wins++;
-                                bankroll += stake * bookmakerOdds;
+                                bankroll -= stake;
+                                totalStaked += stake;
+
+                                if (isCorrectPrediction)
+                                {
+                                    wins++;
+                                    bankroll += stake * bookmakerOdds;
+                                }
+
+                                bets.Add(new ValidationBetResult
+                                {
+                                    RaceId = raceGroup.Key,
+                                    RaceDate = summary?.RaceDate,
+                                    RaceTitle = summary?.Title,
+                                    CourseName = summary?.CourseName,
+                                    HorseName = predictedWinner.Example.HorseName,
+                                    DecimalOdds = bookmakerOdds,
+                                    AiDecimalOdds = aiOdds,
+                                    AiProbability = probability,
+                                    MarketProbability = marketProbability,
+                                    Differential = edge,
+                                    Stake = stake,
+                                    Won = isCorrectPrediction,
+                                    Bankroll = bankrollBefore
+                                });
                             }
-
-                            bets.Add(new ValidationBetResult
-                            {
-                                RaceId = raceGroup.Key,
-                                RaceDate = summary?.RaceDate,
-                                RaceTitle = summary?.Title,
-                                CourseName = summary?.CourseName,
-                                HorseName = predictedWinner.Example.HorseName,
-                                DecimalOdds = bookmakerOdds,
-                                AiDecimalOdds = aiOdds,
-                                AiProbability = probability,
-                                MarketProbability = marketProbability,
-                                Differential = edge,
-                                Stake = stake,
-                                Won = isCorrectPrediction,
-                                Bankroll = bankrollBefore
-                            });
                         }
                     }
                 }
