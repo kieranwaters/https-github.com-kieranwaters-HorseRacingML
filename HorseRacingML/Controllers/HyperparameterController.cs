@@ -612,29 +612,23 @@ namespace HorseRacingML.Controllers
                 var actualWinner = raceGroup.FirstOrDefault(r => r.Example.Label >= 0.5f);
 
                 var isCorrectPrediction = predictedWinner != null && actualWinner != null && predictedWinner.Example.HorseName == actualWinner.Example.HorseName;
-                dailyRaceResults.Add(new RaceResultViewModel
-                {
-                    RaceId = race.RaceGroup.Key,
-                    RaceTitle = race.Summary?.Title,
-                    PredictedWinner = predictedWinner?.Example.HorseName,
-                    ActualWinner = actualWinner?.Example.HorseName,
-                    IsCorrectPrediction = isCorrectPrediction,
-                    Bankroll = bankroll
-                });
                 // A bet is only placed if the conditions are met.
                 // The bankroll progression, however, is continuous.
                 var stake = 0m;
+                var aiOdds = 0m;
+                var bookmakerOdds = 0m;
                 if (predictedWinner != null &&
                     bankroll > 0m &&
                     predictedWinner.Example.StartingPriceDecimal.HasValue &&
                     predictedWinner.Example.StartingPriceDecimal.Value > 1m)
                 {
-                    var decimalOdds = predictedWinner.Example.StartingPriceDecimal.Value;
+                    bookmakerOdds = predictedWinner.Example.StartingPriceDecimal.Value;
                     var probability = predictedWinner.Probability;
-                    var marketProbability = 1.0 / (double)decimalOdds;
+                    aiOdds = BettingMath.CalculateAiDecimalOdds(probability);
+                    var marketProbability = 1.0 / (double)bookmakerOdds;
                     var edge = probability - marketProbability;
 
-                    var kellyFraction = BettingMath.CalculateKellyFraction(edge, (double)decimalOdds, _maxKellyFraction);
+                    var kellyFraction = BettingMath.CalculateKellyFraction(edge, (double)bookmakerOdds, _maxKellyFraction);
 
 
                     if (viewModel.KellyDampener > 0)
@@ -653,7 +647,7 @@ namespace HorseRacingML.Controllers
                             if (isCorrectPrediction)
                             {
                                 wins++;
-                                bankroll += stake * decimalOdds;
+                                bankroll += stake * bookmakerOdds;
                             }
 
                             bets.Add(new ValidationBetResult
@@ -663,8 +657,8 @@ namespace HorseRacingML.Controllers
                                 RaceTitle = summary?.Title,
                                 CourseName = summary?.CourseName,
                                 HorseName = predictedWinner.Example.HorseName,
-                                DecimalOdds = decimalOdds,
-                                AiDecimalOdds = BettingMath.CalculateAiDecimalOdds(probability),
+                                DecimalOdds = bookmakerOdds,
+                                AiDecimalOdds = aiOdds,
                                 AiProbability = probability,
                                 MarketProbability = marketProbability,
                                 Differential = edge,
@@ -675,6 +669,18 @@ namespace HorseRacingML.Controllers
                         }
                     }
                 }
+                dailyRaceResults.Add(new RaceResultViewModel
+                {
+                    RaceId = race.RaceGroup.Key,
+                    RaceTitle = race.Summary?.Title,
+                    PredictedWinner = predictedWinner?.Example.HorseName,
+                    ActualWinner = actualWinner?.Example.HorseName,
+                    IsCorrectPrediction = isCorrectPrediction,
+                    Bankroll = bankrollBefore,
+                    Stake = stake,
+                    AiOdds = aiOdds,
+                    BookmakerOdds = bookmakerOdds
+                });
             }
 
             viewModel.DailyResults = dailyRaceResults
