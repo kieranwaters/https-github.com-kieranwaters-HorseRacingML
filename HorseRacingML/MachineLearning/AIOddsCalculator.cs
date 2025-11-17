@@ -1352,7 +1352,7 @@ namespace HorseRacingML.ML
                 var flow = new RunnerFlow
                 {
                     HorseName = runner.HorseName,
-                    FeatureValues = runner.Features.ToDictionary(f => f.ToString(), f => (object)f)
+                    FeatureValues = runner.Features
                 };
 
                 var probability = CalculateOdds(flow);

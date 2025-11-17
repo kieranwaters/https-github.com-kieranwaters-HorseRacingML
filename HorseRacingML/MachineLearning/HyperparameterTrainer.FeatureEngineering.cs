@@ -224,6 +224,7 @@ namespace HorseRacingML.ML
 
                     _preserveKeys = combined;
                 }
+                _preserveKeys.Add("SP_Decimal");
             }
             private static float ComputeStandardDeviation(IReadOnlyList<float> values)
             {

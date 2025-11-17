@@ -529,11 +529,11 @@ namespace HorseRacingML.ML
                     .ToList();
 
                 int featureCount = dataset.FeatureCount;
-            var trainFeatures = trainExamples.Select(r => (float[])r.Features.Clone()).ToList();
+            var trainFeatures = trainExamples.Select(r => EncodeFeatureVector(r.Features, dataset.FeatureKeys, dataset.FeatureDimensions, dataset.StringMaps, featureCount)).ToList();
             var trainLabels = trainExamples.Select(r => r.Label).ToArray();
             var trainRaceIds = trainExamples.Select(r => r.RaceId).ToArray();
 
-            var valFeatures = valExamples.Select(r => (float[])r.Features.Clone()).ToList();
+            var valFeatures = valExamples.Select(r => EncodeFeatureVector(r.Features, dataset.FeatureKeys, dataset.FeatureDimensions, dataset.StringMaps, featureCount)).ToList();
             var valLabels = valExamples.Select(r => r.Label).ToArray();
             var valRaceIds = valExamples.Select(r => r.RaceId).ToArray();
             bool restoreFeatureState = false;
@@ -1340,49 +1340,20 @@ namespace HorseRacingML.ML
                 };
             }
 
-            var valFeatures = valExamples.Select(r => (float[])r.Features.Clone()).ToList();
+
             var valLabels = valExamples.Select(r => r.Label).ToArray();
             var valRaceIds = valExamples.Select(r => r.RaceId).ToArray();
-
-            var means = dataset.Normalization.Mean ?? Array.Empty<float>();
-            var stdDevs = dataset.Normalization.StdDev ?? Array.Empty<float>();
-            if (means.Length != featureCount || stdDevs.Length != featureCount)
-            {
-                throw new InvalidOperationException("Normalization parameter dimensions do not match feature count.");
-            }
-            void Normalize(IList<float[]> data)
-            {
-                Parallel.ForEach(data, arr =>
-                {
-                    for (int i = 0; i < featureCount; i++)
-                    {
-                        var std = stdDevs[i];
-                        if (Math.Abs(std) > 1e-8)
-                        {
-                            arr[i] = (arr[i] - means[i]) / std;
-                        }
-                        else
-                        {
-                            arr[i] = 0;
-                        }
-                    }
-                });
-            }
-
-            Normalize(valFeatures);
             var valPreds = new float[valLabels.Length];
             var calculator = new AIOddsCalculator(_modelPath);
 
-            for (int i = 0; i < valFeatures.Count; i++)
+            for (int i = 0; i < valExamples.Count; i++)
             {
+                var example = valExamples[i];
                 var runnerFlow = new RunnerFlow
                 {
-                    FeatureValues = new Dictionary<string, object?>()
+                    HorseName = example.HorseName,
+                    FeatureValues = example.Features
                 };
-                for (int j = 0; j < dataset.FeatureKeys.Count; j++)
-                {
-                    runnerFlow.FeatureValues[dataset.FeatureKeys[j]] = valFeatures[i][j];
-                }
                 valPreds[i] = (float)calculator.CalculateOdds(runnerFlow);
             }
 

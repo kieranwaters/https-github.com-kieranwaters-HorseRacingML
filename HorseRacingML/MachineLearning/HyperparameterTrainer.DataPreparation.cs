@@ -364,7 +364,7 @@ namespace HorseRacingML.ML
 
         public class RunnerExample
         {
-            public RunnerExample(int raceId, float[] features, float label, int? horseId, string? horseName, decimal? startingPriceDecimal)
+            public RunnerExample(int raceId, Dictionary<string, object?> features, float label, int? horseId, string? horseName, decimal? startingPriceDecimal)
             {
                 RaceId = raceId;
                 Features = features;
@@ -375,7 +375,7 @@ namespace HorseRacingML.ML
             }
 
             public int RaceId { get; }
-            public float[] Features { get; }
+            public Dictionary<string, object?> Features { get; }
             public float Label { get; }
             public int? HorseId { get; }
             public string? HorseName { get; }
@@ -728,7 +728,7 @@ namespace HorseRacingML.ML
 
                     var spDecimal = GetNullableDecimal(row, "SP_Decimal");
 
-                    runners.Add(new RunnerExample(preparedRace.RaceId, features, label, horseId, horseName, spDecimal));
+                    runners.Add(new RunnerExample(preparedRace.RaceId, row, label, horseId, horseName, spDecimal));
                 }
 
                 result.Add(new RaceExample(preparedRace.RaceId, runners));

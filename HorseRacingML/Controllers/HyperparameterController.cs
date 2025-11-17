@@ -603,11 +603,17 @@ namespace HorseRacingML.Controllers
                         Summary = summary
                     };
                 })
-                .OrderBy(r => r.RaceDate);
+                 .OrderBy(r => r.RaceDate)
+                .ToList();
 
-
+            var raceIndex = 0;
             foreach (var race in allRaceData)
             {
+                raceIndex++;
+                var raceDate = race.RaceDate.ToString("yyyy-MM-dd");
+                var raceTitle = race.Summary?.Title ?? "Unknown Race";
+                Console.WriteLine($"[AI] Processing race {raceIndex}/{allRaceData.Count}: {raceDate} - {raceTitle}");
+                bankrollBefore = bankroll;
                 bankrollBefore = bankroll;
                 var raceGroup = race.RaceGroup;
                 var summary = race.Summary;
@@ -703,7 +709,7 @@ namespace HorseRacingML.Controllers
                     Bankroll = bankrollBefore,
                     Stake = stake,
                     AiOdds = aiOdds,
-                    BookmakerOdds = bookmakerOdds
+                    BookmakerOdds = predictedWinnerDetails?.Example.StartingPriceDecimal ?? 0m
                 });
             }
 
