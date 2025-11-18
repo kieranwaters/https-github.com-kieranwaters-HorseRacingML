@@ -3,6 +3,7 @@ using HorseRacingML.Models;
 using HorseRacingML.Scraping;
 using HorseRacingML.Services;
 using Microsoft.Extensions.Configuration;
+using HorseRacingML.ML;
 using System.Collections.ObjectModel;
 using System;
 using System.Collections.Generic;
@@ -28,7 +29,7 @@ namespace HorseRacingML.Tests
             };
 
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), "test_model.path", 100m, settings);
+            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), new AIOddsCalculator("test_model.path"), 100m, settings);
             var flows = new List<RunnerFlow>
             {
                 new RunnerFlow { HorseName = "Alpha Runner" },
@@ -86,7 +87,7 @@ namespace HorseRacingML.Tests
             };
 
             var settings = new AutomationSettingsSnapshot(1m, null, MaxStakeMode.None, null, null);
-            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), "test_model.path", 50m, settings);
+            var scraper = new BetfairMarketScraper(repo, new StubTrainer(), new AIOddsCalculator("test_model.path"), 50m, settings);
             var flows = new List<RunnerFlow>
             {
                 new RunnerFlow { HorseName = "Known Runner" },

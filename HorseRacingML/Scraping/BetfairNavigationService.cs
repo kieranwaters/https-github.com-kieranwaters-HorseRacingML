@@ -369,7 +369,7 @@ namespace HorseRacingML.Scraping
                     var scraper = new BetfairMarketScraper(
                         repo,
                         trainer,
-                        _modelPath,
+                         _aiOddsCalculator,
                         bankroll,
                         settings,
                         _useMarketFallbackForAiDegeneracy,
