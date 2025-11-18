@@ -905,10 +905,6 @@ namespace HorseRacingML.Scraping
 
             return null;
         }
-        private string ResolveAiWeightPath()
-        {
-            return _modelPath;
-        }
         private void ApplyScrapedFeatureFallbacks(
             Dictionary<string, object?> featureVector,
             RunnerFlow flow,

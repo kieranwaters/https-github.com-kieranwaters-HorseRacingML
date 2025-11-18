@@ -34,7 +34,7 @@ namespace HorseRacingML.Scraping
         private readonly AutomationSettingsService _automationSettings;
         private string _primaryWindowHandle;
         private readonly object _driverLock = new();
-        private readonly string _modelPath;
+        private readonly AIOddsCalculator _aiOddsCalculator;
         private static readonly Regex NonNumericCharactersRegex = new("[^0-9.,-]", RegexOptions.Compiled);
         private static readonly TimeSpan MinimumAutomationDelay = TimeSpan.FromSeconds(30);
         private static readonly TimeSpan MaximumAutomationDelay = TimeSpan.FromMinutes(1.5);
@@ -63,11 +63,11 @@ namespace HorseRacingML.Scraping
         private static readonly TimeSpan SchedulePageReadyTimeout = TimeSpan.FromSeconds(120);
         private string? _activeScheduleRegion;
 
-        public BetfairNavigationService(IConfiguration config, AutomationSettingsService automationSettings)
+        public BetfairNavigationService(IConfiguration config, AutomationSettingsService automationSettings, AIOddsCalculator aiOddsCalculator)
         {
             _username = config["Betfair:Username"] ?? HardCodedUsername;
             _password = config["Betfair:Password"] ?? HardCodedPassword;
-            _modelPath = config.GetValue<string>("ML:ModelPath");
+            _aiOddsCalculator = aiOddsCalculator;
             _configuredBankroll = config.GetValue<decimal?>("Betting:Bankroll") ?? 100m;
             _bankroll = _configuredBankroll;
             _useMarketFallbackForAiDegeneracy = config.GetValue<bool?>("Betting:UseMarketFallbackForAiDegeneracy") ?? true;
@@ -490,7 +490,7 @@ namespace HorseRacingML.Scraping
             var scraper = new BetfairMarketScraper(
                 repo,
                 trainer,
-                _modelPath,
+                _aiOddsCalculator,
                 bankroll,
                 settings,
                 _useMarketFallbackForAiDegeneracy,
@@ -849,7 +849,7 @@ namespace HorseRacingML.Scraping
                 var scraper = new BetfairMarketScraper(
                     repo,
                     trainer,
-                    _modelPath,
+                    _aiOddsCalculator,
                     bankroll,
                     settings,
                     _useMarketFallbackForAiDegeneracy,

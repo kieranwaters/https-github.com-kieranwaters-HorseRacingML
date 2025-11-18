@@ -1056,11 +1056,6 @@ namespace HorseRacingML.ML
                     }
                     else
                     {
-                        // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-                        // ❌ REMOVED: The entire history block was here before
-                        // ✅ Now it runs unconditionally above
-                        // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-
                         float jockeyClassWinFallback = jockeyWinRateValue
                             ?? ResolveFloat(row, "TrainerClassWinRate")
                             ?? ResolveFloat(row, "TrainerWinRate")
@@ -1077,12 +1072,6 @@ namespace HorseRacingML.ML
                         row["JockeyClassAvgNorm"] = jockeyClassAvgFallback;
                         row["LastJockeyClassNormPos"] = jockeyClassLastFallback;
                     }
-
-                    // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-                    // ✅ The rest of the method continues unchanged from here
-                    // (going/surface/course stats, speed computation, draw bias, etc.)
-                    // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-
                     if (!_goingStats.TryGetValue(horseId, out var gDict))
                     {
                         gDict = new Dictionary<string, (int starts, int wins, float sumNorm, float lastNorm)>(StringComparer.OrdinalIgnoreCase);

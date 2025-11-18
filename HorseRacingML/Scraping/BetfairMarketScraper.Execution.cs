@@ -71,24 +71,12 @@ namespace HorseRacingML.Scraping
             var handles = handlesToProcess?.ToList() ?? driver.WindowHandles.ToList(); // collect tab handles
             var orderedHandles = OrderHandlesByScheduledStart(driver, handles);
             Console.WriteLine($"[DayReport][Stage] Preparing to process {orderedHandles.Count} open tab(s) for the day report.");
-            var weightPath = ResolveAiWeightPath(); // resolve AI weights path
             _loadedHyperparameters = null;
             AIOddsCalculator? aiCalculator = null;
             _neuralFeatureKeys = null;
             if (_computeAiProbabilities)
             {
-                Console.WriteLine("[DayReport][Stage] Initializing AI odds calculator and loading model weights.");
-                if (File.Exists(weightPath))
-                {
-                    var info = new FileInfo(weightPath); // file info for logging
-                    Console.WriteLine($"\tAI weight file located at {weightPath} ({info.Length} bytes, last modified {info.LastWriteTimeUtc:u})."); // status
-                }
-                else
-                {
-                    Console.WriteLine($"\tAI weight file missing at {weightPath}; AI probabilities may fall back to defaults."); // warn missing weights
-                }
-
-                aiCalculator = new AIOddsCalculator(weightPath); // init AI calc
+                aiCalculator = _aiOddsCalculator;
                 _neuralFeatureKeys = aiCalculator.FeatureKeys?.ToArray();
                 UpdateNeuralFeatureKeys(aiCalculator.GetRawFeatureKeys());
                 Console.WriteLine($"\tAI model status: {aiCalculator.ModelStatus}"); // log model status
