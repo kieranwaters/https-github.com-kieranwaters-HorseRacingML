@@ -342,8 +342,6 @@
             </div>
         </div>
     }
-   
-</div>
 <div class="card mb-4">
     <div class="card-body">
         <div class="row g-3 align-items-end">
@@ -1214,10 +1212,9 @@ else
                                                             </tbody>
                                                         </table>
                                                     </div>
-                                                </div>
-                                            </details>
-                                                
+                                                </div>                                                
                                         }
+                                                    </details>
                                     </td>
                                     <td>@runner.JockeyName</td>
                                     <td class="text-end">
@@ -1301,7 +1298,7 @@ else
                                         @if (runner.AiTrainedModelApplied)
                                         {
                                             <div class="text-success small ai-win-note">Trained neural model applied</div>
-                                            if (!string.IsNullOrWhiteSpace(runner.AiProbabilityFallbackReason))
+                                            @if (!string.IsNullOrWhiteSpace(runner.AiProbabilityFallbackReason))
                                             {
                                                 <div class="text-muted small ai-win-note">@runner.AiProbabilityFallbackReason</div>
                                             }
