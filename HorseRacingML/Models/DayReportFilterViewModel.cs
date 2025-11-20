@@ -22,6 +22,7 @@ namespace HorseRacingML.Models
         public string? EndTime { get; set; }
         public string? ErrorMessage { get; set; }
         public string Region { get; set; } = DefaultRegion;
+        public bool ShowFeatureSignificance { get; set; } = true;
         public static string NormalizeRegion(string? region)
         {
             if (string.IsNullOrWhiteSpace(region))

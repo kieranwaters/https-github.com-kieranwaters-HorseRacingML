@@ -26,6 +26,7 @@ namespace HorseRacingML.Scraping
         private readonly decimal? _maxStakePercentOfBankroll;
         private readonly decimal? _maxStakeFixedAmount;
         private readonly bool _computeAiProbabilities;
+        private readonly bool _computeFeatureContributions;
         private static IReadOnlyList<string>? _neuralFeatureKeys;
         private readonly Dictionary<RacePreparationKey, FeatureLookup> _featureLookupCache = new();
         private readonly Dictionary<RacePreparationKey, string?> _featureLookupErrorCache = new();
@@ -67,7 +68,8 @@ namespace HorseRacingML.Scraping
             bool computeAiProbabilities = true,
             System.Collections.Generic.IReadOnlyDictionary<string, string?>? raceGoingLookup = null,
             string? scheduleRegion = null,
-            System.Collections.Generic.IReadOnlyDictionary<string, string?>? raceGoingByVenueLookup = null)
+            System.Collections.Generic.IReadOnlyDictionary<string, string?>? raceGoingByVenueLookup = null,
+            bool computeFeatureContributions = false)
         {
             _repo = repo ?? throw new ArgumentNullException(nameof(repo));
             _trainer = trainer ?? throw new ArgumentNullException(nameof(trainer));
@@ -87,6 +89,7 @@ namespace HorseRacingML.Scraping
             _raceGoingByVenueLookup = raceGoingByVenueLookup;
             _computeAiProbabilities = computeAiProbabilities;
             _scheduleRegion = string.IsNullOrWhiteSpace(scheduleRegion) ? null : scheduleRegion.Trim();
+            _computeFeatureContributions = computeFeatureContributions;
         }
 
         public BetfairMarketScraper(
@@ -99,7 +102,8 @@ namespace HorseRacingML.Scraping
             System.Collections.Generic.IReadOnlyDictionary<string, string?>? raceGoingLookup = null,
             bool computeAiProbabilities = true,
             string? scheduleRegion = null,
-            System.Collections.Generic.IReadOnlyDictionary<string, string?>? raceGoingByVenueLookup = null)
+            System.Collections.Generic.IReadOnlyDictionary<string, string?>? raceGoingByVenueLookup = null,
+            bool computeFeatureContributions = false)
             : this(
                 repo,
                 trainer,
@@ -114,7 +118,8 @@ namespace HorseRacingML.Scraping
                 computeAiProbabilities,
                raceGoingLookup,
                 scheduleRegion,
-                raceGoingByVenueLookup)
+                raceGoingByVenueLookup,
+                computeFeatureContributions)
         {
             if (settings == null)
             {

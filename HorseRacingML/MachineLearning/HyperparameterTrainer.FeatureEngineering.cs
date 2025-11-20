@@ -1082,7 +1082,11 @@ namespace HorseRacingML.ML
                     row["GoingWinRate"] = _trainer.SmoothedWinRate(gStats.wins, gStats.starts);
                     row["GoingAvgNorm"] = gStats.starts > 0 ? gStats.sumNorm / gStats.starts : 0f;
                     row["LastGoingNormPos"] = gStats.lastNorm;
-                    var goingFeatureKey = going.Replace(" ", "");
+                    var goingFeatureKey = Regex.Replace(going, "[^a-zA-Z0-9]", "");
+                    if (goingFeatureKey.Length > 50)
+                    {
+                        goingFeatureKey = goingFeatureKey.Substring(0, 50);
+                    }
                     row[$"LayoffNormalized_{goingFeatureKey}"] = (float)row["LayoffNormalized"];
 
                     if (!_surfaceStats.TryGetValue(horseId, out var sDict))

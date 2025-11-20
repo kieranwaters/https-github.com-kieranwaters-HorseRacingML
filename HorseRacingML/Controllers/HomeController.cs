@@ -80,7 +80,7 @@ namespace HorseRacingML.Controllers
             });
         }
         [HttpGet]
-        public IActionResult DayReportOptions(string? startTime = null, string? endTime = null, string? error = null, string? region = null)
+        public IActionResult DayReportOptions(string? startTime = null, string? endTime = null, string? error = null, string? region = null, bool showFeatureSignificance = true)
         {
             var normalizedRegion = DayReportFilterViewModel.NormalizeRegion(region);
             var model = new DayReportFilterViewModel
@@ -88,7 +88,8 @@ namespace HorseRacingML.Controllers
                 StartTime = startTime,
                 EndTime = endTime,
                 ErrorMessage = error,
-                Region = normalizedRegion
+                Region = normalizedRegion,
+                ShowFeatureSignificance = showFeatureSignificance
             };
 
             return View(model);
@@ -99,7 +100,8 @@ namespace HorseRacingML.Controllers
             [FromServices] HyperparameterTrainer trainer,
             string? startTime = null,
             string? endTime = null,
-            string? region = null)
+            string? region = null,
+            bool showFeatureSignificance = true)
         {
             var normalizedRegion = DayReportFilterViewModel.NormalizeRegion(region);
             if (!TryParseTimeOfDay(startTime, out var startTimeSpan))
@@ -109,7 +111,8 @@ namespace HorseRacingML.Controllers
                     StartTime = startTime,
                     EndTime = endTime,
                     ErrorMessage = "Start time must be in HH:MM format.",
-                    Region = normalizedRegion
+                    Region = normalizedRegion,
+                    ShowFeatureSignificance = showFeatureSignificance
                 });
             }
 
@@ -120,7 +123,8 @@ namespace HorseRacingML.Controllers
                     StartTime = startTime,
                     EndTime = endTime,
                     ErrorMessage = "End time must be in HH:MM format.",
-                    Region = normalizedRegion
+                    Region = normalizedRegion,
+                    ShowFeatureSignificance = showFeatureSignificance
                 });
             }
 
@@ -131,7 +135,8 @@ namespace HorseRacingML.Controllers
                     StartTime = startTime,
                     EndTime = endTime,
                     ErrorMessage = "Start time must be earlier than or equal to the end time.",
-                    Region = normalizedRegion
+                    Region = normalizedRegion,
+                    ShowFeatureSignificance = showFeatureSignificance
                 });
             }
             await betfair.OpenHorseRaceMeetingsInNewTabsAsync(
@@ -140,7 +145,7 @@ namespace HorseRacingML.Controllers
                 scheduleRegion: normalizedRegion);
 
 
-            var report = betfair.GenerateDayReport(_repository, trainer);
+            var report = betfair.GenerateDayReport(_repository, trainer, showFeatureSignificance);
             var usedNextDay = false;
 
             if (ShouldLoadNextDaySchedule(report, normalizedRegion))
@@ -153,7 +158,7 @@ namespace HorseRacingML.Controllers
                         closeExistingRaceTabs: true,
                         scheduleStartTime: startTimeSpan,
                         scheduleEndTime: endTimeSpan);
-                    var nextDayReport = betfair.GenerateDayReport(_repository, trainer);
+                    var nextDayReport = betfair.GenerateDayReport(_repository, trainer, showFeatureSignificance);
                     if (nextDayReport?.Races?.Count > 0)
                     {
                         report = nextDayReport;

@@ -83,7 +83,8 @@ namespace HorseRacingML.ML
         private bool TryCalculateWithTrainedModel(
              RunnerFlow flow,
              out double probability,
-             out bool scoredWithOpportunisticFeatures)
+             out bool scoredWithOpportunisticFeatures,
+             bool calculateContributions)
         {
             probability = 0d;
             scoredWithOpportunisticFeatures = false;
@@ -280,10 +281,27 @@ namespace HorseRacingML.ML
             }
 
             var activations = normalized;
+            var layerActivations = new List<double[]>();
+            var preActivations = new List<double[]>();
+
+            if (calculateContributions)
+            {
+                layerActivations.Add(normalized);
+            }
+
             for (int i = 0; i < _hiddenWeights.Count; i++)
             {
                 LogDebug(flow, $"Feeding hidden layer {i + 1} with vector length {activations.Length}");
-                activations = ApplyRelu(Multiply(activations, _hiddenWeights[i], _hiddenBiases[i]));
+                var z = Multiply(activations, _hiddenWeights[i], _hiddenBiases[i]);
+                if (calculateContributions)
+                {
+                    preActivations.Add(z);
+                }
+                activations = ApplyRelu(z);
+                if (calculateContributions)
+                {
+                    layerActivations.Add(activations);
+                }
                 LogDebug(flow, $"Hidden layer {i + 1} output length {activations.Length}");
             }
 
@@ -292,6 +310,26 @@ namespace HorseRacingML.ML
             {
                 LogFallback(flow, "forward pass produced an empty output vector");
                 return false;
+            }
+
+            if (calculateContributions && flow != null && linearWeights == null)
+            {
+                try
+                {
+                    var inputGradients = Backpropagate(layerActivations, preActivations, _hiddenWeights, _outputWeights);
+                    if (inputGradients.Length == _featureCount)
+                    {
+                        contributions = new double[_featureCount];
+                        for (int i = 0; i < _featureCount; i++)
+                        {
+                            contributions[i] = normalized[i] * inputGradients[i];
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"[AI] Failed to calculate feature contributions: {ex.Message}");
+                }
             }
 
             var rawLogit = output[0];
@@ -430,7 +468,62 @@ namespace HorseRacingML.ML
             var pos = Math.Exp(logit);
             return pos / (1d + pos);
         }
-        public double CalculateOdds(RunnerFlow flow)
+        private double[] Backpropagate(
+            List<double[]> layerActivations,
+            List<double[]> preActivations,
+            List<double[][]> hiddenWeights,
+            double[][] outputWeights)
+        {
+            if (outputWeights.Length == 0 || outputWeights[0].Length != 1)
+            {
+                return Array.Empty<double>();
+            }
+
+            var lastHiddenDim = outputWeights.Length;
+            var delta = new double[lastHiddenDim];
+            for (int i = 0; i < lastHiddenDim; i++)
+            {
+                delta[i] = outputWeights[i][0];
+            }
+
+            for (int layerIdx = hiddenWeights.Count - 1; layerIdx >= 0; layerIdx--)
+            {
+                var z = preActivations[layerIdx];
+                var weights = hiddenWeights[layerIdx];
+                var inputDim = weights.Length;
+                var outputDim = weights[0].Length;
+
+                if (outputDim != delta.Length)
+                {
+                    throw new InvalidOperationException($"Dimension mismatch in backprop at layer {layerIdx}. Weights output {outputDim}, delta {delta.Length}");
+                }
+
+                for (int j = 0; j < outputDim; j++)
+                {
+                    if (z[j] <= 0)
+                    {
+                        delta[j] = 0;
+                    }
+                }
+
+                var newDelta = new double[inputDim];
+                for (int i = 0; i < inputDim; i++)
+                {
+                    double sum = 0;
+                    var row = weights[i];
+                    for (int j = 0; j < outputDim; j++)
+                    {
+                        sum += row[j] * delta[j];
+                    }
+                    newDelta[i] = sum;
+                }
+                delta = newDelta;
+            }
+
+            return delta;
+        }
+
+        public double CalculateOdds(RunnerFlow flow, bool calculateContributions = false)
         {
             var legacyProbability = TryCalculateLegacyProbability(flow);
             if (flow != null)
@@ -441,7 +534,7 @@ namespace HorseRacingML.ML
                 flow.AiLogit = null;
             }
 
-            if (TryCalculateWithTrainedModel(flow, out var probability, out var opportunistic))
+            if (TryCalculateWithTrainedModel(flow, out var probability, out var opportunistic, calculateContributions))
             {
                 if (flow != null)
                 {

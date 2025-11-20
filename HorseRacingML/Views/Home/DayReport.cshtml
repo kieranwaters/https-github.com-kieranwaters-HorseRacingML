@@ -995,20 +995,16 @@ else
                                             }
                                             <details class="small mt-1">
                                                 <summary class="text-muted">@summaryLabel</summary>
-                @{
-                    var contributionThreshold = 1e-6d;
-                    var topContributorItems = showContribution && hasEncodedValues
+                @{        var topContributorItems = showContribution && hasEncodedValues
                     ? encodedValues
-                    .Where(value => value.Active && value.Contribution.HasValue && value.Contribution.Value > contributionThreshold)
+                    .Where(value => value.Active && value.Contribution.HasValue && value.Contribution.Value > 0)
                     .OrderByDescending(value => value.Contribution!.Value)
-                    .Take(3)
                     .ToList()
                     : new List<EncodedFeatureValue>();
                     var suppressedHeadwinds = showContribution && hasEncodedValues
                     ? encodedValues
-                    .Where(value => !value.Active && value.Contribution.HasValue && value.Contribution.Value < -contributionThreshold)
+                    .Where(value => value.Active && value.Contribution.HasValue && value.Contribution.Value < 0)
                     .OrderBy(value => value.Contribution!.Value)
-                    .Take(3)
                     .ToList()
                     : new List<EncodedFeatureValue>();
                 }
@@ -1019,7 +1015,7 @@ else
                                                         @if (topContributorItems.Count > 0)
                                                         {
                                                             <div class="small mt-1">
-                                                                <span class="fw-semibold">Top contributing features:</span>
+                                                                                <span class="fw-semibold">Positive signal features:</span>
                                                                 <ul class="mb-0 ps-3">
                                                                     @foreach (var item in topContributorItems)
                                                                     {
@@ -1035,7 +1031,7 @@ else
                                                         @if (suppressedHeadwinds.Count > 0)
                                                         {
                                                             <div class="small mt-2">
-                                                                <span class="fw-semibold">Suppressed dimensions reducing confidence:</span>
+                                                                                <span class="fw-semibold">Negative signal features:</span>
                                                                 <ul class="mb-0 ps-3">
                                                                     @foreach (var item in suppressedHeadwinds)
                                                                     {
@@ -1154,7 +1150,7 @@ else
                                                         }
                                                     </div>
                                                 }
-                                                if (hasEncodedValues)
+                                                @if (hasEncodedValues)
                                                 {
                                                 <div class="mt-2">
                                                     <div class="text-muted small">

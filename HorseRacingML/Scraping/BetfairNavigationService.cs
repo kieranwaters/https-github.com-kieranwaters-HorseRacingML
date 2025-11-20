@@ -824,7 +824,7 @@ namespace HorseRacingML.Scraping
 
             wait.Until(d => IsScheduleUrl(d.Url));
         }
-        public DayReportViewModel GenerateDayReport(RacingRepository repo, HyperparameterTrainer trainer)
+        public DayReportViewModel GenerateDayReport(RacingRepository repo, HyperparameterTrainer trainer, bool showFeatureSignificance = true)
         {
             Console.WriteLine("[DayReport][Stage] Starting day report generation and AI probability calculation pipeline.");
             ReturnToPrimaryWindow();
@@ -855,7 +855,8 @@ namespace HorseRacingML.Scraping
                     _useMarketFallbackForAiDegeneracy,
                     GetRaceGoingSnapshot(),
                     scheduleRegion: GetActiveScheduleRegion(),
-                    raceGoingByVenueLookup: GetRaceGoingByVenueSnapshot());
+                    raceGoingByVenueLookup: GetRaceGoingByVenueSnapshot(),
+                    computeFeatureContributions: showFeatureSignificance);
                 Console.WriteLine("[DayReport][Stage] Scraping open race tabs and executing AI probability calculations.");
                 var races = scraper.ScrapeOpenRaceTabsForReport(_driver);
                 Console.WriteLine($"[DayReport][Stage] Scrape complete; {races.Count} race(s) captured for the day report.");

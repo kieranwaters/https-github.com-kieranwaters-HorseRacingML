@@ -58,6 +58,15 @@
                         </select>
                         <div class="form-text">Choose which Betfair region to expand automatically.</div>
                     </div>
+                    <div class="col-12">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="showFeatureSignificanceCheck" name="showFeatureSignificance" value="true" @(Model.ShowFeatureSignificance ? "checked" : "")>
+                            <label class="form-check-label" for="showFeatureSignificanceCheck">
+                                Calculate feature significance
+                            </label>
+                        </div>
+                        <div class="form-text">Calculate how much each input contributed to the AI's score (slower).</div>
+                    </div>
                     <div class="col-12 d-flex justify-content-between flex-wrap gap-2 mt-3">
                         <a asp-action="Index" asp-controller="Home" class="btn btn-outline-secondary">Back to dashboard</a>
                         <button type="submit" class="btn btn-primary">Generate day report</button>
