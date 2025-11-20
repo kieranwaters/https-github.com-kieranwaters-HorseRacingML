@@ -513,7 +513,51 @@ namespace HorseRacingML.ML
                     runnerRow["DistanceBeatenKnown"] = distanceKnown;
                     runnerRow["DistanceBeatenLengths"] = beatenLengths;
                 }
-               
+                // =================================================================================
+                // Stage 1 (Pre-Computation): Compute individual runner stats needed for race aggregates
+                // Purpose: Calculate history-dependent features for each runner so that race-level
+                //          averages (e.g. AvgSpeedLast5 for the field) can be computed correctly.
+                // =================================================================================
+                foreach (var row in rows)
+                {
+                    int horseId = PreparedDataset.GetRequiredInt32(row, "HorseId");
+                    DateTime date = (DateTime)row["RaceDate"];
+
+                    if (!_horseHistory.TryGetValue(horseId, out var history))
+                    {
+                        history = new List<HistoryEntry>();
+                        _horseHistory[horseId] = history;
+                    }
+
+                    int careerStarts = history.Count;
+                    int careerWins = history.Count(h => h.Won);
+                    row["CareerStarts"] = careerStarts;
+                    row["LifetimeWinRate"] = _trainer.SmoothedWinRate(careerWins, careerStarts);
+
+                    int winsLast5 = 0;
+                    int countLast5 = 0;
+                    double sumSpeedLast5 = 0;
+                    int countSpeedLast5 = 0;
+
+                    if (history.Count > 0)
+                    {
+                        var recent5 = history.GetRange(Math.Max(0, history.Count - 5), Math.Min(5, history.Count));
+                        winsLast5 = recent5.Count(h => h.Won);
+                        countLast5 = recent5.Count;
+
+                        foreach (var h in recent5)
+                        {
+                            if (h.HasSpeed)
+                            {
+                                sumSpeedLast5 += h.Speed;
+                                countSpeedLast5++;
+                            }
+                        }
+                    }
+
+                    row["WinRateLast5"] = _trainer.SmoothedWinRate(winsLast5, countLast5);
+                    row["AvgSpeedLast5"] = countSpeedLast5 > 0 ? (float)(sumSpeedLast5 / countSpeedLast5) : 0f;
+                }
                 // =================================================================================
                 // Stage 2: Compute race-level statistics
                 // Purpose: Aggregate stats from all runners now that per-horse features are ready.
@@ -1949,25 +1993,7 @@ namespace HorseRacingML.ML
 
                 if (includeRace)
                 {
-                    float ResolveRunnerSpeed(Dictionary<string, object?> row)
-                    {
-                        if (row == null)
-                        {
-                            return 0f;
-                        }
-                        if (!row.TryGetValue("AvgSpeedLast5", out var value) || value == null)
-                        {
-                            return 0f;
-                        }
-                        try
-                        {
-                            return Convert.ToSingle(value);
-                        }
-                        catch
-                        {
-                            return 0f;
-                        }
-                    }
+                    // Re-calculate aggregates for safety (though they should match Stage 2)
 
                     float raceAvgWinRate = rows
                         .Select(r => r.ContainsKey("WinRateLast5") && r["WinRateLast5"] != null ? Convert.ToSingle(r["WinRateLast5"]) : 0f)
@@ -1976,8 +2002,8 @@ namespace HorseRacingML.ML
 
                     foreach (var raceRow in rows)
                     {
-                        var runnerSpeed = ResolveRunnerSpeed(raceRow);
-                        raceRow["RaceAvgSpeedLast5"] = runnerSpeed;
+                        // Use the already computed RaceStats values directly where possible
+                        raceRow["RaceAvgSpeedLast5"] = raceStat.AvgSpeedLast5;
                         raceRow["RaceAvgWinRateLast5"] = raceAvgWinRate;
 
                         if (!raceRow.TryGetValue("RatingSlope", out var slope) || slope is null)
@@ -2674,14 +2700,8 @@ namespace HorseRacingML.ML
                     $"[TrainAI] Dataset preparation finished. {races.Count} races ready ({includedRunnerRows:N0} runner rows retained).");
                 return new PreparedDataset(races);
             }
-            private void ApplyRepositoryBackfills(List<PreparedRace> races, bool includeIdentifiers)
+            public void ApplyRepositoryBackfills(List<PreparedRace> races, bool includeIdentifiers)
             {
-                if (races is null || races.Count == 0)
-                {
-                    Console.WriteLine("[TrainAI] No races supplied for repository backfills.");
-                    return;
-                }
-
                 var repository = _trainer.EnsureRacingRepository();
                 if (repository is null)
                 {
