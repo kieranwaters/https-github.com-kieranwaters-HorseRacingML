@@ -465,16 +465,18 @@ namespace HorseRacingML.ML
             int valEnd = foldIndex == foldCount - 1 ? totalRaces : valStart + foldSize;
 
             var trainRaceIds = dataset.Races
-                .Select((race, idx) => new { race, idx })
-                .Where(x => x.idx < valStart || x.idx >= valEnd)
-                .Select(x => x.race.RaceId)
-                .ToHashSet();
+                           .Select((race, idx) => new { race, idx })
+                           .Where(x => x.idx < valStart)
+                           .Select(x => x.race.RaceId)
+                           .ToHashSet();
 
             if (trainRaceIds.Count == 0)
             {
-                trainRaceIds = dataset.Races
-                    .Select(r => r.RaceId)
-                    .ToHashSet();
+                // In time-series validation, the first fold often has no historical data to train on.
+                // In this case, we cannot train, so we return a dummy result to allow the process to continue
+                // (e.g., if iterating through folds).
+                Console.WriteLine($"[TrainAI] Fold {foldIndex} resulted in an empty training set (likely the first chronological block). Skipping training for this fold.");
+                return new TrainingResult();
             }
 
             var validationRaceIds = dataset.Races
