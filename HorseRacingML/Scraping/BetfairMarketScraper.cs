@@ -25,6 +25,7 @@ namespace HorseRacingML.Scraping
         private readonly MaxStakeMode _maxStakeMode;
         private readonly decimal? _maxStakePercentOfBankroll;
         private readonly decimal? _maxStakeFixedAmount;
+        private readonly bool _showFeatureSignificance;
         private readonly bool _computeAiProbabilities;
         private readonly bool _computeFeatureContributions;
         private static IReadOnlyList<string>? _neuralFeatureKeys;

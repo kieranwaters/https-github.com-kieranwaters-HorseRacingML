@@ -113,6 +113,7 @@ namespace HorseRacingML.Models
         public string? RaceDetails { get; set; }
         public string? RaceType { get; set; }
         public string? Going { get; set; }
+        public Dictionary<string, double>? FeatureContributions { get; set; }
         public decimal? BackBookPercentage { get; set; }
         public decimal? LayBookPercentage { get; set; }
         public string? RaceUrl { get; set; }

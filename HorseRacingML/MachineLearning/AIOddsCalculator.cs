@@ -606,6 +606,138 @@ namespace HorseRacingML.ML
             var marketId = string.IsNullOrWhiteSpace(flow.MarketId) ? "<unknown>" : flow.MarketId;
             Console.WriteLine($"[AI] Unable to use trained model for {runnerId} in market {marketId}: {reason}.");
         }
+        public void CalculateFeatureContributions(RunnerFlow flow, out Dictionary<string, double> contributions)
+        {
+            contributions = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+            if (!_hasTrainedModel || flow == null || !flow.HasPreparedFeatures ||
+                _metadata == null || _mean == null || _std == null ||
+                _outputWeights == null || _outputBias == null)
+            {
+                return;
+            }
+
+            var rawFeatures = BuildRawFeatureMap(flow);
+            var encoded = EncodeFeatures(rawFeatures);
+            if (encoded == null || encoded.Length != _featureCount)
+            {
+                return;
+            }
+
+            var normalized = new double[_featureCount];
+            for (int i = 0; i < _featureCount; i++)
+            {
+                var val = double.IsFinite(encoded[i]) ? encoded[i] : 0d;
+                var m = double.IsFinite(_mean[i]) ? _mean[i] : 0d;
+                var s = (double.IsFinite(_std[i]) && Math.Abs(_std[i]) > 1e-8) ? _std[i] : 0d;
+                normalized[i] = s != 0 ? (val - m) / s : 0d;
+            }
+
+            // Forward pass, caching inputs/masks
+            var layerInputs = new List<double[]>();
+            var currentActivations = normalized;
+
+            foreach (var t in _hiddenWeights)
+            {
+                layerInputs.Add(currentActivations); // Input to this layer
+                // We need to know the pre-activation for ReLU derivative, 
+                // or just the output (since ReLU(x) > 0 iff x > 0).
+                // Multiply handles the linear part.
+                // We need to re-calculate the linear output to know the sign.
+            }
+
+            // Actually, let's do it step-by-step properly
+            var activations = new List<double[]>();
+            activations.Add(normalized); // Layer 0 input
+
+            for (int i = 0; i < _hiddenWeights.Count; i++)
+            {
+                var input = activations.Last();
+                var linear = Multiply(input, _hiddenWeights[i], _hiddenBiases[i]);
+                var output = ApplyRelu(linear);
+                activations.Add(output);
+            }
+
+            // Backward pass
+            // Gradient of logit w.r.t logit is 1.0
+            var gradOutput = new double[] { 1.0 };
+
+            // Backprop through output layer (Linear)
+            // gradInput = W^T * gradOutput
+            var gradPrev = MultiplyTranspose(gradOutput, _outputWeights);
+
+            // Backprop through hidden layers
+            for (int i = _hiddenWeights.Count - 1; i >= 0; i--)
+            {
+                var outputOfLayer = activations[i + 1]; // This is the ReLU output
+
+                // Derivative of ReLU: 1 if output > 0, else 0
+                var gradRelu = new double[gradPrev.Length];
+                for (int j = 0; j < gradPrev.Length; j++)
+                {
+                    gradRelu[j] = outputOfLayer[j] > 0 ? gradPrev[j] : 0d;
+                }
+
+                // Backprop through Linear
+                gradPrev = MultiplyTranspose(gradRelu, _hiddenWeights[i]);
+            }
+
+            // gradPrev is now gradient w.r.t. normalized inputs
+            // Contribution = Input * Gradient (Saliency map approx)
+            // Note: Input here refers to the normalized input seen by the network.
+            var inputGrads = gradPrev;
+
+            int offset = 0;
+            foreach (var key in _metadata.Keys)
+            {
+                if (!_metadata.FeatureDimensions.TryGetValue(key, out var dim) || dim <= 0)
+                {
+                    continue;
+                }
+
+                double keyContribution = 0;
+                for (int i = 0; i < dim; i++)
+                {
+                    var index = offset + i;
+                    if (index < inputGrads.Length)
+                    {
+                        // Contribution = NormalizedInput * Gradient
+                        keyContribution += normalized[index] * inputGrads[index];
+                    }
+                }
+
+                contributions[key] = keyContribution;
+                offset += dim;
+            }
+        }
+
+        private static double[] MultiplyTranspose(double[] gradients, double[][] weights)
+        {
+            // gradients is vector of length M (output dim)
+            // weights is input_dim x output_dim
+            // result is vector of length N (input dim)
+            // result[i] = sum(weights[i][j] * gradients[j])
+
+            if (weights.Length == 0) return Array.Empty<double>();
+            int inputDim = weights.Length;
+            int outputDim = weights[0].Length;
+
+            if (gradients.Length != outputDim)
+                throw new InvalidOperationException($"Gradient dimension mismatch. Expected {outputDim}, got {gradients.Length}");
+
+            var result = new double[inputDim];
+            for (int i = 0; i < inputDim; i++)
+            {
+                double sum = 0;
+                var row = weights[i];
+                // row length should be outputDim
+                for (int j = 0; j < Math.Min(row.Length, outputDim); j++)
+                {
+                    sum += row[j] * gradients[j];
+                }
+                result[i] = sum;
+            }
+            return result;
+        }
         private static void AppendFallbackDetail(RunnerFlow? flow, string detail)
         {
             if (flow == null || string.IsNullOrWhiteSpace(detail))
