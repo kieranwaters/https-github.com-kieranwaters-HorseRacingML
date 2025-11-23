@@ -618,7 +618,7 @@ namespace HorseRacingML.ML
 
             var rawFeatures = BuildRawFeatureMap(flow);
             var encoded = EncodeFeatures(rawFeatures);
-            if (encoded == null || encoded.Length != _featureCount)
+            if (encoded == null || encoded.Values.Length != _featureCount)
             {
                 return;
             }
@@ -626,7 +626,13 @@ namespace HorseRacingML.ML
             var normalized = new double[_featureCount];
             for (int i = 0; i < _featureCount; i++)
             {
-                var val = double.IsFinite(encoded[i]) ? encoded[i] : 0d;
+                if (!encoded.Active[i])
+                {
+                    normalized[i] = 0d;
+                    continue;
+                }
+
+                var val = double.IsFinite(encoded.Values[i]) ? encoded.Values[i] : 0d;
                 var m = double.IsFinite(_mean[i]) ? _mean[i] : 0d;
                 var s = (double.IsFinite(_std[i]) && Math.Abs(_std[i]) > 1e-8) ? _std[i] : 0d;
                 normalized[i] = s != 0 ? (val - m) / s : 0d;
