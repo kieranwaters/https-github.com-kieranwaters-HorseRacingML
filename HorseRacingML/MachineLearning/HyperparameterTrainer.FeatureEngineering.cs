@@ -1,4 +1,5 @@
-﻿using Dapper;
+﻿
+using Dapper;
 using HorseRacingML.Data;
 using HorseRacingML.Models;
 using Microsoft.Data.SqlClient;
@@ -993,8 +994,8 @@ namespace HorseRacingML.ML
                             row[$"CourseAvgNormLast{window}"] = 0f;
                             row[$"DistanceBucketWinRateLast{window}"] = _trainer.SmoothedWinRate(0, 0);
                             row[$"DistanceBucketAvgNormLast{window}"] = 0f;
-                        
-                    }
+
+                        }
 
                         int recentTop3 = recent.Count(h => h.Finish.HasValue && h.Finish.Value > 0 && h.Finish.Value <= 3);
                         int recentTop5 = recent.Count(h => h.Finish.HasValue && h.Finish.Value > 0 && h.Finish.Value <= 5);
@@ -1120,12 +1121,7 @@ namespace HorseRacingML.ML
                     row["GoingWinRate"] = _trainer.SmoothedWinRate(gStats.wins, gStats.starts);
                     row["GoingAvgNorm"] = gStats.starts > 0 ? gStats.sumNorm / gStats.starts : 0f;
                     row["LastGoingNormPos"] = gStats.lastNorm;
-                    var goingFeatureKey = Regex.Replace(going, "[^a-zA-Z0-9]", "");
-                    if (goingFeatureKey.Length > 50)
-                    {
-                        goingFeatureKey = goingFeatureKey.Substring(0, 50);
-                    }
-                    row[$"LayoffNormalized_{goingFeatureKey}"] = (float)row["LayoffNormalized"];
+                    row[$"LayoffNormalized_{SanitizeGoing(going)}"] = (float)row["LayoffNormalized"];
 
                     if (!_surfaceStats.TryGetValue(horseId, out var sDict))
                     {
@@ -2066,6 +2062,113 @@ namespace HorseRacingML.ML
                 var collapsed = HorseNameWhitespaceRegex.Replace(withoutBracketed, " ").Trim();
 
                 return string.IsNullOrEmpty(collapsed) ? trimmed : collapsed;
+            }
+            private int ResolveHorseId(SqlConnection conn, string horseName)
+            {
+                const string sql = "SELECT TOP (1) HorseId FROM Horse WHERE Name = @Name ORDER BY HorseId";
+                var normalizedName = NormalizeHorseNameForLookup(horseName);
+                var existing = conn.QuerySingleOrDefault<int?>(sql, new { Name = normalizedName });
+                if (existing.HasValue)
+                {
+                    return existing.Value;
+                }
+
+                var syntheticSeed = string.IsNullOrWhiteSpace(normalizedName) ? horseName : normalizedName;
+                return GenerateSyntheticId("horse:" + syntheticSeed);
+            }
+
+            private int? ResolveJockeyId(SqlConnection conn, string jockeyName)
+            {
+                const string sql = "SELECT TOP (1) JockeyId FROM Jockey WHERE Name = @Name ORDER BY JockeyId";
+                var existing = conn.QuerySingleOrDefault<int?>(sql, new { Name = jockeyName });
+                if (existing.HasValue)
+                {
+                    return existing.Value;
+                }
+                Console.WriteLine($"\t\tNo match found in Jockey.Name for '{jockeyName}'; jockey history will be unavailable.");
+                return null;
+            }
+
+            private static int GenerateSyntheticId(string value)
+            {
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    return int.MaxValue;
+                }
+
+                unchecked
+                {
+                    int hash = 17;
+                    hash = hash * 31 + StringComparer.OrdinalIgnoreCase.GetHashCode(value.Trim());
+                    return 0x60000000 | (hash & 0x0FFFFFFF);
+                }
+            }
+
+            private static string NormalizeLookupKey(string? value)
+            {
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    return string.Empty;
+                }
+
+                var lower = value.Trim().ToLowerInvariant();
+                lower = System.Text.RegularExpressions.Regex.Replace(lower, "[^a-z0-9]+", " ");
+                lower = System.Text.RegularExpressions.Regex.Replace(lower, "\\s+", " ").Trim();
+                return lower;
+            }
+
+            private static string SanitizeGoing(string raw)
+            {
+                if (string.IsNullOrWhiteSpace(raw))
+                {
+                    return "Unknown";
+                }
+
+                // Case-insensitive matching for standard UK/IRE/US going types
+                // If the raw string contains one of these, we normalize to it.
+                // Order matters: match more specific terms first if needed, though most are distinct.
+                var lower = raw.Trim().ToLowerInvariant();
+
+                if (lower.Contains("heavy")) return "Heavy";
+                if (lower.Contains("soft"))
+                {
+                    if (lower.Contains("good")) return "GoodToSoft"; // "Good to Soft" or "Soft, Good in places" -> treat as mixed/soft-side
+                    if (lower.Contains("yielding")) return "YieldingToSoft";
+                    return "Soft";
+                }
+                if (lower.Contains("yielding"))
+                {
+                    if (lower.Contains("good")) return "GoodToYielding";
+                    return "Yielding";
+                }
+                if (lower.Contains("firm"))
+                {
+                    if (lower.Contains("good")) return "GoodToFirm";
+                    if (lower.Contains("hard")) return "Hard";
+                    return "Firm";
+                }
+                if (lower.Contains("good")) return "Good"; // Catch-all for "Good" if not caught above
+                if (lower.Contains("standard"))
+                {
+                    if (lower.Contains("slow")) return "StandardToSlow";
+                    if (lower.Contains("fast")) return "StandardToFast";
+                    return "Standard";
+                }
+                if (lower.Contains("slow")) return "Slow";
+                if (lower.Contains("fast")) return "Fast";
+                if (lower.Contains("sloppy")) return "Sloppy";
+                if (lower.Contains("muddy")) return "Muddy";
+                if (lower.Contains("frozen")) return "Frozen";
+
+                // If no standard keyword is found, fallback to alphanumeric sanitization
+                // but truncated to avoid massive keys from junk data.
+                var alphanumeric = System.Text.RegularExpressions.Regex.Replace(raw, "[^a-zA-Z0-9]", "");
+                if (alphanumeric.Length > 20)
+                {
+                    alphanumeric = alphanumeric.Substring(0, 20);
+                }
+
+                return string.IsNullOrEmpty(alphanumeric) ? "Unknown" : alphanumeric;
             }
             private RaceStats ComputeRaceStats(List<Dictionary<string, object?>> rows)
             {
