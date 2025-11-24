@@ -623,8 +623,7 @@ namespace HorseRacingML.ML
             featureDims["CareerStarts"] = 1;
             featureDims["LifetimeWinRate"] = 1;
             featureDims["DrawBias"] = 1;
-            featureDims["DistanceBeatenLengths"] = 1;
-            featureDims["DistanceBeatenKnown"] = 1;
+            featureDims["LastDistanceBeatenLengths"] = 1;
             featureDims["SaddleclothMissing"] = 1;
             featureDims["SaddleclothRelative"] = 1;
             featureDims["SaddleclothDiffFromMean"] = 1;

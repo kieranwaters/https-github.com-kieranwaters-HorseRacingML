@@ -152,7 +152,8 @@ namespace HorseRacingML.ML
             bool HasSpeed,
             bool HasWinningTime,
             float? WinningTimeMs,
-            float? DistanceYards);
+            float? DistanceYards,
+            float? DistanceBeatenLengths);
         private static float ClampNormalizedPosition(float value)
         {
             if (float.IsNaN(value))
@@ -767,6 +768,14 @@ namespace HorseRacingML.ML
                             ? previous.Speed / previous.RaceSpeed
                             : 0f;
                         row["SpeedMissing"] = !previous.HasSpeed;
+                        if (previous.DistanceBeatenLengths.HasValue)
+                        {
+                            row["LastDistanceBeatenLengths"] = previous.DistanceBeatenLengths.Value;
+                        }
+                        else
+                        {
+                            row["LastDistanceBeatenLengths"] = 0f;
+                        }
                     }
                     else
                     {
@@ -776,6 +785,7 @@ namespace HorseRacingML.ML
                         row["SpeedDiff"] = 0f;
                         row["SpeedRatio"] = 0f;
                         row["SpeedMissing"] = true;
+                        row["LastDistanceBeatenLengths"] = 0f;
                     }
 
                     row["HistoricalDataMissing"] = history.Count == 0;
@@ -1633,7 +1643,8 @@ namespace HorseRacingML.ML
                             hasRunnerSpeed,
                             winningTimeAvailable,
                             winningTimeAvailable ? (float?)currentWinningTimeMs : null,
-                            distanceMissing ? null : (float?)distanceYards));
+                            distanceMissing ? null : (float?)distanceYards,
+                            (float)beatenLengths));
 
                         if (history.Count > HistoryLength)
                             history.RemoveAt(0);
@@ -2446,6 +2457,9 @@ namespace HorseRacingML.ML
             "TrainerId",
             "JockeyId",
             "DistanceBeatenText",
+            "DistanceBeatenLengths",
+            "DistanceBeatenKnown",
+            "OutcomeCode",
             "SP_Fraction",
             "SP_Decimal",
             "OpeningFraction",
@@ -4891,7 +4905,8 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
                         HasSpeed: sample.HasSpeed,
                         HasWinningTime: false,
                         WinningTimeMs: null,
-                        DistanceYards: null));
+                        DistanceYards: null,
+                        DistanceBeatenLengths: 0f));
                 }
 
                 var selected = FeatureEngineeringState.TakeRecentEntries(entries, window, h => h.HasSpeed);
