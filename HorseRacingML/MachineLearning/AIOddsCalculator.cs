@@ -34,7 +34,7 @@ namespace HorseRacingML.ML
         private static bool _gpuStatusLogged;
 
         private static readonly DateTime BaseDate = new DateTime(2005, 1, 1);
-        private static readonly int[] PerformanceWindows = { 1, 3, 5, 10, 15, 20, 25, 30, 50, 100 };
+        private static readonly int[] PerformanceWindows = { 1, 2, 3, 4, 5, 10, 15, 20, 25, 30, 50, 100 };
 
         private void ExcludeFeaturesWithInsufficientData(Dictionary<string, object?> rawFeatures)
         {

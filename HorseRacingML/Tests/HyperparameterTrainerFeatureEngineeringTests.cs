@@ -88,33 +88,105 @@ namespace HorseRacingML.Tests
         }
 
         [Fact]
-        public void ExcludeFeaturesWithInsufficientData_RemovesCorrectFeatures()
+        public void ProcessRace_StrictWindowLogic_RemovesFeaturesIfInsufficientHistory()
         {
             // Arrange
-            var calculator = new AIOddsCalculator("fakepath"); // Path doesn't matter for this test
-            var method = typeof(AIOddsCalculator).GetMethod("ExcludeFeaturesWithInsufficientData", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-
-            var rawFeatures = new Dictionary<string, object?>(System.StringComparer.OrdinalIgnoreCase)
+            var state = new HyperparameterTrainer.FeatureEngineeringState(_trainer);
+            var horseId = 1;
+            var history = new List<HyperparameterTrainer.HistoryEntry>
             {
-                { "CareerStarts", 20 },
-                { "WinRateLast10", 0.5f },
-                { "AvgNormPosLast10", 0.6f },
-                { "WinRateLast25", 0.4f }, // Should be removed
-                { "AvgNormPosLast25", 0.5f }, // Should be removed
-                { "WinRateLast100", 0.3f }, // Should be removed
-                { "AvgNormPosLast100", 0.4f } // Should be removed
+                new(new DateTime(2023, 1, 1), 0.5f, 2, "Good", "Turf", 1, "Sprint", 1, 40f, 41f, 1f, 3, true, 80f, 130f, true, true, 20000, 1000, 0f),
+                new(new DateTime(2023, 2, 1), 0.6f, 3, "Soft", "Turf", 1, "Sprint", 1, 38f, 37f, -1f, 3, false, 81f, 130f, true, true, 22000, 1000, 0f),
+                // Only 2 races in history.
+            };
+
+            var horseHistoryField = typeof(HyperparameterTrainer.FeatureEngineeringState).GetField("_horseHistory", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            var horseHistoryDict = (Dictionary<int, List<HyperparameterTrainer.HistoryEntry>>)horseHistoryField.GetValue(state);
+            horseHistoryDict[horseId] = history;
+
+            var raceData = new List<Dictionary<string, object?>>
+            {
+                new()
+                {
+                    { "RaceId", 100 },
+                    { "HorseId", horseId },
+                    { "RaceDate", new DateTime(2023, 3, 1) },
+                    { "Going", "Good" },
+                    { "Surface", "Turf" },
+                    { "RunnerCount", 10 },
+                    { "FinishPos", (short)1 }
+                }
             };
 
             // Act
-            method.Invoke(calculator, new object[] { rawFeatures });
+            state.ProcessRace(raceData, includeRace: true, updateState: false);
+            var row = raceData.First();
 
             // Assert
-            Assert.Contains("WinRateLast10", rawFeatures.Keys);
-            Assert.Contains("AvgNormPosLast10", rawFeatures.Keys);
-            Assert.DoesNotContain("WinRateLast25", rawFeatures.Keys);
-            Assert.DoesNotContain("AvgNormPosLast25", rawFeatures.Keys);
-            Assert.DoesNotContain("WinRateLast100", rawFeatures.Keys);
-            Assert.DoesNotContain("AvgNormPosLast100", rawFeatures.Keys);
+            // Window 1 (History 2 >= 1): Should exist
+            Assert.True(row.ContainsKey("WinRateLast1"));
+            Assert.True(row.ContainsKey("AvgNormPosLast1"));
+
+            // Window 2 (History 2 >= 2): Should exist (newly added window)
+            Assert.True(row.ContainsKey("WinRateLast2"));
+            Assert.True(row.ContainsKey("AvgNormPosLast2"));
+
+            // Window 3 (History 2 < 3): Should NOT exist
+            Assert.False(row.ContainsKey("WinRateLast3"));
+            Assert.False(row.ContainsKey("AvgNormPosLast3"));
+
+            // Window 5 (History 2 < 5): Should NOT exist
+            Assert.False(row.ContainsKey("WinRateLast5"));
+            Assert.False(row.ContainsKey("AvgNormPosLast5"));
+
+            // Stage 1 features
+            Assert.False(row.ContainsKey("WinRateLast5")); // Stage 1
+            Assert.False(row.ContainsKey("AvgSpeedLast5")); // Stage 1
+        }
+
+        [Fact]
+        public void ProcessRace_GeneratesNewWindowFeatures_2_and_4()
+        {
+            // Arrange
+            var state = new HyperparameterTrainer.FeatureEngineeringState(_trainer);
+            var horseId = 1;
+            var history = new List<HyperparameterTrainer.HistoryEntry>();
+            for (int i = 0; i < 5; i++)
+            {
+                history.Add(new(new DateTime(2023, 1, 1).AddDays(i), 0.5f, 2, "Good", "Turf", 1, "Sprint", 1, 40f, 41f, 1f, 3, true, 80f, 130f, true, true, 20000, 1000, 0f));
+            }
+            // History count is 5.
+
+            var horseHistoryField = typeof(HyperparameterTrainer.FeatureEngineeringState).GetField("_horseHistory", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            var horseHistoryDict = (Dictionary<int, List<HyperparameterTrainer.HistoryEntry>>)horseHistoryField.GetValue(state);
+            horseHistoryDict[horseId] = history;
+
+            var raceData = new List<Dictionary<string, object?>>
+            {
+                new()
+                {
+                    { "RaceId", 100 },
+                    { "HorseId", horseId },
+                    { "RaceDate", new DateTime(2023, 3, 1) },
+                    { "Going", "Good" },
+                    { "Surface", "Turf" },
+                    { "RunnerCount", 10 },
+                    { "FinishPos", (short)1 }
+                }
+            };
+
+            // Act
+            state.ProcessRace(raceData, includeRace: true, updateState: false);
+            var row = raceData.First();
+
+            // Assert
+            // Window 2 should be present
+            Assert.True(row.ContainsKey("WinRateLast2"));
+            Assert.True(row.ContainsKey("AvgNormPosLast2"));
+
+            // Window 4 should be present
+            Assert.True(row.ContainsKey("WinRateLast4"));
+            Assert.True(row.ContainsKey("AvgNormPosLast4"));
         }
         [Fact]
         public void ProcessRace_HandlesPulledUpOutcome()
