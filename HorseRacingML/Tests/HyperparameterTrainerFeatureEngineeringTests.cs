@@ -36,13 +36,13 @@ namespace HorseRacingML.Tests
             var history = new List<HyperparameterTrainer.HistoryEntry>
             {
                 // Older races
-                new(new DateTime(2023, 1, 1), 0.5f, 2, "Good", "Turf", 1, "Sprint", 1, 40f, 41f, 1f, 3, true, 80f, 130f, true, true, 20000, 1000),
-                new(new DateTime(2023, 2, 1), 0.6f, 3, "Soft", "Turf", 1, "Sprint", 1, 38f, 37f, -1f, 3, false, 81f, 130f, true, true, 22000, 1000),
-                new(new DateTime(2023, 3, 1), 0.9f, 1, "Good", "Turf", 1, "Sprint", 1, 42f, 43f, 1f, 3, true, 85f, 130f, true, true, 19000, 1000),
-                new(new DateTime(2023, 4, 1), 0.4f, 5, "Heavy", "Turf", 1, "Sprint", 1, 35f, 36f, 1f, 3, false, 83f, 130f, true, true, 24000, 1000),
-                new(new DateTime(2023, 5, 1), 0.8f, 2, "Good", "Turf", 1, "Sprint", 1, 41f, 42f, 1f, 3, false, 88f, 130f, true, true, 19500, 1000),
+                new(new DateTime(2023, 1, 1), 0.5f, 2, "Good", "Turf", 1, "Sprint", 1, 40f, 41f, 1f, 3, true, 80f, 130f, true, true, 20000, 1000, 0f),
+                new(new DateTime(2023, 2, 1), 0.6f, 3, "Soft", "Turf", 1, "Sprint", 1, 38f, 37f, -1f, 3, false, 81f, 130f, true, true, 22000, 1000, 0f),
+                new(new DateTime(2023, 3, 1), 0.9f, 1, "Good", "Turf", 1, "Sprint", 1, 42f, 43f, 1f, 3, true, 85f, 130f, true, true, 19000, 1000, 0f),
+                new(new DateTime(2023, 4, 1), 0.4f, 5, "Heavy", "Turf", 1, "Sprint", 1, 35f, 36f, 1f, 3, false, 83f, 130f, true, true, 24000, 1000, 0f),
+                new(new DateTime(2023, 5, 1), 0.8f, 2, "Good", "Turf", 1, "Sprint", 1, 41f, 42f, 1f, 3, false, 88f, 130f, true, true, 19500, 1000, 0f),
                  // This is the 6th race, but the 4th on "Good" going. The window is 5.
-                new(new DateTime(2023, 6, 1), 0.7f, 3, "Good", "All-Weather", 1, "Sprint", 1, 40f, 40f, 0f, 3, false, 90f, 130f, true, true, 20000, 1000),
+                new(new DateTime(2023, 6, 1), 0.7f, 3, "Good", "All-Weather", 1, "Sprint", 1, 40f, 40f, 0f, 3, false, 90f, 130f, true, true, 20000, 1000, 0f),
             };
 
             // Manually set the history for the horse
