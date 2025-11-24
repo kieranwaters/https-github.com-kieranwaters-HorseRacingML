@@ -1607,12 +1607,13 @@ namespace HorseRacingML.ML
                             : 0f;
                         bool distanceBeatenKnown = row.TryGetValue("DistanceBeatenKnown", out var distanceKnownObj) &&
                             distanceKnownObj is bool distanceKnownBool && distanceKnownBool;
+                        float beatenLengths = row.TryGetValue("DistanceBeatenLengths", out var blObj) ? Convert.ToSingle(blObj) : 0f;
+
                         bool hasRunnerSpeed = winningTimeAvailable && distanceBeatenKnown;
                         float runnerSpeed = 0f;
                         if (hasRunnerSpeed)
                         {
-                            float beaten = Convert.ToSingle(row["DistanceBeatenLengths"]);
-                            float runnerTime = currentWinningTimeMs!.Value + beaten * MsPerLength;
+                            float runnerTime = currentWinningTimeMs!.Value + beatenLengths * MsPerLength;
                             runnerSpeed = runnerTime > 0f ? distanceYards / runnerTime : 0f;
                         }
                         float speedDiff = hasRunnerSpeed ? runnerSpeed - raceSpeed : 0f;
