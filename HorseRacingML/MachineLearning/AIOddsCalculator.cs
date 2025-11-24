@@ -371,10 +371,40 @@ namespace HorseRacingML.ML
                 return;
             }
 
+            // If we have at least one feature for the group (e.g. LayoffNormalized_Standard), we suppress warnings for the missing siblings.
+            var dynamicPrefixes = new[] { "LayoffNormalized_", "RelativeDraw_" };
+            var presentPrefixes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var key in raw.Keys)
+            {
+                foreach (var prefix in dynamicPrefixes)
+                {
+                    if (key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                    {
+                        presentPrefixes.Add(prefix);
+                    }
+                }
+            }
+
             List<string>? missing = null;
             foreach (var key in _metadata.Keys)
             {
                 if (raw.TryGetValue(key, out var value) && value != null)
+                {
+                    continue;
+                }
+
+                bool isSuppressed = false;
+                foreach (var prefix in dynamicPrefixes)
+                {
+                    if (key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) && presentPrefixes.Contains(prefix))
+                    {
+                        isSuppressed = true;
+                        break;
+                    }
+                }
+
+                if (isSuppressed)
                 {
                     continue;
                 }
