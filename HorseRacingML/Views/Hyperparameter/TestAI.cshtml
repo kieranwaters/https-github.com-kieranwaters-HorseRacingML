@@ -109,7 +109,7 @@
                     <tbody>
                         @foreach (var race in day.Races)
                         {
-                            <tr>
+                            <tr class="race-row clickable-row">
                                 <td>@race.RaceTitle</td>
                                 <td>@race.PredictedWinner</td>
                                 <td>@race.ActualWinner</td>
@@ -118,6 +118,32 @@
                                 <td>@race.Stake.ToString("C")</td>
                                 <td>@race.AiOdds.ToString("0.00")</td>
                                 <td>@race.BookmakerOdds.ToString("0.00")</td>
+                            </tr>
+                            <tr class="race-details hidden">
+                                <td colspan="8">
+                                    <div class="p-3">
+                                        <table class="table table-sm table-bordered table-dark mb-0">
+                                            <thead>
+                                                <tr>
+                                                    <th>Horse Name</th>
+                                                    <th>Historical Races</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @if (race.Runners != null)
+                                                {
+                                                    @foreach (var runner in race.Runners)
+                                                    {
+                                                        <tr>
+                                                            <td>@runner.HorseName</td>
+                                                            <td>@runner.HistoricalRaceCount?.ToString() ?? "N/A"</td>
+                                                        </tr>
+                                                    }
+                                                }
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </td>
                             </tr>
                         }
                     </tbody>
@@ -300,5 +326,21 @@
 <a asp-action="TrainAI" class="btn btn-link mt-3">Back to Train AI</a>
 
 @section Scripts {
-    @{await Html.RenderPartialAsync("_ValidationScriptsPartial");}
+    @{
+        await Html.RenderPartialAsync("_ValidationScriptsPartial");
+    }
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const raceRows = document.querySelectorAll('.clickable-row');
+
+            raceRows.forEach(row => {
+                row.addEventListener('click', function () {
+                    const detailsRow = this.nextElementSibling;
+                    if (detailsRow && detailsRow.classList.contains('race-details')) {
+                        detailsRow.classList.toggle('hidden');
+                    }
+                });
+            });
+        });
+    </script>
 }

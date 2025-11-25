@@ -595,7 +595,13 @@ namespace HorseRacingML.Controllers
                 })
                  .OrderBy(r => r.RaceDate)
                 .ToList();
-
+            var allHorseNames = allRaceData
+               .SelectMany(race => race.RaceGroup)
+               .Select(runner => runner.Example.HorseName)
+               .Where(name => !string.IsNullOrWhiteSpace(name))
+               .Distinct()
+               .ToList();
+            var historicalCounts = _repository.GetHistoricalRaceCountsByHorseNames(allHorseNames).CountsByOriginalName;
             var raceIndex = 0;
             foreach (var race in allRaceData)
             {
@@ -688,7 +694,15 @@ namespace HorseRacingML.Controllers
                         }
                     }
                 }
-
+                var runnersForRace = raceGroup.Select(r =>
+                {
+                    historicalCounts.TryGetValue(r.Example.HorseName, out var count);
+                    return new RunnerViewModel
+                    {
+                        HorseName = r.Example.HorseName,
+                        HistoricalRaceCount = count > 0 ? count : (int?)null
+                    };
+                }).ToList();
                 dailyRaceResults.Add(new RaceResultViewModel
                 {
                     RaceId = race.RaceGroup.First().RaceId,
@@ -699,7 +713,8 @@ namespace HorseRacingML.Controllers
                     Bankroll = bankrollBefore,
                     Stake = stake,
                     AiOdds = aiOdds,
-                    BookmakerOdds = predictedWinnerDetails?.Example.StartingPriceDecimal ?? 0m
+                    BookmakerOdds = predictedWinnerDetails?.Example.StartingPriceDecimal ?? 0m,
+                    Runners = runnersForRace
                 });
             }
 

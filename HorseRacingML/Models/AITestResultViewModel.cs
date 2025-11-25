@@ -15,6 +15,13 @@ namespace HorseRacingML.Models
         public decimal Stake { get; set; }
         public decimal AiOdds { get; set; }
         public decimal BookmakerOdds { get; set; }
+        public List<RunnerViewModel> Runners { get; set; }
+    }
+
+    public class RunnerViewModel
+    {
+        public string HorseName { get; set; }
+        public int? HistoricalRaceCount { get; set; }
     }
 
     public class DayResultViewModel

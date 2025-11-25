@@ -36,3 +36,10 @@ body {
 .runner-history-body dl + dl {
     margin-top: 0.5rem;
 }
+clickable-row {
+    cursor: pointer;
+}
+
+.hidden {
+    display: none;
+}
