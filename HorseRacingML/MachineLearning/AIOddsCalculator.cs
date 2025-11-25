@@ -431,8 +431,7 @@ namespace HorseRacingML.ML
                 preview += $", … (+{missing.Count - maxToShow} more)";
             }
 
-            LogDebug(flow,
-                $"Missing raw feature values for {missing.Count} feature keys: {preview}. Those encoded dimensions will be suppressed");
+           
         }
 
         // Feature metadata is generated from the training pipeline and includes

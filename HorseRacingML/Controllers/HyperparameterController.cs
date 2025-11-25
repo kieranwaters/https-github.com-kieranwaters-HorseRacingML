@@ -84,23 +84,9 @@ namespace HorseRacingML.Controllers
                     double totalValidationBrier = 0;
                     double totalValidationFocalLoss = 0;
 
+                    int validFolds = 0;
+
                     for (int i = 0; i < model.Folds; i++)
-                    {
-                        Console.WriteLine($"[Hyperparameter]  Fold {i + 1}/{model.Folds} - training in progress...");
-                        var result = _trainer.Train(model, dataset, i, model.Folds, persistWeights: false);
-                        Console.WriteLine($"[Hyperparameter]  Fold {i + 1}/{model.Folds} complete. Train acc: {result.TrainAccuracy:F4}, val acc: {result.ValidationAccuracy:F4}.");
-
-                        totalTrainAccuracy += result.TrainAccuracy;
-                        totalTrainLoss += result.TrainLoss;
-                        totalTrainBrier += result.TrainBrier;
-                        totalTrainFocalLoss += result.TrainFocalLoss;
-                        totalValidationAccuracy += result.ValidationAccuracy;
-                        totalValidationLoss += result.ValidationLoss;
-                        totalValidationBrier += result.ValidationBrier;
-                        totalValidationFocalLoss += result.ValidationFocalLoss;
-                        int validFolds = 0;
-
-                        for (int i = 0; i < model.Folds; i++)
                         {
                             Console.WriteLine($"[Hyperparameter]  Fold {i + 1}/{model.Folds} - training in progress...");
                             var result = _trainer.Train(model, dataset, i, model.Folds, persistWeights: false);
@@ -154,7 +140,7 @@ namespace HorseRacingML.Controllers
                     }
 
                     Console.WriteLine("[Hyperparameter] Custom run finished.");
-                }
+                
             });
 
             return RedirectToAction("Index", "Home");
