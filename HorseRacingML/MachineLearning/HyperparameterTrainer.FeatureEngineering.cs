@@ -2685,7 +2685,10 @@ namespace HorseRacingML.ML
                 var currentRows = new List<Dictionary<string, object?>>();
                 int? currentRaceId = null;
                 bool ShouldInclude(int raceId) => includeRaceIdSet is null || includeRaceIdSet.Contains(raceId);
-                bool ShouldUpdate(int raceId) => stateRaceWhitelistSet is null || stateRaceWhitelistSet.Contains(raceId);
+                bool ShouldUpdate(int raceId) =>
+                    stateRaceWhitelistSet is null ||
+                    stateRaceWhitelistSet.Contains(raceId) ||
+                    (includeRaceIdSet != null && includeRaceIdSet.Contains(raceId));
                 const int raceProgressInterval = 250;
                 long totalRunnerRows = 0;
                 long includedRunnerRows = 0;
