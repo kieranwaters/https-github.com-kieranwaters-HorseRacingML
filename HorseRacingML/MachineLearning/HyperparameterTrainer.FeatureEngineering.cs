@@ -823,10 +823,14 @@ namespace HorseRacingML.ML
 
                     for (int i = 0; i < PastRaceCount; i++)
                     {
+                        var key = $"Last{i + 1}NormPos";
                         if (i < history.Count)
                         {
-                            var key = $"Last{i + 1}NormPos";
                             row[key] = history[history.Count - 1 - i].NormFinish;
+                        }
+                        else
+                        {
+                            row[key] = 0f;
                         }
                     }
 
