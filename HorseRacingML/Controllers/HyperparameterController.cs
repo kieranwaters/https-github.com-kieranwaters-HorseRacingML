@@ -601,7 +601,7 @@ namespace HorseRacingML.Controllers
                .Where(name => !string.IsNullOrWhiteSpace(name))
                .Distinct()
                .ToList();
-            var historicalCounts = _repository.GetHistoricalRaceCountsByHorseNames(allHorseNames).CountsByOriginalName;
+            var historicalCounts = _repository.GetHistoricalRaceCountsByHorseNames(allHorseNames).CountsByOriginal;
             var raceIndex = 0;
             foreach (var race in allRaceData)
             {
