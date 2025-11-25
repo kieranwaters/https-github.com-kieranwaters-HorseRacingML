@@ -83,6 +83,29 @@
             </div>
         </div>
     </div>
+    <div class="row g-3 mb-3">
+        <div class="col-md-3">
+            <label for="min-starts-filter" class="form-label">Minimum Career Starts</label>
+            <select id="min-starts-filter" class="form-select">
+                @for (int i = 0; i <= 100; i++)
+                {
+                    <option value="@i">@i</option>
+                }
+            </select>
+        </div>
+        <div class="col-md-3">
+            <label for="max-runners-filter" class="form-label">Maximum Runners</label>
+            <select id="max-runners-filter" class="form-select">
+                @for (int i = 0; i <= 100; i++)
+                {
+                    <option value="@i" selected="@(i == 100 ? "selected" : null)">@i</option>
+                }
+            </select>
+        </div>
+        <div class="col-md-3 d-flex align-items-end">
+            <button type="button" id="apply-filters-btn" class="btn btn-secondary">Apply Filters</button>
+        </div>
+    </div>
     <button type="submit" class="btn btn-primary">Test AI</button>
 </form>
 @if (Model.DailyResults != null && Model.DailyResults.Any())
@@ -109,7 +132,10 @@
                     <tbody>
                         @foreach (var race in day.Races)
                         {
-                            <tr class="race-row clickable-row">
+                            var runnerCount = race.Runners?.Count() ?? 0;
+                            var runnerStarts = race.Runners != null ? string.Join(",", race.Runners.Select(r => r.HistoricalRaceCount ?? 0)) : "";
+                            var profit = race.IsCorrectPrediction ? (race.Stake * (race.BookmakerOdds - 1)) : -race.Stake;
+                            <tr class="race-row clickable-row" data-runner-count="@runnerCount" data-runner-starts="@runnerStarts" data-is-correct="@race.IsCorrectPrediction" data-bankroll="@race.Bankroll" data-stake="@race.Stake" data-profit="@profit">
                                 <td>@race.RaceTitle</td>
                                 <td>@race.PredictedWinner</td>
                                 <td>@race.ActualWinner</td>
@@ -209,11 +235,11 @@
                     @Model.ValidationStart.ToString("yyyy-MM-dd") &ndash; @Model.ValidationEnd.ToString("yyyy-MM-dd")
                 </dd>
                 <dt class="col-sm-4">Validation races</dt>
-                <dd class="col-sm-8">@Model.ValidationRaceCount</dd>
+                <dd class="col-sm-8" id="summary-validation-races">@Model.ValidationRaceCount</dd>
                 <dt class="col-sm-4">Training races</dt>
                 <dd class="col-sm-8">@Model.TrainingRaceCount</dd>
                 <dt class="col-sm-4">Validation accuracy</dt>
-                <dd class="col-sm-8">@Model.ValidationAccuracy?.ToString("P2")</dd>
+                <dd class="col-sm-8" id="summary-validation-accuracy">@Model.ValidationAccuracy?.ToString("P2")</dd>
                 <dt class="col-sm-4">Training accuracy</dt>
                 <dd class="col-sm-8">@Model.TrainAccuracy?.ToString("P2")</dd>
                 <dt class="col-sm-4">Validation loss</dt>
@@ -258,15 +284,15 @@
                 <dt class="col-sm-4">Starting bankroll</dt>
                 <dd class="col-sm-8">@Model.Simulation.StartingBankroll.ToString("C")</dd>
                 <dt class="col-sm-4">Ending bankroll</dt>
-                <dd class="col-sm-8">@Model.Simulation.EndingBankroll.ToString("C")</dd>
+                <dd class="col-sm-8" id="summary-ending-bankroll">@Model.Simulation.EndingBankroll.ToString("C")</dd>
                 <dt class="col-sm-4">Profit</dt>
-                <dd class="col-sm-8">@Model.Simulation.Profit.ToString("C")</dd>
+                <dd class="col-sm-8" id="summary-profit">@Model.Simulation.Profit.ToString("C")</dd>
                 <dt class="col-sm-4">Total staked</dt>
-                <dd class="col-sm-8">@Model.Simulation.TotalStaked.ToString("C")</dd>
+                <dd class="col-sm-8" id="summary-total-staked">@Model.Simulation.TotalStaked.ToString("C")</dd>
                 <dt class="col-sm-4">ROI</dt>
-                <dd class="col-sm-8">@Model.Simulation.Roi.ToString("P2")</dd>
+                <dd class="col-sm-8" id="summary-roi">@Model.Simulation.Roi.ToString("P2")</dd>
                 <dt class="col-sm-4">Bets placed</dt>
-                <dd class="col-sm-8">@Model.Simulation.BetCount (Wins: @Model.Simulation.WinCount, Losses: @Model.Simulation.LossCount)</dd>
+                <dd class="col-sm-8" id="summary-bets-placed">@Model.Simulation.BetCount (Wins: @Model.Simulation.WinCount, Losses: @Model.Simulation.LossCount)</dd>
             </dl>
 
             @if (Model.Simulation.Bets != null && Model.Simulation.Bets.Count > 0)
@@ -340,6 +366,76 @@
                         detailsRow.classList.toggle('hidden');
                     }
                 });
+            });
+
+            const applyFiltersBtn = document.getElementById('apply-filters-btn');
+            applyFiltersBtn.addEventListener('click', function () {
+                const minStarts = parseInt(document.getElementById('min-starts-filter').value, 10);
+                const maxRunners = parseInt(document.getElementById('max-runners-filter').value, 10);
+                const allRaceRows = document.querySelectorAll('.race-row');
+
+                // Step 1: Determine visibility for all rows
+                const visibleRows = [];
+                allRaceRows.forEach(row => {
+                    const runnerCount = parseInt(row.dataset.runnerCount, 10);
+                    const runnerStarts = row.dataset.runnerStarts.split(',').map(s => parseInt(s, 10));
+                    const meetsMinStarts = !runnerStarts.some(starts => starts < minStarts);
+                    const meetsMaxRunners = runnerCount <= maxRunners;
+                    const detailsRow = row.nextElementSibling;
+
+                    if (meetsMinStarts && meetsMaxRunners) {
+                        visibleRows.push(row);
+                        row.style.display = '';
+                        if (detailsRow && detailsRow.classList.contains('race-details')) {
+                            detailsRow.style.display = '';
+                        }
+                    } else {
+                        row.style.display = 'none';
+                        if (detailsRow && detailsRow.classList.contains('race-details')) {
+                            detailsRow.style.display = 'none';
+                        }
+                    }
+                });
+
+                // Step 2: Recalculate summaries based on visible rows
+                let correctPredictions = 0;
+                let totalStaked = 0;
+                let winCount = 0;
+                let lossCount = 0;
+                let currentBankroll = parseFloat('@Model.Simulation.StartingBankroll');
+
+                visibleRows.forEach(row => {
+                    if (row.dataset.isCorrect === 'True') {
+                        correctPredictions++;
+                    }
+
+                    const stake = parseFloat(row.dataset.stake);
+                    if (!isNaN(stake) && stake > 0) {
+                        const profit = parseFloat(row.dataset.profit);
+                        currentBankroll += profit;
+                        totalStaked += stake;
+                        if (profit > 0) {
+                            winCount++;
+                        } else {
+                            lossCount++;
+                        }
+                    }
+                });
+
+                // Step 3: Update the summary display
+                const visibleRaceCount = visibleRows.length;
+                const accuracy = visibleRaceCount > 0 ? (correctPredictions / visibleRaceCount) * 100 : 0;
+                const profit = currentBankroll - parseFloat('@Model.Simulation.StartingBankroll');
+                const roi = totalStaked > 0 ? (profit / totalStaked) * 100 : 0;
+                const betsPlaced = winCount + lossCount;
+
+                document.getElementById('summary-validation-races').textContent = visibleRaceCount;
+                document.getElementById('summary-validation-accuracy').textContent = accuracy.toFixed(2) + '%';
+                document.getElementById('summary-ending-bankroll').textContent = currentBankroll.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+                document.getElementById('summary-profit').textContent = profit.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+                document.getElementById('summary-total-staked').textContent = totalStaked.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+                document.getElementById('summary-roi').textContent = roi.toFixed(2) + '%';
+                document.getElementById('summary-bets-placed').textContent = `${betsPlaced} (Wins: ${winCount}, Losses: ${lossCount})`;
             });
         });
     </script>
