@@ -162,7 +162,7 @@
                                                     {
                                                         <tr>
                                                             <td>@runner.HorseName</td>
-                                                            <td>@runner.HistoricalRaceCount?.ToString() ?? "N/A"</td>
+                                                            <td>@(runner.HistoricalRaceCount.HasValue? runner.HistoricalRaceCount.Value.ToString() : "N/A")</td>
                                                         </tr>
                                                     }
                                                 }
@@ -351,7 +351,7 @@
 
 <a asp-action="TrainAI" class="btn btn-link mt-3">Back to Train AI</a>
 
-    @section Scripts {
+@section Scripts {
     @{
         await Html.RenderPartialAsync("_ValidationScriptsPartial");
     }
@@ -370,13 +370,13 @@
 
             // Pass the simulation data safely as a JSON object
             // If simulation is null, this variable becomes null in JS
-            const simulationConfig = @Json.Serialize(Model.Simulation != null 
-                ? new { startingBankroll = Model.Simulation.StartingBankroll } 
-                : null);
+            const simulationConfig = @Json.Serialize(Model.Simulation != null
+                            ? new { startingBankroll = Model.Simulation.StartingBankroll }
+                            : null);
 
-            if (simulationConfig) {
-                const applyFiltersBtn = document.getElementById('apply-filters-btn');
-                
+        if (simulationConfig) {
+            const applyFiltersBtn = document.getElementById('apply-filters-btn');
+
                 applyFiltersBtn.addEventListener('click', function () {
                     const minStarts = parseInt(document.getElementById('min-starts-filter').value, 10);
                     const maxRunners = parseInt(document.getElementById('max-runners-filter').value, 10);
@@ -387,9 +387,9 @@
                     allRaceRows.forEach(row => {
                         const runnerCount = parseInt(row.dataset.runnerCount, 10);
                         const runnerStarts = row.dataset.runnerStarts.split(',').map(s => parseInt(s, 10));
-                        
+
                         // Razor won't complain here anymore because we aren't inside <text>
-                        const meetsMinStarts = !runnerStarts.some(starts => starts < minStarts); 
+                        const meetsMinStarts = !runnerStarts.some(starts => starts < minStarts);
                         const meetsMaxRunners = runnerCount <= maxRunners;
                         const detailsRow = row.nextElementSibling;
 
@@ -407,15 +407,21 @@
                         }
                     });
 
-                    // Step 2: Recalculate summaries based on visible rows
+                    // Step 2: Recalculate summaries and update table based on visible rows
                     let correctPredictions = 0;
                     let totalStaked = 0;
                     let winCount = 0;
                     let lossCount = 0;
-                    // Use the safe variable passed from C#
-                    let currentBankroll = simulationConfig.startingBankroll; 
+                    let currentBankroll = simulationConfig.startingBankroll;
 
                     visibleRows.forEach(row => {
+                        // First, update the bankroll display for the current row
+                        const bankrollCell = row.querySelector('td:nth-child(5)'); // 5th cell is Bankroll
+                        if (bankrollCell) {
+                            bankrollCell.textContent = currentBankroll.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+                        }
+
+                        // Now, calculate the outcome of this race to find the next bankroll value
                         if (row.dataset.isCorrect === 'True') {
                             correctPredictions++;
                         }
@@ -423,7 +429,7 @@
                         const stake = parseFloat(row.dataset.stake);
                         if (!isNaN(stake) && stake > 0) {
                             const profit = parseFloat(row.dataset.profit);
-                            currentBankroll += profit;
+                            currentBankroll += profit; // This now correctly carries over from the previous visible row
                             totalStaked += stake;
                             if (profit > 0) {
                                 winCount++;
@@ -433,20 +439,19 @@
                         }
                     });
 
-                    // Step 3: Update the summary display
+                    // Step 3: Update the summary display with the final calculated values
                     const visibleRaceCount = visibleRows.length;
-                    const accuracy = visibleRaceCount > 0 ? (correctPredictions / visibleRaceCount) * 100 : 0;
-                    // Use the safe variable passed from C#
+                    const accuracy = visibleRaceCount > 0 ? (correctPredictions / visibleRaceCount) : 0;
                     const profit = currentBankroll - simulationConfig.startingBankroll;
-                    const roi = totalStaked > 0 ? (profit / totalStaked) * 100 : 0;
+                    const roi = totalStaked > 0 ? (profit / totalStaked) : 0;
                     const betsPlaced = winCount + lossCount;
 
                     document.getElementById('summary-validation-races').textContent = visibleRaceCount;
-                    document.getElementById('summary-validation-accuracy').textContent = accuracy.toFixed(2) + '%';
+                    document.getElementById('summary-validation-accuracy').textContent = accuracy.toLocaleString('en-US', { style: 'percent', minimumFractionDigits: 2 });
                     document.getElementById('summary-ending-bankroll').textContent = currentBankroll.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
                     document.getElementById('summary-profit').textContent = profit.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
                     document.getElementById('summary-total-staked').textContent = totalStaked.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
-                    document.getElementById('summary-roi').textContent = roi.toFixed(2) + '%';
+                    document.getElementById('summary-roi').textContent = roi.toLocaleString('en-US', { style: 'percent', minimumFractionDigits: 2 });
                     document.getElementById('summary-bets-placed').textContent = `${betsPlaced} (Wins: ${winCount}, Losses: ${lossCount})`;
                 });
             }
