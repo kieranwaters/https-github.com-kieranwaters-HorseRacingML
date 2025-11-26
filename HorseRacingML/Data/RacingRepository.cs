@@ -838,19 +838,22 @@ SELECT Name,
 FROM Horse
 WHERE Name IN @Names;";
 
-            var candidateList = candidateMap.Keys.ToArray();
-            if (candidateList.Length > 0)
+            var candidateList = candidateMap.Keys.ToList();
+            if (candidateList.Count > 0)
             {
-                foreach (var (Name, HorseId) in conn.Query<(string Name, int HorseId)>(horseSql, new { Names = candidateList }))
+                foreach (var chunk in Chunk(candidateList, 1000))
                 {
-                    if (!candidateMap.TryGetValue(Name, out var originals) || originals == null)
+                    foreach (var (Name, HorseId) in conn.Query<(string Name, int HorseId)>(horseSql, new { Names = chunk }))
                     {
-                        continue;
-                    }
+                        if (!candidateMap.TryGetValue(Name, out var originals) || originals == null)
+                        {
+                            continue;
+                        }
 
-                    foreach (var original in originals)
-                    {
-                        AddHorseId(horseIdsByOriginal, original, HorseId);
+                        foreach (var original in originals)
+                        {
+                            AddHorseId(horseIdsByOriginal, original, HorseId);
+                        }
                     }
                 }
             }
@@ -922,17 +925,20 @@ CROSS APPLY (
 ) AS lookup
 WHERE lookup.Normalized IN @Names;";
 
-                    var normalizedKeys = normalizedMap.Keys.ToArray();
-                    foreach (var (Normalized, HorseId) in conn.Query<(string Normalized, int HorseId)>(normalizedHorseSql, new { Names = normalizedKeys }))
+                    var normalizedKeys = normalizedMap.Keys.ToList();
+                    foreach (var chunk in Chunk(normalizedKeys, 1000))
                     {
-                        if (!normalizedMap.TryGetValue(Normalized, out var originals) || originals == null)
+                        foreach (var (Normalized, HorseId) in conn.Query<(string Normalized, int HorseId)>(normalizedHorseSql, new { Names = chunk }))
                         {
-                            continue;
-                        }
+                            if (!normalizedMap.TryGetValue(Normalized, out var originals) || originals == null)
+                            {
+                                continue;
+                            }
 
-                        foreach (var original in originals)
-                        {
-                            AddHorseId(horseIdsByOriginal, original, HorseId);
+                            foreach (var original in originals)
+                            {
+                                AddHorseId(horseIdsByOriginal, original, HorseId);
+                            }
                         }
                     }
                 }
@@ -964,13 +970,16 @@ GROUP BY rr.HorseId;";
 
             var countsByHorseId = new Dictionary<int, int>();
             var winsByHorseId = new Dictionary<int, int>();
-            foreach (var row in conn.Query(countSql, new { HorseIds = distinctHorseIds }))
+            foreach (var chunk in Chunk(distinctHorseIds, 1000))
             {
-                var horseId = (int)row.HorseId;
-                var count = (int)row.RaceCount;
-                var wins = (int)row.WinCount;
-                countsByHorseId[horseId] = count;
-                winsByHorseId[horseId] = wins;
+                foreach (var row in conn.Query(countSql, new { HorseIds = chunk }))
+                {
+                    var horseId = (int)row.HorseId;
+                    var count = (int)row.RaceCount;
+                    var wins = (int)row.WinCount;
+                    countsByHorseId[horseId] = count;
+                    winsByHorseId[horseId] = wins;
+                }
             }
 
             var countsByOriginal = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
@@ -3409,6 +3418,31 @@ END";
         {
             public int RequestIndex { get; set; }
             public int? DistanceYards { get; set; }
+        }
+        private static IEnumerable<IReadOnlyCollection<T>> Chunk<T>(IReadOnlyCollection<T> collection, int size)
+        {
+            if (collection is null)
+            {
+                throw new ArgumentNullException(nameof(collection));
+            }
+
+            if (size <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(size), "Chunk size must be positive.");
+            }
+
+            if (collection.Count == 0)
+            {
+                yield break;
+            }
+
+            var offset = 0;
+            while (offset < collection.Count)
+            {
+                var chunk = collection.Skip(offset).Take(size).ToList();
+                offset += chunk.Count;
+                yield return chunk;
+            }
         }
     }
 }

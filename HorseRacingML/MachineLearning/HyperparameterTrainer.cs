@@ -849,12 +849,6 @@ namespace HorseRacingML.ML
                             {
                                 patienceCounter++;
                             }
-
-                            if (patienceCounter >= patience)
-                            {
-                                Console.WriteLine("Early stopping due to no improvement in validation loss.");
-                                break;
-                            }
                         }
                         else
                         {
