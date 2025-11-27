@@ -74,8 +74,35 @@ namespace HorseRacingML.Controllers
 
                     model.Folds = foldCount;
                     model.RunDate = DateTime.UtcNow;
+                    if (model.TrainFinalFoldOnly && model.Folds > 0)
+                    {
+                        var lastFoldIndex = model.Folds - 1;
+                        Console.WriteLine($"[Hyperparameter]  Training ONLY final fold {lastFoldIndex + 1}/{model.Folds}...");
+                        var result = _trainer.Train(model, dataset, lastFoldIndex, model.Folds, persistWeights: false);
 
-                    double totalTrainAccuracy = 0;
+                        model.TrainAccuracy = result.TrainAccuracy;
+                        model.TrainLoss = result.TrainLoss;
+                        model.TrainBrier = result.TrainBrier;
+                        model.TrainFocalLoss = result.TrainFocalLoss;
+                        model.ValidationAccuracy = result.ValidationAccuracy;
+                        model.ValidationLoss = result.ValidationLoss;
+                        model.ValidationBrier = result.ValidationBrier;
+                        model.ValidationFocalLoss = result.ValidationFocalLoss;
+                        model.Fold = model.Folds; // Store the total fold count (1-based index) as requested
+
+                        if (result.TrainingRaceIds.Count > 0)
+                        {
+                            _repository.InsertMLParameter(model);
+                            Console.WriteLine($"[Hyperparameter]  Final fold complete. Train acc: {result.TrainAccuracy:F4}, val acc: {result.ValidationAccuracy:F4}.");
+                        }
+                        else
+                        {
+                            Console.WriteLine($"[Hyperparameter]  Final fold skipped due to empty training set.");
+                        }
+                    }
+                    else
+                    {
+                        double totalTrainAccuracy = 0;
                     double totalTrainLoss = 0;
                     double totalTrainBrier = 0;
                     double totalTrainFocalLoss = 0;
@@ -134,6 +161,7 @@ namespace HorseRacingML.Controllers
                             };
 
                             _repository.InsertMLParameter(averagedModel);
+                        }
                         }
 
                         Console.WriteLine($"[Hyperparameter] Completed model {modelIndex}/{parameters.Count}.");

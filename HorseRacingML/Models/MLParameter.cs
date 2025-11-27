@@ -31,5 +31,6 @@ namespace HorseRacingML.Models
         public double? ValidationFocalLoss { get; set; }
         public int? Fold { get; set; }
         public double? ValidationBrier { get; set; }
+        public bool TrainFinalFoldOnly { get; set; }
     }
 }
