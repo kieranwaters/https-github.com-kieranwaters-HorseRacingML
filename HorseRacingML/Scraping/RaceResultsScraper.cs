@@ -23,6 +23,7 @@ namespace HorseRacingML.Scraping
         private readonly RacingRepository _repo;
         private readonly ScrapingStatusService _status;
         private const int MaxParallelDrivers = 15;
+        private const int MaxEasternParallelDrivers = 5;
         private static readonly TimeSpan EstimateOutputInterval = TimeSpan.FromMinutes(3);
         private readonly object _estimateLock = new object();
         private DateTime _estimateStartUtc = DateTime.MinValue;
@@ -442,7 +443,7 @@ namespace HorseRacingML.Scraping
 
             var queue = new ConcurrentQueue<DateTime>(dates);
             var tasks = new List<Task>();
-            int workers = Math.Min(MaxParallelDrivers, queue.Count);
+            int workers = Math.Min(MaxEasternParallelDrivers, queue.Count);
 
             for (int i = 0; i < workers; i++)
             {
@@ -452,7 +453,7 @@ namespace HorseRacingML.Scraping
                     svc.HideCommandPromptWindow = true;
                     svc.Port = GetFreeTcpPort();
                     using var driver = new ChromeDriver(svc, BuildChromeOptions(), TimeSpan.FromSeconds(60));
-                    driver.Manage().Timeouts().PageLoad = TimeSpan.FromSeconds(10); // slightly longer for Sky
+                    driver.Manage().Timeouts().PageLoad = TimeSpan.FromSeconds(60); // slightly longer for Sky
                     driver.Manage().Timeouts().AsynchronousJavaScript = TimeSpan.FromSeconds(5);
                     driver.Manage().Timeouts().ImplicitWait = TimeSpan.FromSeconds(0);
 
@@ -479,7 +480,7 @@ namespace HorseRacingML.Scraping
                 driver.Navigate().GoToUrl(url);
 
                 // Wait for content
-                var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10));
+                var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(20));
 
                 // Try to find race links
                 // Based on view_text_website, links might be like /horse-racing-results/country/venue/date/Rn
@@ -1102,6 +1103,6 @@ namespace HorseRacingML.Scraping
         }
         private static byte? ExtractClass(string meta) { if (string.IsNullOrWhiteSpace(meta)) return null; var m = System.Text.RegularExpressions.Regex.Match(meta, @"Class\s*[:\-]?\s*(\d)", System.Text.RegularExpressions.RegexOptions.IgnoreCase); return m.Success ? (byte?)byte.Parse(m.Groups[1].Value) : null; } // Class 1..7
         private static string InferSurface(string meta) { if (string.IsNullOrWhiteSpace(meta)) return null; if (meta.Contains("All Weather", StringComparison.OrdinalIgnoreCase) || meta.Contains("Allweather", StringComparison.OrdinalIgnoreCase)) return "Allweather"; return "Turf"; } // surface
-    
-}
+
+    }
 }
