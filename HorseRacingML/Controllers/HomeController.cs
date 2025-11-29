@@ -577,7 +577,29 @@ namespace HorseRacingML.Controllers
 
             return View(model);
         }
+        public IActionResult ScrapeOptions()
+        {
+            return View();
+        }
 
+        public IActionResult ScrapeEasternResults([FromServices] RaceResultsScraper scraper)
+        {
+            _status.Update($"Eastern Scraping started at {DateTime.Now:G}");
+            Task.Run(() =>
+            {
+                try
+                {
+                    scraper.ScrapeEasternFromDate(new DateTime(2009, 1, 2));
+                    _status.Update($"Eastern Scraping completed at {DateTime.Now:G}");
+                }
+                catch (Exception ex)
+                {
+                    _status.Update($"Eastern Scraping failed: {ex.Message}");
+                }
+            });
+            TempData["Message"] = "Eastern scraping (Sky Racing World) has started.";
+            return RedirectToAction("Index");
+        }
         public IActionResult ScrapeRaceResults([FromServices] RaceResultsScraper scraper)
         {
             _status.Update($"Scraping started at {DateTime.Now:G}");

@@ -1,0 +1,26 @@
+﻿@{
+    ViewData["Title"] = "Scrape Options";
+}
+
+<div class="text-center mt-5">
+    <h1 class="display-4">Select Scrape Region</h1>
+    <p class="lead">Choose which region to scrape data from.</p>
+
+    <div class="d-flex justify-content-center gap-4 mt-5">
+        <div class="card" style="width: 18rem;">
+            <div class="card-body">
+                <h5 class="card-title">Western</h5>
+                <p class="card-text">Scrape data using the standard scraping logic (Sporting Life).</p>
+                <a asp-controller="Home" asp-action="ScrapeRaceResults" class="btn btn-primary btn-lg w-100">Western</a>
+            </div>
+        </div>
+
+        <div class="card" style="width: 18rem;">
+            <div class="card-body">
+                <h5 class="card-title">Eastern</h5>
+                <p class="card-text">Iterate Sky Racing World results from 2009 to present.</p>
+                <a asp-controller="Home" asp-action="ScrapeEasternResults" class="btn btn-success btn-lg w-100">Eastern</a>
+            </div>
+        </div>
+    </div>
+</div>
