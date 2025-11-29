@@ -520,15 +520,15 @@ namespace HorseRacingML.ML
                 try { tf.config.experimental.set_memory_growth(gpus[0], true); } catch { }
             }
 
-                _ = foldIndex;
-                _ = foldCount;
+            _ = foldIndex;
+            _ = foldCount;
 
-                var trainExamples = dataset.TrainingRaces
-                    .SelectMany(r => r.Runners)
-                    .ToList();
-                var valExamples = dataset.ValidationRaces
-                    .SelectMany(r => r.Runners)
-                    .ToList();
+            var trainExamples = dataset.TrainingRaces
+                .SelectMany(r => r.Runners)
+                .ToList();
+            var valExamples = dataset.ValidationRaces
+                .SelectMany(r => r.Runners)
+                .ToList();
 
             int featureCount = dataset.FeatureCount;
             var trainFeatures = trainExamples.AsParallel().AsOrdered().Select(r => EncodeFeatureVector(r.Features, dataset.FeatureKeys, dataset.FeatureDimensions, dataset.StringMaps, featureCount)).ToList();
@@ -986,8 +986,8 @@ namespace HorseRacingML.ML
                     Directory.CreateDirectory(weightsDirectory);
                 }
 
-                    var options = new JsonSerializerOptions { WriteIndented = true };
-                    var serialized = JsonSerializer.Serialize(model, options);
+                var options = new JsonSerializerOptions { WriteIndented = true };
+                var serialized = JsonSerializer.Serialize(model, options);
                 File.WriteAllText(_modelPath, serialized);
             }
             HyperparameterCompleted(param, trainAcc, valAcc, trainLoss, valLoss, trainBrier, valBrier, trainFocalLoss, valFocalLoss);

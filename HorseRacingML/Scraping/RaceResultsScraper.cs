@@ -488,7 +488,7 @@ namespace HorseRacingML.Scraping
 
                 try
                 {
-                    wait.Until(d => d.FindElements(By.CssSelector("a[href*='/horse-racing-results/']")).Count > 0);
+                    wait.Until(d => d.FindElements(By.CssSelector(".fg-race-name")).Count > 0);
                 }
                 catch
                 {
@@ -496,13 +496,25 @@ namespace HorseRacingML.Scraping
                     return;
                 }
 
-                var links = driver.FindElements(By.CssSelector("a[href*='/horse-racing-results/']"));
-                var raceLinks = links
-                    .Select(a => a.GetAttribute("href"))
-                    .Where(h => !string.IsNullOrWhiteSpace(h) &&
-                                h.Contains($"/{date:yyyy-MM-dd}/R", StringComparison.OrdinalIgnoreCase))
-                    .Distinct()
-                    .ToList();
+                var raceElements = driver.FindElements(By.CssSelector(".fg-race-name"));
+                var raceLinks = new List<string>();
+
+                foreach (var el in raceElements)
+                {
+                    try
+                    {
+                        // The span is inside the anchor
+                        var parent = el.FindElement(By.XPath("./ancestor::a"));
+                        var href = parent.GetAttribute("href");
+                        if (!string.IsNullOrWhiteSpace(href))
+                        {
+                            raceLinks.Add(href);
+                        }
+                    }
+                    catch { }
+                }
+
+                raceLinks = raceLinks.Distinct().ToList();
 
                 if (raceLinks.Count == 0)
                 {
@@ -511,27 +523,37 @@ namespace HorseRacingML.Scraping
                 }
 
                 Console.WriteLine($"[Eastern] Found {raceLinks.Count} races for {date:yyyy-MM-dd}");
+                var dayHandle = driver.CurrentWindowHandle;
 
                 foreach (var raceLink in raceLinks)
                 {
                     try
                     {
-                        // Visit the race page
-                        driver.Navigate().GoToUrl(raceLink);
+                        ((IJavaScriptExecutor)driver).ExecuteScript("window.open(arguments[0], '_blank');", raceLink);
 
-                        // Placeholder for parsing logic. 
-                        // The user asked to "iterate", which implies visiting.
-                        // Ideally we would parse here, but without full HTML/selectors knowledge it's guessing.
-                        // I will add a small wait to simulate processing or allow dynamic content to load.
-                        Thread.Sleep(500);
+                        var newHandle = driver.WindowHandles.FirstOrDefault(h => h != dayHandle);
+                        if (newHandle != null)
+                        {
+                            driver.SwitchTo().Window(newHandle);
 
-                        // Log visit
-                        // Console.WriteLine($"[Eastern] Visited {raceLink}");
-                        RecordRaceProcessed();
+                            // Placeholder for parsing logic. 
+                            Thread.Sleep(500);
+
+                            // Log visit
+                            RecordRaceProcessed();
+
+                            driver.Close();
+                            driver.SwitchTo().Window(dayHandle);
+                        }
+                        else
+                        {
+                            Console.WriteLine($"[Eastern] Failed to open new tab for {raceLink}");
+                        }
                     }
                     catch (Exception ex)
                     {
                         Console.WriteLine($"[Eastern] Error visiting {raceLink}: {ex.Message}");
+                        try { if (driver.WindowHandles.Contains(dayHandle)) driver.SwitchTo().Window(dayHandle); } catch { }
                     }
                 }
             }
