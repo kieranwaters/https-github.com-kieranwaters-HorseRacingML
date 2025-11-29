@@ -102,6 +102,10 @@
                 }
             </select>
         </div>
+        <div class="col-md-3">
+            <label for="min-edge-filter" class="form-label">Minimum Edge %</label>
+            <input type="number" id="min-edge-filter" class="form-control" value="-100" step="0.1" />
+        </div>
         <div class="col-md-3 d-flex align-items-end">
             <div class="form-check mb-3 me-3">
                 <input id="include-fees-checkbox" class="form-check-input" type="checkbox" />
@@ -334,6 +338,8 @@
                     // Get filter and simulation values
                     const minStarts = parseInt(document.getElementById('min-starts-filter').value, 10);
                     const maxRunners = parseInt(document.getElementById('max-runners-filter').value, 10);
+                    const minEdgeVal = parseFloat(document.getElementById('min-edge-filter').value);
+                    const minEdge = isNaN(minEdgeVal) ? -100 : minEdgeVal;
                     const includeFees = document.getElementById('include-fees-checkbox').checked;
                     const kellyDampener = parseFloat(document.getElementById('KellyDampener').value);
                     const startingBankroll = parseFloat(document.getElementById('StartingBankroll').value);
@@ -345,11 +351,20 @@
                     allRaceRows.forEach(row => {
                         const runnerCount = parseInt(row.dataset.runnerCount, 10);
                         const runnerStarts = row.dataset.runnerStarts.split(',').map(s => parseInt(s, 10) || 0);
+
+                        const aiOdds = parseFloat(row.dataset.aiOdds);
+                        const bookmakerOdds = parseFloat(row.dataset.bookmakerOdds);
+                        const aiProb = 1 / aiOdds;
+                        const bookmakerProb = 1 / bookmakerOdds;
+                        const edgePercent = (aiProb - bookmakerProb) * 100;
+
                         const meetsMinStarts = !runnerStarts.some(starts => starts < minStarts);
                         const meetsMaxRunners = runnerCount <= maxRunners;
+                        const meetsMinEdge = edgePercent >= minEdge;
+
                         const detailsRow = row.nextElementSibling;
 
-                        if (meetsMinStarts && meetsMaxRunners) {
+                        if (meetsMinStarts && meetsMaxRunners && meetsMinEdge) {
                             visibleRows.push(row);
                             row.style.display = '';
                             if (detailsRow && detailsRow.classList.contains('race-details')) detailsRow.style.display = '';
@@ -428,5 +443,4 @@
             }
         });
     </script>
-}
 }
