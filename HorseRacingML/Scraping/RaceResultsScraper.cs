@@ -23,12 +23,18 @@ namespace HorseRacingML.Scraping
         private readonly RacingRepository _repo;
         private readonly ScrapingStatusService _status;
         private const int MaxParallelDrivers = 15;
-        private const int MaxEasternParallelDrivers = 5;
+        private const int MaxEasternParallelDrivers = 1;
         private static readonly TimeSpan EstimateOutputInterval = TimeSpan.FromMinutes(3);
         private readonly object _estimateLock = new object();
         private DateTime _estimateStartUtc = DateTime.MinValue;
         private DateTime _lastEstimateOutputUtc = DateTime.MinValue;
         private long _racesProcessed = 0;
+
+        private static void RandomDelay(int minMs, int maxMs)
+        {
+            Thread.Sleep(new Random().Next(minMs, maxMs));
+        }
+
         public RaceResultsScraper(RacingRepository repo, ScrapingStatusService status)
         {
             _repo = repo;
@@ -463,6 +469,10 @@ namespace HorseRacingML.Scraping
                         var msg = $"[Eastern] [{date:yyyy-MM-dd}] processed";
                         Console.WriteLine(msg);
                         _status.Update(msg);
+
+                        // Anti-detection: random delay between days
+                        RandomDelay(3000, 8000);
+
                         try { _ = driver.WindowHandles.Count; }
                         catch (Exception ex) { Console.Error.WriteLine($"[Warning] Driver session not healthy: {ex.Message}"); break; }
                     }
@@ -476,6 +486,9 @@ namespace HorseRacingML.Scraping
         {
             try
             {
+                // Anti-detection: random delay before starting the day
+                RandomDelay(2000, 5000);
+
                 var url = $"https://www.skyracingworld.com/horse-racing-results/{date:yyyy-MM-dd}";
                 driver.Navigate().GoToUrl(url);
 
@@ -529,6 +542,9 @@ namespace HorseRacingML.Scraping
                 {
                     try
                     {
+                        // Anti-detection: random delay between races
+                        RandomDelay(5000, 15000);
+
                         ((IJavaScriptExecutor)driver).ExecuteScript("window.open(arguments[0], '_blank');", raceLink);
 
                         var newHandle = driver.WindowHandles.FirstOrDefault(h => h != dayHandle);
@@ -537,7 +553,8 @@ namespace HorseRacingML.Scraping
                             driver.SwitchTo().Window(newHandle);
 
                             // Placeholder for parsing logic. 
-                            Thread.Sleep(500);
+                            // Using random delay instead of fixed sleep
+                            RandomDelay(1000, 3000);
 
                             // Log visit
                             RecordRaceProcessed();
@@ -689,6 +706,7 @@ namespace HorseRacingML.Scraping
             options.AddArgument("--disable-dev-shm-usage");
             options.AddArgument("--disable-gpu");
             options.AddArgument("--no-sandbox");
+            options.AddArgument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36");
             options.AddUserProfilePreference("profile.managed_default_content_settings.images", 2);
             options.AddUserProfilePreference("profile.managed_default_content_settings.fonts", 2);
             options.AddUserProfilePreference("profile.managed_default_content_settings.stylesheets", 2);

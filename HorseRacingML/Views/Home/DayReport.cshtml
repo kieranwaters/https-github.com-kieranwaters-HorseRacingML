@@ -458,7 +458,8 @@ else
             ? null
             : race.Going.Trim();
         var orderedRunners = (race.Runners ?? new List<RunnerDayReport>())
-            .OrderBy(r => r.ClothNumber ?? byte.MaxValue)
+                .OrderByDescending(r => r.AiProbability ?? double.MinValue)
+                .ThenBy(r => r.ClothNumber ?? byte.MaxValue)
             .ThenBy(r => r.HorseName ?? string.Empty)
             .ToList();
 
