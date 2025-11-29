@@ -530,12 +530,12 @@ namespace HorseRacingML.ML
                     .SelectMany(r => r.Runners)
                     .ToList();
 
-                int featureCount = dataset.FeatureCount;
-            var trainFeatures = trainExamples.Select(r => EncodeFeatureVector(r.Features, dataset.FeatureKeys, dataset.FeatureDimensions, dataset.StringMaps, featureCount)).ToList();
+            int featureCount = dataset.FeatureCount;
+            var trainFeatures = trainExamples.AsParallel().AsOrdered().Select(r => EncodeFeatureVector(r.Features, dataset.FeatureKeys, dataset.FeatureDimensions, dataset.StringMaps, featureCount)).ToList();
             var trainLabels = trainExamples.Select(r => r.Label).ToArray();
             var trainRaceIds = trainExamples.Select(r => r.RaceId).ToArray();
 
-            var valFeatures = valExamples.Select(r => EncodeFeatureVector(r.Features, dataset.FeatureKeys, dataset.FeatureDimensions, dataset.StringMaps, featureCount)).ToList();
+            var valFeatures = valExamples.AsParallel().AsOrdered().Select(r => EncodeFeatureVector(r.Features, dataset.FeatureKeys, dataset.FeatureDimensions, dataset.StringMaps, featureCount)).ToList();
             var valLabels = valExamples.Select(r => r.Label).ToArray();
             var valRaceIds = valExamples.Select(r => r.RaceId).ToArray();
             bool restoreFeatureState = false;

@@ -707,8 +707,6 @@ namespace HorseRacingML.ML
                 var runners = new List<RunnerExample>(preparedRace.Rows.Count);
                 foreach (var row in preparedRace.Rows)
                 {
-                    var features = EncodeFeatureVector(row, featureKeys, featureDimensions, stringMaps, featureCount);
-
                     float label = row.TryGetValue("FinishPos", out var f) && PreparedDataset.TryConvertToInt32(f, out var finishPos) && finishPos == 1
                         ? 1f
                     : 0f;
