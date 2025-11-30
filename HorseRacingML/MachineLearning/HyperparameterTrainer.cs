@@ -550,8 +550,12 @@ namespace HorseRacingML.ML
             var trainData = trainFeatures.Zip(trainExamples, (f, r) => new LightGbmInput { Features = f, Label = r.Label }).ToList();
             var valData = valFeatures.Zip(valExamples, (f, r) => new LightGbmInput { Features = f, Label = r.Label }).ToList();
 
-            var trainDataView = mlContext.Data.LoadFromEnumerable(trainData);
-            var valDataView = mlContext.Data.LoadFromEnumerable(valData);
+            // Define schema explicitly to handle dynamic feature count as a fixed-size vector
+            var schemaDef = SchemaDefinition.Create(typeof(LightGbmInput));
+            schemaDef["Features"].ColumnType = new VectorDataViewType(NumberDataViewType.Single, featureCount);
+
+            var trainDataView = mlContext.Data.LoadFromEnumerable(trainData, schemaDef);
+            var valDataView = mlContext.Data.LoadFromEnumerable(valData, schemaDef);
 
             var pipeline = mlContext.BinaryClassification.Trainers.LightGbm(new LightGbmBinaryTrainer.Options
             {

@@ -20,6 +20,7 @@ namespace HorseRacingML.Models
         public int Folds { get; set; }
         public int? Fold { get; set; }
         public DateTime? TrainedAtUtc { get; set; }
+        public int ModelType { get; internal set; }
     }
     public class FeatureMetadata
     {
