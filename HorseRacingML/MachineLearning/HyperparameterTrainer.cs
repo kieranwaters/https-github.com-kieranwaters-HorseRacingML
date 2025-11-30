@@ -517,7 +517,7 @@ namespace HorseRacingML.ML
         {
             [VectorType]
             public float[] Features { get; set; } = Array.Empty<float>();
-            public float Label { get; set; }
+            public bool Label { get; set; }
         }
 
         public class LightGbmOutput
@@ -547,8 +547,8 @@ namespace HorseRacingML.ML
                 .Select(r => EncodeFeatureVector(r.Features, dataset.FeatureKeys, dataset.FeatureDimensions, dataset.StringMaps, featureCount))
                 .ToList();
 
-            var trainData = trainFeatures.Zip(trainExamples, (f, r) => new LightGbmInput { Features = f, Label = r.Label }).ToList();
-            var valData = valFeatures.Zip(valExamples, (f, r) => new LightGbmInput { Features = f, Label = r.Label }).ToList();
+            var trainData = trainFeatures.Zip(trainExamples, (f, r) => new LightGbmInput { Features = f, Label = r.Label == 1f }).ToList();
+            var valData = valFeatures.Zip(valExamples, (f, r) => new LightGbmInput { Features = f, Label = r.Label == 1f }).ToList();
 
             // Define schema explicitly to handle dynamic feature count as a fixed-size vector
             var schemaDef = SchemaDefinition.Create(typeof(LightGbmInput));
@@ -579,8 +579,8 @@ namespace HorseRacingML.ML
             var trainProbs = trainPredictions.GetColumn<float>("Probability").ToArray();
             var valProbs = valPredictions.GetColumn<float>("Probability").ToArray();
 
-            var trainLabels = trainData.Select(x => x.Label).ToArray();
-            var valLabels = valData.Select(x => x.Label).ToArray();
+            var trainLabels = trainData.Select(x => x.Label ? 1f : 0f).ToArray();
+            var valLabels = valData.Select(x => x.Label ? 1f : 0f).ToArray();
             var trainRaceIds = trainExamples.Select(r => r.RaceId).ToArray();
             var valRaceIds = valExamples.Select(r => r.RaceId).ToArray();
 
