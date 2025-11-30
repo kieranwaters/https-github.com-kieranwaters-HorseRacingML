@@ -1770,8 +1770,13 @@ END";
         public int InsertMLParameter(MLParameter param)
         {
             const string sql = @"
-INSERT INTO MLParameters(RunDate, Units, Dropout, Layers, LearningRate, TrainAccuracy, ValidationAccuracy, ValidationLoss, Epochs, BatchSize, Folds, TrainLoss, TrainBrier, Fold, ValidationBrier, TrainFocalLoss, ValidationFocalLoss)
-VALUES(@RunDate, @Units, @Dropout, @Layers, @LearningRate, @TrainAccuracy, @ValidationAccuracy, @ValidationLoss, @Epochs, @BatchSize, @Folds, @TrainLoss, @TrainBrier, @Fold, @ValidationBrier, @TrainFocalLoss, @ValidationFocalLoss);
+IF COL_LENGTH('dbo.MLParameters', 'ModelType') IS NULL
+BEGIN
+    ALTER TABLE dbo.MLParameters ADD ModelType INT NOT NULL DEFAULT 0;
+END;
+
+INSERT INTO MLParameters(RunDate, Units, Dropout, Layers, LearningRate, TrainAccuracy, ValidationAccuracy, ValidationLoss, Epochs, BatchSize, Folds, TrainLoss, TrainBrier, Fold, ValidationBrier, TrainFocalLoss, ValidationFocalLoss, ModelType)
+VALUES(@RunDate, @Units, @Dropout, @Layers, @LearningRate, @TrainAccuracy, @ValidationAccuracy, @ValidationLoss, @Epochs, @BatchSize, @Folds, @TrainLoss, @TrainBrier, @Fold, @ValidationBrier, @TrainFocalLoss, @ValidationFocalLoss, @ModelType);
 SELECT CAST(SCOPE_IDENTITY() as int);";
             using var conn = OpenConnection();
             return conn.QuerySingle<int>(sql, param);

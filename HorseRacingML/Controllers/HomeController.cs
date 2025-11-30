@@ -589,7 +589,7 @@ namespace HorseRacingML.Controllers
             {
                 try
                 {
-                    scraper.ScrapeEasternFromDate(new DateTime(2009, 1, 2));
+                    scraper.ScrapeEasternFromDate(new DateTime(2015, 6, 1));
                     _status.Update($"Eastern Scraping completed at {DateTime.Now:G}");
                 }
                 catch (Exception ex)

@@ -5,6 +5,8 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using HorseRacingML.Models;
+using Microsoft.ML;
+using Microsoft.ML.Data;
 
 namespace HorseRacingML.ML
 {
@@ -32,6 +34,8 @@ namespace HorseRacingML.ML
         private HyperparameterSummary? _hyperparameters;
         private static readonly object _gpuStatusLock = new();
         private static bool _gpuStatusLogged;
+        private readonly bool _isLightGbm;
+        private readonly PredictionEngine<HyperparameterTrainer.LightGbmInput, HyperparameterTrainer.LightGbmOutput>? _predictionEngine;
 
         private static readonly DateTime BaseDate = new DateTime(2005, 1, 1);
         private static readonly int[] PerformanceWindows = { 1, 2, 3, 4, 5, 10, 15, 20, 25, 30, 50, 100 };
@@ -146,8 +150,7 @@ namespace HorseRacingML.ML
                 LogDebug(flow,
                     "Prepared feature vector incomplete; proceeding with available values");
             }
-            if (_metadata == null || _mean == null || _std == null ||
-                _outputWeights == null || _outputBias == null)
+            if (_metadata == null || (!_isLightGbm && (_mean == null || _std == null || _outputWeights == null || _outputBias == null)))
             {
                 LogFallback(flow, "trained model metadata is incomplete");
                 return false;
@@ -199,6 +202,36 @@ namespace HorseRacingML.ML
                 return false;
             }
             LogDebug(flow, $"Encoded feature vector length {_featureCount}");
+
+            if (_isLightGbm)
+            {
+                if (_predictionEngine == null)
+                {
+                    LogFallback(flow, "LightGBM prediction engine not initialized");
+                    return false;
+                }
+
+                // Convert doubles to floats for LightGBM
+                var floatFeatures = new float[_featureCount];
+                for (int i = 0; i < _featureCount; i++)
+                {
+                    floatFeatures[i] = (float)encoded.Values[i];
+                }
+
+                var prediction = _predictionEngine.Predict(new HyperparameterTrainer.LightGbmInput { Features = floatFeatures });
+                probability = prediction.Probability;
+                var formattedLgbmProb = probability.ToString("0.0000", CultureInfo.InvariantCulture);
+                LogDebug(flow, $"Calculated LightGBM probability {formattedLgbmProb} (Score: {prediction.Score:F4})");
+
+                if (flow != null)
+                {
+                    flow.EncodedFeatureValues = BuildEncodedFeatureDetails(encoded);
+                }
+
+                return true;
+            }
+
+            // Fallback to Neural Network Logic
             bool hasSignal = false;
             for (int i = 0; i < encoded.Values.Length; i++)
             {
@@ -431,7 +464,7 @@ namespace HorseRacingML.ML
                 preview += $", … (+{missing.Count - maxToShow} more)";
             }
 
-           
+
         }
 
         // Feature metadata is generated from the training pipeline and includes
@@ -851,6 +884,51 @@ namespace HorseRacingML.ML
             var json = File.ReadAllText(path);
             if (TryLoadTrainedModel(json))
             {
+                if (_hyperparameters?.ModelType == 1) // LightGBM
+                {
+                    var zipPath = Path.ChangeExtension(modelPath, ".zip");
+                    if (File.Exists(zipPath))
+                    {
+                        try
+                        {
+                            var mlContext = new MLContext(seed: 42);
+                            var model = mlContext.Model.Load(zipPath, out var schema);
+                            _predictionEngine = mlContext.Model.CreatePredictionEngine<HyperparameterTrainer.LightGbmInput, HyperparameterTrainer.LightGbmOutput>(model);
+                            _isLightGbm = true;
+                            _hasTrainedModel = true;
+                            Console.WriteLine($"[AI] Loaded LightGBM model with {_featureCount} features from {fileName}.");
+                            _modelStatus = $"Loaded LightGBM model with {_featureCount} features from {fileName}.";
+                            return;
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.Error.WriteLine($"[AI] Failed to load LightGBM model: {ex.Message}");
+                            _modelStatus = $"Failed to load LightGBM model: {ex.Message}";
+                            _hasTrainedModel = false;
+                            return;
+                        }
+                    }
+                    else
+                    {
+                        Console.Error.WriteLine($"[AI] LightGBM model file not found at {zipPath}.");
+                        _modelStatus = $"LightGBM model file not found at {zipPath}.";
+                        return;
+                    }
+                }
+
+                // Fallthrough for Neural Network
+                if (_mean == null || _std == null)
+                {
+                    // This might happen if TryLoadTrainedModel loaded metadata but not normalization for some reason, 
+                    // though TryLoadTrainedModel checks for mean/std nullity for NN. 
+                    // For LightGBM we don't strictly need them but they are in the JSON.
+                    // If we are here, we are assuming NN, so strict check.
+                    if (!_isLightGbm)
+                    {
+                        // Already failed in TryLoadTrainedModel if keys/mean/std missing
+                    }
+                }
+
                 _hasTrainedModel = true;
                 Console.WriteLine($"[AI] Loaded trained model with {_featureCount} features from {fileName}.");
                 _modelStatus = $"Loaded trained model with {_featureCount} features from {fileName}.";

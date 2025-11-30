@@ -11,6 +11,7 @@
     <table class="table">
         <thead>
             <tr>
+                <th>Model</th>
                 <th>Units</th>
                 <th>Dropout</th>
                 <th>Layers</th>
@@ -25,6 +26,12 @@
             @for (int i = 0; i < Model.Batch.Parameters.Count; i++)
             {
                 <tr>
+                    <td>
+                        <select asp-for="Batch.Parameters[i].ModelType" class="form-select">
+                            <option value="0">Neural Network</option>
+                            <option value="1">LightGBM</option>
+                        </select>
+                    </td>
                     <td><input asp-for="Batch.Parameters[i].Units" class="form-control" /></td>
                     <td><input asp-for="Batch.Parameters[i].Dropout" class="form-control" /></td>
                     <td><input asp-for="Batch.Parameters[i].Layers" class="form-control" /></td>
@@ -144,6 +151,12 @@
             const index = rows.length;
             const template = `
                 <tr>
+                    <td>
+                        <select name="Batch.Parameters[${index}].ModelType" class="form-select">
+                            <option value="0">Neural Network</option>
+                            <option value="1">LightGBM</option>
+                        </select>
+                    </td>
                     <td><input name="Batch.Parameters[${index}].Units" class="form-control" /></td>
                     <td><input name="Batch.Parameters[${index}].Dropout" class="form-control" /></td>
                     <td><input name="Batch.Parameters[${index}].Layers" class="form-control" /></td>
@@ -232,4 +245,4 @@
             window.location.href = target;
         }
     </script>
-    }
+}

@@ -17,6 +17,10 @@ using System.IO;
 using System.Threading.Tasks;
 using static Tensorflow.Binding;
 using static Tensorflow.TensorShapeProto.Types;
+using Microsoft.ML;
+using Microsoft.ML.Data;
+using Microsoft.ML.Trainers;
+using Microsoft.ML.Trainers.LightGbm;
 using PreparedDataset = HorseRacingML.ML.HyperparameterTrainer.TrainingDataset.PreparedDataset;
 using PreparedRace = HorseRacingML.ML.HyperparameterTrainer.TrainingDataset.PreparedDataset.PreparedRace;
 using TensorShape = Tensorflow.Shape;
@@ -509,8 +513,134 @@ namespace HorseRacingML.ML
             var trainingDataset = BuildTrainingDataset(trainingPrepared, validationPrepared, includeIdentifiers: false);
             return Train(param, foldIndex, foldCount, trainingDataset, persistWeights);
         }
+        public class LightGbmInput
+        {
+            [VectorType]
+            public float[] Features { get; set; } = Array.Empty<float>();
+            public float Label { get; set; }
+        }
+
+        public class LightGbmOutput
+        {
+            public float Score { get; set; }
+            public float Probability { get; set; }
+        }
+
+        private TrainingResult TrainLightGbm(MLParameter param, int foldIndex, int foldCount, TrainingDataset dataset, bool persistWeights = true)
+        {
+            var mlContext = new MLContext(seed: 42);
+
+            var trainExamples = dataset.TrainingRaces
+                .SelectMany(r => r.Runners)
+                .ToList();
+            var valExamples = dataset.ValidationRaces
+                .SelectMany(r => r.Runners)
+                .ToList();
+
+            int featureCount = dataset.FeatureCount;
+            // Note: LightGBM handles non-normalized data well, so we skip explicit normalization here
+            // but we still encode features to get float vectors.
+            var trainFeatures = trainExamples.AsParallel().AsOrdered()
+                .Select(r => EncodeFeatureVector(r.Features, dataset.FeatureKeys, dataset.FeatureDimensions, dataset.StringMaps, featureCount))
+                .ToList();
+            var valFeatures = valExamples.AsParallel().AsOrdered()
+                .Select(r => EncodeFeatureVector(r.Features, dataset.FeatureKeys, dataset.FeatureDimensions, dataset.StringMaps, featureCount))
+                .ToList();
+
+            var trainData = trainFeatures.Zip(trainExamples, (f, r) => new LightGbmInput { Features = f, Label = r.Label }).ToList();
+            var valData = valFeatures.Zip(valExamples, (f, r) => new LightGbmInput { Features = f, Label = r.Label }).ToList();
+
+            var trainDataView = mlContext.Data.LoadFromEnumerable(trainData);
+            var valDataView = mlContext.Data.LoadFromEnumerable(valData);
+
+            var pipeline = mlContext.BinaryClassification.Trainers.LightGbm(new LightGbmBinaryTrainer.Options
+            {
+                LabelColumnName = "Label",
+                FeatureColumnName = "Features",
+                NumberOfLeaves = param.Units > 0 ? param.Units : 31, // Default 31
+                LearningRate = param.LearningRate > 0 ? param.LearningRate : 0.1,
+                NumberOfIterations = param.Epochs > 0 ? param.Epochs : 100,
+                // Map other params if needed
+            });
+
+            Console.WriteLine("[LightGBM] Training model...");
+            var model = pipeline.Fit(trainDataView);
+
+            var trainPredictions = model.Transform(trainDataView);
+            var valPredictions = model.Transform(valDataView);
+
+            var trainMetrics = mlContext.BinaryClassification.Evaluate(trainPredictions, labelColumnName: "Label");
+            var valMetrics = mlContext.BinaryClassification.Evaluate(valPredictions, labelColumnName: "Label");
+
+            var trainProbs = trainPredictions.GetColumn<float>("Probability").ToArray();
+            var valProbs = valPredictions.GetColumn<float>("Probability").ToArray();
+
+            var trainLabels = trainData.Select(x => x.Label).ToArray();
+            var valLabels = valData.Select(x => x.Label).ToArray();
+            var trainRaceIds = trainExamples.Select(r => r.RaceId).ToArray();
+            var valRaceIds = valExamples.Select(r => r.RaceId).ToArray();
+
+            double trainAcc = ComputeWinnerAccuracy(trainRaceIds, trainProbs, trainLabels);
+            double valAcc = ComputeWinnerAccuracy(valRaceIds, valProbs, valLabels);
+            double trainBrier = ComputeBrier(trainProbs, trainLabels);
+            double valBrier = ComputeBrier(valProbs, valLabels);
+
+            if (persistWeights)
+            {
+                var modelPath = Path.ChangeExtension(_modelPath, ".zip"); // ML.NET saves as zip
+                mlContext.Model.Save(model, trainDataView.Schema, modelPath);
+
+                // We also need to save the metadata so we know how to encode features for inference
+                var metadataModel = new TrainedModel
+                {
+                    Metadata = new FeatureMetadata
+                    {
+                        Keys = new List<string>(dataset.FeatureKeys),
+                        FeatureDimensions = new Dictionary<string, int>(dataset.FeatureDimensions),
+                        StringMaps = dataset.StringMaps.ToDictionary(
+                            kvp => kvp.Key,
+                            kvp => new Dictionary<string, int>(kvp.Value))
+                    },
+                    Hyperparameters = new HyperparameterSummary
+                    {
+                        ModelType = 1, // LightGBM
+                        TrainedAtUtc = DateTime.UtcNow
+                    }
+                };
+                var options = new JsonSerializerOptions { WriteIndented = true };
+                var serialized = JsonSerializer.Serialize(metadataModel, options);
+                File.WriteAllText(_modelPath, serialized); // Overwrite the main json with metadata
+            }
+
+            Console.WriteLine($"[LightGBM] Training complete. Train Acc: {trainAcc:P2}, Val Acc: {valAcc:P2}");
+
+            return new TrainingResult
+            {
+                TrainAccuracy = trainAcc,
+                TrainLoss = trainMetrics.LogLoss, // LogLoss is analogous to cross-entropy
+                TrainBrier = trainBrier,
+                ValidationAccuracy = valAcc,
+                ValidationLoss = valMetrics.LogLoss,
+                ValidationBrier = valBrier,
+                TrainingPredictions = Array.AsReadOnly(trainProbs),
+                TrainingLabels = Array.AsReadOnly(trainLabels),
+                TrainingRaceIds = Array.AsReadOnly(trainRaceIds),
+                ValidationPredictions = Array.AsReadOnly(valProbs),
+                ValidationLabels = Array.AsReadOnly(valLabels),
+                ValidationRaceIds = Array.AsReadOnly(valRaceIds),
+                ValidationExamples = new ReadOnlyCollection<RunnerExample>(valExamples)
+            };
+        }
+
         public TrainingResult Train(MLParameter param, int foldIndex, int foldCount, TrainingDataset dataset, bool persistWeights = true)
         {
+            if (param.ModelType == 1) // LightGBM
+            {
+                NormalizeBatchSize(param); // Still valid for consistency checks
+                return TrainLightGbm(param, foldIndex, foldCount, dataset, persistWeights);
+            }
+
+            // Default to Neural Network (TensorFlow)
             if (dataset is null)
                 throw new ArgumentNullException(nameof(dataset));
             NormalizeBatchSize(param);

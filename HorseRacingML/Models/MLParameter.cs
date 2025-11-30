@@ -32,5 +32,9 @@ namespace HorseRacingML.Models
         public int? Fold { get; set; }
         public double? ValidationBrier { get; set; }
         public bool TrainFinalFoldOnly { get; set; }
+        /// <summary>
+        /// 0 = Neural Network (TensorFlow), 1 = LightGBM
+        /// </summary>
+        public int ModelType { get; set; }
     }
 }
