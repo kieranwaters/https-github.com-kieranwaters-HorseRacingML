@@ -10,9 +10,9 @@
         <thead>
             <tr>
                 <th>Model</th>
-                <th>Units</th>
-                <th>Dropout</th>
-                <th>Layers</th>
+                <th>Units / Leaves</th>
+                <th>Dropout / Min Data</th>
+                <th>Layers / Max Depth</th>
                 <th>Learning Rate</th>
                 <th>Epochs</th>
                 <th>Batch Size</th>
@@ -24,19 +24,31 @@
         <tbody id="parameterRows">
             @for (int i = 0; i < Model.Parameters.Count; i++)
             {
-                <tr>
+                <tr class="parameter-row">
                     <td>
-                        <select asp-for="Parameters[i].ModelType" class="form-select">
+                        <select asp-for="Parameters[i].ModelType" class="form-select model-type-select" onchange="toggleInputs(this)">
                             <option value="0">Neural Network</option>
                             <option value="1">LightGBM</option>
                         </select>
                     </td>
-                    <td><input asp-for="Parameters[i].Units" class="form-control" /></td>
-                    <td><input asp-for="Parameters[i].Dropout" class="form-control" /></td>
-                    <td><input asp-for="Parameters[i].Layers" class="form-control" /></td>
+                    <td>
+                        <input asp-for="Parameters[i].Units" class="form-control nn-input" placeholder="Units" />
+                        <input asp-for="Parameters[i].LgbmLeaves" class="form-control lgbm-input" placeholder="Leaves" style="display:none" />
+                    </td>
+                    <td>
+                        <input asp-for="Parameters[i].Dropout" class="form-control nn-input" placeholder="Dropout" />
+                        <input asp-for="Parameters[i].LgbmMinDataInLeaf" class="form-control lgbm-input" placeholder="Min Data" style="display:none" />
+                    </td>
+                    <td>
+                        <input asp-for="Parameters[i].Layers" class="form-control nn-input" placeholder="Layers" />
+                        <input asp-for="Parameters[i].LgbmMaxDepth" class="form-control lgbm-input" placeholder="Max Depth" style="display:none" />
+                    </td>
                     <td><input asp-for="Parameters[i].LearningRate" class="form-control" /></td>
                     <td><input asp-for="Parameters[i].Epochs" class="form-control" /></td>
-                    <td><input asp-for="Parameters[i].BatchSize" class="form-control" /></td>
+                    <td>
+                        <input asp-for="Parameters[i].BatchSize" class="form-control nn-input" />
+                        <span class="lgbm-input text-muted small" style="display:none">N/A</span>
+                    </td>
                     <td><input asp-for="Parameters[i].Folds" class="form-control" /></td>
                     <td><div class="form-check d-flex justify-content-center"><input asp-for="Parameters[i].TrainFinalFoldOnly" class="form-check-input" /></div></td>
                     <td>
@@ -56,23 +68,48 @@
         await Html.RenderPartialAsync("_ValidationScriptsPartial");
     }
     <script>
+        document.addEventListener("DOMContentLoaded", function () {
+            // Initialize existing rows
+            document.querySelectorAll('.model-type-select').forEach(select => toggleInputs(select));
+        });
+
+        function toggleInputs(selectElement) {
+            const row = selectElement.closest('tr');
+            const isLgbm = selectElement.value === "1";
+
+            row.querySelectorAll('.nn-input').forEach(el => el.style.display = isLgbm ? 'none' : '');
+            row.querySelectorAll('.lgbm-input').forEach(el => el.style.display = isLgbm ? '' : 'none');
+        }
+
         function addRow() {
             const rows = document.querySelectorAll('#parameterRows tr');
             const index = rows.length;
             const template = `
-                <tr>
+                <tr class="parameter-row">
                     <td>
-                        <select name="Parameters[${index}].ModelType" class="form-select">
+                        <select name="Parameters[${index}].ModelType" class="form-select model-type-select" onchange="toggleInputs(this)">
                             <option value="0">Neural Network</option>
                             <option value="1">LightGBM</option>
                         </select>
                     </td>
-                    <td><input name="Parameters[${index}].Units" class="form-control" /></td>
-                    <td><input name="Parameters[${index}].Dropout" class="form-control" /></td>
-                    <td><input name="Parameters[${index}].Layers" class="form-control" /></td>
+                    <td>
+                        <input name="Parameters[${index}].Units" class="form-control nn-input" placeholder="Units" />
+                        <input name="Parameters[${index}].LgbmLeaves" class="form-control lgbm-input" placeholder="Leaves" style="display:none" />
+                    </td>
+                    <td>
+                        <input name="Parameters[${index}].Dropout" class="form-control nn-input" placeholder="Dropout" />
+                        <input name="Parameters[${index}].LgbmMinDataInLeaf" class="form-control lgbm-input" placeholder="Min Data" style="display:none" />
+                    </td>
+                    <td>
+                        <input name="Parameters[${index}].Layers" class="form-control nn-input" placeholder="Layers" />
+                        <input name="Parameters[${index}].LgbmMaxDepth" class="form-control lgbm-input" placeholder="Max Depth" style="display:none" />
+                    </td>
                     <td><input name="Parameters[${index}].LearningRate" class="form-control" /></td>
                     <td><input name="Parameters[${index}].Epochs" class="form-control" /></td>
-                    <td><input name="Parameters[${index}].BatchSize" class="form-control" /></td>
+                    <td>
+                         <input name="Parameters[${index}].BatchSize" class="form-control nn-input" />
+                         <span class="lgbm-input text-muted small" style="display:none">N/A</span>
+                    </td>
                     <td><input name="Parameters[${index}].Folds" class="form-control" /></td>
                     <td><div class="form-check d-flex justify-content-center"><input class="form-check-input" type="checkbox" name="Parameters[${index}].TrainFinalFoldOnly" value="true"></div></td>
                     <td><button type="button" class="btn btn-danger" onclick="removeRow(this)">Delete</button></td>

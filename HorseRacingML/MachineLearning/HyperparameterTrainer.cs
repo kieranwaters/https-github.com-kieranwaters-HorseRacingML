@@ -134,6 +134,11 @@ namespace HorseRacingML.ML
                 throw new ArgumentNullException(nameof(param));
             }
 
+            if (param.ModelType == 1) // LightGBM ignores batch size
+            {
+                return;
+            }
+
             var normalized = MLParameterValidator.EnsureBatchSize(param.BatchSize, fallback: 0);
             if (normalized <= 0)
             {
@@ -561,10 +566,11 @@ namespace HorseRacingML.ML
             {
                 LabelColumnName = "Label",
                 FeatureColumnName = "Features",
-                NumberOfLeaves = param.Units > 0 ? param.Units : 31, // Default 31
+                NumberOfLeaves = param.LgbmLeaves > 0 ? param.LgbmLeaves.Value : 31,
+                MinimumExampleCountPerLeaf = param.LgbmMinDataInLeaf > 0 ? param.LgbmMinDataInLeaf.Value : 20,
+                MaximumTreeDepth = param.LgbmMaxDepth > 0 ? param.LgbmMaxDepth.Value : 0,
                 LearningRate = param.LearningRate > 0 ? param.LearningRate : 0.1,
                 NumberOfIterations = param.Epochs > 0 ? param.Epochs : 100,
-                // Map other params if needed
             });
 
             Console.WriteLine("[LightGBM] Training model...");

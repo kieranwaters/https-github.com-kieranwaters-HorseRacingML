@@ -1775,11 +1775,19 @@ BEGIN
     ALTER TABLE dbo.MLParameters ADD ModelType INT NOT NULL DEFAULT 0;
 END;
 
-INSERT INTO MLParameters(RunDate, Units, Dropout, Layers, LearningRate, TrainAccuracy, ValidationAccuracy, ValidationLoss, Epochs, BatchSize, Folds, TrainLoss, TrainBrier, Fold, ValidationBrier, TrainFocalLoss, ValidationFocalLoss, ModelType)
-VALUES(@RunDate, @Units, @Dropout, @Layers, @LearningRate, @TrainAccuracy, @ValidationAccuracy, @ValidationLoss, @Epochs, @BatchSize, @Folds, @TrainLoss, @TrainBrier, @Fold, @ValidationBrier, @TrainFocalLoss, @ValidationFocalLoss, @ModelType);
+INSERT INTO MLParameters(RunDate, Units, Dropout, Layers, LearningRate, TrainAccuracy, ValidationAccuracy, ValidationLoss, Epochs, BatchSize, Folds, TrainLoss, TrainBrier, Fold, ValidationBrier, TrainFocalLoss, ValidationFocalLoss, ModelType, LgbmLeaves, LgbmMinDataInLeaf, LgbmMaxDepth)
+VALUES(@RunDate, @Units, @Dropout, @Layers, @LearningRate, @TrainAccuracy, @ValidationAccuracy, @ValidationLoss, @Epochs, @BatchSize, @Folds, @TrainLoss, @TrainBrier, @Fold, @ValidationBrier, @TrainFocalLoss, @ValidationFocalLoss, @ModelType, @LgbmLeaves, @LgbmMinDataInLeaf, @LgbmMaxDepth);
 SELECT CAST(SCOPE_IDENTITY() as int);";
             using var conn = OpenConnection();
-            return conn.QuerySingle<int>(sql, param);
+
+            // Map nulls to defaults for existing NOT NULL columns to preserve schema compatibility
+            var parameters = new DynamicParameters(param);
+            if (!param.Units.HasValue) parameters.Add("Units", 0);
+            if (!param.Dropout.HasValue) parameters.Add("Dropout", 0);
+            if (!param.Layers.HasValue) parameters.Add("Layers", 0);
+            if (!param.BatchSize.HasValue) parameters.Add("BatchSize", 0);
+
+            return conn.QuerySingle<int>(sql, parameters);
         }
         public List<int> GetRaceIdsBetweenDates(DateTime startInclusive, DateTime endInclusive, string country = null)
         {

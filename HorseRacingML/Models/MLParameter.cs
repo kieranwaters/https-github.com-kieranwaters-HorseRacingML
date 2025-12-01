@@ -7,19 +7,12 @@ namespace HorseRacingML.Models
     {
         public int Id { get; set; }
         public DateTime RunDate { get; set; }
-        [Required]
-        public int Units { get; set; }
-        [Required]
-        public double Dropout { get; set; }
-        [Required]
-        public int Layers { get; set; }
-        [Required]
+        public int? Units { get; set; }
+        public double? Dropout { get; set; }
+        public int? Layers { get; set; }
         public double LearningRate { get; set; }
-        [Required]
         public int Epochs { get; set; }
-        [Required]
-        public int BatchSize { get; set; }
-        [Required]
+        public int? BatchSize { get; set; }
         public int Folds { get; set; }
         public bool EnableFeatureCorrelations { get; set; } = true;
         public double? TrainAccuracy { get; set; }
@@ -36,5 +29,10 @@ namespace HorseRacingML.Models
         /// 0 = Neural Network (TensorFlow), 1 = LightGBM
         /// </summary>
         public int ModelType { get; set; }
+
+        // LightGBM specific parameters
+        public int? LgbmLeaves { get; set; }
+        public int? LgbmMinDataInLeaf { get; set; }
+        public int? LgbmMaxDepth { get; set; }
     }
 }
