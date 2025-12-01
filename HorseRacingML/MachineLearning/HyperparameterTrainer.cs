@@ -411,6 +411,24 @@ namespace HorseRacingML.ML
 
             return ids.Length == 0 ? string.Empty : string.Join(',', ids);
         }
+
+        private static string BuildRaceSignature(IEnumerable<RaceExample> races)
+        {
+            if (races is null)
+            {
+                return string.Empty;
+            }
+
+            var ids = races
+                .Where(r => r is not null)
+                .Select(r => r!.RaceId)
+                .Distinct()
+                .OrderBy(id => id)
+                .ToArray();
+
+            return ids.Length == 0 ? string.Empty : string.Join(',', ids);
+        }
+
         private static string BuildNormalizationCacheKey(bool includeIdentifiers, string raceSignature)
         {
             var signature = string.IsNullOrEmpty(raceSignature) ? "*" : raceSignature;
@@ -1583,8 +1601,6 @@ namespace HorseRacingML.ML
             return File.Exists(_modelPath);
         }
 
-
-
         public TrainingResult Train(MLParameter param, TrainingDataset fullDataset, int foldIndex, int foldCount, bool persistWeights = true)
         {
             if (fullDataset is null)
@@ -1654,5 +1670,6 @@ namespace HorseRacingML.ML
 
             return Train(param, foldIndex, foldCount, slicedDataset, persistWeights);
         }
+
     }
 }
