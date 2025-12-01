@@ -68,6 +68,9 @@ namespace HorseRacingML.Controllers
                 //    This converts dictionaries to float[] vectors once, caching them in RunnerExample.
                 _trainer.PreEncodeFeatures(masterDataset);
 
+                var mlContext = _trainer.CreateLightGbmContext();
+                var lightGbmCache = new Dictionary<(int FoldIndex, int FoldCount), LightGbmFoldData>();
+
                 int modelIndex = 0;
                 foreach (var model in parameters)
                 {
@@ -88,8 +91,22 @@ namespace HorseRacingML.Controllers
                         var lastFoldIndex = model.Folds - 1;
                         Console.WriteLine($"[Hyperparameter]  Training ONLY final fold {lastFoldIndex + 1}/{model.Folds}...");
 
-                        // Use the overload that takes TrainingDataset (masterDataset) directly
-                        var result = _trainer.Train(model, masterDataset, lastFoldIndex, model.Folds, persistWeights: false);
+                        TrainingResult result;
+                        if (model.ModelType == 1)
+                        {
+                            var cacheKey = (lastFoldIndex, model.Folds);
+                            if (!lightGbmCache.TryGetValue(cacheKey, out var foldData))
+                            {
+                                foldData = _trainer.PrepareLightGbmFold(mlContext, masterDataset, lastFoldIndex, model.Folds);
+                                lightGbmCache[cacheKey] = foldData;
+                            }
+                            result = _trainer.TrainLightGbmOptimized(model, mlContext, foldData, persistWeights: false);
+                        }
+                        else
+                        {
+                            // Use the overload that takes TrainingDataset (masterDataset) directly
+                            result = _trainer.Train(model, masterDataset, lastFoldIndex, model.Folds, persistWeights: false);
+                        }
 
                         model.TrainAccuracy = result.TrainAccuracy;
                         model.TrainLoss = result.TrainLoss;
@@ -128,8 +145,22 @@ namespace HorseRacingML.Controllers
                         {
                             Console.WriteLine($"[Hyperparameter]  Fold {i + 1}/{model.Folds} - training in progress...");
 
-                            // Use the overload that takes TrainingDataset (masterDataset) directly
-                            var result = _trainer.Train(model, masterDataset, i, model.Folds, persistWeights: false);
+                            TrainingResult result;
+                            if (model.ModelType == 1)
+                            {
+                                var cacheKey = (i, model.Folds);
+                                if (!lightGbmCache.TryGetValue(cacheKey, out var foldData))
+                                {
+                                    foldData = _trainer.PrepareLightGbmFold(mlContext, masterDataset, i, model.Folds);
+                                    lightGbmCache[cacheKey] = foldData;
+                                }
+                                result = _trainer.TrainLightGbmOptimized(model, mlContext, foldData, persistWeights: false);
+                            }
+                            else
+                            {
+                                // Use the overload that takes TrainingDataset (masterDataset) directly
+                                result = _trainer.Train(model, masterDataset, i, model.Folds, persistWeights: false);
+                            }
 
                             if (result.TrainingRaceIds.Count == 0)
                             {

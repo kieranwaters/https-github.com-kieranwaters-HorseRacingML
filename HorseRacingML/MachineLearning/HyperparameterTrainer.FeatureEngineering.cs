@@ -2848,7 +2848,7 @@ namespace HorseRacingML.ML
                         speedCache,
                         distanceCache);
                 }
-                const int backfillProgressInterval = 250;
+                const int backfillProgressInterval = 2500;
                 int processed = 0;
                 var totalRaces = races.Count;
                 var stopwatch = Stopwatch.StartNew();

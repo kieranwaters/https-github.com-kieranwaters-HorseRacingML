@@ -1671,5 +1671,157 @@ namespace HorseRacingML.ML
             return Train(param, foldIndex, foldCount, slicedDataset, persistWeights);
         }
 
+        public class LightGbmFoldData
+        {
+            public IDataView TrainData { get; init; }
+            public IDataView ValData { get; init; }
+            public IReadOnlyList<float> ValLabels { get; init; } = Array.Empty<float>();
+            public IReadOnlyList<int> ValRaceIds { get; init; } = Array.Empty<int>();
+            public IReadOnlyList<RunnerExample> ValExamples { get; init; } = Array.Empty<RunnerExample>();
+            public IReadOnlyList<float> TrainLabels { get; init; } = Array.Empty<float>();
+            public IReadOnlyList<int> TrainRaceIds { get; init; } = Array.Empty<int>();
+            public bool IsEmpty { get; init; }
+        }
+
+        public MLContext CreateLightGbmContext()
+        {
+            return new MLContext(seed: 42);
+        }
+
+        public LightGbmFoldData PrepareLightGbmFold(MLContext mlContext, TrainingDataset dataset, int foldIndex, int foldCount)
+        {
+            if (dataset is null) throw new ArgumentNullException(nameof(dataset));
+            if (foldCount <= 0) throw new ArgumentOutOfRangeException(nameof(foldCount));
+            if (foldIndex < 0 || foldIndex >= foldCount) throw new ArgumentOutOfRangeException(nameof(foldIndex));
+
+            int totalRaces = dataset.Races.Count;
+            int foldSize = totalRaces / foldCount;
+            int valStart = foldIndex * foldSize;
+            int valEnd = foldIndex == foldCount - 1 ? totalRaces : valStart + foldSize;
+
+            var trainRaceIds = dataset.Races
+                           .Select((race, idx) => new { race, idx })
+                           .Where(x => x.idx < valStart)
+                           .Select(x => x.race.RaceId)
+                           .ToHashSet();
+
+            if (trainRaceIds.Count == 0)
+            {
+                return new LightGbmFoldData { IsEmpty = true };
+            }
+
+            var validationRaceIds = dataset.Races
+                .Skip(valStart)
+                .Take(valEnd - valStart)
+                .Select(r => r.RaceId)
+                .ToHashSet();
+
+            var trainingRaces = new List<RaceExample>();
+            var validationRaces = new List<RaceExample>();
+
+            foreach (var race in dataset.Races)
+            {
+                if (trainRaceIds.Contains(race.RaceId))
+                {
+                    trainingRaces.Add(race);
+                }
+                else if (validationRaceIds.Contains(race.RaceId))
+                {
+                    validationRaces.Add(race);
+                }
+            }
+
+            var trainExamples = trainingRaces.SelectMany(r => r.Runners).ToList();
+            var valExamples = validationRaces.SelectMany(r => r.Runners).ToList();
+
+            int featureCount = dataset.FeatureCount;
+
+            var trainFeatures = trainExamples.AsParallel().AsOrdered()
+                .Select(r => r.EncodedFeatures ?? EncodeFeatureVector(r.Features, dataset.FeatureKeys, dataset.FeatureDimensions, dataset.StringMaps, featureCount))
+                .ToList();
+            var valFeatures = valExamples.AsParallel().AsOrdered()
+                .Select(r => r.EncodedFeatures ?? EncodeFeatureVector(r.Features, dataset.FeatureKeys, dataset.FeatureDimensions, dataset.StringMaps, featureCount))
+                .ToList();
+
+            var trainData = trainFeatures.Zip(trainExamples, (f, r) => new LightGbmInput { Features = f, Label = r.Label == 1f }).ToList();
+            var valData = valFeatures.Zip(valExamples, (f, r) => new LightGbmInput { Features = f, Label = r.Label == 1f }).ToList();
+
+            var schemaDef = SchemaDefinition.Create(typeof(LightGbmInput));
+            schemaDef["Features"].ColumnType = new VectorDataViewType(NumberDataViewType.Single, featureCount);
+
+            var trainDataView = mlContext.Data.LoadFromEnumerable(trainData, schemaDef);
+            var valDataView = mlContext.Data.LoadFromEnumerable(valData, schemaDef);
+
+            return new LightGbmFoldData
+            {
+                TrainData = trainDataView,
+                ValData = valDataView,
+                TrainLabels = trainData.Select(x => x.Label ? 1f : 0f).ToArray(),
+                TrainRaceIds = trainExamples.Select(r => r.RaceId).ToArray(),
+                ValLabels = valData.Select(x => x.Label ? 1f : 0f).ToArray(),
+                ValRaceIds = valExamples.Select(r => r.RaceId).ToArray(),
+                ValExamples = valExamples,
+                IsEmpty = false
+            };
+        }
+
+        public TrainingResult TrainLightGbmOptimized(MLParameter param, MLContext mlContext, LightGbmFoldData data, bool persistWeights = false)
+        {
+            if (data.IsEmpty)
+            {
+                return new TrainingResult();
+            }
+
+            NormalizeBatchSize(param);
+
+            var pipeline = mlContext.BinaryClassification.Trainers.LightGbm(new LightGbmBinaryTrainer.Options
+            {
+                LabelColumnName = "Label",
+                FeatureColumnName = "Features",
+                NumberOfLeaves = param.LgbmLeaves > 0 ? param.LgbmLeaves.Value : 31,
+                MinimumExampleCountPerLeaf = param.LgbmMinDataInLeaf > 0 ? param.LgbmMinDataInLeaf.Value : 20,
+                LearningRate = param.LearningRate > 0 ? param.LearningRate : 0.1,
+                NumberOfIterations = param.Epochs > 0 ? param.Epochs : 100,
+            });
+
+            var model = pipeline.Fit(data.TrainData);
+
+            var trainPredictions = model.Transform(data.TrainData);
+            var valPredictions = model.Transform(data.ValData);
+
+            var trainMetrics = mlContext.BinaryClassification.Evaluate(trainPredictions, labelColumnName: "Label");
+            var valMetrics = mlContext.BinaryClassification.Evaluate(valPredictions, labelColumnName: "Label");
+
+            var trainProbs = trainPredictions.GetColumn<float>("Probability").ToArray();
+            var valProbs = valPredictions.GetColumn<float>("Probability").ToArray();
+
+            var trainLabelsArr = data.TrainLabels.ToArray();
+            var valLabelsArr = data.ValLabels.ToArray();
+            var trainRaceIdsArr = data.TrainRaceIds.ToArray();
+            var valRaceIdsArr = data.ValRaceIds.ToArray();
+
+            double trainAcc = ComputeWinnerAccuracy(trainRaceIdsArr, trainProbs, trainLabelsArr);
+            double valAcc = ComputeWinnerAccuracy(valRaceIdsArr, valProbs, valLabelsArr);
+            double trainBrier = ComputeBrier(trainProbs, trainLabelsArr);
+            double valBrier = ComputeBrier(valProbs, valLabelsArr);
+
+            return new TrainingResult
+            {
+                TrainAccuracy = trainAcc,
+                TrainLoss = trainMetrics.LogLoss,
+                TrainBrier = trainBrier,
+                ValidationAccuracy = valAcc,
+                ValidationLoss = valMetrics.LogLoss,
+                ValidationBrier = valBrier,
+                TrainingPredictions = Array.AsReadOnly(trainProbs),
+                TrainingLabels = Array.AsReadOnly(trainLabelsArr),
+                TrainingRaceIds = Array.AsReadOnly(trainRaceIdsArr),
+                ValidationPredictions = Array.AsReadOnly(valProbs),
+                ValidationLabels = Array.AsReadOnly(valLabelsArr),
+                ValidationRaceIds = Array.AsReadOnly(valRaceIdsArr),
+                ValidationExamples = new ReadOnlyCollection<RunnerExample>(data.ValExamples.ToList())
+            };
+        }
+
     }
 }
