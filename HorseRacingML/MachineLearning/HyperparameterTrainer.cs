@@ -568,7 +568,6 @@ namespace HorseRacingML.ML
                 FeatureColumnName = "Features",
                 NumberOfLeaves = param.LgbmLeaves > 0 ? param.LgbmLeaves.Value : 31,
                 MinimumExampleCountPerLeaf = param.LgbmMinDataInLeaf > 0 ? param.LgbmMinDataInLeaf.Value : 20,
-                MaximumTreeDepth = param.LgbmMaxDepth > 0 ? param.LgbmMaxDepth.Value : 0,
                 LearningRate = param.LearningRate > 0 ? param.LearningRate : 0.1,
                 NumberOfIterations = param.Epochs > 0 ? param.Epochs : 100,
             });
@@ -828,8 +827,8 @@ namespace HorseRacingML.ML
             var hiddenBiasVars = new List<ResourceVariable>();
             for (int i = 0; i < param.Layers; i++)
             {
-                var w = tf.Variable(tf.random.normal((inputDim, param.Units)), name: $"w{i}");
-                var b = tf.Variable(tf.zeros(param.Units), name: $"b{i}");
+                var w = tf.Variable(tf.random.normal((inputDim, param.Units ?? 10)), name: $"w{i}");
+                var b = tf.Variable(tf.zeros(param.Units ?? 10), name: $"b{i}");
                 hiddenWeightVars.Add(w);
                 hiddenBiasVars.Add(b);
                 layer = tf.nn.relu(tf.matmul(layer, w) + b);
@@ -837,7 +836,7 @@ namespace HorseRacingML.ML
                 {
                     layer = tf.nn.dropout(layer, rate: (float)param.Dropout);
                 }
-                inputDim = param.Units;
+                inputDim = param.Units ?? 10;
             }
 
             var wOut = tf.Variable(tf.random.normal((inputDim, 1)), name: "wOut");
@@ -948,14 +947,14 @@ namespace HorseRacingML.ML
                     patience = 5;
                     int wait = 0;
                     var indices = Enumerable.Range(0, n).ToArray();
-                    var batchIndexBuffer = new int[param.BatchSize];
+                    var batchIndexBuffer = new int[param.BatchSize ?? 32];
                     for (int epoch = 0; epoch < param.Epochs; epoch++)
                     {
                         Shuffle(indices, rnd);
 
-                        for (int start = 0; start < n; start += param.BatchSize)
+                        for (int start = 0; start < n; start += (param.BatchSize ?? 32))
                         {
-                            int batchCount = Math.Min(param.BatchSize, n - start);
+                            int batchCount = Math.Min(param.BatchSize ?? 32, n - start);
                             var batchIndices = indices.AsSpan(start, batchCount);
                             batchIndices.CopyTo(batchIndexBuffer);
                             var batchIndexArray = batchIndexBuffer.AsSpan(0, batchCount).ToArray();
@@ -1106,12 +1105,12 @@ namespace HorseRacingML.ML
                 },
                 Hyperparameters = new HyperparameterSummary
                 {
-                    Layers = param.Layers,
-                    Units = param.Units,
-                    Dropout = param.Dropout,
+                    Layers = param.Layers ?? 0,
+                    Units = param.Units ?? 10,
+                    Dropout = param.Dropout ?? 0,
                     LearningRate = param.LearningRate,
                     Epochs = param.Epochs,
-                    BatchSize = param.BatchSize,
+                    BatchSize = param.BatchSize ?? 32,
                     Folds = param.Folds,
                     Fold = param.Fold,
                     TrainedAtUtc = trainedAtUtc

@@ -69,7 +69,7 @@
                 <div class="d-flex flex-column flex-lg-row justify-content-between">
                     <span>Run @runNumber correlations</span>
                     <span class="text-muted small">
-                        Units: @result.Parameters.Units · Layers: @result.Parameters.Layers · Dropout: @result.Parameters.Dropout.ToString("0.###") · Learning Rate: @result.Parameters.LearningRate.ToString("0.#####")
+                        Units: @result.Parameters.Units · Layers: @result.Parameters.Layers · Dropout: @(result.Parameters.Dropout.HasValue? result.Parameters.Dropout.Value.ToString("0.###") : "N/A") · Learning Rate: @result.Parameters.LearningRate.ToString("0.#####")
                     </span>
                 </div>
             </div>
