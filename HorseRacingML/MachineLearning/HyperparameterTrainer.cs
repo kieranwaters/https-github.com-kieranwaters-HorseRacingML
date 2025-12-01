@@ -1,26 +1,27 @@
 ﻿using HorseRacingML.Data;
 using HorseRacingML.Models;
-using Microsoft.Data.SqlClient;
-using OpenQA.Selenium.BiDi.Script;
-using Microsoft.Extensions.Configuration;
-using System.Collections.ObjectModel;
-using System.Linq;
-using System.Text;
 using HorseRacingML.Models;
-using System.Text.Json;
-using System.Collections.Generic;
-using System.Collections.Concurrent;
-using System;
-using Tensorflow;
-using Tensorflow.NumPy;
-using System.IO;
-using System.Threading.Tasks;
-using static Tensorflow.Binding;
-using static Tensorflow.TensorShapeProto.Types;
+using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Configuration;
 using Microsoft.ML;
 using Microsoft.ML.Data;
 using Microsoft.ML.Trainers;
 using Microsoft.ML.Trainers.LightGbm;
+using OpenQA.Selenium.BiDi.Script;
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.IO;
+using System.Linq;
+using System.Text;
+using System.Text.Json;
+using System.Threading.Tasks;
+using Tensorflow;
+using Tensorflow.NumPy;
+using static HorseRacingML.ML.HyperparameterTrainer;
+using static Tensorflow.Binding;
+using static Tensorflow.TensorShapeProto.Types;
 using PreparedDataset = HorseRacingML.ML.HyperparameterTrainer.TrainingDataset.PreparedDataset;
 using PreparedRace = HorseRacingML.ML.HyperparameterTrainer.TrainingDataset.PreparedDataset.PreparedRace;
 using TensorShape = Tensorflow.Shape;
@@ -290,7 +291,37 @@ namespace HorseRacingML.ML
             }
             return sum / preds.Length;
         }
-        private TrainingDataset BuildTrainingDataset(
+        public void PreEncodeFeatures(TrainingDataset dataset)
+        {
+            if (dataset is null)
+                throw new ArgumentNullException(nameof(dataset));
+
+            Console.WriteLine($"[AI] Pre-encoding features for {dataset.Races.Count} races...");
+            var allRunners = dataset.Races.SelectMany(r => r.Runners).ToList();
+            int featureCount = dataset.FeatureCount;
+            var featureKeys = dataset.FeatureKeys;
+            var featureDims = dataset.FeatureDimensions;
+            var stringMaps = dataset.StringMaps;
+
+            Parallel.ForEach(allRunners, runner =>
+            {
+                runner.EncodedFeatures = EncodeFeatureVector(
+                    runner.Features,
+                    featureKeys,
+                    featureDims,
+                    stringMaps,
+                    featureCount);
+            });
+            Console.WriteLine("[AI] Pre-encoding complete.");
+        }
+
+        public TrainingDataset CreateMasterDataset(PreparedDataset prepared, bool includeIdentifiers = false)
+        {
+            var emptyValidation = new PreparedDataset(new List<PreparedRace>());
+            return BuildTrainingDataset(prepared, emptyValidation, includeIdentifiers);
+        }
+
+        public TrainingDataset BuildTrainingDataset(
         PreparedDataset trainingPrepared,
         PreparedDataset validationPrepared,
         bool includeIdentifiers = false)
@@ -546,10 +577,10 @@ namespace HorseRacingML.ML
             // Note: LightGBM handles non-normalized data well, so we skip explicit normalization here
             // but we still encode features to get float vectors.
             var trainFeatures = trainExamples.AsParallel().AsOrdered()
-                .Select(r => EncodeFeatureVector(r.Features, dataset.FeatureKeys, dataset.FeatureDimensions, dataset.StringMaps, featureCount))
+                .Select(r => r.EncodedFeatures ?? EncodeFeatureVector(r.Features, dataset.FeatureKeys, dataset.FeatureDimensions, dataset.StringMaps, featureCount))
                 .ToList();
             var valFeatures = valExamples.AsParallel().AsOrdered()
-                .Select(r => EncodeFeatureVector(r.Features, dataset.FeatureKeys, dataset.FeatureDimensions, dataset.StringMaps, featureCount))
+                .Select(r => r.EncodedFeatures ?? EncodeFeatureVector(r.Features, dataset.FeatureKeys, dataset.FeatureDimensions, dataset.StringMaps, featureCount))
                 .ToList();
 
             var trainData = trainFeatures.Zip(trainExamples, (f, r) => new LightGbmInput { Features = f, Label = r.Label == 1f }).ToList();
@@ -670,11 +701,11 @@ namespace HorseRacingML.ML
                 .ToList();
 
             int featureCount = dataset.FeatureCount;
-            var trainFeatures = trainExamples.AsParallel().AsOrdered().Select(r => EncodeFeatureVector(r.Features, dataset.FeatureKeys, dataset.FeatureDimensions, dataset.StringMaps, featureCount)).ToList();
+            var trainFeatures = trainExamples.AsParallel().AsOrdered().Select(r => r.EncodedFeatures ?? EncodeFeatureVector(r.Features, dataset.FeatureKeys, dataset.FeatureDimensions, dataset.StringMaps, featureCount)).ToList();
             var trainLabels = trainExamples.Select(r => r.Label).ToArray();
             var trainRaceIds = trainExamples.Select(r => r.RaceId).ToArray();
 
-            var valFeatures = valExamples.AsParallel().AsOrdered().Select(r => EncodeFeatureVector(r.Features, dataset.FeatureKeys, dataset.FeatureDimensions, dataset.StringMaps, featureCount)).ToList();
+            var valFeatures = valExamples.AsParallel().AsOrdered().Select(r => r.EncodedFeatures ?? EncodeFeatureVector(r.Features, dataset.FeatureKeys, dataset.FeatureDimensions, dataset.StringMaps, featureCount)).ToList();
             var valLabels = valExamples.Select(r => r.Label).ToArray();
             var valRaceIds = valExamples.Select(r => r.RaceId).ToArray();
             bool restoreFeatureState = false;
@@ -1553,4 +1584,73 @@ namespace HorseRacingML.ML
         }
 
     }
+}
+public TrainingResult Train(MLParameter param, TrainingDataset fullDataset, int foldIndex, int foldCount, bool persistWeights = true)
+{
+    if (fullDataset is null)
+        throw new ArgumentNullException(nameof(fullDataset));
+    NormalizeBatchSize(param);
+    int totalRaces = fullDataset.Races.Count;
+    if (foldCount <= 0)
+        throw new ArgumentOutOfRangeException(nameof(foldCount));
+    if (foldIndex < 0 || foldIndex >= foldCount)
+        throw new ArgumentOutOfRangeException(nameof(foldIndex));
+
+    int foldSize = totalRaces / foldCount;
+    int valStart = foldIndex * foldSize;
+    int valEnd = foldIndex == foldCount - 1 ? totalRaces : valStart + foldSize;
+
+    var trainRaceIds = fullDataset.Races
+                   .Select((race, idx) => new { race, idx })
+                   .Where(x => x.idx < valStart)
+                   .Select(x => x.race.RaceId)
+                   .ToHashSet();
+
+    if (trainRaceIds.Count == 0)
+    {
+        Console.WriteLine($"[TrainAI] Fold {foldIndex} resulted in an empty training set (likely the first chronological block). Skipping training for this fold.");
+        return new TrainingResult();
+    }
+
+    var validationRaceIds = fullDataset.Races
+        .Skip(valStart)
+        .Take(valEnd - valStart)
+        .Select(r => r.RaceId)
+        .ToHashSet();
+
+    var trainingRaces = new List<RaceExample>();
+    var validationRaces = new List<RaceExample>();
+
+    foreach (var race in fullDataset.Races)
+    {
+        if (trainRaceIds.Contains(race.RaceId))
+        {
+            trainingRaces.Add(race);
+        }
+        else if (validationRaceIds.Contains(race.RaceId))
+        {
+            validationRaces.Add(race);
+        }
+    }
+
+    // Create a new TrainingDataset using the existing metadata but sliced races
+    // Note: We need to use a distinct normalization key for this fold's training set
+    // so we don't accidentally reuse normalization from a different fold or the full set.
+    var normalizationKey = BuildNormalizationCacheKey(false, BuildRaceSignature(trainingRaces));
+
+    // Note: We MUST recalculate normalization statistics based ONLY on the training split
+    // to avoid data leakage. We cannot reuse normalization from 'fullDataset'.
+    // The Train(..., TrainingDataset, ...) method handles normalization calc if the key is new or stats are empty.
+    var normalization = GetNormalizationParameters(normalizationKey, fullDataset.FeatureCount, out _);
+
+    var slicedDataset = new TrainingDataset(
+        trainingRaces,
+        validationRaces,
+        fullDataset.FeatureKeys,
+        fullDataset.FeatureDimensions,
+        fullDataset.StringMaps,
+        normalization,
+        normalizationKey);
+
+    return Train(param, foldIndex, foldCount, slicedDataset, persistWeights);
 }

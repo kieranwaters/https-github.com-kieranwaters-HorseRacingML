@@ -380,6 +380,7 @@ namespace HorseRacingML.ML
             public int? HorseId { get; }
             public string? HorseName { get; }
             public decimal? StartingPriceDecimal { get; }
+            public float[]? EncodedFeatures { get; set; }
         }
 
         private sealed class DatasetFeatureMetadata

@@ -56,8 +56,17 @@ namespace HorseRacingML.Controllers
                 var parameters = batch.Parameters ?? new List<MLParameter>();
                 Console.WriteLine($"[Hyperparameter] Starting custom run for {parameters.Count} parameter set(s).");
 
-                var dataset = _trainer.PrepareDataset(includeIdentifiers: true);
-                Console.WriteLine($"[Hyperparameter] Dataset prepared with {dataset.Races.Count} races and {dataset.RowCount} runner rows.");
+                // 1. Prepare raw dataset (Stage 1: SQL Load)
+                var rawDataset = _trainer.PrepareDataset(includeIdentifiers: true);
+                Console.WriteLine($"[Hyperparameter] Raw dataset loaded with {rawDataset.Races.Count} races and {rawDataset.RowCount} runner rows.");
+
+                // 2. Create Master TrainingDataset (Stage 2: Metadata & Normalization Prep)
+                //    This performs BuildFeatureMetadata once for all data.
+                var masterDataset = _trainer.CreateMasterDataset(rawDataset, includeIdentifiers: true);
+
+                // 3. Pre-encode features (Stage 3: Vector Encoding)
+                //    This converts dictionaries to float[] vectors once, caching them in RunnerExample.
+                _trainer.PreEncodeFeatures(masterDataset);
 
                 int modelIndex = 0;
                 foreach (var model in parameters)
@@ -78,7 +87,9 @@ namespace HorseRacingML.Controllers
                     {
                         var lastFoldIndex = model.Folds - 1;
                         Console.WriteLine($"[Hyperparameter]  Training ONLY final fold {lastFoldIndex + 1}/{model.Folds}...");
-                        var result = _trainer.Train(model, dataset, lastFoldIndex, model.Folds, persistWeights: false);
+
+                        // Use the overload that takes TrainingDataset (masterDataset) directly
+                        var result = _trainer.Train(model, masterDataset, lastFoldIndex, model.Folds, persistWeights: false);
 
                         model.TrainAccuracy = result.TrainAccuracy;
                         model.TrainLoss = result.TrainLoss;
@@ -103,20 +114,22 @@ namespace HorseRacingML.Controllers
                     else
                     {
                         double totalTrainAccuracy = 0;
-                    double totalTrainLoss = 0;
-                    double totalTrainBrier = 0;
-                    double totalTrainFocalLoss = 0;
-                    double totalValidationAccuracy = 0;
-                    double totalValidationLoss = 0;
-                    double totalValidationBrier = 0;
-                    double totalValidationFocalLoss = 0;
+                        double totalTrainLoss = 0;
+                        double totalTrainBrier = 0;
+                        double totalTrainFocalLoss = 0;
+                        double totalValidationAccuracy = 0;
+                        double totalValidationLoss = 0;
+                        double totalValidationBrier = 0;
+                        double totalValidationFocalLoss = 0;
 
-                    int validFolds = 0;
+                        int validFolds = 0;
 
-                    for (int i = 0; i < model.Folds; i++)
+                        for (int i = 0; i < model.Folds; i++)
                         {
                             Console.WriteLine($"[Hyperparameter]  Fold {i + 1}/{model.Folds} - training in progress...");
-                            var result = _trainer.Train(model, dataset, i, model.Folds, persistWeights: false);
+
+                            // Use the overload that takes TrainingDataset (masterDataset) directly
+                            var result = _trainer.Train(model, masterDataset, i, model.Folds, persistWeights: false);
 
                             if (result.TrainingRaceIds.Count == 0)
                             {
@@ -162,13 +175,13 @@ namespace HorseRacingML.Controllers
 
                             _repository.InsertMLParameter(averagedModel);
                         }
-                        }
-
-                        Console.WriteLine($"[Hyperparameter] Completed model {modelIndex}/{parameters.Count}.");
                     }
 
-                    Console.WriteLine("[Hyperparameter] Custom run finished.");
-                
+                    Console.WriteLine($"[Hyperparameter] Completed model {modelIndex}/{parameters.Count}.");
+                }
+
+                Console.WriteLine("[Hyperparameter] Custom run finished.");
+
             });
 
             return RedirectToAction("Index", "Home");
@@ -606,10 +619,10 @@ namespace HorseRacingML.Controllers
 
             var allRaceData = Enumerable.Range(0, examples.Count)
                  .Select(i => new
-                {
-                    RaceId = raceIds[i],
-                    Example = examples[i]
-                })
+                 {
+                     RaceId = raceIds[i],
+                     Example = examples[i]
+                 })
                 .GroupBy(x => x.RaceId)
                 .Select(g =>
                 {
