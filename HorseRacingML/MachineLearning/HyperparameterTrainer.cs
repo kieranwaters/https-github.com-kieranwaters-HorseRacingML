@@ -1583,74 +1583,76 @@ namespace HorseRacingML.ML
             return File.Exists(_modelPath);
         }
 
-    }
-}
-public TrainingResult Train(MLParameter param, TrainingDataset fullDataset, int foldIndex, int foldCount, bool persistWeights = true)
-{
-    if (fullDataset is null)
-        throw new ArgumentNullException(nameof(fullDataset));
-    NormalizeBatchSize(param);
-    int totalRaces = fullDataset.Races.Count;
-    if (foldCount <= 0)
-        throw new ArgumentOutOfRangeException(nameof(foldCount));
-    if (foldIndex < 0 || foldIndex >= foldCount)
-        throw new ArgumentOutOfRangeException(nameof(foldIndex));
 
-    int foldSize = totalRaces / foldCount;
-    int valStart = foldIndex * foldSize;
-    int valEnd = foldIndex == foldCount - 1 ? totalRaces : valStart + foldSize;
 
-    var trainRaceIds = fullDataset.Races
-                   .Select((race, idx) => new { race, idx })
-                   .Where(x => x.idx < valStart)
-                   .Select(x => x.race.RaceId)
-                   .ToHashSet();
-
-    if (trainRaceIds.Count == 0)
-    {
-        Console.WriteLine($"[TrainAI] Fold {foldIndex} resulted in an empty training set (likely the first chronological block). Skipping training for this fold.");
-        return new TrainingResult();
-    }
-
-    var validationRaceIds = fullDataset.Races
-        .Skip(valStart)
-        .Take(valEnd - valStart)
-        .Select(r => r.RaceId)
-        .ToHashSet();
-
-    var trainingRaces = new List<RaceExample>();
-    var validationRaces = new List<RaceExample>();
-
-    foreach (var race in fullDataset.Races)
-    {
-        if (trainRaceIds.Contains(race.RaceId))
+        public TrainingResult Train(MLParameter param, TrainingDataset fullDataset, int foldIndex, int foldCount, bool persistWeights = true)
         {
-            trainingRaces.Add(race);
-        }
-        else if (validationRaceIds.Contains(race.RaceId))
-        {
-            validationRaces.Add(race);
+            if (fullDataset is null)
+                throw new ArgumentNullException(nameof(fullDataset));
+            NormalizeBatchSize(param);
+            int totalRaces = fullDataset.Races.Count;
+            if (foldCount <= 0)
+                throw new ArgumentOutOfRangeException(nameof(foldCount));
+            if (foldIndex < 0 || foldIndex >= foldCount)
+                throw new ArgumentOutOfRangeException(nameof(foldIndex));
+
+            int foldSize = totalRaces / foldCount;
+            int valStart = foldIndex * foldSize;
+            int valEnd = foldIndex == foldCount - 1 ? totalRaces : valStart + foldSize;
+
+            var trainRaceIds = fullDataset.Races
+                           .Select((race, idx) => new { race, idx })
+                           .Where(x => x.idx < valStart)
+                           .Select(x => x.race.RaceId)
+                           .ToHashSet();
+
+            if (trainRaceIds.Count == 0)
+            {
+                Console.WriteLine($"[TrainAI] Fold {foldIndex} resulted in an empty training set (likely the first chronological block). Skipping training for this fold.");
+                return new TrainingResult();
+            }
+
+            var validationRaceIds = fullDataset.Races
+                .Skip(valStart)
+                .Take(valEnd - valStart)
+                .Select(r => r.RaceId)
+                .ToHashSet();
+
+            var trainingRaces = new List<RaceExample>();
+            var validationRaces = new List<RaceExample>();
+
+            foreach (var race in fullDataset.Races)
+            {
+                if (trainRaceIds.Contains(race.RaceId))
+                {
+                    trainingRaces.Add(race);
+                }
+                else if (validationRaceIds.Contains(race.RaceId))
+                {
+                    validationRaces.Add(race);
+                }
+            }
+
+            // Create a new TrainingDataset using the existing metadata but sliced races
+            // Note: We need to use a distinct normalization key for this fold's training set
+            // so we don't accidentally reuse normalization from a different fold or the full set.
+            var normalizationKey = BuildNormalizationCacheKey(false, BuildRaceSignature(trainingRaces));
+
+            // Note: We MUST recalculate normalization statistics based ONLY on the training split
+            // to avoid data leakage. We cannot reuse normalization from 'fullDataset'.
+            // The Train(..., TrainingDataset, ...) method handles normalization calc if the key is new or stats are empty.
+            var normalization = GetNormalizationParameters(normalizationKey, fullDataset.FeatureCount, out _);
+
+            var slicedDataset = new TrainingDataset(
+                trainingRaces,
+                validationRaces,
+                fullDataset.FeatureKeys,
+                fullDataset.FeatureDimensions,
+                fullDataset.StringMaps,
+                normalization,
+                normalizationKey);
+
+            return Train(param, foldIndex, foldCount, slicedDataset, persistWeights);
         }
     }
-
-    // Create a new TrainingDataset using the existing metadata but sliced races
-    // Note: We need to use a distinct normalization key for this fold's training set
-    // so we don't accidentally reuse normalization from a different fold or the full set.
-    var normalizationKey = BuildNormalizationCacheKey(false, BuildRaceSignature(trainingRaces));
-
-    // Note: We MUST recalculate normalization statistics based ONLY on the training split
-    // to avoid data leakage. We cannot reuse normalization from 'fullDataset'.
-    // The Train(..., TrainingDataset, ...) method handles normalization calc if the key is new or stats are empty.
-    var normalization = GetNormalizationParameters(normalizationKey, fullDataset.FeatureCount, out _);
-
-    var slicedDataset = new TrainingDataset(
-        trainingRaces,
-        validationRaces,
-        fullDataset.FeatureKeys,
-        fullDataset.FeatureDimensions,
-        fullDataset.StringMaps,
-        normalization,
-        normalizationKey);
-
-    return Train(param, foldIndex, foldCount, slicedDataset, persistWeights);
 }
