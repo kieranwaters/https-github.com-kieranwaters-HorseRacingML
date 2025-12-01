@@ -6,6 +6,7 @@
 <h1>Custom Hyperparameters</h1>
 
 <form asp-action="Custom" method="post">
+    <div asp-validation-summary="All" class="text-danger"></div>
     <table class="table">
         <thead>
             <tr>
@@ -32,24 +33,24 @@
                         </select>
                     </td>
                     <td>
-                        <input asp-for="Parameters[i].Units" class="form-control nn-input" placeholder="Units" />
-                        <input asp-for="Parameters[i].LgbmLeaves" class="form-control lgbm-input" placeholder="Leaves" style="display:none" />
+                        <input asp-for="Parameters[i].Units" type="number" class="form-control nn-input" placeholder="Units" />
+                        <input asp-for="Parameters[i].LgbmLeaves" type="number" class="form-control lgbm-input" placeholder="Leaves" style="display:none" />
                     </td>
                     <td>
-                        <input asp-for="Parameters[i].Dropout" class="form-control nn-input" placeholder="Dropout" />
-                        <input asp-for="Parameters[i].LgbmMinDataInLeaf" class="form-control lgbm-input" placeholder="Min Data" style="display:none" />
+                        <input asp-for="Parameters[i].Dropout" type="number" step="any" class="form-control nn-input" placeholder="Dropout" />
+                        <input asp-for="Parameters[i].LgbmMinDataInLeaf" type="number" class="form-control lgbm-input" placeholder="Min Data" style="display:none" />
                     </td>
                     <td>
-                        <input asp-for="Parameters[i].Layers" class="form-control nn-input" placeholder="Layers" />
-                        <input asp-for="Parameters[i].LgbmMaxDepth" class="form-control lgbm-input" placeholder="Max Depth" style="display:none" />
+                        <input asp-for="Parameters[i].Layers" type="number" class="form-control nn-input" placeholder="Layers" />
+                        <input asp-for="Parameters[i].LgbmMaxDepth" type="number" class="form-control lgbm-input" placeholder="Max Depth" style="display:none" />
                     </td>
-                    <td><input asp-for="Parameters[i].LearningRate" class="form-control" /></td>
-                    <td><input asp-for="Parameters[i].Epochs" class="form-control" /></td>
+                    <td><input asp-for="Parameters[i].LearningRate" type="number" step="any" class="form-control" /></td>
+                    <td><input asp-for="Parameters[i].Epochs" type="number" class="form-control" /></td>
                     <td>
-                        <input asp-for="Parameters[i].BatchSize" class="form-control nn-input" />
+                        <input asp-for="Parameters[i].BatchSize" type="number" class="form-control nn-input" />
                         <span class="lgbm-input text-muted small" style="display:none">N/A</span>
                     </td>
-                    <td><input asp-for="Parameters[i].Folds" class="form-control" /></td>
+                    <td><input asp-for="Parameters[i].Folds" type="number" class="form-control" /></td>
                     <td><div class="form-check d-flex justify-content-center"><input asp-for="Parameters[i].TrainFinalFoldOnly" class="form-check-input" /></div></td>
                     <td>
                         <button type="button" class="btn btn-danger" onclick="removeRow(this)">Delete</button>
@@ -93,24 +94,24 @@
                         </select>
                     </td>
                     <td>
-                        <input name="Parameters[${index}].Units" class="form-control nn-input" placeholder="Units" />
-                        <input name="Parameters[${index}].LgbmLeaves" class="form-control lgbm-input" placeholder="Leaves" style="display:none" />
+                        <input name="Parameters[${index}].Units" type="number" class="form-control nn-input" placeholder="Units" />
+                        <input name="Parameters[${index}].LgbmLeaves" type="number" class="form-control lgbm-input" placeholder="Leaves" style="display:none" />
                     </td>
                     <td>
-                        <input name="Parameters[${index}].Dropout" class="form-control nn-input" placeholder="Dropout" />
-                        <input name="Parameters[${index}].LgbmMinDataInLeaf" class="form-control lgbm-input" placeholder="Min Data" style="display:none" />
+                        <input name="Parameters[${index}].Dropout" type="number" step="any" class="form-control nn-input" placeholder="Dropout" />
+                        <input name="Parameters[${index}].LgbmMinDataInLeaf" type="number" class="form-control lgbm-input" placeholder="Min Data" style="display:none" />
                     </td>
                     <td>
-                        <input name="Parameters[${index}].Layers" class="form-control nn-input" placeholder="Layers" />
-                        <input name="Parameters[${index}].LgbmMaxDepth" class="form-control lgbm-input" placeholder="Max Depth" style="display:none" />
+                        <input name="Parameters[${index}].Layers" type="number" class="form-control nn-input" placeholder="Layers" />
+                        <input name="Parameters[${index}].LgbmMaxDepth" type="number" class="form-control lgbm-input" placeholder="Max Depth" style="display:none" />
                     </td>
-                    <td><input name="Parameters[${index}].LearningRate" class="form-control" /></td>
-                    <td><input name="Parameters[${index}].Epochs" class="form-control" /></td>
+                    <td><input name="Parameters[${index}].LearningRate" type="number" step="any" class="form-control" /></td>
+                    <td><input name="Parameters[${index}].Epochs" type="number" class="form-control" /></td>
                     <td>
-                         <input name="Parameters[${index}].BatchSize" class="form-control nn-input" />
+                         <input name="Parameters[${index}].BatchSize" type="number" class="form-control nn-input" />
                          <span class="lgbm-input text-muted small" style="display:none">N/A</span>
                     </td>
-                    <td><input name="Parameters[${index}].Folds" class="form-control" /></td>
+                    <td><input name="Parameters[${index}].Folds" type="number" class="form-control" /></td>
                     <td><div class="form-check d-flex justify-content-center"><input class="form-check-input" type="checkbox" name="Parameters[${index}].TrainFinalFoldOnly" value="true"></div></td>
                     <td><button type="button" class="btn btn-danger" onclick="removeRow(this)">Delete</button></td>
                     <input type="hidden" name="Parameters[${index}].RunDate" value="${new Date().toISOString()}" />
