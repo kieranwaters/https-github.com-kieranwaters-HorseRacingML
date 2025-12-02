@@ -19,7 +19,7 @@
                 <th>Batch Size</th>
                 <th>Folds</th>
                 <th>Last Fold Only?</th>
-                <th></th>
+                <th style="width: 150px;">Actions</th>
             </tr>
         </thead>
         <tbody id="parameterRows">
@@ -53,15 +53,22 @@
                     <td><input asp-for="Parameters[i].Folds" type="number" class="form-control" /></td>
                     <td><div class="form-check d-flex justify-content-center"><input asp-for="Parameters[i].TrainFinalFoldOnly" class="form-check-input" /></div></td>
                     <td>
-                        <button type="button" class="btn btn-danger" onclick="removeRow(this)">Delete</button>
+                        <div class="d-flex gap-1">
+                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="moveRowUp(this)" title="Move Up">↑</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="moveRowDown(this)" title="Move Down">↓</button>
+                            <button type="button" class="btn btn-sm btn-danger" onclick="removeRow(this)" title="Remove">✕</button>
+                        </div>
                     </td>
                     <input type="hidden" asp-for="Parameters[i].RunDate" />
                 </tr>
             }
         </tbody>
     </table>
-    <button type="button" class="btn btn-secondary" onclick="addRow()">Add Row</button>
-    <button type="submit" class="btn btn-primary">Run</button>
+    <div class="d-flex align-items-center gap-3">
+        <button type="button" class="btn btn-secondary" onclick="addRow()">Add Row</button>
+        <button type="button" class="btn btn-primary" id="btnStartProcessing" onclick="startProcessingQueue()">Start Processing Queue</button>
+        <div id="processingStatus" class="fw-bold text-info" style="display:none;"></div>
+    </div>
 </form>
 
 @section Scripts {
@@ -113,7 +120,13 @@
                     </td>
                     <td><input name="Parameters[${index}].Folds" type="number" class="form-control" /></td>
                     <td><div class="form-check d-flex justify-content-center"><input class="form-check-input" type="checkbox" name="Parameters[${index}].TrainFinalFoldOnly" value="true"></div></td>
-                    <td><button type="button" class="btn btn-danger" onclick="removeRow(this)">Delete</button></td>
+                    <td>
+                        <div class="d-flex gap-1">
+                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="moveRowUp(this)" title="Move Up">↑</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="moveRowDown(this)" title="Move Down">↓</button>
+                            <button type="button" class="btn btn-sm btn-danger" onclick="removeRow(this)" title="Remove">✕</button>
+                        </div>
+                    </td>
                     <input type="hidden" name="Parameters[${index}].RunDate" value="${new Date().toISOString()}" />
                 </tr>`;
             document.getElementById('parameterRows').insertAdjacentHTML('beforeend', template);
@@ -122,10 +135,26 @@
             btn.closest('tr').remove();
             updateIndexes();
         }
+        function moveRowUp(btn) {
+            const row = btn.closest('tr');
+            const prev = row.previousElementSibling;
+            if (prev) {
+                row.parentNode.insertBefore(row, prev);
+                updateIndexes();
+            }
+        }
+        function moveRowDown(btn) {
+            const row = btn.closest('tr');
+            const next = row.nextElementSibling;
+            if (next) {
+                row.parentNode.insertBefore(next, row);
+                updateIndexes();
+            }
+        }
         function updateIndexes() {
             const rows = document.querySelectorAll('#parameterRows tr');
             rows.forEach((row, idx) => {
-                row.querySelectorAll('input').forEach(input => {
+                row.querySelectorAll('input, select').forEach(input => {
                     const name = input.getAttribute('name');
                     if (name) {
                         input.setAttribute('name', name.replace(/Parameters\[\d+\]/, `Parameters[${idx}]`));
@@ -136,6 +165,88 @@
                     }
                 });
             });
+        }
+
+        async function startProcessingQueue() {
+            const btn = document.getElementById('btnStartProcessing');
+            const statusDiv = document.getElementById('processingStatus');
+            btn.disabled = true;
+            statusDiv.style.display = 'block';
+            statusDiv.textContent = 'Initializing...';
+
+            // Function to process one item at a time
+            async function processNext() {
+                const rows = document.querySelectorAll('#parameterRows tr.parameter-row');
+                if (rows.length === 0) {
+                    statusDiv.textContent = 'All items processed.';
+                    btn.disabled = false;
+                    setTimeout(() => statusDiv.style.display = 'none', 3000);
+                    return;
+                }
+
+                const row = rows[0];
+                statusDiv.textContent = `Processing item 1 of ${rows.length}...`;
+
+                // Extract data from the row inputs
+                const modelType = parseInt(row.querySelector('.model-type-select').value);
+                const isLgbm = modelType === 1;
+
+                const model = {
+                    ModelType: modelType,
+                    LearningRate: parseFloat(row.querySelector('input[name*=".LearningRate"]').value) || 0.1,
+                    Epochs: parseInt(row.querySelector('input[name*=".Epochs"]').value) || 100,
+                    Folds: parseInt(row.querySelector('input[name*=".Folds"]').value) || 1,
+                    TrainFinalFoldOnly: row.querySelector('input[name*=".TrainFinalFoldOnly"]').checked,
+                    RunDate: new Date().toISOString()
+                };
+
+                if (isLgbm) {
+                    model.LgbmLeaves = parseInt(row.querySelector('.lgbm-input[placeholder="Leaves"]').value) || 31;
+                    model.LgbmMinDataInLeaf = parseInt(row.querySelector('.lgbm-input[placeholder="Min Data"]').value) || 20;
+                    model.LgbmMaxDepth = parseInt(row.querySelector('.lgbm-input[placeholder="Max Depth"]').value) || -1;
+                } else {
+                    model.Units = parseInt(row.querySelector('.nn-input[placeholder="Units"]').value) || 10;
+                    model.Dropout = parseFloat(row.querySelector('.nn-input[placeholder="Dropout"]').value) || 0;
+                    model.Layers = parseInt(row.querySelector('.nn-input[placeholder="Layers"]').value) || 1;
+                    model.BatchSize = parseInt(row.querySelector('input[name*=".BatchSize"]').value) || 32;
+                }
+
+                try {
+                    const response = await fetch('/Hyperparameter/TrainCustomModel', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'RequestVerificationToken': document.querySelector('input[name="__RequestVerificationToken"]').value
+                        },
+                        body: JSON.stringify(model)
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`Server returned ${response.status} ${response.statusText}`);
+                    }
+
+                    const result = await response.json();
+                    if (result.success) {
+                        // Remove the completed row
+                        row.remove();
+                        updateIndexes(); // Keep remaining indices tidy
+                        // Recursive call to process next
+                        processNext();
+                    } else {
+                        alert('Training failed: ' + result.message);
+                        btn.disabled = false;
+                        statusDiv.textContent = 'Stopped due to error.';
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
+                    alert('An error occurred during processing: ' + error.message);
+                    btn.disabled = false;
+                    statusDiv.textContent = 'Stopped due to error.';
+                }
+            }
+
+            // Start the loop
+            processNext();
         }
     </script>
 }

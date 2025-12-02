@@ -46,6 +46,8 @@ namespace HorseRacingML.Controllers
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> Custom(MLParameterBatch batch)
         {
+            // Retained for backward compatibility if standard form submit is used,
+            // though the new JS queue will use TrainCustomModel.
             if (!ModelState.IsValid)
             {
                 return View(batch);
@@ -56,17 +58,7 @@ namespace HorseRacingML.Controllers
                 var parameters = batch.Parameters ?? new List<MLParameter>();
                 Console.WriteLine($"[Hyperparameter] Starting custom run for {parameters.Count} parameter set(s).");
 
-                // 1. Prepare raw dataset (Stage 1: SQL Load)
-                var rawDataset = _trainer.PrepareDataset(includeIdentifiers: true);
-                Console.WriteLine($"[Hyperparameter] Raw dataset loaded with {rawDataset.Races.Count} races and {rawDataset.RowCount} runner rows.");
-
-                // 2. Create Master TrainingDataset (Stage 2: Metadata & Normalization Prep)
-                //    This performs BuildFeatureMetadata once for all data.
-                var masterDataset = _trainer.CreateMasterDataset(rawDataset, includeIdentifiers: true);
-
-                // 3. Pre-encode features (Stage 3: Vector Encoding)
-                //    This converts dictionaries to float[] vectors once, caching them in RunnerExample.
-                _trainer.PreEncodeFeatures(masterDataset);
+                var masterDataset = _trainer.EnsureMasterDatasetLoaded();
 
                 var mlContext = _trainer.CreateLightGbmContext();
                 var lightGbmCache = new Dictionary<(int FoldIndex, int FoldCount), LightGbmFoldData>();
@@ -104,7 +96,6 @@ namespace HorseRacingML.Controllers
                         }
                         else
                         {
-                            // Use the overload that takes TrainingDataset (masterDataset) directly
                             result = _trainer.Train(model, masterDataset, lastFoldIndex, model.Folds, persistWeights: false);
                         }
 
@@ -116,7 +107,7 @@ namespace HorseRacingML.Controllers
                         model.ValidationLoss = result.ValidationLoss;
                         model.ValidationBrier = result.ValidationBrier;
                         model.ValidationFocalLoss = result.ValidationFocalLoss;
-                        model.Fold = model.Folds; // Store the total fold count (1-based index) as requested
+                        model.Fold = model.Folds;
 
                         if (result.TrainingRaceIds.Count > 0)
                         {
@@ -158,7 +149,6 @@ namespace HorseRacingML.Controllers
                             }
                             else
                             {
-                                // Use the overload that takes TrainingDataset (masterDataset) directly
                                 result = _trainer.Train(model, masterDataset, i, model.Folds, persistWeights: false);
                             }
 
@@ -216,6 +206,157 @@ namespace HorseRacingML.Controllers
             });
 
             return RedirectToAction("Index", "Home");
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> TrainCustomModel([FromBody] MLParameter model)
+        {
+            if (model == null)
+            {
+                return BadRequest("Invalid model parameters.");
+            }
+
+            try
+            {
+                await Task.Run(() =>
+                {
+                    // Ensure dataset is loaded and cached
+                    var masterDataset = _trainer.EnsureMasterDatasetLoaded();
+
+                    Console.WriteLine($"[Hyperparameter] Starting custom model training (layers: {model.Layers}, units: {model.Units}, dropout: {model.Dropout}, lr: {model.LearningRate}).");
+
+                    var foldCount = model.Folds;
+                    if (foldCount <= 0)
+                    {
+                        foldCount = 1;
+                        Console.WriteLine($"[Hyperparameter] Fold count was not specified or invalid. Defaulting to {foldCount}.");
+                    }
+                    model.Folds = foldCount;
+                    model.RunDate = DateTime.UtcNow;
+
+                    var mlContext = _trainer.CreateLightGbmContext();
+                    // We don't cache LightGBM fold data across HTTP requests for now, as it adds complexity.
+                    // Each request rebuilds the fold data if needed.
+
+                    if (model.TrainFinalFoldOnly && model.Folds > 0)
+                    {
+                        var lastFoldIndex = model.Folds - 1;
+                        Console.WriteLine($"[Hyperparameter] Training ONLY final fold {lastFoldIndex + 1}/{model.Folds}...");
+
+                        TrainingResult result;
+                        if (model.ModelType == 1)
+                        {
+                            var foldData = _trainer.PrepareLightGbmFold(mlContext, masterDataset, lastFoldIndex, model.Folds);
+                            result = _trainer.TrainLightGbmOptimized(model, mlContext, foldData, persistWeights: false);
+                        }
+                        else
+                        {
+                            result = _trainer.Train(model, masterDataset, lastFoldIndex, model.Folds, persistWeights: false);
+                        }
+
+                        model.TrainAccuracy = result.TrainAccuracy;
+                        model.TrainLoss = result.TrainLoss;
+                        model.TrainBrier = result.TrainBrier;
+                        model.TrainFocalLoss = result.TrainFocalLoss;
+                        model.ValidationAccuracy = result.ValidationAccuracy;
+                        model.ValidationLoss = result.ValidationLoss;
+                        model.ValidationBrier = result.ValidationBrier;
+                        model.ValidationFocalLoss = result.ValidationFocalLoss;
+                        model.Fold = model.Folds;
+
+                        if (result.TrainingRaceIds.Count > 0)
+                        {
+                            _repository.InsertMLParameter(model);
+                            Console.WriteLine($"[Hyperparameter] Final fold complete. Train acc: {result.TrainAccuracy:F4}, val acc: {result.ValidationAccuracy:F4}.");
+                        }
+                        else
+                        {
+                            Console.WriteLine($"[Hyperparameter] Final fold skipped due to empty training set.");
+                        }
+                    }
+                    else
+                    {
+                        double totalTrainAccuracy = 0;
+                        double totalTrainLoss = 0;
+                        double totalTrainBrier = 0;
+                        double totalTrainFocalLoss = 0;
+                        double totalValidationAccuracy = 0;
+                        double totalValidationLoss = 0;
+                        double totalValidationBrier = 0;
+                        double totalValidationFocalLoss = 0;
+
+                        int validFolds = 0;
+
+                        for (int i = 0; i < model.Folds; i++)
+                        {
+                            Console.WriteLine($"[Hyperparameter] Fold {i + 1}/{model.Folds} - training in progress...");
+
+                            TrainingResult result;
+                            if (model.ModelType == 1)
+                            {
+                                var foldData = _trainer.PrepareLightGbmFold(mlContext, masterDataset, i, model.Folds);
+                                result = _trainer.TrainLightGbmOptimized(model, mlContext, foldData, persistWeights: false);
+                            }
+                            else
+                            {
+                                result = _trainer.Train(model, masterDataset, i, model.Folds, persistWeights: false);
+                            }
+
+                            if (result.TrainingRaceIds.Count == 0)
+                            {
+                                Console.WriteLine($"[Hyperparameter] Fold {i + 1}/{model.Folds} skipped due to empty training set.");
+                                continue;
+                            }
+
+                            validFolds++;
+                            Console.WriteLine($"[Hyperparameter] Fold {i + 1}/{model.Folds} complete. Train acc: {result.TrainAccuracy:F4}, val acc: {result.ValidationAccuracy:F4}.");
+
+                            totalTrainAccuracy += result.TrainAccuracy;
+                            totalTrainLoss += result.TrainLoss;
+                            totalTrainBrier += result.TrainBrier;
+                            totalTrainFocalLoss += result.TrainFocalLoss;
+                            totalValidationAccuracy += result.ValidationAccuracy;
+                            totalValidationLoss += result.ValidationLoss;
+                            totalValidationBrier += result.ValidationBrier;
+                            totalValidationFocalLoss += result.ValidationFocalLoss;
+                        }
+
+                        if (validFolds > 0)
+                        {
+                            var averagedModel = new MLParameter
+                            {
+                                RunDate = model.RunDate,
+                                Units = model.Units,
+                                Dropout = model.Dropout,
+                                Layers = model.Layers,
+                                LearningRate = model.LearningRate,
+                                Epochs = model.Epochs,
+                                BatchSize = model.BatchSize,
+                                Folds = model.Folds,
+                                Fold = null,
+                                TrainAccuracy = totalTrainAccuracy / validFolds,
+                                TrainLoss = totalTrainLoss / validFolds,
+                                TrainBrier = totalTrainBrier / validFolds,
+                                TrainFocalLoss = totalTrainFocalLoss / validFolds,
+                                ValidationAccuracy = totalValidationAccuracy / validFolds,
+                                ValidationLoss = totalValidationLoss / validFolds,
+                                ValidationBrier = totalValidationBrier / validFolds,
+                                ValidationFocalLoss = totalValidationFocalLoss / validFolds
+                            };
+
+                            _repository.InsertMLParameter(averagedModel);
+                        }
+                    }
+                });
+
+                return Json(new { success = true });
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[Hyperparameter] Error training custom model: {ex}");
+                return Json(new { success = false, message = ex.Message });
+            }
         }
         [HttpGet]
         public IActionResult TrainAI()

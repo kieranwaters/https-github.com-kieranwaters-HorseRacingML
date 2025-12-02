@@ -45,8 +45,10 @@ namespace HorseRacingML.ML
         private readonly Dictionary<(bool IncludeIdentifiers, string RaceSignature), DatasetFeatureMetadata> _featureMetadataCache = new();
         private readonly object _normalizationCacheLock = new();
         private readonly Dictionary<string, NormalizationParameters> _normalizationCache = new(StringComparer.Ordinal);
+        private readonly object _masterDatasetLock = new();
+        private TrainingDataset? _cachedMasterDataset;
         private readonly string _modelPath;
-        public HyperparameterTrainer(IConfiguration configuration, IRacingRepository? racingRepository = null)
+        public HyperparameterTrainer(IConfiguration configuration)
         {
             if (configuration is null)
             {
@@ -59,8 +61,6 @@ namespace HorseRacingML.ML
             _winRateBeta = configuration.GetValue<float>("WinRateBeta", 2f);
             var modelPath = configuration["ML:ModelPath"] ?? throw new InvalidOperationException("AI model path not configured.");
             _modelPath = Path.IsPathRooted(modelPath) ? modelPath : Path.Combine(AppContext.BaseDirectory, modelPath);
-            _racingRepository = racingRepository;
-
         }
         public class TrainingResult
         {
@@ -128,6 +128,32 @@ namespace HorseRacingML.ML
             public double Correlation { get; init; }
             public IReadOnlyList<RunnerExample> ValidationExamples { get; init; } = Array.Empty<RunnerExample>();
         }
+        public TrainingDataset EnsureMasterDatasetLoaded(bool forceReload = false)
+        {
+            lock (_masterDatasetLock)
+            {
+                if (_cachedMasterDataset != null && !forceReload)
+                {
+                    return _cachedMasterDataset;
+                }
+
+                Console.WriteLine("[AI] Loading and preparing master dataset for custom training queue...");
+                // 1. Prepare raw dataset (Stage 1: SQL Load)
+                // includeIdentifiers: true is required to track race IDs for caching
+                var rawDataset = PrepareDataset(includeRaceIds: null, stateRaceWhitelist: null, includeIdentifiers: true);
+                Console.WriteLine($"[AI] Raw dataset loaded with {rawDataset.Races.Count} races.");
+
+                // 2. Create Master TrainingDataset (Stage 2: Metadata & Normalization Prep)
+                var masterDataset = CreateMasterDataset(rawDataset, includeIdentifiers: true);
+
+                // 3. Pre-encode features (Stage 3: Vector Encoding)
+                PreEncodeFeatures(masterDataset);
+
+                _cachedMasterDataset = masterDataset;
+                return _cachedMasterDataset;
+            }
+        }
+
         private static void NormalizeBatchSize(MLParameter param)
         {
             if (param is null)
@@ -1825,3 +1851,4 @@ namespace HorseRacingML.ML
 
     }
 }
+

@@ -1,780 +1,957 @@
-using HorseRacingML.Models;
-using HorseRacingML.Scraping;
 using HorseRacingML.Data;
+using HorseRacingML.ML;
+using HorseRacingML.Models;
 using HorseRacingML.Services;
 using Microsoft.AspNetCore.Mvc;
-using System.Diagnostics;
-using System.Threading.Tasks;
-using HorseRacingML.ML;
+using Microsoft.Extensions.Configuration;
+using System;
+using HorseRacingML.Services;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
-using System;
-using System.Collections.Generic;
+using System.Threading.Tasks;
+using static HorseRacingML.ML.HyperparameterTrainer;
 
 namespace HorseRacingML.Controllers
 {
-    public class HomeController : Controller
+    public class HyperparameterController : Controller
     {
-        private const double AiProbabilityDisplayThreshold = 0.01d;
-        private readonly ILogger<HomeController> _logger;
         private readonly RacingRepository _repository;
-        private readonly ScrapingStatusService _status;
-        private readonly AutomationSettingsService _automationSettings;
+        private readonly HyperparameterTrainer _trainer;
+        private readonly AIOddsCalculator _aiOddsCalculator;
 
-        public HomeController(
-           ILogger<HomeController> logger,
-           RacingRepository repository,
-           ScrapingStatusService status,
-           AutomationSettingsService automationSettings)
+        private readonly decimal? _maxKellyFraction;
+
+        public HyperparameterController(RacingRepository repository, HyperparameterTrainer trainer, IConfiguration configuration, AIOddsCalculator aiOddsCalculator)
         {
-            _logger = logger;
             _repository = repository;
-            _status = status;
-            _automationSettings = automationSettings;
+            _trainer = trainer;
+            _aiOddsCalculator = aiOddsCalculator;
+            _maxKellyFraction = configuration.GetValue<decimal?>("Betting:MaxKellyFraction");
         }
+
         [HttpGet]
-        public IActionResult GetAutomationSettings()
+        public IActionResult Custom()
         {
-            var snapshot = _automationSettings.GetSnapshot();
-            return Json(new
+            return View(new MLParameterBatch
             {
-                success = true,
-                settings = new
+                Parameters = new List<MLParameter>
                 {
-                    kellyDampener = snapshot.KellyDampener,
-                    maxKellyFraction = snapshot.MaxKellyFraction,
-                    maxStakeMode = snapshot.MaxStakeMode.ToString(),
-                    maxStakePercent = snapshot.MaxStakePercentOfBankroll,
-                    maxStakeAmount = snapshot.MaxStakeFixedAmount
+                    new MLParameter { RunDate = DateTime.UtcNow }
                 }
             });
         }
 
         [HttpPost]
-        public IActionResult UpdateAutomationSettings([FromBody] UpdateAutomationSettingsRequest? request)
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> Custom(MLParameterBatch batch)
         {
-            if (request == null)
+            // Retained for backward compatibility if standard form submit is used,
+            // though the new JS queue will use TrainCustomModel.
+            if (!ModelState.IsValid)
             {
-                return BadRequest(new { success = false, message = "A request payload is required." });
+                return View(batch);
             }
 
-            var update = new AutomationSettingsUpdate(
-                request.KellyDampener,
-                request.MaxKellyFraction,
-                request.MaxStakeMode,
-                request.MaxStakeMode == MaxStakeMode.PercentageOfBankroll ? request.MaxStakePercent : null,
-                request.MaxStakeMode == MaxStakeMode.FixedAmount ? request.MaxStakeAmount : null);
-
-            var snapshot = _automationSettings.UpdateSettings(update);
-            return Json(new
+            await Task.Run(() =>
             {
-                success = true,
-                settings = new
+                var parameters = batch.Parameters ?? new List<MLParameter>();
+                Console.WriteLine($"[Hyperparameter] Starting custom run for {parameters.Count} parameter set(s).");
+
+                var masterDataset = _trainer.EnsureMasterDatasetLoaded();
+
+                var mlContext = _trainer.CreateLightGbmContext();
+                var lightGbmCache = new Dictionary<(int FoldIndex, int FoldCount), LightGbmFoldData>();
+
+                int modelIndex = 0;
+                foreach (var model in parameters)
                 {
-                    kellyDampener = snapshot.KellyDampener,
-                    maxKellyFraction = snapshot.MaxKellyFraction,
-                    maxStakeMode = snapshot.MaxStakeMode.ToString(),
-                    maxStakePercent = snapshot.MaxStakePercentOfBankroll,
-                    maxStakeAmount = snapshot.MaxStakeFixedAmount
-                }
-            });
-        }
-        [HttpGet]
-        public IActionResult DayReportOptions(string? startTime = null, string? endTime = null, string? error = null, string? region = null, bool showFeatureSignificance = true)
-        {
-            var normalizedRegion = DayReportFilterViewModel.NormalizeRegion(region);
-            var model = new DayReportFilterViewModel
-            {
-                StartTime = startTime,
-                EndTime = endTime,
-                ErrorMessage = error,
-                Region = normalizedRegion,
-                ShowFeatureSignificance = showFeatureSignificance
-            };
+                    modelIndex++;
+                    Console.WriteLine($"[Hyperparameter] Starting model {modelIndex}/{parameters.Count} (layers: {model.Layers}, units: {model.Units}, dropout: {model.Dropout}, lr: {model.LearningRate}).");
 
-            return View(model);
-        }
-
-        public async Task<IActionResult> DayReport(
-            [FromServices] BetfairNavigationService betfair,
-            [FromServices] HyperparameterTrainer trainer,
-            string? startTime = null,
-            string? endTime = null,
-            string? region = null,
-            bool showFeatureSignificance = true)
-        {
-            var normalizedRegion = DayReportFilterViewModel.NormalizeRegion(region);
-            if (!TryParseTimeOfDay(startTime, out var startTimeSpan))
-            {
-                return View("DayReportOptions", new DayReportFilterViewModel
-                {
-                    StartTime = startTime,
-                    EndTime = endTime,
-                    ErrorMessage = "Start time must be in HH:MM format.",
-                    Region = normalizedRegion,
-                    ShowFeatureSignificance = showFeatureSignificance
-                });
-            }
-
-            if (!TryParseTimeOfDay(endTime, out var endTimeSpan))
-            {
-                return View("DayReportOptions", new DayReportFilterViewModel
-                {
-                    StartTime = startTime,
-                    EndTime = endTime,
-                    ErrorMessage = "End time must be in HH:MM format.",
-                    Region = normalizedRegion,
-                    ShowFeatureSignificance = showFeatureSignificance
-                });
-            }
-
-            if (startTimeSpan.HasValue && endTimeSpan.HasValue && startTimeSpan.Value > endTimeSpan.Value)
-            {
-                return View("DayReportOptions", new DayReportFilterViewModel
-                {
-                    StartTime = startTime,
-                    EndTime = endTime,
-                    ErrorMessage = "Start time must be earlier than or equal to the end time.",
-                    Region = normalizedRegion,
-                    ShowFeatureSignificance = showFeatureSignificance
-                });
-            }
-            await betfair.OpenHorseRaceMeetingsInNewTabsAsync(
-                scheduleStartTime: startTimeSpan,
-                scheduleEndTime: endTimeSpan,
-                scheduleRegion: normalizedRegion);
-
-
-            var report = betfair.GenerateDayReport(_repository, trainer, showFeatureSignificance);
-            var usedNextDay = false;
-
-            if (ShouldLoadNextDaySchedule(report, normalizedRegion))
-            {
-                _logger.LogInformation("Day report contains only USA races; attempting to load the next day's schedule.");
-                var switched = await betfair.TrySelectHorseRacingDayAsync(1);
-                if (switched)
-                {
-                    await betfair.OpenHorseRaceMeetingsInNewTabsAsync(
-                        closeExistingRaceTabs: true,
-                        scheduleStartTime: startTimeSpan,
-                        scheduleEndTime: endTimeSpan);
-                    var nextDayReport = betfair.GenerateDayReport(_repository, trainer, showFeatureSignificance);
-                    if (nextDayReport?.Races?.Count > 0)
+                    var foldCount = model.Folds;
+                    if (foldCount <= 0)
                     {
-                        report = nextDayReport;
-                        usedNextDay = true;
+                        foldCount = 1;
+                        Console.WriteLine($"[Hyperparameter]  Fold count was not specified or invalid. Defaulting to {foldCount} for model {modelIndex}.");
+                    }
+
+                    model.Folds = foldCount;
+                    model.RunDate = DateTime.UtcNow;
+                    if (model.TrainFinalFoldOnly && model.Folds > 0)
+                    {
+                        var lastFoldIndex = model.Folds - 1;
+                        Console.WriteLine($"[Hyperparameter]  Training ONLY final fold {lastFoldIndex + 1}/{model.Folds}...");
+
+                        TrainingResult result;
+                        if (model.ModelType == 1)
+                        {
+                            var cacheKey = (lastFoldIndex, model.Folds);
+                            if (!lightGbmCache.TryGetValue(cacheKey, out var foldData))
+                            {
+                                foldData = _trainer.PrepareLightGbmFold(mlContext, masterDataset, lastFoldIndex, model.Folds);
+                                lightGbmCache[cacheKey] = foldData;
+                            }
+                            result = _trainer.TrainLightGbmOptimized(model, mlContext, foldData, persistWeights: false);
+                        }
+                        else
+                        {
+                            result = _trainer.Train(model, masterDataset, lastFoldIndex, model.Folds, persistWeights: false);
+                        }
+
+                        model.TrainAccuracy = result.TrainAccuracy;
+                        model.TrainLoss = result.TrainLoss;
+                        model.TrainBrier = result.TrainBrier;
+                        model.TrainFocalLoss = result.TrainFocalLoss;
+                        model.ValidationAccuracy = result.ValidationAccuracy;
+                        model.ValidationLoss = result.ValidationLoss;
+                        model.ValidationBrier = result.ValidationBrier;
+                        model.ValidationFocalLoss = result.ValidationFocalLoss;
+                        model.Fold = model.Folds;
+
+                        if (result.TrainingRaceIds.Count > 0)
+                        {
+                            _repository.InsertMLParameter(model);
+                            Console.WriteLine($"[Hyperparameter]  Final fold complete. Train acc: {result.TrainAccuracy:F4}, val acc: {result.ValidationAccuracy:F4}.");
+                        }
+                        else
+                        {
+                            Console.WriteLine($"[Hyperparameter]  Final fold skipped due to empty training set.");
+                        }
                     }
                     else
                     {
-                        _logger.LogWarning("Next day schedule did not produce any races; retaining USA schedule report.");
+                        double totalTrainAccuracy = 0;
+                        double totalTrainLoss = 0;
+                        double totalTrainBrier = 0;
+                        double totalTrainFocalLoss = 0;
+                        double totalValidationAccuracy = 0;
+                        double totalValidationLoss = 0;
+                        double totalValidationBrier = 0;
+                        double totalValidationFocalLoss = 0;
+
+                        int validFolds = 0;
+
+                        for (int i = 0; i < model.Folds; i++)
+                        {
+                            Console.WriteLine($"[Hyperparameter]  Fold {i + 1}/{model.Folds} - training in progress...");
+
+                            TrainingResult result;
+                            if (model.ModelType == 1)
+                            {
+                                var cacheKey = (i, model.Folds);
+                                if (!lightGbmCache.TryGetValue(cacheKey, out var foldData))
+                                {
+                                    foldData = _trainer.PrepareLightGbmFold(mlContext, masterDataset, i, model.Folds);
+                                    lightGbmCache[cacheKey] = foldData;
+                                }
+                                result = _trainer.TrainLightGbmOptimized(model, mlContext, foldData, persistWeights: false);
+                            }
+                            else
+                            {
+                                result = _trainer.Train(model, masterDataset, i, model.Folds, persistWeights: false);
+                            }
+
+                            if (result.TrainingRaceIds.Count == 0)
+                            {
+                                Console.WriteLine($"[Hyperparameter]  Fold {i + 1}/{model.Folds} skipped due to empty training set.");
+                                continue;
+                            }
+
+                            validFolds++;
+                            Console.WriteLine($"[Hyperparameter]  Fold {i + 1}/{model.Folds} complete. Train acc: {result.TrainAccuracy:F4}, val acc: {result.ValidationAccuracy:F4}.");
+
+                            totalTrainAccuracy += result.TrainAccuracy;
+                            totalTrainLoss += result.TrainLoss;
+                            totalTrainBrier += result.TrainBrier;
+                            totalTrainFocalLoss += result.TrainFocalLoss;
+                            totalValidationAccuracy += result.ValidationAccuracy;
+                            totalValidationLoss += result.ValidationLoss;
+                            totalValidationBrier += result.ValidationBrier;
+                            totalValidationFocalLoss += result.ValidationFocalLoss;
+                        }
+
+                        if (validFolds > 0)
+                        {
+                            var averagedModel = new MLParameter
+                            {
+                                RunDate = model.RunDate,
+                                Units = model.Units,
+                                Dropout = model.Dropout,
+                                Layers = model.Layers,
+                                LearningRate = model.LearningRate,
+                                Epochs = model.Epochs,
+                                BatchSize = model.BatchSize,
+                                Folds = model.Folds,
+                                Fold = null,
+                                TrainAccuracy = totalTrainAccuracy / validFolds,
+                                TrainLoss = totalTrainLoss / validFolds,
+                                TrainBrier = totalTrainBrier / validFolds,
+                                TrainFocalLoss = totalTrainFocalLoss / validFolds,
+                                ValidationAccuracy = totalValidationAccuracy / validFolds,
+                                ValidationLoss = totalValidationLoss / validFolds,
+                                ValidationBrier = totalValidationBrier / validFolds,
+                                ValidationFocalLoss = totalValidationFocalLoss / validFolds
+                            };
+
+                            _repository.InsertMLParameter(averagedModel);
+                        }
                     }
-                }
-                else
-                {
-                    _logger.LogWarning("Unable to switch Betfair schedule to the next day; retaining USA schedule report.");
-                }
-            }
 
-            var statusMessage = usedNextDay
-                ? $"Day report (next day schedule) generated at {DateTime.Now:G}."
-                : $"Day report generated at {DateTime.Now:G}.";
-            _status.Update(statusMessage);
-            if (report != null)
-            {
-                ApplyTimeFilters(report, startTimeSpan, endTimeSpan);
-                report.InitialRegion = normalizedRegion;
-                ApplyDisplayedAiProbabilities(report);
-            }
-            else
-            {
-                report = new DayReportViewModel
-                {
-                    FilterStartTime = startTimeSpan,
-                    FilterEndTime = endTimeSpan,
-                    InitialRegion = normalizedRegion
-                };
-            }
+                    Console.WriteLine($"[Hyperparameter] Completed model {modelIndex}/{parameters.Count}.");
+                }
 
-            return View(report);
+                Console.WriteLine("[Hyperparameter] Custom run finished.");
+
+            });
+
+            return RedirectToAction("Index", "Home");
         }
-        private static void ApplyDisplayedAiProbabilities(DayReportViewModel? report)
+
+        [HttpPost]
+        public async Task<IActionResult> TrainCustomModel([FromBody] MLParameter model)
         {
-            if (report?.Races == null)
+            if (model == null)
             {
-                return;
+                return BadRequest("Invalid model parameters.");
             }
 
-            foreach (var race in report.Races)
+            try
             {
-                if (race?.Runners == null || race.Runners.Count == 0)
+                await Task.Run(() =>
                 {
-                    continue;
-                }
+                    // Ensure dataset is loaded and cached
+                    var masterDataset = _trainer.EnsureMasterDatasetLoaded();
 
-                var candidates = new List<(RunnerDayReport Runner, double Probability, bool FromMarket)>(race.Runners.Count);
+                    Console.WriteLine($"[Hyperparameter] Starting custom model training (layers: {model.Layers}, units: {model.Units}, dropout: {model.Dropout}, lr: {model.LearningRate}).");
 
-                foreach (var runner in race.Runners)
-                {
-                    if (runner == null)
+                    var foldCount = model.Folds;
+                    if (foldCount <= 0)
                     {
-                        continue;
+                        foldCount = 1;
+                        Console.WriteLine($"[Hyperparameter] Fold count was not specified or invalid. Defaulting to {foldCount}.");
                     }
+                    model.Folds = foldCount;
+                    model.RunDate = DateTime.UtcNow;
 
-                    var probability = 0d;
-                    var fromMarket = false;
-                    var aiProbability = runner.AiProbability;
-                    var hasAiProbability = aiProbability.HasValue && double.IsFinite(aiProbability.Value) && aiProbability.Value > 0d;
+                    var mlContext = _trainer.CreateLightGbmContext();
+                    // We don't cache LightGBM fold data across HTTP requests for now, as it adds complexity.
+                    // Each request rebuilds the fold data if needed.
 
-                    if (hasAiProbability && aiProbability!.Value >= AiProbabilityDisplayThreshold)
+                    if (model.TrainFinalFoldOnly && model.Folds > 0)
                     {
-                        probability = aiProbability.Value;
-                    }
-                    else if (runner.MarketProbability.HasValue && double.IsFinite(runner.MarketProbability.Value) && runner.MarketProbability.Value > 0d)
-                    {
-                        probability = runner.MarketProbability.Value;
-                        fromMarket = true;
-                    }
-                    else if (hasAiProbability)
-                    {
-                        probability = aiProbability!.Value;
-                    }
-                    else if (runner.AiDecimalOdds.HasValue && runner.AiDecimalOdds.Value > 0m)
-                    {
-                        probability = 1.0 / (double)runner.AiDecimalOdds.Value;
-                    }
+                        var lastFoldIndex = model.Folds - 1;
+                        Console.WriteLine($"[Hyperparameter] Training ONLY final fold {lastFoldIndex + 1}/{model.Folds}...");
 
-                    if (probability < 0d || double.IsNaN(probability) || double.IsInfinity(probability))
-                    {
-                        probability = 0d;
-                        fromMarket = false;
+                        TrainingResult result;
+                        if (model.ModelType == 1)
+                        {
+                             var foldData = _trainer.PrepareLightGbmFold(mlContext, masterDataset, lastFoldIndex, model.Folds);
+                             result = _trainer.TrainLightGbmOptimized(model, mlContext, foldData, persistWeights: false);
+                        }
+                        else
+                        {
+                            result = _trainer.Train(model, masterDataset, lastFoldIndex, model.Folds, persistWeights: false);
+                        }
+
+                        model.TrainAccuracy = result.TrainAccuracy;
+                        model.TrainLoss = result.TrainLoss;
+                        model.TrainBrier = result.TrainBrier;
+                        model.TrainFocalLoss = result.TrainFocalLoss;
+                        model.ValidationAccuracy = result.ValidationAccuracy;
+                        model.ValidationLoss = result.ValidationLoss;
+                        model.ValidationBrier = result.ValidationBrier;
+                        model.ValidationFocalLoss = result.ValidationFocalLoss;
+                        model.Fold = model.Folds;
+
+                        if (result.TrainingRaceIds.Count > 0)
+                        {
+                            _repository.InsertMLParameter(model);
+                            Console.WriteLine($"[Hyperparameter] Final fold complete. Train acc: {result.TrainAccuracy:F4}, val acc: {result.ValidationAccuracy:F4}.");
+                        }
+                        else
+                        {
+                            Console.WriteLine($"[Hyperparameter] Final fold skipped due to empty training set.");
+                        }
                     }
-
-                    candidates.Add((runner, probability, fromMarket));
-                }
-
-                var total = candidates.Sum(entry => entry.Probability);
-                if (total <= 0d || double.IsNaN(total) || double.IsInfinity(total))
-                {
-                    foreach (var entry in candidates)
+                    else
                     {
-                        entry.Runner.DisplayedAiProbability = null;
-                        entry.Runner.DisplayedAiProbabilityMarketDerived = false;
-                        entry.Runner.DisplayedDifferential = null;
+                        double totalTrainAccuracy = 0;
+                        double totalTrainLoss = 0;
+                        double totalTrainBrier = 0;
+                        double totalTrainFocalLoss = 0;
+                        double totalValidationAccuracy = 0;
+                        double totalValidationLoss = 0;
+                        double totalValidationBrier = 0;
+                        double totalValidationFocalLoss = 0;
+
+                        int validFolds = 0;
+
+                        for (int i = 0; i < model.Folds; i++)
+                        {
+                            Console.WriteLine($"[Hyperparameter] Fold {i + 1}/{model.Folds} - training in progress...");
+
+                            TrainingResult result;
+                            if (model.ModelType == 1)
+                            {
+                                var foldData = _trainer.PrepareLightGbmFold(mlContext, masterDataset, i, model.Folds);
+                                result = _trainer.TrainLightGbmOptimized(model, mlContext, foldData, persistWeights: false);
+                            }
+                            else
+                            {
+                                result = _trainer.Train(model, masterDataset, i, model.Folds, persistWeights: false);
+                            }
+
+                            if (result.TrainingRaceIds.Count == 0)
+                            {
+                                Console.WriteLine($"[Hyperparameter] Fold {i + 1}/{model.Folds} skipped due to empty training set.");
+                                continue;
+                            }
+
+                            validFolds++;
+                            Console.WriteLine($"[Hyperparameter] Fold {i + 1}/{model.Folds} complete. Train acc: {result.TrainAccuracy:F4}, val acc: {result.ValidationAccuracy:F4}.");
+
+                            totalTrainAccuracy += result.TrainAccuracy;
+                            totalTrainLoss += result.TrainLoss;
+                            totalTrainBrier += result.TrainBrier;
+                            totalTrainFocalLoss += result.TrainFocalLoss;
+                            totalValidationAccuracy += result.ValidationAccuracy;
+                            totalValidationLoss += result.ValidationLoss;
+                            totalValidationBrier += result.ValidationBrier;
+                            totalValidationFocalLoss += result.ValidationFocalLoss;
+                        }
+
+                        if (validFolds > 0)
+                        {
+                            var averagedModel = new MLParameter
+                            {
+                                RunDate = model.RunDate,
+                                Units = model.Units,
+                                Dropout = model.Dropout,
+                                Layers = model.Layers,
+                                LearningRate = model.LearningRate,
+                                Epochs = model.Epochs,
+                                BatchSize = model.BatchSize,
+                                Folds = model.Folds,
+                                Fold = null,
+                                TrainAccuracy = totalTrainAccuracy / validFolds,
+                                TrainLoss = totalTrainLoss / validFolds,
+                                TrainBrier = totalTrainBrier / validFolds,
+                                TrainFocalLoss = totalTrainFocalLoss / validFolds,
+                                ValidationAccuracy = totalValidationAccuracy / validFolds,
+                                ValidationLoss = totalValidationLoss / validFolds,
+                                ValidationBrier = totalValidationBrier / validFolds,
+                                ValidationFocalLoss = totalValidationFocalLoss / validFolds
+                            };
+
+                            _repository.InsertMLParameter(averagedModel);
+                        }
                     }
+                });
 
-                    continue;
-                }
-
-                var scale = 1d / total;
-                foreach (var entry in candidates)
-                {
-                    var scaled = entry.Probability * scale;
-                    if (scaled < 0d || double.IsNaN(scaled) || double.IsInfinity(scaled))
-                    {
-                        entry.Runner.DisplayedAiProbability = null;
-                        entry.Runner.DisplayedAiProbabilityMarketDerived = false;
-                        entry.Runner.DisplayedDifferential = null;
-                        continue;
-                    }
-
-                    entry.Runner.DisplayedAiProbability = scaled;
-                    entry.Runner.DisplayedAiProbabilityMarketDerived = entry.FromMarket;
-                    entry.Runner.DisplayedDifferential = entry.Runner.MarketProbability.HasValue
-                        ? scaled - entry.Runner.MarketProbability.Value
-                        : (double?)null;
-                }
+                return Json(new { success = true });
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[Hyperparameter] Error training custom model: {ex}");
+                return Json(new { success = false, message = ex.Message });
             }
         }
-        private static object BuildRaceResponse(RaceDayReport race)
+        [HttpGet]
+        public IActionResult TrainAI()
         {
-            return new
+            return View(new TrainAIViewModel
             {
-                marketId = race.MarketId,
-                raceTitle = race.RaceTitle,
-                venueName = race.VenueName,
-                venueCountry = race.VenueCountry,
-                raceDate = race.RaceDate?.ToString("o"),
-                offTime = race.OffTime?.ToString(@"hh\:mm"),
-                raceDetails = race.RaceDetails,
-                raceType = race.RaceType,
-                going = string.IsNullOrWhiteSpace(race.Going) ? null : race.Going.Trim(),
-                backBookPercentage = race.BackBookPercentage,
-                layBookPercentage = race.LayBookPercentage,
-                raceUrl = race.RaceUrl,
-                raceFallbackSummary = race.RaceFallbackSummary,
-                upcomingRaceId = race.UpcomingRaceId,
-                runners = (race.Runners ?? new List<RunnerDayReport>()).Select(runner => new
+                Batch = new MLParameterBatch
                 {
-                    clothNumber = runner.ClothNumber,
-                    draw = runner.Draw,
-                    horseName = runner.HorseName,
-                    jockeyName = runner.JockeyName,
-                    marketDecimalOdds = runner.MarketDecimalOdds,
-                    layDecimalOdds = runner.LayDecimalOdds,
-                    aiDecimalOdds = runner.AiDecimalOdds,
-                    aiProbability = runner.AiProbability,
-                    displayedAiProbability = runner.DisplayedAiProbability,
-                    aiProbabilityMarketDerived = runner.AiProbabilityMarketDerived,
-                    displayedAiProbabilityMarketDerived = runner.DisplayedAiProbabilityMarketDerived,
-                    aiProbabilityClampedToMarket = runner.AiProbabilityClampedToMarket,
-                    aiProbabilityFallbackReason = runner.AiProbabilityFallbackReason,
-                    marketProbability = runner.MarketProbability,
-                    differential = runner.Differential,
-                    displayedDifferential = runner.DisplayedDifferential,
-                    kellyFraction = runner.KellyFraction,
-                    suggestedStake = runner.SuggestedStake,
-                    layKellyFraction = runner.LayKellyFraction,
-                    laySuggestedStake = runner.LaySuggestedStake,
-                    historicalRaceCount = runner.HistoricalRaceCount,
-                    historicalRaces = runner.HistoricalRaces,
-                    top3FinishRate = runner.Top3FinishRate,
-                    top5FinishRate = runner.Top5FinishRate,
-                    finishPositionVolatility = runner.FinishPositionVolatility,
-                    trainerHistoricalRaceCount = runner.TrainerHistoricalRaceCount,
-                    trainerTop3FinishRate = runner.TrainerTop3FinishRate,
-                    trainerTop5FinishRate = runner.TrainerTop5FinishRate,
-                    trainerFinishPositionVolatility = runner.TrainerFinishPositionVolatility,
-                    jockeyHistoricalRaceCount = runner.JockeyHistoricalRaceCount,
-                    jockeyTop3FinishRate = runner.JockeyTop3FinishRate,
-                    jockeyTop5FinishRate = runner.JockeyTop5FinishRate,
-                    jockeyFinishPositionVolatility = runner.JockeyFinishPositionVolatility,
-                    featureValues = runner.FeatureValues,
-                    encodedFeatureValues = runner.EncodedFeatureValues,
-                    hasPreparedFeatures = runner.HasPreparedFeatures,
-                    hasPartialPreparedFeatures = runner.HasPartialPreparedFeatures,
-                    aiTrainedModelApplied = runner.AiTrainedModelApplied,
-                    aiUsedLegacyModel = runner.AiUsedLegacyModel
-                }).ToList()
+                    Parameters = new List<MLParameter>
+                    {
+                        new MLParameter { RunDate = DateTime.UtcNow }
+                    }
+                }
+            });
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> TrainAI(TrainAIViewModel viewModel)
+        {
+            if (viewModel is null)
+            {
+                throw new ArgumentNullException(nameof(viewModel));
+            }
+
+            viewModel.Batch ??= new MLParameterBatch();
+            var batch = viewModel.Batch;
+            batch.Parameters ??= new List<MLParameter>();
+
+            if (!ModelState.IsValid)
+            {
+                return View(viewModel);
+            }
+
+            var results = new List<TrainAIViewModel.TrainAIModelResult>();
+
+            await Task.Run(() =>
+            {
+                var parameters = batch.Parameters;
+                Console.WriteLine($"[TrainAI] Starting training run for {parameters.Count} parameter set(s).");
+
+                var dataset = _trainer.LoadTrainingDataset(includeIdentifiers: true);
+                Console.WriteLine($"[TrainAI] Dataset loaded with {dataset.TrainingRaces.Count} races covering {dataset.TrainingRaces.Sum(r => r.Runners.Count)} runner rows.");
+
+                int modelIndex = 0;
+                foreach (var model in parameters)
+                {
+                    modelIndex++;
+                    Console.WriteLine($"[TrainAI] Starting model {modelIndex}/{parameters.Count} (layers: {model.Layers}, units: {model.Units}, dropout: {model.Dropout}, lr: {model.LearningRate}).");
+
+                    model.RunDate = DateTime.UtcNow;
+                    model.Folds = 1;
+                    model.Fold = null;
+
+                    var result = _trainer.Train(model, 0, 1, dataset, persistWeights: true);
+
+                    model.TrainAccuracy = result.TrainAccuracy;
+                    model.TrainLoss = result.TrainLoss;
+                    model.TrainBrier = result.TrainBrier;
+                    model.TrainFocalLoss = result.TrainFocalLoss;
+                    model.ValidationAccuracy = result.ValidationAccuracy;
+                    model.ValidationLoss = result.ValidationLoss;
+                    model.ValidationBrier = result.ValidationBrier;
+                    model.ValidationFocalLoss = result.ValidationFocalLoss;
+
+                    _repository.InsertMLParameter(model);
+
+                    var correlationInfos = (result.FeatureCorrelations ?? Array.Empty<HyperparameterTrainer.FeatureCorrelation>())
+                        .Select(c => new TrainAIViewModel.FeatureCorrelationInfo
+                        {
+                            FeatureKey = c.FeatureKey,
+                            Dimension = c.Dimension,
+                            Correlation = c.Correlation
+                        })
+                        .ToList();
+
+                    results.Add(new TrainAIViewModel.TrainAIModelResult
+                    {
+                        Parameters = model,
+                        FeatureCorrelations = correlationInfos
+                    });
+
+                    Console.WriteLine($"[TrainAI] Completed model {modelIndex}/{parameters.Count}. Train acc: {result.TrainAccuracy:F4}, train loss: {result.TrainLoss:F4}.");
+                }
+
+                Console.WriteLine("[TrainAI] Training run finished.");
+            });
+
+            viewModel.Results ??= new List<TrainAIViewModel.TrainAIModelResult>();
+            viewModel.Results.Clear();
+            viewModel.Results.AddRange(results);
+
+            // Clear model state so the freshly computed results are rendered instead of
+            // being suppressed by the existing form values submitted with the request.
+            ModelState.Clear();
+
+            return View(viewModel);
+        }
+        [HttpGet]
+        public IActionResult TestAI(
+            [FromQuery(Name = "units")] int? requestedUnits,
+            [FromQuery(Name = "dropout")] double? requestedDropout,
+            [FromQuery(Name = "layers")] int? requestedLayers,
+            [FromQuery(Name = "learningRate")] double? requestedLearningRate,
+            [FromQuery(Name = "epochs")] int? requestedEpochs,
+            [FromQuery(Name = "batchSize")] int? requestedBatchSize,
+            [FromQuery(Name = "folds")] int? requestedFolds)
+        {
+            var viewModel = new AITestResultViewModel
+            {
+                RequestedUnits = requestedUnits,
+                RequestedDropout = requestedDropout,
+                RequestedLayers = requestedLayers,
+                RequestedLearningRate = requestedLearningRate,
+                RequestedEpochs = requestedEpochs,
+                RequestedBatchSize = requestedBatchSize,
+                RequestedFolds = requestedFolds,
+                Countries = _repository.GetCountries().ToList()
             };
+
+            return View(viewModel);
         }
-
-        private static bool TryParseTimeOfDay(string? value, out TimeSpan? time)
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> TestAI(AITestResultViewModel request)
         {
-            time = null;
-
-            if (string.IsNullOrWhiteSpace(value))
+            static bool HasValidUnits(int units) => MLParameterValidator.EnsureUnits(units, int.MinValue) == units;
+            static bool HasValidDropout(double dropout) => !double.IsNaN(MLParameterValidator.EnsureDropout(dropout, double.NaN));
+            static bool HasValidLayers(int layers) => MLParameterValidator.EnsureLayers(layers, int.MinValue) == layers;
+            static bool HasValidLearningRate(double learningRate) => !double.IsNaN(MLParameterValidator.EnsureLearningRate(learningRate, double.NaN));
+            static bool HasValidPositive(int value) => MLParameterValidator.EnsurePositive(value, int.MinValue) == value;
+            static bool TryNormalizeBatchSize(int value, out int normalized)
             {
-                return true;
+                normalized = MLParameterValidator.EnsureBatchSize(value, fallback: 0);
+                return normalized > 0;
             }
-
-            if (TimeSpan.TryParseExact(value, new[] { "h\\:mm", "hh\\:mm" }, CultureInfo.InvariantCulture, out var parsed))
+            int? ReadRequestedInt(int? current, string key)
             {
-                time = parsed;
-                return true;
-            }
-
-            return false;
-        }
-        public IActionResult CalculateFavouritesAccuracy()
-        {
-            var (includingJoint, excludingJoint, logLoss) = _repository.GetFavouriteAccuracy();
-            var model = new FavouriteAccuracyViewModel
-            {
-                IncludingJoint = includingJoint,
-                ExcludingJoint = excludingJoint,
-                LogLoss = logLoss
-            };
-            return View(model);
-        }
-        private static void ApplyTimeFilters(DayReportViewModel report, TimeSpan? start, TimeSpan? end)
-        {
-            if (report.Races == null || report.Races.Count == 0)
-            {
-                report.FilterStartTime = start;
-                report.FilterEndTime = end;
-                return;
-            }
-
-            var hasStart = start.HasValue;
-            var hasEnd = end.HasValue;
-
-            if (!hasStart && !hasEnd)
-            {
-                report.FilterStartTime = null;
-                report.FilterEndTime = null;
-                return;
-            }
-
-            var effectiveStart = start ?? TimeSpan.Zero;
-            var effectiveEnd = end ?? new TimeSpan(23, 59, 59);
-
-            static TimeSpan? GetRaceTime(RaceDayReport race)
-            {
-                if (race.OffTime.HasValue)
+                if (current.HasValue)
                 {
-                    return race.OffTime.Value;
+                    return current;
                 }
 
-                if (race.RaceDate.HasValue)
+                var raw = Request.Form[key];
+                if (string.IsNullOrWhiteSpace(raw))
                 {
-                    return race.RaceDate.Value.TimeOfDay;
+                    return null;
+                }
+
+                if (int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedInt))
+                {
+                    return parsedInt;
+                }
+
+                if (int.TryParse(raw, NumberStyles.Integer, CultureInfo.CurrentCulture, out parsedInt))
+                {
+                    return parsedInt;
                 }
 
                 return null;
             }
 
-            var filtered = report.Races
-                .Where(race =>
+            double? ReadRequestedDouble(double? current, string key)
+            {
+                if (current.HasValue)
                 {
-                    var raceTime = GetRaceTime(race);
-                    if (!raceTime.HasValue)
-                    {
-                        return true;
-                    }
-
-                    if (hasStart && raceTime.Value < effectiveStart)
-                    {
-                        return false;
-                    }
-
-                    if (hasEnd && raceTime.Value > effectiveEnd)
-                    {
-                        return false;
-                    }
-
-                    return true;
-                })
-                .ToList();
-
-            report.Races = filtered;
-            report.FilterStartTime = start;
-            report.FilterEndTime = end;
-        }
-        private static bool ShouldLoadNextDaySchedule(DayReportViewModel? report, string normalizedRegion)
-        {
-            if (!string.Equals(normalizedRegion, DayReportFilterViewModel.DefaultRegion, StringComparison.OrdinalIgnoreCase))
-            {
-                return false;
-            }
-            if (report?.Races == null || report.Races.Count == 0)
-            {
-                return false;
-            }
-
-            var hasRace = false;
-            foreach (var race in report.Races)
-            {
-                if (race == null)
-                {
-                    continue;
+                    return current;
                 }
 
-                hasRace = true;
-                if (!IsUsRace(race))
+                var raw = Request.Form[key];
+                if (string.IsNullOrWhiteSpace(raw))
                 {
-                    return false;
+                    return null;
                 }
+
+                const NumberStyles style = NumberStyles.Float | NumberStyles.AllowThousands;
+                if (double.TryParse(raw, style, CultureInfo.InvariantCulture, out var parsedDouble))
+                {
+                    return parsedDouble;
+                }
+
+                if (double.TryParse(raw, style, CultureInfo.CurrentCulture, out parsedDouble))
+                {
+                    return parsedDouble;
+                }
+
+                return null;
             }
 
-            return hasRace;
-        }
+            var requestedUnits = ReadRequestedInt(request.RequestedUnits, nameof(request.RequestedUnits));
+            var requestedDropout = ReadRequestedDouble(request.RequestedDropout, nameof(request.RequestedDropout));
+            var requestedLayers = ReadRequestedInt(request.RequestedLayers, nameof(request.RequestedLayers));
+            var requestedLearningRate = ReadRequestedDouble(request.RequestedLearningRate, nameof(request.RequestedLearningRate));
+            var requestedEpochs = ReadRequestedInt(request.RequestedEpochs, nameof(request.RequestedEpochs));
+            var requestedBatchSize = ReadRequestedInt(request.RequestedBatchSize, nameof(request.RequestedBatchSize));
+            var requestedFolds = ReadRequestedInt(request.RequestedFolds, nameof(request.RequestedFolds));
 
-        private static bool IsUsRace(RaceDayReport? race)
-        {
-            var country = race?.VenueCountry;
-            if (string.IsNullOrWhiteSpace(country))
+            int months = request.SelectedValidationMonths;
+            if (months <= 0)
             {
-                return false;
+                months = 1;
+            }
+            else if (months > 24)
+            {
+                months = 24;
             }
 
-            var normalized = country.Trim();
-            return normalized.Equals("USA", StringComparison.OrdinalIgnoreCase) ||
-                   normalized.Equals("US", StringComparison.OrdinalIgnoreCase) ||
-                   normalized.Equals("U.S.A.", StringComparison.OrdinalIgnoreCase) ||
-                   normalized.Equals("United States", StringComparison.OrdinalIgnoreCase) ||
-                   normalized.Equals("United States Of America", StringComparison.OrdinalIgnoreCase);
-        }
-        public IActionResult AutomateBets(
-            [FromServices] BetfairNavigationService betfair,
-            [FromServices] HyperparameterTrainer trainer)
-        {
-            const string startingMessage = "Starting automated betting process...";
-            _status.Update(startingMessage);
+            var monthLabel = months == 1 ? "month" : "months";
 
-            var snapshot = _automationSettings.GetSnapshot();
-            var model = new AutomateBetsViewModel
+            var validationEnd = DateTime.Today;
+            var validationStart = validationEnd.AddMonths(-months);
+            var startingBankroll = request.StartingBankroll < 0 ? 0m : request.StartingBankroll;
+            var viewModel = new AITestResultViewModel
             {
-                KellyDampener = snapshot.KellyDampener,
-                MaxKellyFraction = snapshot.MaxKellyFraction,
-                MaxStakeMode = snapshot.MaxStakeMode,
-                MaxStakePercent = snapshot.MaxStakePercentOfBankroll.HasValue
-                    ? snapshot.MaxStakePercentOfBankroll.Value * 100m
-                    : (decimal?)null,
-                MaxStakeAmount = snapshot.MaxStakeFixedAmount,
-                StatusMessage = _status.Message,
-                BannerMessage = startingMessage
+                ValidationStart = validationStart,
+                ValidationEnd = validationEnd,
+                SelectedValidationMonths = months,
+                StartingBankroll = startingBankroll
             };
 
-            _ = Task.Run(async () =>
+            viewModel.RequestedUnits = requestedUnits;
+            viewModel.RequestedDropout = requestedDropout;
+            viewModel.RequestedLayers = requestedLayers;
+            viewModel.RequestedLearningRate = requestedLearningRate;
+            viewModel.RequestedEpochs = requestedEpochs;
+            viewModel.RequestedBatchSize = requestedBatchSize;
+            viewModel.RequestedFolds = requestedFolds;
+            viewModel.Countries = _repository.GetCountries().ToList();
+            var validationRaceIds = _repository.GetRaceIdsBetweenDates(validationStart, validationEnd, request.SelectedCountry);
+            if (validationRaceIds.Count == 0)
             {
-                try
+                viewModel.Message = $"No races were found in the last {months} {monthLabel} to use for validation.";
+                return View(viewModel);
+            }
+
+            var trainingRaceIds = _repository.GetRaceIdsOutsideRange(validationStart, validationEnd, request.SelectedCountry);
+            if (trainingRaceIds.Count == 0)
+            {
+                viewModel.Message = "No training data is available outside the validation window.";
+                return View(viewModel);
+            }
+            TrainingDataset dataset;
+            if (request.UseExistingWeights)
+            {
+                if (!_trainer.IsModelPersisted())
                 {
-                    await betfair.LoginAsync();
-                    var raceWindow = TimeSpan.FromHours(2);
-                    var refreshLeadTime = TimeSpan.FromMinutes(20);
-                    var cycleStartUtc = DateTime.UtcNow;
-                    await betfair.OpenHorseRaceMeetingsInNewTabsAsync(
-                        closeExistingRaceTabs: true,
-                        raceWindow: raceWindow,
-                        windowReferenceUtc: cycleStartUtc);
-                    var cycleEndUtc = DateTime.UtcNow;
-                    var initialDelay = raceWindow - refreshLeadTime - (cycleEndUtc - cycleStartUtc);
-                    if (initialDelay < TimeSpan.Zero)
+                    viewModel.Message = "The AI model weights file (aiweights.json) was not found. Please train a model before running this test.";
+                    return View(viewModel);
+                }
+                dataset = _trainer.LoadValidationDataset(new HashSet<int>(trainingRaceIds), new HashSet<int>(validationRaceIds), includeIdentifiers: true);
+            }
+            else
+            {
+                dataset = _trainer.LoadTrainingDataset(new HashSet<int>(trainingRaceIds), new HashSet<int>(validationRaceIds), includeIdentifiers: true);
+            }
+
+            if (dataset.ValidationRaces.Count == 0)
+            {
+                viewModel.Message = "The validation dataset was empty after preparation.";
+                return View(viewModel);
+            }
+
+
+            MLParameter parameter;
+            string? batchSizeAdjustmentMessage = null;
+            if (request.UseExistingWeights)
+            {
+                parameter = new MLParameter();
+            }
+            else
+            {
+                bool unitsValid = !requestedUnits.HasValue || HasValidUnits(requestedUnits.Value);
+                bool layersValid = !requestedLayers.HasValue || HasValidLayers(requestedLayers.Value);
+                int normalizedBatchSize = 0;
+                var invalidHyperparameters = new List<string>();
+                if (!unitsValid)
+                {
+                    invalidHyperparameters.Add("Units per layer");
+                }
+
+                if (requestedDropout.HasValue && !HasValidDropout(requestedDropout.Value))
+                {
+                    invalidHyperparameters.Add("Dropout");
+                }
+
+                if (!layersValid)
+                {
+                    invalidHyperparameters.Add("Layers");
+                }
+
+                if (layersValid && requestedLayers.GetValueOrDefault() > 0 && (!requestedUnits.HasValue || requestedUnits.Value <= 0))
+                {
+                    invalidHyperparameters.Add("Units per layer (must be positive when Layers > 0)");
+                }
+
+                if (requestedLearningRate.HasValue && !HasValidLearningRate(requestedLearningRate.Value))
+                {
+                    invalidHyperparameters.Add("Learning rate");
+                }
+
+                if (requestedEpochs.HasValue && !HasValidPositive(requestedEpochs.Value))
+                {
+                    invalidHyperparameters.Add("Epochs");
+                }
+
+                if (requestedBatchSize.HasValue && !TryNormalizeBatchSize(requestedBatchSize.Value, out normalizedBatchSize))
+                {
+                    invalidHyperparameters.Add("Batch size");
+                }
+
+                if (requestedFolds.HasValue && !HasValidPositive(requestedFolds.Value))
+                {
+                    invalidHyperparameters.Add("Folds");
+                }
+
+                if (invalidHyperparameters.Count > 0)
+                {
+                    var invalidList = string.Join(", ", invalidHyperparameters);
+                    ModelState.AddModelError(string.Empty, $"The following hyperparameter values are invalid: {invalidList}. Please correct them and try again.");
+                    return View(viewModel);
+                }
+
+
+                bool hasRequestedHyperparameters =
+                   requestedUnits.HasValue &&
+                   requestedDropout.HasValue &&
+                   requestedLayers.HasValue &&
+                   requestedLearningRate.HasValue &&
+                   requestedEpochs.HasValue &&
+                   requestedBatchSize.HasValue &&
+                   requestedFolds.HasValue;
+
+                if (!hasRequestedHyperparameters)
+                {
+                    viewModel.Message = "Please supply all hyperparameter values before running the AI test.";
+                    return View(viewModel);
+                }
+
+                if (normalizedBatchSize < requestedBatchSize.Value)
+                {
+                    batchSizeAdjustmentMessage = $"Batch size reduced to {normalizedBatchSize} to respect the maximum of {MLParameterValidator.MaxBatchSize}.";
+                }
+
+                parameter = new MLParameter
+                {
+                    Units = requestedUnits.Value,
+                    Dropout = requestedDropout.Value,
+                    Layers = requestedLayers.Value,
+                    LearningRate = requestedLearningRate.Value,
+                    Epochs = requestedEpochs.Value,
+                    BatchSize = normalizedBatchSize,
+                    Folds = requestedFolds.Value,
+                    Fold = null,
+                    RunDate = DateTime.UtcNow
+                };
+            }
+
+            var result = new HyperparameterTrainer.TrainingResult();
+            if (request.UseExistingWeights)
+            {
+                result = await Task.Run(() => _trainer.Evaluate(dataset));
+            }
+            else
+            {
+                result = await Task.Run(() => _trainer.Train(parameter, 0, 1, dataset, persistWeights: false));
+            }
+            viewModel.ParameterUsed = new MLParameter
+            {
+                RunDate = parameter.RunDate,
+                Units = parameter.Units,
+                Dropout = parameter.Dropout,
+                Layers = parameter.Layers,
+                LearningRate = parameter.LearningRate,
+                Epochs = parameter.Epochs,
+                BatchSize = parameter.BatchSize,
+                Folds = parameter.Folds,
+                Fold = parameter.Fold,
+                EnableFeatureCorrelations = parameter.EnableFeatureCorrelations
+            };
+            viewModel.TrainAccuracy = result.TrainAccuracy;
+            viewModel.TrainLoss = result.TrainLoss;
+            viewModel.TrainBrier = result.TrainBrier;
+            viewModel.TrainFocalLoss = result.TrainFocalLoss;
+            viewModel.ValidationAccuracy = result.ValidationAccuracy;
+            viewModel.ValidationLoss = result.ValidationLoss;
+            viewModel.ValidationBrier = result.ValidationBrier;
+            viewModel.ValidationFocalLoss = result.ValidationFocalLoss;
+            viewModel.ValidationRaceCount = dataset.ValidationRaces.Count;
+            viewModel.TrainingRaceCount = dataset.TrainingRaces.Count;
+            var accuracyMessage = $"Validation accuracy over {viewModel.ValidationRaceCount} races: {result.ValidationAccuracy:P2}.";
+            viewModel.Message = batchSizeAdjustmentMessage is null
+                ? accuracyMessage
+                : string.Concat(batchSizeAdjustmentMessage, " ", accuracyMessage);
+
+            var raceSummaries = _repository.GetRaceSummaries(result.ValidationRaceIds);
+            viewModel.Simulation = RunValidationSimulation(result, raceSummaries, startingBankroll, viewModel);
+
+            return View(viewModel);
+        }
+        private ValidationSimulationResult RunValidationSimulation(
+            HyperparameterTrainer.TrainingResult result,
+            IDictionary<int, RaceSummary> raceSummaries,
+            decimal startingBankroll,
+            AITestResultViewModel viewModel)
+        {
+            raceSummaries ??= new Dictionary<int, RaceSummary>();
+
+            var predictions = result.ValidationPredictions ?? Array.Empty<float>();
+            var examples = result.ValidationExamples ?? Array.Empty<HyperparameterTrainer.RunnerExample>();
+            var raceIds = result.ValidationRaceIds ?? Array.Empty<int>();
+
+            if (predictions.Count == 0 || examples.Count == 0 || raceIds.Count == 0 ||
+                predictions.Count != examples.Count || raceIds.Count != examples.Count)
+            {
+                return new ValidationSimulationResult
+                {
+                    StartingBankroll = startingBankroll,
+                    EndingBankroll = startingBankroll,
+                    TotalStaked = 0m,
+                    BetCount = 0,
+                    WinCount = 0,
+                    Bets = Array.Empty<ValidationBetResult>()
+                };
+            }
+
+            decimal bankroll = startingBankroll;
+            decimal totalStaked = 0m;
+            int wins = 0;
+            var bets = new List<ValidationBetResult>();
+            var dailyRaceResults = new List<RaceResultViewModel>();
+            decimal bankrollBefore = bankroll;
+
+            var allRaceData = Enumerable.Range(0, examples.Count)
+                 .Select(i => new
+                 {
+                     RaceId = raceIds[i],
+                     Example = examples[i]
+                 })
+                .GroupBy(x => x.RaceId)
+                .Select(g =>
+                {
+                    raceSummaries.TryGetValue(g.Key, out var summary);
+                    return new
                     {
-                        initialDelay = TimeSpan.Zero;
+                        RaceGroup = g.ToList(),
+                        RaceDate = summary?.RaceDate ?? DateTime.MinValue,
+                        Summary = summary
+                    };
+                })
+                 .OrderBy(r => r.RaceDate)
+                .ToList();
+            var allHorseNames = allRaceData
+               .SelectMany(race => race.RaceGroup)
+               .Select(runner => runner.Example.HorseName)
+               .Where(name => !string.IsNullOrWhiteSpace(name))
+               .Distinct()
+               .ToList();
+            var historicalCounts = _repository.GetHistoricalRaceCountsByHorseNames(allHorseNames).CountsByOriginal;
+            var raceIndex = 0;
+            foreach (var race in allRaceData)
+            {
+                raceIndex++;
+                var raceDate = race.RaceDate.ToString("yyyy-MM-dd");
+                var raceTitle = race.Summary?.Title ?? "Unknown Race";
+                Console.WriteLine($"[AI] Processing race {raceIndex}/{allRaceData.Count}: {raceDate} - {raceTitle}");
+                bankrollBefore = bankroll;
+                bankrollBefore = bankroll;
+                var raceGroup = race.RaceGroup;
+                var summary = race.Summary;
+
+                var runnersForOddsCalc = raceGroup.Select(r => r.Example).ToList();
+                var calculatedProbs = _aiOddsCalculator.CalculateProbabilities(runnersForOddsCalc);
+
+                var runnersWithProbs = raceGroup
+                    .Select(r => new
+                    {
+                        r.Example,
+                        CalculatedProbability = (double)(calculatedProbs
+                            .FirstOrDefault(p => p.HorseId == r.Example.HorseId)?.Probability ?? 0m)
+                    })
+                    .ToList();
+
+                var predictedWinnerDetails = runnersWithProbs
+                    .OrderByDescending(r => r.CalculatedProbability)
+                    .FirstOrDefault();
+
+                var actualWinnerDetails = runnersWithProbs.FirstOrDefault(r => r.Example.Label >= 0.5f);
+
+                var isCorrectPrediction = predictedWinnerDetails != null && actualWinnerDetails != null &&
+                                          predictedWinnerDetails.Example.HorseId == actualWinnerDetails.Example.HorseId;
+
+                var stake = 0m;
+                var aiOdds = 0m;
+                var bookmakerOdds = 0m;
+
+                if (predictedWinnerDetails != null)
+                {
+                    if (predictedWinnerDetails.Example.StartingPriceDecimal.HasValue)
+                    {
+                        bookmakerOdds = predictedWinnerDetails.Example.StartingPriceDecimal.Value;
                     }
+                    aiOdds = BettingMath.CalculateAiDecimalOdds(predictedWinnerDetails.CalculatedProbability);
 
-                    betfair.StartAutomatedBettingLoop(_repository, trainer, raceWindow, refreshLeadTime, initialDelay);
-                    var recommendations = betfair.ScrapeOpenRaceTabs(_repository, trainer, out var missingScrapeFields);
-                    string message;
-                    if (recommendations.Count > 0)
+                    if (bankroll > 0m && bookmakerOdds > 1m)
                     {
-                        var best = recommendations
-                            .OrderByDescending(r => r.Differential)
-                            .ThenByDescending(r => r.KellyFraction)
-                            .First();
+                        var probability = predictedWinnerDetails.CalculatedProbability;
+                        var marketProbability = 1.0 / (double)bookmakerOdds;
+                        var edge = probability - marketProbability;
 
-                        var horse = string.IsNullOrWhiteSpace(best.HorseName) ? "selection" : best.HorseName;
-                        var race = string.IsNullOrWhiteSpace(best.RaceTitle) ? "race" : best.RaceTitle;
-                        var venue = string.IsNullOrWhiteSpace(best.VenueName) ? string.Empty : $" at {best.VenueName}";
-                        var odds = best.DecimalOdds.ToString("0.00", CultureInfo.InvariantCulture);
-                        var aiProb = (best.AiProbability * 100).ToString("0.##", CultureInfo.InvariantCulture);
-                        var aiReturn = best.AiDecimalOdds.ToString("0.00", CultureInfo.InvariantCulture);
-                        var marketProb = (best.MarketProbability * 100).ToString("0.##", CultureInfo.InvariantCulture);
-                        var diff = (best.Differential * 100).ToString("0.##", CultureInfo.InvariantCulture);
-                        var stake = best.Stake.ToString("0.##", CultureInfo.InvariantCulture);
-                        var kelly = (best.KellyFraction * 100m).ToString("0.##", CultureInfo.InvariantCulture);
+                        var kellyFraction = BettingMath.CalculateKellyFraction(edge, (double)bookmakerOdds, _maxKellyFraction);
 
-                        message = $"Best value bet: {horse}{venue} ({race})  odds {odds}, AI win {aiProb}% (AI return {aiReturn}) vs market {marketProb}% (diff {diff}%). Kelly stake {stake} ({kelly}% bankroll).";
-                    }
-                    else
-                    {
-                        message = "No positive expected value opportunities were found while scanning markets.";
-                    }
-                    if (missingScrapeFields != null && missingScrapeFields.Count > 0)
-                    {
-                        var ordered = missingScrapeFields
-                            .Where(s => !string.IsNullOrWhiteSpace(s))
-                            .Select(s => s.Trim())
-                            .Where(s => s.Length > 0)
-                            .Distinct(StringComparer.OrdinalIgnoreCase)
-                            .OrderBy(s => s, StringComparer.OrdinalIgnoreCase)
-                            .ToList();
-
-                        if (ordered.Count > 0)
+                        if (viewModel.KellyDampener > 0)
                         {
-                            var details = string.Join(", ", ordered);
-                            message += $" Some features were disabled because scraped data was unavailable for: {details}.";
+                            kellyFraction /= viewModel.KellyDampener;
+                        }
+
+                        if (kellyFraction > 0m)
+                        {
+                            stake = BettingMath.CalculateSequentialStake(bankroll, kellyFraction);
+                            if (stake > 0m)
+                            {
+                                bankroll -= stake;
+                                totalStaked += stake;
+
+                                if (isCorrectPrediction)
+                                {
+                                    wins++;
+                                    bankroll += stake * bookmakerOdds;
+                                }
+
+                                bets.Add(new ValidationBetResult
+                                {
+                                    RaceId = race.RaceGroup.First().RaceId,
+                                    RaceDate = summary?.RaceDate,
+                                    RaceTitle = summary?.Title,
+                                    CourseName = summary?.CourseName,
+                                    HorseName = predictedWinnerDetails.Example.HorseName,
+                                    DecimalOdds = bookmakerOdds,
+                                    AiDecimalOdds = aiOdds,
+                                    AiProbability = probability,
+                                    MarketProbability = marketProbability,
+                                    Differential = edge,
+                                    Stake = stake,
+                                    Won = isCorrectPrediction,
+                                    Bankroll = bankrollBefore
+                                });
+                            }
                         }
                     }
-                    _status.Update(message);
                 }
-                catch (Exception ex)
+                var runnersForRace = raceGroup.Select(r =>
                 {
-                    _status.Update($"Failed to start automated betting: {ex.Message}");
-                }
-            });
-
-            return View(model);
-        }
-        public IActionResult ScrapeOptions()
-        {
-            return View();
-        }
-
-        public IActionResult ScrapeEasternResults([FromServices] RaceResultsScraper scraper)
-        {
-            _status.Update($"Eastern Scraping started at {DateTime.Now:G}");
-            Task.Run(() =>
-            {
-                try
-                {
-                    scraper.ScrapeEasternFromDate(new DateTime(2015, 6, 1));
-                    _status.Update($"Eastern Scraping completed at {DateTime.Now:G}");
-                }
-                catch (Exception ex)
-                {
-                    _status.Update($"Eastern Scraping failed: {ex.Message}");
-                }
-            });
-            TempData["Message"] = "Eastern scraping (Sky Racing World) has started.";
-            return RedirectToAction("Index");
-        }
-        public IActionResult ScrapeRaceResults([FromServices] RaceResultsScraper scraper)
-        {
-            _status.Update($"Scraping started at {DateTime.Now:G}");
-            Task.Run(() =>
-            {
-                try
-                {
-                    scraper.ScrapeFromTodayBackwards();
-                    _status.Update($"Scraping completed at {DateTime.Now:G}");
-                }
-                catch (Exception ex)
-                {
-                    _status.Update($"Scraping failed: {ex.Message}");
-                }
-            });
-            TempData["Message"] = "Scraping of recent race results has started.";
-            return RedirectToAction("Index");
-        }
-        [HttpPost]
-        public async Task<IActionResult> RefreshRaceMarketOddsMarketOnly(
-            [FromBody] RefreshRaceRequest request,
-            [FromServices] BetfairNavigationService betfair,
-            [FromServices] HyperparameterTrainer trainer)
-        {
-            if (request == null || string.IsNullOrWhiteSpace(request.RaceUrl))
-            {
-                return BadRequest(new { success = false, message = "Race URL is required." });
-            }
-
-            try
-            {
-                var refreshed = await betfair.RefreshRaceAsync(
-                    request.RaceUrl,
-                    _repository,
-                    trainer,
-                    includeAiProbabilities: false,
-                    refreshBankrollFromPage: false,
-                    requireLogin: false);
-                if (refreshed == null)
-                {
-                    return NotFound(new { success = false, message = "Unable to refresh market data for the selected race." });
-                }
-
-                var update = new RaceMarketOddsUpdate
-                {
-                    MarketId = refreshed.MarketId,
-                    BackBookPercentage = refreshed.BackBookPercentage,
-                    LayBookPercentage = refreshed.LayBookPercentage,
-                    Going = string.IsNullOrWhiteSpace(refreshed.Going) ? null : refreshed.Going.Trim(),
-                    Runners = refreshed.Runners?.Select(runner => new RunnerMarketOddsUpdate
+                    historicalCounts.TryGetValue(r.Example.HorseName, out var count);
+                    return new RunnerViewModel
                     {
-                        HorseName = runner.HorseName,
-                        MarketDecimalOdds = runner.MarketDecimalOdds,
-                        LayDecimalOdds = runner.LayDecimalOdds,
-                        MarketProbability = runner.MarketProbability ??
-                            (runner.MarketDecimalOdds.HasValue && runner.MarketDecimalOdds.Value > 0m
-                                ? (double?)(1.0m / runner.MarketDecimalOdds.Value)
-                                : null)
-                    }).ToList() ?? new List<RunnerMarketOddsUpdate>()
-                };
-
-                var normalizedUpdatedGoing = string.IsNullOrWhiteSpace(update.Going) ? null : update.Going.Trim();
-                var normalizedRequestGoing = string.IsNullOrWhiteSpace(request.CurrentGoing)
-                    ? null
-                    : request.CurrentGoing.Trim();
-                var goingChanged = !string.Equals(normalizedUpdatedGoing, normalizedRequestGoing, StringComparison.OrdinalIgnoreCase);
-
-                return Json(new
+                        HorseName = r.Example.HorseName,
+                        HistoricalRaceCount = count > 0 ? count : (int?)null
+                    };
+                }).ToList();
+                dailyRaceResults.Add(new RaceResultViewModel
                 {
-                    success = true,
-                    update,
-                    goingChanged,
-                    newGoing = normalizedUpdatedGoing,
-                    aiRefreshed = false
+                    RaceId = race.RaceGroup.First().RaceId,
+                    RaceTitle = summary?.Title,
+                    PredictedWinner = predictedWinnerDetails?.Example.HorseName,
+                    ActualWinner = actualWinnerDetails?.Example.HorseName,
+                    IsCorrectPrediction = isCorrectPrediction,
+                    Bankroll = bankrollBefore,
+                    Stake = stake,
+                    AiOdds = aiOdds,
+                    BookmakerOdds = predictedWinnerDetails?.Example.StartingPriceDecimal ?? 0m,
+                    Runners = runnersForRace
                 });
             }
-            catch (Exception ex)
+
+            viewModel.DailyResults = dailyRaceResults
+                .GroupBy(r =>
+                {
+                    raceSummaries.TryGetValue(r.RaceId, out var summary);
+                    return summary?.RaceDate?.Date ?? DateTime.MinValue.Date;
+                })
+                .OrderBy(g => g.Key)
+                .Select(g => new DayResultViewModel
+                {
+                    RaceDate = g.Key,
+                    Races = g.ToList()
+                })
+                .ToList();
+            return new ValidationSimulationResult
             {
-                _logger.LogError(ex, "Failed to refresh market-only odds for URL {RaceUrl}.", request.RaceUrl);
-                return StatusCode(500, new { success = false, message = "An unexpected error occurred while refreshing the market odds." });
-            }
-        }
-        public IActionResult Index()
-        {
-            ViewData["StatusMessage"] = _status.Message;
-            return View();
-        }
-        [HttpPost]
-        public async Task<IActionResult> RefreshRaceMarketOdds(
-            [FromBody] RefreshRaceRequest request,
-            [FromServices] BetfairNavigationService betfair,
-            [FromServices] HyperparameterTrainer trainer)
-        {
-            if (request == null || string.IsNullOrWhiteSpace(request.RaceUrl))
-            {
-                return BadRequest(new { success = false, message = "Race URL is required." });
-            }
-
-            try
-            {
-                bool shouldRecalculateAi = false;
-                string? latestGoing = null;
-                var marketId = request.MarketId?.Trim();
-                if (!string.IsNullOrWhiteSpace(marketId))
-                {
-                    shouldRecalculateAi = betfair.ShouldRecalculateAiForMarket(marketId, request.CurrentGoing, out latestGoing);
-                }
-
-                var refreshed = await betfair.RefreshRaceAsync(
-                    request.RaceUrl,
-                    _repository,
-                    trainer,
-                    includeAiProbabilities: shouldRecalculateAi,
-                    refreshBankrollFromPage: shouldRecalculateAi);
-                if (refreshed == null)
-                {
-                    return NotFound(new { success = false, message = "Unable to refresh market data for the selected race." });
-                }
-
-                var update = new RaceMarketOddsUpdate
-                {
-                    MarketId = refreshed.MarketId,
-                    BackBookPercentage = refreshed.BackBookPercentage,
-                    LayBookPercentage = refreshed.LayBookPercentage,
-                    Going = string.IsNullOrWhiteSpace(refreshed.Going) ? null : refreshed.Going.Trim(),
-                    Runners = refreshed.Runners?.Select(runner => new RunnerMarketOddsUpdate
-                    {
-                        HorseName = runner.HorseName,
-                        MarketDecimalOdds = runner.MarketDecimalOdds,
-                        LayDecimalOdds = runner.LayDecimalOdds,
-                        MarketProbability = runner.MarketProbability ??
-                            (runner.MarketDecimalOdds.HasValue && runner.MarketDecimalOdds.Value > 0m
-                                ? (double?)(1.0m / runner.MarketDecimalOdds.Value)
-                                : null)
-                    }).ToList() ?? new List<RunnerMarketOddsUpdate>()
-                };
-                var tempReport = new DayReportViewModel
-                {
-                    Races = new List<RaceDayReport> { refreshed }
-                };
-                ApplyDisplayedAiProbabilities(tempReport);
-                var race = BuildRaceResponse(refreshed);
-
-                var normalizedUpdatedGoing = string.IsNullOrWhiteSpace(update.Going) ? null : update.Going.Trim();
-                if (normalizedUpdatedGoing == null && !string.IsNullOrWhiteSpace(latestGoing))
-                {
-                    normalizedUpdatedGoing = latestGoing.Trim();
-                }
-                var normalizedRequestGoing = string.IsNullOrWhiteSpace(request.CurrentGoing) ? null : request.CurrentGoing.Trim();
-                var goingChanged = !string.Equals(normalizedUpdatedGoing, normalizedRequestGoing, StringComparison.OrdinalIgnoreCase);
-
-                return Json(new
-                {
-                    success = true,
-                    update,
-                    race,
-                    goingChanged,
-                    newGoing = normalizedUpdatedGoing,
-                    aiRefreshed = shouldRecalculateAi
-                });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to refresh market-only odds for URL {RaceUrl}.", request.RaceUrl);
-                return StatusCode(500, new { success = false, message = "An unexpected error occurred while refreshing the market odds." });
-            }
-        }
-        public IActionResult Privacy()
-        {
-            return View();
-        }
-        [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
-        public IActionResult Error()
-        {
-            return View(new ErrorViewModel { RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier });
+                StartingBankroll = startingBankroll,
+                EndingBankroll = bankroll,
+                TotalStaked = totalStaked,
+                BetCount = bets.Count,
+                WinCount = wins,
+                Bets = bets
+            };
         }
     }
 }
