@@ -537,6 +537,7 @@ namespace HorseRacingML.Scraping
 
                 Console.WriteLine($"[Eastern] Found {raceLinks.Count} races for {date:yyyy-MM-dd}");
                 var dayHandle = driver.CurrentWindowHandle;
+                var dayResults = new List<RunnerResult>();
 
                 foreach (var raceLink in raceLinks)
                 {
@@ -555,7 +556,7 @@ namespace HorseRacingML.Scraping
                             // Using random delay instead of fixed sleep
                             RandomDelay(1000, 3000);
 
-                            ParseEasternRacePage(driver, wait, date, null); // pass null for sessionResults as we handle inserting inside the method for now or refactor to use session buffer if high volume, but one at a time is fine for Eastern scraping as it's slower. Wait, the existing architecture uses bulk insert for runners. Since we aren't parsing runners yet, we don't need the list.
+                            ParseEasternRacePage(driver, wait, date, dayResults);
 
                             // Log visit
                             RecordRaceProcessed();
@@ -573,6 +574,11 @@ namespace HorseRacingML.Scraping
                         Console.WriteLine($"[Eastern] Error visiting {raceLink}: {ex.Message}");
                         try { if (driver.WindowHandles.Contains(dayHandle)) driver.SwitchTo().Window(dayHandle); } catch { }
                     }
+                }
+
+                if (dayResults.Count > 0)
+                {
+                    _repo.BulkInsertRunnerResults(dayResults);
                 }
             }
             catch (Exception ex)
@@ -1363,9 +1369,103 @@ namespace HorseRacingML.Scraping
                     PrizeMoney = prizeMoney
                 };
 
-                _repo.InsertRace(raceEntity);
+                var raceId = _repo.InsertRace(raceEntity);
 
                 Console.WriteLine($"[Eastern] Parsed Race: {track} ({country}) - {raceTitle} - {distanceText} - {going} - Prize: {prizeMoney}");
+                Console.WriteLine($"[Eastern] URL: {driver.Url}");
+
+                // Parse Runners
+                var runners = new List<RunnerResult>();
+                try
+                {
+                    // Selector: .table-responsive.marginTop.fgr-table-lvl-1.hidden-xs > table > tbody > tr
+                    var rows = driver.FindElements(By.CssSelector(".fgr-table-lvl-1.hidden-xs > table > tbody > tr"));
+
+                    foreach (var row in rows)
+                    {
+                        try
+                        {
+                            // 1. Horse Name
+                            string horseName = SafeText(row, By.CssSelector("td:nth-child(3) > b:nth-child(2)"));
+
+                            // 2. Saddlecloth
+                            string saddleText = SafeText(row, By.CssSelector("td:nth-child(3) > b:nth-child(1)"));
+                            saddleText = saddleText.Replace(".", "").Trim();
+                            byte? saddle = TryParseByteLoose(saddleText);
+
+                            // 3. Age / Sex
+                            string ageSexText = SafeText(row, By.CssSelector("td.text-center"));
+                            // Format example: "4G", "3C"
+                            byte? age = null;
+                            if (!string.IsNullOrWhiteSpace(ageSexText))
+                            {
+                                var mAge = System.Text.RegularExpressions.Regex.Match(ageSexText, @"^\d+");
+                                if (mAge.Success && byte.TryParse(mAge.Value, out var a))
+                                {
+                                    age = a;
+                                }
+                            }
+
+                            // 4. Draw
+                            string drawText = SafeText(row, By.CssSelector("td:nth-child(8)"));
+                            byte? draw = TryParseByteLoose(drawText);
+
+                            // 5. Jockey
+                            string jockeyName = SafeText(row, By.CssSelector("td:nth-child(9) > p > span"));
+
+                            // 6. Weight
+                            string weightText = SafeText(row, By.CssSelector("td:nth-child(11) > p"));
+                            // Format: "130 lbs"
+                            byte? weightLbs = null;
+                            if (!string.IsNullOrWhiteSpace(weightText))
+                            {
+                                var wClean = weightText.ToLowerInvariant().Replace("lbs", "").Trim();
+                                if (double.TryParse(wClean, NumberStyles.Any, CultureInfo.InvariantCulture, out var w))
+                                {
+                                    weightLbs = (byte)Math.Round(w);
+                                }
+                            }
+
+                            Console.WriteLine($"[Eastern] Runner: {horseName} | Saddle: {saddle} | Age: {age} | Draw: {draw} | Jockey: {jockeyName} | Weight: {weightLbs}");
+
+                            if (!string.IsNullOrWhiteSpace(horseName))
+                            {
+                                var horseId = _repo.InsertHorse(new Horse { Name = horseName });
+                                short? jockeyId = string.IsNullOrWhiteSpace(jockeyName) ? (short?)null : (short)_repo.InsertJockey(new Jockey { Name = jockeyName });
+
+                                runners.Add(new RunnerResult
+                                {
+                                    RaceId = raceId,
+                                    HorseId = horseId,
+                                    JockeyId = jockeyId,
+                                    SaddleclothNumber = saddle,
+                                    Draw = draw,
+                                    Age = age,
+                                    WeightLbs = weightLbs,
+                                    WeightText = weightText,
+                                    // Default/Missing fields
+                                    TrainerId = null,
+                                    FinishPos = null, // Not requested yet
+                                    OutcomeCode = "", // Not requested yet
+                                    SP_Decimal = null
+                                });
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"[Eastern] Error parsing runner row: {ex.Message}");
+                        }
+                    }
+
+                    if (runners.Count > 0 && sessionResults != null)
+                    {
+                        sessionResults.AddRange(runners);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[Eastern] Error finding runner rows: {ex.Message}");
+                }
             }
             catch (Exception ex)
             {
