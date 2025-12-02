@@ -552,9 +552,10 @@ namespace HorseRacingML.Scraping
                         {
                             driver.SwitchTo().Window(newHandle);
 
-                            // Placeholder for parsing logic. 
                             // Using random delay instead of fixed sleep
                             RandomDelay(1000, 3000);
+
+                            ParseEasternRacePage(driver, wait, date, null); // pass null for sessionResults as we handle inserting inside the method for now or refactor to use session buffer if high volume, but one at a time is fine for Eastern scraping as it's slower. Wait, the existing architecture uses bulk insert for runners. Since we aren't parsing runners yet, we don't need the list.
 
                             // Log visit
                             RecordRaceProcessed();
@@ -1144,5 +1145,232 @@ namespace HorseRacingML.Scraping
         private static byte? ExtractClass(string meta) { if (string.IsNullOrWhiteSpace(meta)) return null; var m = System.Text.RegularExpressions.Regex.Match(meta, @"Class\s*[:\-]?\s*(\d)", System.Text.RegularExpressions.RegexOptions.IgnoreCase); return m.Success ? (byte?)byte.Parse(m.Groups[1].Value) : null; } // Class 1..7
         private static string InferSurface(string meta) { if (string.IsNullOrWhiteSpace(meta)) return null; if (meta.Contains("All Weather", StringComparison.OrdinalIgnoreCase) || meta.Contains("Allweather", StringComparison.OrdinalIgnoreCase)) return "Allweather"; return "Turf"; } // surface
 
+        private void ParseEasternRacePage(IWebDriver driver, WebDriverWait wait, DateTime defaultDate, List<RunnerResult> sessionResults)
+        {
+            try
+            {
+                // 1. Race Title
+                string raceTitle = "";
+                try
+                {
+                    // Prefer text content as data-original-title might be a label like "Race Name"
+                    raceTitle = driver.FindElement(By.CssSelector("h2.fgr")).Text.Trim();
+                }
+                catch { }
+
+                if (string.IsNullOrWhiteSpace(raceTitle))
+                {
+                    try { raceTitle = driver.FindElement(By.CssSelector("h2.fgr")).GetAttribute("data-original-title"); } catch { }
+                }
+
+                // 2. Date
+                DateTime raceDate = defaultDate;
+                try
+                {
+                    var dateText = driver.FindElement(By.CssSelector("#mainContentBody > section > div > div.white-bg > div > div.fgr-heading-wrapper.hidden-print > div > h2")).Text.Trim();
+                    if (DateTime.TryParse(dateText, out var parsedDate))
+                    {
+                        raceDate = parsedDate;
+                    }
+                }
+                catch { }
+
+                // 3. Prize Money
+                decimal? prizeMoney = null;
+                try
+                {
+                    // Use direct child selector as per user's JSPath hint
+                    var prizeText = driver.FindElement(By.CssSelector("div.fgr-rh-right-pm-wrp > span")).Text;
+                    if (!string.IsNullOrWhiteSpace(prizeText))
+                    {
+                        // Remove $, AUD, commas
+                        prizeText = prizeText.Replace("$", "").Replace("AUD", "").Replace(",", "").Trim();
+                        if (decimal.TryParse(prizeText, NumberStyles.Any, CultureInfo.InvariantCulture, out var pm))
+                        {
+                            prizeMoney = pm;
+                        }
+                    }
+                }
+                catch { }
+
+                // 4. Distance
+                int distanceYards = 0;
+                string distanceText = "";
+                try
+                {
+                    distanceText = driver.FindElement(By.CssSelector("span.fgr-rh-right-dist")).Text.Trim();
+
+                    // Regex parsing to handle "1 m", "6 f", "1200m" correctly
+                    var m = System.Text.RegularExpressions.Regex.Match(distanceText, @"^(\d+(?:\.\d+)?)\s*([mMfFyY])(?:iles?|eters?|urlongs?|ards?)?$");
+                    if (m.Success)
+                    {
+                        var val = double.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture);
+                        var unit = m.Groups[2].Value.ToLowerInvariant();
+
+                        if (unit == "m") // Miles (screenshot shows "1 m")
+                        {
+                            // Ambiguity: "m" can be meters or miles. 
+                            // In context of "1 m", it's likely 1 Mile (1760 yards).
+                            // If it were "1600 m", it would be meters.
+                            // Simple heuristic: if val < 10, assume miles. If val > 200, assume meters.
+                            if (val < 50)
+                            {
+                                distanceYards = (int)(val * 1760);
+                            }
+                            else
+                            {
+                                // Meters to Yards: 1m = 1.09361 yards
+                                distanceYards = (int)(val * 1.09361);
+                            }
+                        }
+                        else if (unit == "f") // Furlongs
+                        {
+                            distanceYards = (int)(val * 220);
+                        }
+                        else if (unit == "y") // Yards
+                        {
+                            distanceYards = (int)val;
+                        }
+                    }
+                    else
+                    {
+                        // Fallback to existing logic if regex fails (e.g. multi-part like "2m 4f")
+                        distanceYards = ParseDistanceToYards(distanceText);
+                    }
+                }
+                catch { }
+
+                // 5. Surface
+                string surface = "Turf"; // Default
+                try
+                {
+                    var surfaceText = driver.FindElement(By.CssSelector("span.fgr-rh-right-sot")).Text.Trim(); // This selector matches the first one?
+                    // The screenshot shows two spans with class "fgr-rh-right-sot".
+                    // One is TURF (Background green/blue), one is GOOD 4 (Background green).
+                    // We need to pick the one that is surface.
+                    // The prompt said: "screenshot shows TURF".
+                    // I'll try to find the one with "TURF", "SYNTHETIC", "DIRT", "ALL WEATHER".
+                    var sots = driver.FindElements(By.CssSelector("span.fgr-rh-right-sot"));
+                    foreach (var s in sots)
+                    {
+                        var txt = s.Text.Trim().ToUpperInvariant();
+                        if (txt.Contains("TURF") || txt.Contains("DIRT") || txt.Contains("SYNTHETIC") || txt.Contains("AW") || txt.Contains("ALL WEATHER"))
+                        {
+                            if (txt.Contains("TURF")) surface = "Turf";
+                            else if (txt.Contains("DIRT")) surface = "Dirt"; // Map to Turf/Allweather? DB uses these 2 usually.
+                            else surface = "Allweather";
+                            break;
+                        }
+                    }
+                }
+                catch { }
+
+                // 6. Going
+                string going = "";
+                try
+                {
+                    // Look for the one with data-original-title="Track Surface" as per screenshot (it says title="Track Surface" in the DOM inspector popup?)
+                    // Actually the screenshot shows `data-original-title="Track Surface"` for the "GOOD 4" span.
+                    // The "TURF" span has `data-original-title` empty or different.
+                    var sots = driver.FindElements(By.CssSelector("span.fgr-rh-right-sot"));
+                    foreach (var s in sots)
+                    {
+                        var title = s.GetAttribute("data-original-title");
+                        if (!string.IsNullOrEmpty(title) && title.Equals("Track Surface", StringComparison.OrdinalIgnoreCase))
+                        {
+                            going = s.Text.Trim();
+                            break;
+                        }
+                    }
+                    // Fallback: if we didn't find it by title, look for known going keywords
+                    if (string.IsNullOrWhiteSpace(going))
+                    {
+                        foreach (var s in sots)
+                        {
+                            var txt = s.Text.Trim();
+                            if (IsGoingToken(txt))
+                            {
+                                going = txt;
+                                break;
+                            }
+                            // Map "GOOD 4", "SOFT 5" etc.
+                            if (System.Text.RegularExpressions.Regex.IsMatch(txt, @"^(GOOD|SOFT|HEAVY|FIRM|SYNTHETIC)\s*\d*$", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+                            {
+                                going = txt;
+                                break;
+                            }
+                        }
+                    }
+
+                    // Map Going
+                    if (!string.IsNullOrWhiteSpace(going))
+                    {
+                        // "GOOD 4" -> "Good"
+                        var gUpper = going.ToUpperInvariant();
+                        if (gUpper.Contains("GOOD")) going = "Good";
+                        else if (gUpper.Contains("SOFT")) going = "Soft";
+                        else if (gUpper.Contains("HEAVY")) going = "Heavy";
+                        else if (gUpper.Contains("FIRM")) going = "Firm";
+                        else if (gUpper.Contains("YIELDING")) going = "Yielding";
+                        else if (gUpper.Contains("FAST")) going = "Firm"; // US
+                        else if (gUpper.Contains("SLOW")) going = "Soft"; // US
+                    }
+                }
+                catch { }
+
+                // 7. Country and Track from URL
+                string country = "";
+                string track = "";
+                try
+                {
+                    // Format: https://www.skyracingworld.com/horse-racing-results/australia/gosford/2015-10-08/R1
+                    var url = driver.Url;
+                    var parts = url.Split('/', StringSplitOptions.RemoveEmptyEntries);
+                    // parts: ["https:", "", "www.skyracingworld.com", "horse-racing-results", "australia", "gosford", "2015-10-08", "R1"]
+                    // Find "horse-racing-results" index
+                    int idx = Array.IndexOf(parts, "horse-racing-results");
+                    if (idx >= 0 && idx + 2 < parts.Length)
+                    {
+                        country = CultureInfo.CurrentCulture.TextInfo.ToTitleCase(parts[idx + 1].ToLowerInvariant());
+                        track = CultureInfo.CurrentCulture.TextInfo.ToTitleCase(parts[idx + 2].Replace("-", " ").ToLowerInvariant());
+                    }
+                }
+                catch { }
+
+                // Construct and Insert
+                if (string.IsNullOrWhiteSpace(track)) track = "Unknown Track";
+
+                var courseId = _repo.InsertCourse(new Course { Name = track, Country = country });
+
+                var raceEntity = new Race
+                {
+                    CourseId = courseId,
+                    RaceDate = raceDate,
+                    ScheduledOff = TimeSpan.Zero, // Not parsed yet
+                    ActualOff = null,
+                    Title = raceTitle,
+                    RaceType = "", // User said later
+                    Class = null,
+                    AgeRestriction = null,
+                    Surface = surface,
+                    Going = going,
+                    DistanceYards = (short)distanceYards,
+                    DistanceText = distanceText,
+                    RunnerCount = null, // User said later
+                    Status = "Result",
+                    WinningTimeMs = null,
+                    WinningTimeText = null,
+                    PrizeMoney = prizeMoney
+                };
+
+                _repo.InsertRace(raceEntity);
+
+                Console.WriteLine($"[Eastern] Parsed Race: {track} ({country}) - {raceTitle} - {distanceText} - {going} - Prize: {prizeMoney}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Eastern] Error parsing race page: {ex.Message}");
+            }
+        }
     }
 }

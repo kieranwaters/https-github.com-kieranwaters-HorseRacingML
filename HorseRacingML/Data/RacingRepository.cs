@@ -32,6 +32,7 @@ namespace HorseRacingML.Data
         private static bool _runnerFlowTableEnsured;
         private static bool _upcomingRaceTableEnsured;
         private readonly AsyncLocal<DayReportScopeState?> _dayReportScope = new();
+        private static bool _raceTableSchemaEnsured;
         private static bool _runnerResultUniquenessEnsured;
         private static bool _horsePerformanceIndexesEnsured;
         private IDbConnection OpenConnection()
@@ -405,7 +406,7 @@ VALUES";
             StripBracketedText(race);
             race.Going = NormalizeGoing(race.Going);
             race.DistanceText ??= string.Empty;
-
+            EnsureRaceTableSchema();
             const string sql = @"SET NOCOUNT ON;
 
 DECLARE @ExistingId INT;
@@ -420,9 +421,9 @@ WHERE CourseId = @CourseId
 IF @ExistingId IS NULL
 BEGIN
     INSERT INTO Race
-        (CourseId, RaceDate, ScheduledOff, ActualOff, Title, RaceType, Class, AgeRestriction, Surface, Going, DistanceYards, DistanceText, RunnerCount, Status, WinningTimeMs, WinningTimeText)
+        (CourseId, RaceDate, ScheduledOff, ActualOff, Title, RaceType, Class, AgeRestriction, Surface, Going, DistanceYards, DistanceText, RunnerCount, Status, WinningTimeMs, WinningTimeText, PrizeMoney)
     VALUES
-        (@CourseId, @RaceDate, @ScheduledOff, @ActualOff, @Title, @RaceType, @Class, @AgeRestriction, @Surface, @Going, @DistanceYards, @DistanceText, @RunnerCount, @Status, @WinningTimeMs, @WinningTimeText);
+        (@CourseId, @RaceDate, @ScheduledOff, @ActualOff, @Title, @RaceType, @Class, @AgeRestriction, @Surface, @Going, @DistanceYards, @DistanceText, @RunnerCount, @Status, @WinningTimeMs, @WinningTimeText, @PrizeMoney);
 
     SELECT CAST(SCOPE_IDENTITY() as int);
 END
@@ -440,9 +441,9 @@ BEGIN
         RunnerCount = @RunnerCount,
         Status = @Status,
         WinningTimeMs = @WinningTimeMs,
-        WinningTimeText = @WinningTimeText
+        WinningTimeText = @WinningTimeText,
+        PrizeMoney = @PrizeMoney
     WHERE RaceId = @ExistingId;
-
     SELECT @ExistingId;
 END;";
 
@@ -1429,6 +1430,24 @@ END";
         {
             // 4712: Cannot truncate table because it is being referenced by a FOREIGN KEY constraint.
             return ex.Number == 4712;
+        }
+        private void EnsureRaceTableSchema()
+        {
+            if (_raceTableSchemaEnsured) return;
+
+            lock (SchemaLock)
+            {
+                if (_raceTableSchemaEnsured) return;
+
+                using var conn = OpenConnection();
+                const string sql = @"
+IF COL_LENGTH('dbo.Race', 'PrizeMoney') IS NULL
+BEGIN
+    ALTER TABLE dbo.Race ADD PrizeMoney DECIMAL(18, 2) NULL;
+END;";
+                conn.Execute(sql);
+                _raceTableSchemaEnsured = true;
+            }
         }
         private static string? NormalizeGoing(string? going)
         {

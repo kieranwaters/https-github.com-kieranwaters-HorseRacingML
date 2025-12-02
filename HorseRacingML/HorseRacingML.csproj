@@ -55,7 +55,7 @@
 		<Folder Include="Views\NewFolder1\" />
 	</ItemGroup>
 	<ItemGroup>
-	  <None Include="tests\HorseRacingML.Tests.csproj" />
+	  <None Include="Services\Tests\HorseRacingML.Tests.csproj" />
 	</ItemGroup>
 </Project>
 

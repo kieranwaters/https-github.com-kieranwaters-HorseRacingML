@@ -30,6 +30,7 @@ namespace HorseRacingML.Models
         public string? Status { get; set; }
         public int? WinningTimeMs { get; set; }
         public string? WinningTimeText { get; set; }
+        public decimal? PrizeMoney { get; set; }
     }
 
     public class Trainer
