@@ -24,7 +24,7 @@ namespace HorseRacingML.Tests
                 })
                 .Build();
             _trainer = new HyperparameterTrainer(_configuration, new RacingRepository(""));
-        }
+        }//
 
         [Fact]
         public void IsModelPersisted_ReturnsFalse_WhenModelNotPersisted()
