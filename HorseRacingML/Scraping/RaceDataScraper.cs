@@ -1,5 +1,6 @@
 ﻿using HorseRacingML.Data;
 using HorseRacingML.Services;
+using Microsoft.Extensions.Configuration;
 
 namespace HorseRacingML.Scraping
 {
@@ -8,8 +9,8 @@ namespace HorseRacingML.Scraping
     /// </summary>
     public class RaceDataScraper : RaceResultsScraper
     {
-        public RaceDataScraper(RacingRepository repo, ScrapingStatusService status)
-            : base(repo, status)
+        public RaceDataScraper(RacingRepository repo, ScrapingStatusService status, IConfiguration config)
+            : base(repo, status, config)
         {
         }
     }
