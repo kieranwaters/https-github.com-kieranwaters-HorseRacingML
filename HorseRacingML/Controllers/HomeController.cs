@@ -1,5 +1,6 @@
 using CsvHelper;
 using CsvHelper.Configuration;
+using CsvHelper.TypeConversion;
 using HorseRacingML.Data;
 using HorseRacingML.ML;
 using HorseRacingML.Models;
@@ -90,6 +91,11 @@ namespace HorseRacingML.Controllers
             // 1. Parse Races
             using var raceReader = new StreamReader(raceCsv.OpenReadStream());
             using var raceCsvReader = new CsvReader(raceReader, config);
+
+            // Add date format support for 'yy/MM/dd' (e.g. 90/01/01) and standard 'yyyy-MM-dd'
+            var options = new TypeConverterOptions { Formats = new[] { "yy/MM/dd", "yyyy-MM-dd" } };
+            raceCsvReader.Context.TypeConverterOptionsCache.AddOptions<DateTime>(options);
+
             var raceRecords = raceCsvReader.GetRecords<RaceCsvModel>().ToList();
 
             // 2. Insert Races
