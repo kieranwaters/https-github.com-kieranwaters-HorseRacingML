@@ -1,6 +1,7 @@
 ﻿using HorseRacingML.Data;
 using HorseRacingML.Models;
 using HorseRacingML.Services;
+using Microsoft.Extensions.Configuration;
 using OpenQA.Selenium;
 using OpenQA.Selenium.Chrome;
 using OpenQA.Selenium.Support.UI;
@@ -22,6 +23,7 @@ namespace HorseRacingML.Scraping
     {
         private readonly RacingRepository _repo;
         private readonly ScrapingStatusService _status;
+        private readonly IConfiguration _config;
         private const int MaxParallelDrivers = 15;
         private const int MaxEasternParallelDrivers = 1;
         private static readonly TimeSpan EstimateOutputInterval = TimeSpan.FromMinutes(3);
@@ -35,10 +37,11 @@ namespace HorseRacingML.Scraping
             Thread.Sleep(new Random().Next(minMs, maxMs));
         }
 
-        public RaceResultsScraper(RacingRepository repo, ScrapingStatusService status)
+        public RaceResultsScraper(RacingRepository repo, ScrapingStatusService status, IConfiguration config)
         {
             _repo = repo;
             _status = status;
+            _config = config;
         }
         private void ResetEstimateSession()
         {
@@ -443,6 +446,22 @@ namespace HorseRacingML.Scraping
             var end = endDate.Date;
             if (start > end) return;
 
+            // Check Tor configuration
+            var useTor = _config.GetValue<bool>("Scraping:UseTorProxy");
+            var torPort = _config.GetValue<int>("Scraping:TorProxyPort", 9150);
+
+            if (useTor)
+            {
+                if (!IsTorRunning(torPort))
+                {
+                    var error = $"Error: Tor proxy is enabled but port {torPort} is not listening. Please start the Tor Browser.";
+                    Console.WriteLine(error);
+                    _status.Update(error);
+                    return;
+                }
+                Console.WriteLine($"[Eastern] Using Tor Proxy on port {torPort}");
+            }
+
             // Generate date range
             var dates = Enumerable.Range(0, (end - start).Days + 1)
                                    .Select(i => start.AddDays(i)); // Forward iteration as requested "up to present day"
@@ -458,7 +477,7 @@ namespace HorseRacingML.Scraping
                     using var svc = ChromeDriverService.CreateDefaultService();
                     svc.HideCommandPromptWindow = true;
                     svc.Port = GetFreeTcpPort();
-                    using var driver = new ChromeDriver(svc, BuildChromeOptions(headless: false), TimeSpan.FromSeconds(60));
+                    using var driver = new ChromeDriver(svc, BuildChromeOptions(headless: false, useTor: useTor, torPort: torPort), TimeSpan.FromSeconds(60));
                     driver.Manage().Timeouts().PageLoad = TimeSpan.FromSeconds(60); // slightly longer for Sky
                     driver.Manage().Timeouts().AsynchronousJavaScript = TimeSpan.FromSeconds(5);
                     driver.Manage().Timeouts().ImplicitWait = TimeSpan.FromSeconds(0);
@@ -480,6 +499,24 @@ namespace HorseRacingML.Scraping
             }
 
             Task.WaitAll(tasks.ToArray());
+        }
+
+        private bool IsTorRunning(int port)
+        {
+            try
+            {
+                using var client = new TcpClient();
+                // Short timeout check
+                var result = client.BeginConnect("127.0.0.1", port, null, null);
+                var success = result.AsyncWaitHandle.WaitOne(TimeSpan.FromSeconds(2));
+                if (!success) return false;
+                client.EndConnect(result);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private void ScrapeEasternDay(IWebDriver driver, DateTime date)
@@ -706,12 +743,16 @@ namespace HorseRacingML.Scraping
             catch (OperationCanceledException ex) { Console.Error.WriteLine($"[Skip Day] {date:yyyy-MM-dd} OperationCanceled: {ex.Message}"); }
             catch (Exception ex) { Console.Error.WriteLine($"[Skip Day] {date:yyyy-MM-dd} Unexpected: {ex.Message}"); }
         }
-        private ChromeOptions BuildChromeOptions(bool headless = true)
+        private ChromeOptions BuildChromeOptions(bool headless = true, bool useTor = false, int torPort = 9150)
         {
             var options = new ChromeOptions();
             if (headless)
             {
                 options.AddArgument("--headless=new");
+            }
+            if (useTor)
+            {
+                options.AddArgument($"--proxy-server=socks5://127.0.0.1:{torPort}");
             }
             options.AddArgument("--disable-dev-shm-usage");
             options.AddArgument("--disable-gpu");
@@ -1515,4 +1556,3 @@ namespace HorseRacingML.Scraping
         }
     }
 }
-
