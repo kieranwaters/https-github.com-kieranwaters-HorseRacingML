@@ -1,4 +1,5 @@
 using CsvHelper;
+using CsvHelper.Configuration;
 using HorseRacingML.Data;
 using HorseRacingML.ML;
 using HorseRacingML.Models;
@@ -81,9 +82,14 @@ namespace HorseRacingML.Controllers
 
         private void ProcessCsvFiles(IFormFile raceCsv, IFormFile runnerCsv)
         {
+            var config = new CsvConfiguration(CultureInfo.InvariantCulture)
+            {
+                PrepareHeaderForMatch = args => args.Header.ToLower(),
+            };
+
             // 1. Parse Races
             using var raceReader = new StreamReader(raceCsv.OpenReadStream());
-            using var raceCsvReader = new CsvReader(raceReader, CultureInfo.InvariantCulture);
+            using var raceCsvReader = new CsvReader(raceReader, config);
             var raceRecords = raceCsvReader.GetRecords<RaceCsvModel>().ToList();
 
             // 2. Insert Races
@@ -137,7 +143,7 @@ namespace HorseRacingML.Controllers
 
             // 3. Parse Runners
             using var runnerReader = new StreamReader(runnerCsv.OpenReadStream());
-            using var runnerCsvReader = new CsvReader(runnerReader, CultureInfo.InvariantCulture);
+            using var runnerCsvReader = new CsvReader(runnerReader, config);
             var runnerRecords = runnerCsvReader.GetRecords<RunnerCsvModel>().ToList();
 
             // 4. Resolve RaceIds
