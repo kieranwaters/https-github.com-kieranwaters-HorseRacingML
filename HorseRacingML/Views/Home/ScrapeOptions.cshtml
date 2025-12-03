@@ -2,6 +2,13 @@
     ViewData["Title"] = "Scrape Options";
 }
 
+@if (TempData["Message"] != null)
+{
+    <div class="alert alert-info text-center" role="alert">
+        @TempData["Message"]
+    </div>
+}
+
 <div class="text-center mt-5">
     <h1 class="display-4">Select Scrape Region</h1>
     <p class="lead">Choose which region to scrape data from.</p>
@@ -25,6 +32,24 @@
                         <input type="date" class="form-control" id="startDate" name="startDate" value="2015-05-17">
                     </div>
                     <button type="submit" class="btn btn-success btn-lg w-100">Eastern</button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card" style="width: 18rem;">
+            <div class="card-body">
+                <h5 class="card-title">CSV Upload</h5>
+                <p class="card-text">Upload historical race and runner data from CSV files.</p>
+                <form asp-controller="Home" asp-action="UploadCsv" method="post" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label for="raceCsv" class="form-label">Race CSV</label>
+                        <input type="file" class="form-control" id="raceCsv" name="raceCsv" accept=".csv" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="runnerCsv" class="form-label">Runner CSV</label>
+                        <input type="file" class="form-control" id="runnerCsv" name="runnerCsv" accept=".csv" required>
+                    </div>
+                    <button type="submit" class="btn btn-warning btn-lg w-100">Upload</button>
                 </form>
             </div>
         </div>

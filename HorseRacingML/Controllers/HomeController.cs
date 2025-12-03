@@ -61,19 +61,19 @@ namespace HorseRacingML.Controllers
         {
             if (raceCsv == null || runnerCsv == null)
             {
-                // In a real scenario, use TempData or similar to show error
+                TempData["Message"] = "Please select both race and runner CSV files.";
                 return RedirectToAction(nameof(ScrapeOptions));
             }
 
             try
             {
                 await Task.Run(() => ProcessCsvFiles(raceCsv, runnerCsv));
+                TempData["Message"] = "CSV files processed successfully.";
             }
             catch (Exception ex)
             {
-                // _logger.LogError(ex, "Error processing CSV files");
                 Console.WriteLine($"Error processing CSV files: {ex}");
-                // Ideally propagate error to UI
+                TempData["Message"] = $"Error processing CSV files: {ex.Message}";
             }
 
             return RedirectToAction(nameof(ScrapeOptions));
