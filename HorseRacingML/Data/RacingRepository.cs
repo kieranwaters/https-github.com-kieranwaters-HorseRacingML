@@ -413,7 +413,7 @@ DECLARE @ExistingId INT;
 
 SELECT TOP (1) @ExistingId = RaceId
 FROM Race
-HERE CourseId = @CourseId
+WHERE CourseId = @CourseId
   AND RaceDate = @RaceDate
   AND (@ScheduledOff IS NULL OR ISNULL(ScheduledOff, '00:00:00') = @ScheduledOff)
   AND ISNULL(LTRIM(RTRIM(Title)), '') = ISNULL(LTRIM(RTRIM(@Title)), '');
