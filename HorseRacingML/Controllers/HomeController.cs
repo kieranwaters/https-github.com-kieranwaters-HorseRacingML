@@ -200,8 +200,8 @@ namespace HorseRacingML.Controllers
                     HorseId = horseId,
                     TrainerId = trainerId,
                     JockeyId = jockeyId,
-                    SaddleclothNumber = run.Saddle,
-                    Age = run.Age,
+                    SaddleclothNumber = (byte?)run.Saddle,
+                    Age = (byte?)run.Age,
                     FinishPos = run.Position == 40 ? (short?)null : (short)run.Position,
                     OutcomeCode = run.Position == 40 ? "DNF" : null, // Assuming 40 means DNF
                     DistanceBeatenLengths = (decimal?)run.Dist, // "dist - how far a horse has finished from a winner"

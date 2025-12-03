@@ -50,9 +50,9 @@ namespace HorseRacingML.Models
         [Name("decimalPrice")]
         public decimal? DecimalPrice { get; set; }
         [Name("saddle")]
-        public byte? Saddle { get; set; }
+        public double? Saddle { get; set; }
         [Name("age")]
-        public byte? Age { get; set; }
+        public double? Age { get; set; }
         [Name("position")]
         public int Position { get; set; }
         [Name("dist")]
