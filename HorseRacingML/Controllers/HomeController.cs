@@ -59,7 +59,7 @@ namespace HorseRacingML.Controllers
         }
 
         [HttpPost]
-        public async Task<IActionResult> UploadCsv(IFormFile raceCsv, IFormFile runnerCsv)
+        public async Task<IActionResult> UploadCsv(IFormFile raceCsv, IFormFile runnerCsv, DateTime? selectionDate)
         {
             if (raceCsv == null && runnerCsv == null)
             {
@@ -69,7 +69,7 @@ namespace HorseRacingML.Controllers
 
             try
             {
-                await Task.Run(() => ProcessCsvFiles(raceCsv, runnerCsv));
+                await Task.Run(() => ProcessCsvFiles(raceCsv, runnerCsv, selectionDate));
                 TempData["Message"] = "CSV files processed successfully.";
             }
             catch (Exception ex)
@@ -81,7 +81,7 @@ namespace HorseRacingML.Controllers
             return RedirectToAction(nameof(ScrapeOptions));
         }
 
-        private void ProcessCsvFiles(IFormFile raceCsv, IFormFile runnerCsv)
+        private void ProcessCsvFiles(IFormFile raceCsv, IFormFile runnerCsv, DateTime? selectionDate)
         {
             var config = new CsvConfiguration(CultureInfo.InvariantCulture)
             {
@@ -94,15 +94,20 @@ namespace HorseRacingML.Controllers
             if (raceCsv != null)
             {
                 using var raceReader = new StreamReader(raceCsv.OpenReadStream());
-            using var raceCsvReader = new CsvReader(raceReader, config);
+                using var raceCsvReader = new CsvReader(raceReader, config);
 
-            // Add date format support for 'yy/MM/dd' (e.g. 90/01/01) and standard 'yyyy-MM-dd'
-            var options = new TypeConverterOptions { Formats = new[] { "yy/MM/dd", "yyyy-MM-dd" } };
-            raceCsvReader.Context.TypeConverterOptionsCache.AddOptions<DateTime>(options);
+                // Add date format support for 'yy/MM/dd' (e.g. 90/01/01) and standard 'yyyy-MM-dd'
+                var options = new TypeConverterOptions { Formats = new[] { "yy/MM/dd", "yyyy-MM-dd" } };
+                raceCsvReader.Context.TypeConverterOptionsCache.AddOptions<DateTime>(options);
 
-            var raceRecords = raceCsvReader.GetRecords<RaceCsvModel>().ToList();
+                var raceRecords = raceCsvReader.GetRecords<RaceCsvModel>().ToList();
                 foreach (var r in raceRecords)
                 {
+                    if (selectionDate.HasValue && r.Date > selectionDate.Value)
+                    {
+                        continue;
+                    }
+
                     // Course Lookup/Insert
                     var courseId = _repo.InsertCourse(new Course
                     {
