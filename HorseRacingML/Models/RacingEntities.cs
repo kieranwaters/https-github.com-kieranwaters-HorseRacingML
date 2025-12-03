@@ -14,6 +14,7 @@ namespace HorseRacingML.Models
     public class Race
     {
         public int RaceId { get; set; }
+        public int? Rid { get; set; }
         public short CourseId { get; set; }
         public DateTime RaceDate { get; set; }
         public TimeSpan? ScheduledOff { get; set; }
@@ -55,6 +56,7 @@ namespace HorseRacingML.Models
     {
         public int RunnerResultId { get; set; }
         public int RaceId { get; set; }
+        public int? Rid { get; set; }
         public int HorseId { get; set; }
         public short? TrainerId { get; set; }
         public short? JockeyId { get; set; }
@@ -78,6 +80,7 @@ namespace HorseRacingML.Models
         public string? Surface { get; set; }
         public short? CourseId { get; set; }
         public short DistanceYards { get; set; }
+        public bool IsPlace { get; set; }
     }
     public sealed class RaceClassRating
     {
