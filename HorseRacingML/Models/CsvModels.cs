@@ -1,5 +1,8 @@
 ﻿using System;
+using CsvHelper;
+using CsvHelper.Configuration;
 using CsvHelper.Configuration.Attributes;
+using CsvHelper.TypeConversion;
 
 namespace HorseRacingML.Models
 {
@@ -56,6 +59,7 @@ namespace HorseRacingML.Models
         [Name("position")]
         public int Position { get; set; }
         [Name("dist")]
+        [TypeConverter(typeof(RacingDistanceConverter))]
         public decimal? Dist { get; set; }
         [Name("isFav")]
         public int? IsFav { get; set; }
@@ -65,5 +69,48 @@ namespace HorseRacingML.Models
         public int WeightLb { get; set; }
         [Name("res_place")]
         public int? ResPlace { get; set; }
+    }
+
+    public class RacingDistanceConverter : DefaultTypeConverter
+    {
+        public override object? ConvertFromString(string? text, IReaderRow row, MemberMapData memberMapData)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return null;
+            }
+
+            var cleanText = text.Trim().ToLowerInvariant();
+
+            if (decimal.TryParse(cleanText, out var decimalValue))
+            {
+                return decimalValue;
+            }
+
+            switch (cleanText)
+            {
+                case "nse":
+                case "nose":
+                    return 0.05m;
+                case "shd":
+                case "sht-hd":
+                case "short head":
+                    return 0.1m;
+                case "hd":
+                case "head":
+                    return 0.2m;
+                case "nk":
+                case "neck":
+                    return 0.3m;
+                case "dist":
+                case "ds":
+                    return 30.0m;
+                default:
+                    if (cleanText == "½") return 0.5m;
+                    if (cleanText == "¼") return 0.25m;
+                    if (cleanText == "¾") return 0.75m;
+                    return null;
+            }
+        }
     }
 }

@@ -43,11 +43,11 @@
                 <form asp-controller="Home" asp-action="UploadCsv" method="post" enctype="multipart/form-data">
                     <div class="mb-3">
                         <label for="raceCsv" class="form-label">Race CSV</label>
-                        <input type="file" class="form-control" id="raceCsv" name="raceCsv" accept=".csv" required>
+                        <input type="file" class="form-control" id="raceCsv" name="raceCsv" accept=".csv">
                     </div>
                     <div class="mb-3">
                         <label for="runnerCsv" class="form-label">Runner CSV</label>
-                        <input type="file" class="form-control" id="runnerCsv" name="runnerCsv" accept=".csv" required>
+                        <input type="file" class="form-control" id="runnerCsv" name="runnerCsv" accept=".csv">
                     </div>
                     <button type="submit" class="btn btn-warning btn-lg w-100">Upload</button>
                 </form>

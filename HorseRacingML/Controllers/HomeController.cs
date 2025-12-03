@@ -61,9 +61,9 @@ namespace HorseRacingML.Controllers
         [HttpPost]
         public async Task<IActionResult> UploadCsv(IFormFile raceCsv, IFormFile runnerCsv)
         {
-            if (raceCsv == null || runnerCsv == null)
+            if (raceCsv == null && runnerCsv == null)
             {
-                TempData["Message"] = "Please select both race and runner CSV files.";
+                TempData["Message"] = "Please select at least one CSV file.";
                 return RedirectToAction(nameof(ScrapeOptions));
             }
 
@@ -88,8 +88,12 @@ namespace HorseRacingML.Controllers
                 PrepareHeaderForMatch = args => args.Header.ToLower(),
             };
 
-            // 1. Parse Races
-            using var raceReader = new StreamReader(raceCsv.OpenReadStream());
+            var insertedRids = new List<int>();
+
+            // 1. Parse and Insert Races (if provided)
+            if (raceCsv != null)
+            {
+                using var raceReader = new StreamReader(raceCsv.OpenReadStream());
             using var raceCsvReader = new CsvReader(raceReader, config);
 
             // Add date format support for 'yy/MM/dd' (e.g. 90/01/01) and standard 'yyyy-MM-dd'
@@ -97,123 +101,123 @@ namespace HorseRacingML.Controllers
             raceCsvReader.Context.TypeConverterOptionsCache.AddOptions<DateTime>(options);
 
             var raceRecords = raceCsvReader.GetRecords<RaceCsvModel>().ToList();
-
-            // 2. Insert Races
-            var insertedRids = new List<int>();
-            foreach (var r in raceRecords)
-            {
-                // Course Lookup/Insert
-                var courseId = _repo.InsertCourse(new Course
+                foreach (var r in raceRecords)
                 {
-                    Name = r.Course ?? "Unknown",
-                    Country = r.CountryCode
-                });
-
-                // Class logic: use 'class' column, fallback to parsing 'rclass' if 0/missing
-                byte? raceClass = (byte?)r.Class;
-                if (raceClass == 0 && !string.IsNullOrWhiteSpace(r.RClass))
-                {
-                    // Try parse from "Class 5" or just "5"
-                    var digits = new string(r.RClass.Where(char.IsDigit).ToArray());
-                    if (byte.TryParse(digits, out var parsedClass))
+                    // Course Lookup/Insert
+                    var courseId = _repo.InsertCourse(new Course
                     {
-                        raceClass = parsedClass;
+                        Name = r.Course ?? "Unknown",
+                        Country = r.CountryCode
+                    });
+
+                    // Class logic: use 'class' column, fallback to parsing 'rclass' if 0/missing
+                    byte? raceClass = (byte?)r.Class;
+                    if (raceClass == 0 && !string.IsNullOrWhiteSpace(r.RClass))
+                    {
+                        // Try parse from "Class 5" or just "5"
+                        var digits = new string(r.RClass.Where(char.IsDigit).ToArray());
+                        if (byte.TryParse(digits, out var parsedClass))
+                        {
+                            raceClass = parsedClass;
+                        }
                     }
+                    if (raceClass == 0) raceClass = null;
+
+                    var race = new Race
+                    {
+                        Rid = r.Rid,
+                        CourseId = courseId,
+                        RaceDate = r.Date,
+                        ScheduledOff = TimeSpan.TryParse(r.Time, out var t) ? t : (TimeSpan?)null,
+                        Title = r.Title ?? string.Empty,
+                        RaceType = r.Hurdles ?? string.Empty, // Mapping hurdles info to RaceType roughly
+                        Class = raceClass,
+                        AgeRestriction = r.Ages, // or Band? User said ages -> Ages allowed
+                        Surface = r.Condition, // Mapping condition -> Going usually, user said condition -> Surface condition... wait.
+                                               // User said: "condition - Surface condition" and "ncond - condition type (created from condition feature)".
+                                               // And later in Q&A: "2) Mapping condition: You have a condition column and an ncond column. Which one should map to the Race table's Going and Surface columns? ... Current assumption: condition -> Going? User: yes"
+                                               // So I map condition -> Going. Surface can be inferred or left null for now.
+                        Going = r.Condition,
+                        DistanceYards = (short)(r.Metric.HasValue ? r.Metric.Value * 1.09361 : 0), // Meters to Yards
+                        DistanceText = r.Distance ?? string.Empty,
+                        WinningTimeMs = r.WinningTime.HasValue ? (int)(r.WinningTime.Value * 1000) : null,
+                        PrizeMoney = r.Prize
+                    };
+
+                    _repo.InsertRace(race);
+                    insertedRids.Add(r.Rid);
                 }
-                if (raceClass == 0) raceClass = null;
-
-                var race = new Race
-                {
-                    Rid = r.Rid,
-                    CourseId = courseId,
-                    RaceDate = r.Date,
-                    ScheduledOff = TimeSpan.TryParse(r.Time, out var t) ? t : (TimeSpan?)null,
-                    Title = r.Title ?? string.Empty,
-                    RaceType = r.Hurdles ?? string.Empty, // Mapping hurdles info to RaceType roughly
-                    Class = raceClass,
-                    AgeRestriction = r.Ages, // or Band? User said ages -> Ages allowed
-                    Surface = r.Condition, // Mapping condition -> Going usually, user said condition -> Surface condition... wait.
-                                           // User said: "condition - Surface condition" and "ncond - condition type (created from condition feature)".
-                                           // And later in Q&A: "2) Mapping condition: You have a condition column and an ncond column. Which one should map to the Race table's Going and Surface columns? ... Current assumption: condition -> Going? User: yes"
-                                           // So I map condition -> Going. Surface can be inferred or left null for now.
-                    Going = r.Condition,
-                    DistanceYards = (short)(r.Metric.HasValue ? r.Metric.Value * 1.09361 : 0), // Meters to Yards
-                    DistanceText = r.Distance ?? string.Empty,
-                    WinningTimeMs = r.WinningTime.HasValue ? (int)(r.WinningTime.Value * 1000) : null,
-                    PrizeMoney = r.Prize
-                };
-
-                _repo.InsertRace(race);
-                insertedRids.Add(r.Rid);
             }
 
-            // 3. Parse Runners
-            using var runnerReader = new StreamReader(runnerCsv.OpenReadStream());
-            using var runnerCsvReader = new CsvReader(runnerReader, config);
-            var runnerRecords = runnerCsvReader.GetRecords<RunnerCsvModel>().ToList();
-
-            // 4. Resolve RaceIds
-            // We need to map CSV rid -> Database RaceId
-            var ridMap = _repo.GetRaceIdsByRids(insertedRids);
-
-            // 5. Insert Runners
-            var runnerResults = new List<RunnerResult>();
-            foreach (var run in runnerRecords)
+            if (runnerCsv != null)
             {
-                if (!ridMap.TryGetValue(run.Rid, out int raceId))
+                using var runnerReader = new StreamReader(runnerCsv.OpenReadStream());
+                using var runnerCsvReader = new CsvReader(runnerReader, config);
+                var runnerRecords = runnerCsvReader.GetRecords<RunnerCsvModel>().ToList();
+
+                // 4. Resolve RaceIds
+                // We need to map CSV rid -> Database RaceId
+                var ridMap = _repo.GetRaceIdsByRids(insertedRids);
+
+                // 5. Insert Runners
+                var runnerResults = new List<RunnerResult>();
+                foreach (var run in runnerRecords)
                 {
-                    // If race not found (maybe uploaded previously?), try to find it?
-                    // For now, skip or log.
-                    // We can also try fetching singular if not in batch map.
-                    var ids = _repo.GetRaceIdsByRids(new[] { run.Rid });
-                    if (ids.ContainsKey(run.Rid))
+                    if (!ridMap.TryGetValue(run.Rid, out int raceId))
                     {
-                        raceId = ids[run.Rid];
-                        ridMap[run.Rid] = raceId;
+                        // If race not found (maybe uploaded previously?), try to find it?
+                        // For now, skip or log.
+                        // We can also try fetching singular if not in batch map.
+                        var ids = _repo.GetRaceIdsByRids(new[] { run.Rid });
+                        if (ids.ContainsKey(run.Rid))
+                        {
+                            raceId = ids[run.Rid];
+                            ridMap[run.Rid] = raceId;
+                        }
+                        else
+                        {
+                            continue;
+                        }
                     }
-                    else
+
+                    // Entity Lookups
+                    var horseId = _repo.InsertHorse(new Horse { Name = run.HorseName ?? "Unknown" });
+                    short? trainerId = !string.IsNullOrWhiteSpace(run.TrainerName)
+                        ? _repo.InsertTrainer(new Trainer { Name = run.TrainerName })
+                        : (short?)null;
+                    short? jockeyId = !string.IsNullOrWhiteSpace(run.JockeyName)
+                        ? _repo.InsertJockey(new Jockey { Name = run.JockeyName })
+                        : (short?)null;
+
+                    // Decimal Price Conversion
+                    decimal? spDecimal = null;
+                    if (run.DecimalPrice.HasValue && run.DecimalPrice.Value != 0)
                     {
-                        continue;
+                        spDecimal = 1.0m / run.DecimalPrice.Value;
                     }
+
+                    runnerResults.Add(new RunnerResult
+                    {
+                        RaceId = raceId,
+                        Rid = run.Rid,
+                        HorseId = horseId,
+                        TrainerId = trainerId,
+                        JockeyId = jockeyId,
+                        SaddleclothNumber = (byte?)run.Saddle,
+                        Age = (byte?)run.Age,
+                        FinishPos = run.Position == 40 ? (short?)null : (short)run.Position,
+                        OutcomeCode = run.Position == 40 ? "DNF" : null, // Assuming 40 means DNF
+                        DistanceBeatenLengths = (decimal?)run.Dist, // "dist - how far a horse has finished from a winner"
+                        SP_Decimal = spDecimal,
+                        FavTag = run.IsFav == 1 ? "F" : null, // Simple mapping
+                        WeightLbs = (byte?)((run.WeightSt * 14) + run.WeightLb),
+                        IsPlace = run.ResPlace == 1,
+                        // Mappings for other fields if necessary
+                    });
                 }
 
-                // Entity Lookups
-                var horseId = _repo.InsertHorse(new Horse { Name = run.HorseName ?? "Unknown" });
-                short? trainerId = !string.IsNullOrWhiteSpace(run.TrainerName)
-                    ? _repo.InsertTrainer(new Trainer { Name = run.TrainerName })
-                    : (short?)null;
-                short? jockeyId = !string.IsNullOrWhiteSpace(run.JockeyName)
-                    ? _repo.InsertJockey(new Jockey { Name = run.JockeyName })
-                    : (short?)null;
-
-                // Decimal Price Conversion
-                decimal? spDecimal = null;
-                if (run.DecimalPrice.HasValue && run.DecimalPrice.Value != 0)
-                {
-                    spDecimal = 1.0m / run.DecimalPrice.Value;
-                }
-
-                runnerResults.Add(new RunnerResult
-                {
-                    RaceId = raceId,
-                    Rid = run.Rid,
-                    HorseId = horseId,
-                    TrainerId = trainerId,
-                    JockeyId = jockeyId,
-                    SaddleclothNumber = (byte?)run.Saddle,
-                    Age = (byte?)run.Age,
-                    FinishPos = run.Position == 40 ? (short?)null : (short)run.Position,
-                    OutcomeCode = run.Position == 40 ? "DNF" : null, // Assuming 40 means DNF
-                    DistanceBeatenLengths = (decimal?)run.Dist, // "dist - how far a horse has finished from a winner"
-                    SP_Decimal = spDecimal,
-                    FavTag = run.IsFav == 1 ? "F" : null, // Simple mapping
-                    WeightLbs = (byte?)((run.WeightSt * 14) + run.WeightLb),
-                    IsPlace = run.ResPlace == 1,
-                    // Mappings for other fields if necessary
-                });
+                _repo.BulkInsertRunnerResults(runnerResults);
             }
-
-            _repo.BulkInsertRunnerResults(runnerResults);
         }
 
         public async Task<IActionResult> ScrapeRaceResults()
