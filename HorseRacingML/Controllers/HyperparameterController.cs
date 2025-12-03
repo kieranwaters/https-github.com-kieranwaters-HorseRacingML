@@ -57,9 +57,9 @@ namespace HorseRacingML.Controllers
             return RedirectToAction(nameof(ScrapeOptions));
         }
 
-        public async Task<IActionResult> ScrapeEasternResults()
+        public async Task<IActionResult> ScrapeEasternResults(DateTime startDate)
         {
-            await Task.Run(() => _raceResultsScraper.ScrapeEasternFromDate(new DateTime(2009, 1, 1)));
+            await Task.Run(() => _raceResultsScraper.ScrapeEasternFromDate(startDate));
             return RedirectToAction(nameof(ScrapeOptions));
         }
 
