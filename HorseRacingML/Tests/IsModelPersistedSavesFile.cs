@@ -13,6 +13,15 @@ namespace HorseRacingML.Tests
         private readonly HyperparameterTrainer _trainer;
         private readonly string _modelPath;
 
+        private class TestHyperparameterTrainer : HyperparameterTrainer
+        {
+            public TestHyperparameterTrainer(IConfiguration configuration, IRacingRepository repository)
+                : base(configuration)
+            {
+                SetRacingRepository(repository);
+            }
+        }
+
         public IsModelPersistedSavesFile()
         {
             _modelPath = Path.Combine(Path.GetTempPath(), "aiweights.json");
@@ -23,7 +32,7 @@ namespace HorseRacingML.Tests
                     ["ML:ModelPath"] = _modelPath
                 })
                 .Build();
-            _trainer = new HyperparameterTrainer(_configuration, new RacingRepository(""));
+            _trainer = new TestHyperparameterTrainer(_configuration, new RacingRepository(""));
         }//
 
         [Fact]
