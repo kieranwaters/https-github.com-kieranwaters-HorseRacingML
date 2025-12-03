@@ -643,6 +643,7 @@ END;";
                 return;
             }
 
+            Console.WriteLine($"[Repository] Merging {deduped.Count} runner results into database...");
             const string mergeSql = @"
 MERGE INTO dbo.RunnerResult AS target
 USING (VALUES (
@@ -757,10 +758,19 @@ WHEN NOT MATCHED BY TARGET THEN
 
             using var conn = OpenConnection();
             EnsureRunnerResultUniqueness(conn);
-            conn.Execute(mergeSql, deduped.Values.ToList());
+            try
+            {
+                conn.Execute(mergeSql, deduped.Values.ToList());
+                Console.WriteLine($"[Repository] Successfully merged {deduped.Count} results.");
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[Repository] Error merging runner results: {ex.Message}");
+                throw;
+            }
         }
 
-        
+
         public int? GetHistoricalRaceCountByHorseName(string? horseName)
         {
             var candidates = BuildHistoricalNameCandidates(horseName);

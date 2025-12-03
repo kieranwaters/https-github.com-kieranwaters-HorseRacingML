@@ -1411,10 +1411,21 @@ namespace HorseRacingML.Scraping
                         Console.WriteLine($"[Eastern] Warning: No runner rows found for race {raceTitle}");
                     }
 
+                    int rowIndex = 0;
                     foreach (var row in rows)
                     {
+                        rowIndex++;
                         try
                         {
+                            // 0. Finish Position
+                            string posText = SafeText(row, By.CssSelector("td:nth-child(1)"));
+                            int? finishPos = TryParseOrdinalInt(posText);
+                            if (!finishPos.HasValue)
+                            {
+                                // Fallback to row index if the table is assumed to be ordered
+                                finishPos = rowIndex;
+                            }
+
                             // 1. Horse Name
                             string horseName = SafeText(row, By.CssSelector("td:nth-child(3) > b:nth-child(2)"));
 
@@ -1456,7 +1467,7 @@ namespace HorseRacingML.Scraping
                                 }
                             }
 
-                            Console.WriteLine($"[Eastern] Runner: {horseName} | Saddle: {saddle} | Age: {age} | Draw: {draw} | Jockey: {jockeyName} | Weight: {weightLbs}");
+                            Console.WriteLine($"[Eastern] Runner: {finishPos}. {horseName} | Saddle: {saddle} | Age: {age} | Draw: {draw} | Jockey: {jockeyName} | Weight: {weightLbs}");
 
                             if (!string.IsNullOrWhiteSpace(horseName))
                             {
@@ -1475,8 +1486,8 @@ namespace HorseRacingML.Scraping
                                     WeightText = weightText,
                                     // Default/Missing fields
                                     TrainerId = null,
-                                    FinishPos = null, // Not requested yet
-                                    OutcomeCode = "", // Not requested yet
+                                    FinishPos = (short?)finishPos,
+                                    OutcomeCode = "",
                                     SP_Decimal = null
                                 });
                             }
@@ -1504,3 +1515,4 @@ namespace HorseRacingML.Scraping
         }
     }
 }
+
