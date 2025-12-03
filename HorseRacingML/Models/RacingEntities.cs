@@ -16,7 +16,7 @@ namespace HorseRacingML.Models
         public int RaceId { get; set; }
         public short CourseId { get; set; }
         public DateTime RaceDate { get; set; }
-        public TimeSpan ScheduledOff { get; set; }
+        public TimeSpan? ScheduledOff { get; set; }
         public TimeSpan? ActualOff { get; set; }
         public string Title { get; set; } = string.Empty;
         public string RaceType { get; set; } = string.Empty;

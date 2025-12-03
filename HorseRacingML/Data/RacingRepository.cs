@@ -413,9 +413,9 @@ DECLARE @ExistingId INT;
 
 SELECT TOP (1) @ExistingId = RaceId
 FROM Race
-WHERE CourseId = @CourseId
+HERE CourseId = @CourseId
   AND RaceDate = @RaceDate
-  AND ISNULL(ScheduledOff, '00:00:00') = ISNULL(@ScheduledOff, '00:00:00')
+  AND (@ScheduledOff IS NULL OR ISNULL(ScheduledOff, '00:00:00') = @ScheduledOff)
   AND ISNULL(LTRIM(RTRIM(Title)), '') = ISNULL(LTRIM(RTRIM(@Title)), '');
 
 IF @ExistingId IS NULL
@@ -1443,8 +1443,11 @@ END";
                 const string sql = @"
 IF COL_LENGTH('dbo.Race', 'PrizeMoney') IS NULL
 BEGIN
-    ALTER TABLE dbo.Race ADD PrizeMoney DECIMAL(18, 2) NULL;
-END;";
+   ALTER TABLE dbo.Race ADD PrizeMoney DECIMAL(18, 2) NULL;
+END;
+
+ALTER TABLE dbo.Race ALTER COLUMN ScheduledOff TIME(7) NULL;
+";
                 conn.Execute(sql);
                 _raceTableSchemaEnsured = true;
             }

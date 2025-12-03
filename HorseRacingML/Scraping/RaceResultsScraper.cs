@@ -1163,9 +1163,15 @@ namespace HorseRacingML.Scraping
                 try
                 {
                     // Prefer text content as data-original-title might be a label like "Race Name"
-                    raceTitle = driver.FindElement(By.CssSelector("h2.fgr")).Text.Trim();
+                    // Use more specific selector to avoid picking up the date header (h2.fgr can be ambiguous)
+                    raceTitle = driver.FindElement(By.CssSelector("div.fgr-rh-middle-rname-wrp > h2")).Text.Trim();
                 }
                 catch { }
+
+                if (string.IsNullOrWhiteSpace(raceTitle))
+                {
+                    try { raceTitle = driver.FindElement(By.CssSelector("h2.fgr")).Text.Trim(); } catch { }
+                }
 
                 if (string.IsNullOrWhiteSpace(raceTitle))
                 {
@@ -1355,7 +1361,7 @@ namespace HorseRacingML.Scraping
                 {
                     CourseId = courseId,
                     RaceDate = raceDate,
-                    ScheduledOff = TimeSpan.Zero, // Not parsed yet
+                    ScheduledOff = null, // Not parsed for Eastern
                     ActualOff = null,
                     Title = raceTitle,
                     RaceType = "", // User said later
@@ -1384,12 +1390,32 @@ namespace HorseRacingML.Scraping
                     // Selector: .table-responsive.marginTop.fgr-table-lvl-1.hidden-xs > table > tbody > tr
                     var rows = driver.FindElements(By.CssSelector(".fgr-table-lvl-1.hidden-xs > table > tbody > tr"));
 
-                    foreach (var row in rows)
+
+                    // Selectors: Primary (.fgr-table-lvl-1.hidden-xs) and Fallback (.table-responsive > table)
+                    IReadOnlyCollection<IWebElement> rows = new List<IWebElement>();
+
+                    try
+                    {
+                        rows = driver.FindElements(By.CssSelector(".fgr-table-lvl-1.hidden-xs > table > tbody > tr"));
+                    }
+                    catch { }
+
+                    if (rows.Count == 0)
                     {
                         try
                         {
-                            // 1. Horse Name
-                            string horseName = SafeText(row, By.CssSelector("td:nth-child(3) > b:nth-child(2)"));
+                            // Fallback: look for any result table in main content
+                            rows = driver.FindElements(By.CssSelector("div.white-bg table.table tbody tr"));
+                        }
+                        catch { }
+                    }
+
+                    if (rows.Count == 0)
+                    {
+                        Console.WriteLine($"[Eastern] Warning: No runner rows found for race {raceTitle}");
+                    }
+                    // 1. Horse Name
+                    string horseName = SafeText(row, By.CssSelector("td:nth-child(3) > b:nth-child(2)"));
 
                             // 2. Saddlecloth
                             string saddleText = SafeText(row, By.CssSelector("td:nth-child(3) > b:nth-child(1)"));
