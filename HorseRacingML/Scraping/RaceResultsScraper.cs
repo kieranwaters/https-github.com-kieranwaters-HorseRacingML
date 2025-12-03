@@ -353,7 +353,7 @@ namespace HorseRacingML.Scraping
                     using var svc = ChromeDriverService.CreateDefaultService();
                     svc.HideCommandPromptWindow = true;
                     svc.Port = GetFreeTcpPort(); // let OS choose a free port to avoid collisions
-                    using var driver = new ChromeDriver(svc, BuildChromeOptions(), TimeSpan.FromSeconds(60));
+                    using var driver = new ChromeDriver(svc, BuildChromeOptions(headless: true), TimeSpan.FromSeconds(60));
                     driver.Manage().Timeouts().PageLoad = TimeSpan.FromSeconds(5);
                     driver.Manage().Timeouts().AsynchronousJavaScript = TimeSpan.FromSeconds(5);
                     driver.Manage().Timeouts().ImplicitWait = TimeSpan.FromSeconds(0); // timeouts
@@ -458,7 +458,7 @@ namespace HorseRacingML.Scraping
                     using var svc = ChromeDriverService.CreateDefaultService();
                     svc.HideCommandPromptWindow = true;
                     svc.Port = GetFreeTcpPort();
-                    using var driver = new ChromeDriver(svc, BuildChromeOptions(), TimeSpan.FromSeconds(60));
+                    using var driver = new ChromeDriver(svc, BuildChromeOptions(headless: false), TimeSpan.FromSeconds(60));
                     driver.Manage().Timeouts().PageLoad = TimeSpan.FromSeconds(60); // slightly longer for Sky
                     driver.Manage().Timeouts().AsynchronousJavaScript = TimeSpan.FromSeconds(5);
                     driver.Manage().Timeouts().ImplicitWait = TimeSpan.FromSeconds(0);
@@ -706,10 +706,13 @@ namespace HorseRacingML.Scraping
             catch (OperationCanceledException ex) { Console.Error.WriteLine($"[Skip Day] {date:yyyy-MM-dd} OperationCanceled: {ex.Message}"); }
             catch (Exception ex) { Console.Error.WriteLine($"[Skip Day] {date:yyyy-MM-dd} Unexpected: {ex.Message}"); }
         }
-        private ChromeOptions BuildChromeOptions()
+        private ChromeOptions BuildChromeOptions(bool headless = true)
         {
             var options = new ChromeOptions();
-            options.AddArgument("--headless=new");
+            if (headless)
+            {
+                options.AddArgument("--headless=new");
+            }
             options.AddArgument("--disable-dev-shm-usage");
             options.AddArgument("--disable-gpu");
             options.AddArgument("--no-sandbox");
