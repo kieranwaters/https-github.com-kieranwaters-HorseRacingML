@@ -413,17 +413,18 @@ DECLARE @ExistingId INT;
 
 SELECT TOP (1) @ExistingId = RaceId
 FROM Race
-WHERE CourseId = @CourseId
+WHERE (Rid IS NOT NULL AND Rid = @Rid) OR
+      (Rid IS NULL AND CourseId = @CourseId
   AND RaceDate = @RaceDate
   AND (@ScheduledOff IS NULL OR ISNULL(ScheduledOff, '00:00:00') = @ScheduledOff)
-  AND ISNULL(LTRIM(RTRIM(Title)), '') = ISNULL(LTRIM(RTRIM(@Title)), '');
+  AND ISNULL(LTRIM(RTRIM(Title)), '') = ISNULL(LTRIM(RTRIM(@Title)), ''));
 
 IF @ExistingId IS NULL
 BEGIN
     INSERT INTO Race
-        (CourseId, RaceDate, ScheduledOff, ActualOff, Title, RaceType, Class, AgeRestriction, Surface, Going, DistanceYards, DistanceText, RunnerCount, Status, WinningTimeMs, WinningTimeText, PrizeMoney)
+        (Rid, CourseId, RaceDate, ScheduledOff, ActualOff, Title, RaceType, Class, AgeRestriction, Surface, Going, DistanceYards, DistanceText, RunnerCount, Status, WinningTimeMs, WinningTimeText, PrizeMoney)
     VALUES
-        (@CourseId, @RaceDate, @ScheduledOff, @ActualOff, @Title, @RaceType, @Class, @AgeRestriction, @Surface, @Going, @DistanceYards, @DistanceText, @RunnerCount, @Status, @WinningTimeMs, @WinningTimeText, @PrizeMoney);
+        (@Rid, @CourseId, @RaceDate, @ScheduledOff, @ActualOff, @Title, @RaceType, @Class, @AgeRestriction, @Surface, @Going, @DistanceYards, @DistanceText, @RunnerCount, @Status, @WinningTimeMs, @WinningTimeText, @PrizeMoney);
 
     SELECT CAST(SCOPE_IDENTITY() as int);
 END
@@ -442,13 +443,34 @@ BEGIN
         Status = @Status,
         WinningTimeMs = @WinningTimeMs,
         WinningTimeText = @WinningTimeText,
-        PrizeMoney = @PrizeMoney
+        PrizeMoney = @PrizeMoney,
+        Rid = COALESCE(@Rid, Rid)
     WHERE RaceId = @ExistingId;
     SELECT @ExistingId;
 END;";
 
             using var conn = OpenConnection();
             return conn.QuerySingle<int>(sql, race);
+        }
+
+        public Dictionary<int, int> GetRaceIdsByRids(IEnumerable<int> rids)
+        {
+            if (rids == null) return new Dictionary<int, int>();
+            var distinctRids = rids.Distinct().ToList();
+            if (distinctRids.Count == 0) return new Dictionary<int, int>();
+
+            const string sql = "SELECT Rid, RaceId FROM Race WHERE Rid IN @Rids";
+            var result = new Dictionary<int, int>();
+
+            using var conn = OpenConnection();
+            foreach (var chunk in Chunk(distinctRids, 1000))
+            {
+                foreach (var row in conn.Query<(int Rid, int RaceId)>(sql, new { Rids = chunk }))
+                {
+                    result[row.Rid] = row.RaceId;
+                }
+            }
+            return result;
         }
         public int UpsertUpcomingRace(UpcomingRace race)
         {
@@ -648,6 +670,7 @@ END;";
 MERGE INTO dbo.RunnerResult AS target
 USING (VALUES (
     @RaceId,
+    @Rid,
     @HorseId,
     @TrainerId,
     @JockeyId,
@@ -666,9 +689,11 @@ USING (VALUES (
     @OpeningFraction,
     @TouchedHighFraction,
     @TouchedLowFraction,
-    @Comment
+    @Comment,
+    @IsPlace
 )) AS source (
     RaceId,
+    Rid,
     HorseId,
     TrainerId,
     JockeyId,
@@ -687,11 +712,13 @@ USING (VALUES (
     OpeningFraction,
     TouchedHighFraction,
     TouchedLowFraction,
-    Comment
+    Comment,
+    IsPlace
 )
 ON target.RaceId = source.RaceId AND target.HorseId = source.HorseId
 WHEN MATCHED THEN
     UPDATE SET
+        Rid = source.Rid,
         TrainerId = source.TrainerId,
         JockeyId = source.JockeyId,
         SaddleclothNumber = source.SaddleclothNumber,
@@ -709,10 +736,12 @@ WHEN MATCHED THEN
         OpeningFraction = source.OpeningFraction,
         TouchedHighFraction = source.TouchedHighFraction,
         TouchedLowFraction = source.TouchedLowFraction,
-        Comment = source.Comment
+        Comment = source.Comment,
+        IsPlace = source.IsPlace
 WHEN NOT MATCHED BY TARGET THEN
     INSERT (
         RaceId,
+        Rid,
         HorseId,
         TrainerId,
         JockeyId,
@@ -731,10 +760,12 @@ WHEN NOT MATCHED BY TARGET THEN
         OpeningFraction,
         TouchedHighFraction,
         TouchedLowFraction,
-        Comment
+        Comment,
+        IsPlace
     )
     VALUES (
         source.RaceId,
+        source.Rid,
         source.HorseId,
         source.TrainerId,
         source.JockeyId,
@@ -753,7 +784,8 @@ WHEN NOT MATCHED BY TARGET THEN
         source.OpeningFraction,
         source.TouchedHighFraction,
         source.TouchedLowFraction,
-        source.Comment
+        source.Comment,
+        source.IsPlace
     );";
 
             using var conn = OpenConnection();
@@ -1234,7 +1266,7 @@ WHERE h.Name IN @Names;";
                 }
             }
         }
-        
+
 
         public static string NormalizeLookupKey(string? value)
         {
@@ -1454,6 +1486,26 @@ END";
 IF COL_LENGTH('dbo.Race', 'PrizeMoney') IS NULL
 BEGIN
    ALTER TABLE dbo.Race ADD PrizeMoney DECIMAL(18, 2) NULL;
+END;
+
+IF COL_LENGTH('dbo.Race', 'Rid') IS NULL
+BEGIN
+   ALTER TABLE dbo.Race ADD Rid INT NULL;
+END;
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_Race_Rid' AND object_id = OBJECT_ID('dbo.Race'))
+BEGIN
+   EXEC('CREATE INDEX IX_Race_Rid ON dbo.Race(Rid) WHERE Rid IS NOT NULL');
+END;
+
+IF COL_LENGTH('dbo.RunnerResult', 'Rid') IS NULL
+BEGIN
+   ALTER TABLE dbo.RunnerResult ADD Rid INT NULL;
+END;
+
+IF COL_LENGTH('dbo.RunnerResult', 'IsPlace') IS NULL
+BEGIN
+   ALTER TABLE dbo.RunnerResult ADD IsPlace BIT NOT NULL DEFAULT 0;
 END;
 
 ALTER TABLE dbo.Race ALTER COLUMN ScheduledOff TIME(7) NULL;
