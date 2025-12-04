@@ -201,16 +201,24 @@ namespace HorseRacingML.Controllers
                         try
                         {
                             spDecimal = 1.0m / run.DecimalPrice.Value;
-                            if (spDecimal > 9999999.99m)
-                            {
-                                spDecimal = 9999999.99m;
-                            }
+                            // Clamp to fit DECIMAL(9, 2)
+                            if (spDecimal > 9999999.99m) spDecimal = 9999999.99m;
+                            else if (spDecimal < -9999999.99m) spDecimal = -9999999.99m;
                         }
                         catch
                         {
                             spDecimal = null;
                         }
                     }
+
+                    // Clamp DistanceBeatenLengths to avoid arithmetic overflow (e.g. if column is DECIMAL(5,2))
+                    decimal? dist = (decimal?)run.Dist;
+                    if (dist.HasValue)
+                    {
+                        if (dist.Value > 999.99m) dist = 999.99m;
+                        else if (dist.Value < -999.99m) dist = -999.99m;
+                    }
+
                     runnerResults.Add(new RunnerResult
                     {
                         RaceId = raceId,
@@ -222,7 +230,7 @@ namespace HorseRacingML.Controllers
                         Age = (byte?)run.Age,
                         FinishPos = run.Position == 40 ? (short?)null : (short)run.Position,
                         OutcomeCode = run.Position == 40 ? "DNF" : null, // Assuming 40 means DNF
-                        DistanceBeatenLengths = (decimal?)run.Dist, // "dist - how far a horse has finished from a winner"
+                        DistanceBeatenLengths = dist, // "dist - how far a horse has finished from a winner"
                         SP_Decimal = spDecimal,
                         FavTag = run.IsFav == 1 ? "F" : null, // Simple mapping
                         WeightLbs = (byte?)((run.WeightSt * 14) + run.WeightLb),
