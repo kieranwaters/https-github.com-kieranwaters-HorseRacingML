@@ -198,9 +198,19 @@ namespace HorseRacingML.Controllers
                     decimal? spDecimal = null;
                     if (run.DecimalPrice.HasValue && run.DecimalPrice.Value != 0)
                     {
-                        spDecimal = 1.0m / run.DecimalPrice.Value;
+                        try
+                        {
+                            spDecimal = 1.0m / run.DecimalPrice.Value;
+                            if (spDecimal > 9999999.99m)
+                            {
+                                spDecimal = 9999999.99m;
+                            }
+                        }
+                        catch
+                        {
+                            spDecimal = null;
+                        }
                     }
-
                     runnerResults.Add(new RunnerResult
                     {
                         RaceId = raceId,
