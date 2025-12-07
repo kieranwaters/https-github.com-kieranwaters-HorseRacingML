@@ -66,6 +66,10 @@
     </table>
     <div class="d-flex align-items-center gap-3">
         <button type="button" class="btn btn-secondary" onclick="addRow()">Add Row</button>
+        <div class="input-group" style="width: 200px;">
+            <span class="input-group-text">Threads</span>
+            <input type="number" id="concurrencyLimit" class="form-control" value="2" min="1" max="8">
+        </div>
         <button type="button" class="btn btn-primary" id="btnStartProcessing" onclick="startProcessingQueue()">Start Processing Queue</button>
         <div id="processingStatus" class="fw-bold text-info" style="display:none;"></div>
     </div>
@@ -170,22 +174,39 @@
         async function startProcessingQueue() {
             const btn = document.getElementById('btnStartProcessing');
             const statusDiv = document.getElementById('processingStatus');
+            const concurrencyInput = document.getElementById('concurrencyLimit');
+
+            const maxConcurrency = parseInt(concurrencyInput.value) || 1;
+
             btn.disabled = true;
+            concurrencyInput.disabled = true;
             statusDiv.style.display = 'block';
             statusDiv.textContent = 'Initializing...';
 
-            // Function to process one item at a time
+            let activeCount = 0;
+            let totalProcessed = 0;
+            let hasError = false;
+
             async function processNext() {
-                const rows = document.querySelectorAll('#parameterRows tr.parameter-row');
+                if (hasError) return;
+
+                const rows = document.querySelectorAll('#parameterRows tr.parameter-row:not(.processing-row)');
                 if (rows.length === 0) {
-                    statusDiv.textContent = 'All items processed.';
-                    btn.disabled = false;
-                    setTimeout(() => statusDiv.style.display = 'none', 3000);
+                    if (activeCount === 0) {
+                        statusDiv.textContent = 'All items processed.';
+                        btn.disabled = false;
+                        concurrencyInput.disabled = false;
+                        setTimeout(() => statusDiv.style.display = 'none', 3000);
+                    }
                     return;
                 }
 
+                // Pick the first available row and mark it as processing
                 const row = rows[0];
-                statusDiv.textContent = `Processing item 1 of ${rows.length}...`;
+                row.classList.add('processing-row');
+
+                activeCount++;
+                statusDiv.textContent = `Processing... (${activeCount} active)`;
 
                 // Extract data from the row inputs
                 const modelType = parseInt(row.querySelector('.model-type-select').value);
@@ -227,26 +248,39 @@
 
                     const result = await response.json();
                     if (result.success) {
-                        // Remove the completed row
                         row.remove();
-                        updateIndexes(); // Keep remaining indices tidy
-                        // Recursive call to process next
-                        processNext();
+                        totalProcessed++;
+                        // We don't update indexes here to avoid breaking concurrent processing
                     } else {
+                        hasError = true;
                         alert('Training failed: ' + result.message);
-                        btn.disabled = false;
                         statusDiv.textContent = 'Stopped due to error.';
+                        row.classList.remove('processing-row');
+                        // Highlight error?
+                        row.style.backgroundColor = '#ffe6e6';
                     }
                 } catch (error) {
+                    hasError = true;
                     console.error('Error:', error);
                     alert('An error occurred during processing: ' + error.message);
-                    btn.disabled = false;
                     statusDiv.textContent = 'Stopped due to error.';
+                    row.classList.remove('processing-row');
+                    row.style.backgroundColor = '#ffe6e6';
+                } finally {
+                    activeCount--;
+                    if (!hasError) {
+                        processNext();
+                    } else if (activeCount === 0) {
+                         btn.disabled = false;
+                         concurrencyInput.disabled = false;
+                    }
                 }
             }
 
-            // Start the loop
-            processNext();
+            // Start initial batch
+            for (let i = 0; i < maxConcurrency; i++) {
+                processNext();
+            }
         }
     </script>
 }

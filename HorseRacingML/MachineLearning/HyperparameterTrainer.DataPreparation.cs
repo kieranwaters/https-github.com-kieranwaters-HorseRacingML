@@ -528,84 +528,83 @@ namespace HorseRacingML.ML
             PreparedDataset prepared,
             List<Dictionary<string, object?>> metadataRows)
         {
-            if (prepared is null)
-                throw new ArgumentNullException(nameof(prepared));
-            if (metadataRows is null)
-                throw new ArgumentNullException(nameof(metadataRows));
+            if (prepared is null) throw new ArgumentNullException(nameof(prepared));
+            if (metadataRows is null) throw new ArgumentNullException(nameof(metadataRows));
 
-            var keys = prepared.Rows
-                .SelectMany(r => r.Keys)
-                .Distinct()
-                .ToList();
-            keys.Remove("FinishPos");
-            keys.Remove("RaceId");
-            keys.Remove("HorseId");
-            keys.Remove("CourseId");
-            keys.Remove("TrainerId");
-            keys.Remove("JockeyId");
-            keys.Remove("OutcomeCode");
-            keys.Remove("DistanceBeatenText");
-            keys.Remove("DistanceBeatenLengths");
-            keys.Remove("DistanceBeatenKnown");
-            keys.Remove("SP_Fraction");
-            keys.Remove("SP_Decimal");
-            keys.Remove("OpeningFraction");
-            keys.Remove("TouchedHighFraction");
-            keys.Remove("TouchedLowFraction");
-            keys.Remove("HorseName");
-            keys.Remove("JockeyName");
-            keys.Remove("TrainerName");
-            keys.Remove("Title");
-            keys.Remove("RaceMonth");
-            keys.Remove("RaceDayOfWeek");
-            keys.Remove("Season");
-            keys.Remove("ActualOff");
-            keys.Remove("ScheduledOff");
-            keys.Remove("RaceDate");
-            keys.Remove("CourseName");
-            keys.Remove("DistanceText");
-            keys.Remove("Status");
-            keys.Remove("WeightText");
-            keys.Remove("FavTag");
-            keys.Remove("SaddleclothNumber");
-            keys.Remove("Purse");
-
-            var featureDims = new Dictionary<string, int>();
-            var stringMaps = new Dictionary<string, Dictionary<string, int>>();
-            foreach (var k in keys)
+            var ignoredKeys = new HashSet<string>(StringComparer.Ordinal)
             {
-                var values = metadataRows
-                    .Select(r => r.ContainsKey(k) ? r[k] : null)
-                    .ToList();
-                bool hasMissing = values.Count == 0 || values.Any(v => v == null);
-                var nonNullValues = values.Where(v => v != null).ToList();
-                object? sample = nonNullValues.Count > 0
-                    ? nonNullValues[0]
-                    : prepared.Rows
-                        .Select(r => r.ContainsKey(k) ? r[k] : null)
-                        .FirstOrDefault(v => v != null);
-                if (sample == null)
+                "FinishPos", "RaceId", "HorseId", "CourseId", "TrainerId", "JockeyId",
+                "OutcomeCode", "DistanceBeatenText", "DistanceBeatenLengths", "DistanceBeatenKnown",
+                "SP_Fraction", "SP_Decimal", "OpeningFraction", "TouchedHighFraction", "TouchedLowFraction",
+                "HorseName", "JockeyName", "TrainerName", "Title", "RaceMonth", "RaceDayOfWeek", "Season",
+                "ActualOff", "ScheduledOff", "RaceDate", "CourseName", "DistanceText", "Status",
+                "WeightText", "FavTag", "SaddleclothNumber", "Purse"
+            };
+
+            var stringValues = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+            var keyCounts = new Dictionary<string, int>(StringComparer.Ordinal);
+            var explicitNulls = new HashSet<string>(StringComparer.Ordinal);
+            var allKeys = new HashSet<string>(StringComparer.Ordinal);
+
+            // Optimized Single-Pass Scan
+            // Instead of looping keys then rows (O(N*K)), we loop rows then keys (O(N*K_avg)).
+            // This is cache-friendly and avoids multiple passes.
+            foreach (var row in metadataRows)
+            {
+                foreach (var kvp in row)
                 {
-                    continue;
+                    if (ignoredKeys.Contains(kvp.Key))
+                        continue;
+
+                    if (!allKeys.Contains(kvp.Key))
+                        allKeys.Add(kvp.Key);
+
+                    if (!keyCounts.TryGetValue(kvp.Key, out int count))
+                        count = 0;
+                    keyCounts[kvp.Key] = count + 1;
+
+                    if (kvp.Value == null)
+                    {
+                        explicitNulls.Add(kvp.Key);
+                    }
+                    else if (kvp.Value is string s)
+                    {
+                        if (!stringValues.TryGetValue(kvp.Key, out var set))
+                        {
+                            set = new HashSet<string>(StringComparer.Ordinal);
+                            stringValues[kvp.Key] = set;
+                        }
+                        set.Add(s);
+                    }
                 }
-                var firstValue = nonNullValues.Count > 0 ? nonNullValues[0]! : sample;
-                int baseDim;
-                if (firstValue is string)
+            }
+
+            var featureDims = new Dictionary<string, int>(StringComparer.Ordinal);
+            var stringMaps = new Dictionary<string, Dictionary<string, int>>(StringComparer.Ordinal);
+            int rowCount = metadataRows.Count;
+
+            foreach (var k in allKeys)
+            {
+                bool hasExplicitNull = explicitNulls.Contains(k);
+                // A key is missing if it wasn't present in all rows
+                bool isMissingRows = keyCounts.TryGetValue(k, out int count) && count < rowCount;
+                bool hasMissing = hasExplicitNull || isMissingRows;
+
+                int baseDim = 1;
+
+                if (stringValues.TryGetValue(k, out var uniqueStrings) && uniqueStrings.Count > 0)
                 {
-                    var distinct = nonNullValues.Count > 0
-                        ? nonNullValues.Cast<string>().Distinct().ToList()
-                        : new List<string>();
-                    var map = distinct
-                        .Select((v, idx) => new { v, idx })
-                        .ToDictionary(x => x.v, x => x.idx);
+                    var distinct = uniqueStrings.OrderBy(x => x).ToList();
+                    var map = new Dictionary<string, int>(StringComparer.Ordinal);
+                    for (int i = 0; i < distinct.Count; i++)
+                    {
+                        map[distinct[i]] = i;
+                    }
                     map["__unknown__"] = distinct.Count;
                     stringMaps[k] = map;
                     baseDim = map.Count;
                 }
-                else
-                {
-                    baseDim = 1;
-                }
+
                 if (k == "DaysSinceLastWin" || k == "RacesSinceLastWin")
                 {
                     featureDims[k] = baseDim; // presence handled by HasLastWin
@@ -615,6 +614,7 @@ namespace HorseRacingML.ML
                     featureDims[k] = baseDim + (hasMissing ? 1 : 0);
                 }
             }
+
             featureDims["HasLastWin"] = 1;
 
             featureDims["TimeOfDaySin"] = 1;
