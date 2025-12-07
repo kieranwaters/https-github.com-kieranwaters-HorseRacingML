@@ -201,9 +201,9 @@ namespace HorseRacingML.Controllers
                         try
                         {
                             spDecimal = 1.0m / run.DecimalPrice.Value;
-                            // Clamp to fit DECIMAL(9, 2)
-                            if (spDecimal > 9999999.99m) spDecimal = 9999999.99m;
-                            else if (spDecimal < -9999999.99m) spDecimal = -9999999.99m;
+                            // Clamp to fit DECIMAL(8, 3) - Max 99999.999
+                            if (spDecimal > 99999.999m) spDecimal = 99999.999m;
+                            else if (spDecimal < -99999.999m) spDecimal = -99999.999m;
                         }
                         catch
                         {
@@ -211,13 +211,17 @@ namespace HorseRacingML.Controllers
                         }
                     }
 
-                    // Clamp DistanceBeatenLengths to avoid arithmetic overflow (e.g. if column is DECIMAL(5,2))
+                    // Clamp DistanceBeatenLengths to avoid arithmetic overflow (Schema is DECIMAL(4, 2) -> Max 99.99)
                     decimal? dist = (decimal?)run.Dist;
                     if (dist.HasValue)
                     {
-                        if (dist.Value > 999.99m) dist = 999.99m;
-                        else if (dist.Value < -999.99m) dist = -999.99m;
+                        if (dist.Value > 99.99m) dist = 99.99m;
+                        else if (dist.Value < -99.99m) dist = -99.99m;
                     }
+
+                    // Clamp WeightLbs to 255 (tinyint max)
+                    int rawWeight = (run.WeightSt * 14) + run.WeightLb;
+                    byte? weightLbs = rawWeight > 255 ? (byte)255 : (byte?)rawWeight;
 
                     runnerResults.Add(new RunnerResult
                     {
@@ -233,7 +237,7 @@ namespace HorseRacingML.Controllers
                         DistanceBeatenLengths = dist, // "dist - how far a horse has finished from a winner"
                         SP_Decimal = spDecimal,
                         FavTag = run.IsFav == 1 ? "F" : null, // Simple mapping
-                        WeightLbs = (byte?)((run.WeightSt * 14) + run.WeightLb),
+                        WeightLbs = weightLbs,
                         IsPlace = run.ResPlace == 1,
                         // Mappings for other fields if necessary
                     });

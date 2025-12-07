@@ -666,55 +666,124 @@ END;";
             }
 
             Console.WriteLine($"[Repository] Merging {deduped.Count} runner results into database...");
+            using var conn = (SqlConnection)OpenConnection();
+
+            const string createTempTableSql = @"
+CREATE TABLE #RunnerResultStage (
+    RaceId INT,
+    Rid INT NULL,
+    HorseId INT,
+    TrainerId SMALLINT NULL,
+    JockeyId SMALLINT NULL,
+    SaddleclothNumber TINYINT NULL,
+    Draw TINYINT NULL,
+    Age TINYINT NULL,
+    WeightLbs TINYINT NULL,
+    WeightText NVARCHAR(32) NULL,
+    FinishPos SMALLINT NULL,
+    OutcomeCode NVARCHAR(32) NULL,
+    DistanceBeatenText NVARCHAR(32) NULL,
+    DistanceBeatenLengths DECIMAL(4, 2) NULL,
+    SP_Fraction NVARCHAR(32) NULL,
+    SP_Decimal DECIMAL(8, 3) NULL,
+    FavTag NVARCHAR(32) NULL,
+    OpeningFraction NVARCHAR(32) NULL,
+    TouchedHighFraction NVARCHAR(32) NULL,
+    TouchedLowFraction NVARCHAR(32) NULL,
+    Comment NVARCHAR(MAX) NULL,
+    IsPlace BIT NOT NULL
+)";
+            conn.Execute(createTempTableSql);
+
+            using (var bulkCopy = new SqlBulkCopy(conn))
+            {
+                bulkCopy.DestinationTableName = "#RunnerResultStage";
+                bulkCopy.BulkCopyTimeout = 300;
+
+                var table = new DataTable();
+                table.Columns.Add("RaceId", typeof(int));
+                table.Columns.Add("Rid", typeof(int));
+                table.Columns.Add("HorseId", typeof(int));
+                table.Columns.Add("TrainerId", typeof(short));
+                table.Columns.Add("JockeyId", typeof(short));
+                table.Columns.Add("SaddleclothNumber", typeof(byte));
+                table.Columns.Add("Draw", typeof(byte));
+                table.Columns.Add("Age", typeof(byte));
+                table.Columns.Add("WeightLbs", typeof(byte));
+                table.Columns.Add("WeightText", typeof(string));
+                table.Columns.Add("FinishPos", typeof(short));
+                table.Columns.Add("OutcomeCode", typeof(string));
+                table.Columns.Add("DistanceBeatenText", typeof(string));
+                table.Columns.Add("DistanceBeatenLengths", typeof(decimal));
+                table.Columns.Add("SP_Fraction", typeof(string));
+                table.Columns.Add("SP_Decimal", typeof(decimal));
+                table.Columns.Add("FavTag", typeof(string));
+                table.Columns.Add("OpeningFraction", typeof(string));
+                table.Columns.Add("TouchedHighFraction", typeof(string));
+                table.Columns.Add("TouchedLowFraction", typeof(string));
+                table.Columns.Add("Comment", typeof(string));
+                table.Columns.Add("IsPlace", typeof(bool));
+
+                foreach (var item in deduped.Values)
+                {
+                    // Apply safety clamping logic to ensure SqlBulkCopy doesn't fail
+                    // DistanceBeatenLengths DECIMAL(4, 2) -> Max 99.99
+                    object distVal = DBNull.Value;
+                    if (item.DistanceBeatenLengths.HasValue)
+                    {
+                        var d = item.DistanceBeatenLengths.Value;
+                        if (d > 99.99m) d = 99.99m;
+                        else if (d < -99.99m) d = -99.99m;
+                        distVal = d;
+                    }
+
+                    // SP_Decimal DECIMAL(8, 3) -> Max 99999.999
+                    object spVal = DBNull.Value;
+                    if (item.SP_Decimal.HasValue)
+                    {
+                        var s = item.SP_Decimal.Value;
+                        if (s > 99999.999m) s = 99999.999m;
+                        else if (s < -99999.999m) s = -99999.999m;
+                        spVal = s;
+                    }
+
+                    // WeightLbs TINYINT -> Max 255
+                    // Note: item.WeightLbs is already byte?, so logically it fits, 
+                    // but if it was populated from raw unchecked code it might be good to ensure.
+                    // (Since it is byte in C#, it is already < 256, so no extra clamp needed here for the type check)
+
+                    table.Rows.Add(
+                        item.RaceId,
+                        item.Rid ?? (object)DBNull.Value,
+                        item.HorseId,
+                        item.TrainerId ?? (object)DBNull.Value,
+                        item.JockeyId ?? (object)DBNull.Value,
+                        item.SaddleclothNumber ?? (object)DBNull.Value,
+                        item.Draw ?? (object)DBNull.Value,
+                        item.Age ?? (object)DBNull.Value,
+                        item.WeightLbs ?? (object)DBNull.Value,
+                        item.WeightText,
+                        item.FinishPos ?? (object)DBNull.Value,
+                        item.OutcomeCode,
+                        item.DistanceBeatenText,
+                        distVal,
+                        item.SP_Fraction,
+                        spVal,
+                        item.FavTag,
+                        item.OpeningFraction,
+                        item.TouchedHighFraction,
+                        item.TouchedLowFraction,
+                        item.Comment,
+                        item.IsPlace
+                    );
+                }
+
+                bulkCopy.WriteToServer(table);
+            }
+
             const string mergeSql = @"
 MERGE INTO dbo.RunnerResult AS target
-USING (VALUES (
-    @RaceId,
-    @Rid,
-    @HorseId,
-    @TrainerId,
-    @JockeyId,
-    @SaddleclothNumber,
-    @Draw,
-    @Age,
-    @WeightLbs,
-    @WeightText,
-    @FinishPos,
-    @OutcomeCode,
-    @DistanceBeatenText,
-    @DistanceBeatenLengths,
-    @SP_Fraction,
-    @SP_Decimal,
-    @FavTag,
-    @OpeningFraction,
-    @TouchedHighFraction,
-    @TouchedLowFraction,
-    @Comment,
-    @IsPlace
-)) AS source (
-    RaceId,
-    Rid,
-    HorseId,
-    TrainerId,
-    JockeyId,
-    SaddleclothNumber,
-    Draw,
-    Age,
-    WeightLbs,
-    WeightText,
-    FinishPos,
-    OutcomeCode,
-    DistanceBeatenText,
-    DistanceBeatenLengths,
-    SP_Fraction,
-    SP_Decimal,
-    FavTag,
-    OpeningFraction,
-    TouchedHighFraction,
-    TouchedLowFraction,
-    Comment,
-    IsPlace
-)
+USING #RunnerResultStage AS source
 ON target.RaceId = source.RaceId AND target.HorseId = source.HorseId
 WHEN MATCHED THEN
     UPDATE SET
@@ -786,15 +855,16 @@ WHEN NOT MATCHED BY TARGET THEN
         source.TouchedLowFraction,
         source.Comment,
         source.IsPlace
-    );";
+    );
+DROP TABLE #RunnerResultStage;";
 
-            using var conn = OpenConnection();
             EnsureRunnerResultUniqueness(conn);
             try
             {
-                conn.Execute(mergeSql, deduped.Values.ToList());
+                conn.Execute(mergeSql, commandTimeout: 300);
                 Console.WriteLine($"[Repository] Successfully merged {deduped.Count} results.");
             }
+            
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"[Repository] Error merging runner results: {ex.Message}");
