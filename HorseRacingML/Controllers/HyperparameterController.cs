@@ -64,7 +64,6 @@ namespace HorseRacingML.Controllers
                 var masterDataset = _trainer.EnsureMasterDatasetLoaded();
 
                 var mlContext = _trainer.CreateLightGbmContext();
-                var lightGbmCache = new Dictionary<(int FoldIndex, int FoldCount), LightGbmFoldData>();
 
                 int modelIndex = 0;
                 foreach (var model in parameters)
@@ -87,19 +86,15 @@ namespace HorseRacingML.Controllers
                         Console.WriteLine($"[Hyperparameter]  Training ONLY final fold {lastFoldIndex + 1}/{model.Folds}...");
 
                         TrainingResult result;
+                        var preparedData = _trainer.GetPreparedFold(lastFoldIndex, model.Folds, model.ModelType ?? 0, mlContext);
+
                         if (model.ModelType == 1)
                         {
-                            var cacheKey = (lastFoldIndex, model.Folds);
-                            if (!lightGbmCache.TryGetValue(cacheKey, out var foldData))
-                            {
-                                foldData = _trainer.PrepareLightGbmFold(mlContext, masterDataset, lastFoldIndex, model.Folds);
-                                lightGbmCache[cacheKey] = foldData;
-                            }
-                            result = _trainer.TrainLightGbmOptimized(model, mlContext, foldData, persistWeights: false);
+                            result = _trainer.TrainLightGbmOptimized(model, mlContext, (LightGbmFoldData)preparedData, persistWeights: false);
                         }
                         else
                         {
-                            result = _trainer.Train(model, masterDataset, lastFoldIndex, model.Folds, persistWeights: false);
+                            result = _trainer.TrainTensorFlowOptimized(model, (TensorFlowFoldData)preparedData, persistWeights: false);
                         }
 
                         model.TrainAccuracy = result.TrainAccuracy;
@@ -140,19 +135,15 @@ namespace HorseRacingML.Controllers
                             Console.WriteLine($"[Hyperparameter]  Fold {i + 1}/{model.Folds} - training in progress...");
 
                             TrainingResult result;
+                            var preparedData = _trainer.GetPreparedFold(i, model.Folds, model.ModelType ?? 0, mlContext);
+
                             if (model.ModelType == 1)
                             {
-                                var cacheKey = (i, model.Folds);
-                                if (!lightGbmCache.TryGetValue(cacheKey, out var foldData))
-                                {
-                                    foldData = _trainer.PrepareLightGbmFold(mlContext, masterDataset, i, model.Folds);
-                                    lightGbmCache[cacheKey] = foldData;
-                                }
-                                result = _trainer.TrainLightGbmOptimized(model, mlContext, foldData, persistWeights: false);
+                                result = _trainer.TrainLightGbmOptimized(model, mlContext, (LightGbmFoldData)preparedData, persistWeights: false);
                             }
                             else
                             {
-                                result = _trainer.Train(model, masterDataset, i, model.Folds, persistWeights: false);
+                                result = _trainer.TrainTensorFlowOptimized(model, (TensorFlowFoldData)preparedData, persistWeights: false);
                             }
 
                             if (result.TrainingRaceIds.Count == 0)
@@ -247,14 +238,15 @@ namespace HorseRacingML.Controllers
                         Console.WriteLine($"[Hyperparameter] Training ONLY final fold {lastFoldIndex + 1}/{model.Folds}...");
 
                         TrainingResult result;
+                        var preparedData = _trainer.GetPreparedFold(lastFoldIndex, model.Folds, model.ModelType ?? 0, mlContext);
+
                         if (model.ModelType == 1)
                         {
-                            var foldData = _trainer.PrepareLightGbmFold(mlContext, masterDataset, lastFoldIndex, model.Folds);
-                            result = _trainer.TrainLightGbmOptimized(model, mlContext, foldData, persistWeights: false);
+                            result = _trainer.TrainLightGbmOptimized(model, mlContext, (LightGbmFoldData)preparedData, persistWeights: false);
                         }
                         else
                         {
-                            result = _trainer.Train(model, masterDataset, lastFoldIndex, model.Folds, persistWeights: false);
+                            result = _trainer.TrainTensorFlowOptimized(model, (TensorFlowFoldData)preparedData, persistWeights: false);
                         }
 
                         model.TrainAccuracy = result.TrainAccuracy;
@@ -295,14 +287,15 @@ namespace HorseRacingML.Controllers
                             Console.WriteLine($"[Hyperparameter] Fold {i + 1}/{model.Folds} - training in progress...");
 
                             TrainingResult result;
+                            var preparedData = _trainer.GetPreparedFold(i, model.Folds, model.ModelType ?? 0, mlContext);
+
                             if (model.ModelType == 1)
                             {
-                                var foldData = _trainer.PrepareLightGbmFold(mlContext, masterDataset, i, model.Folds);
-                                result = _trainer.TrainLightGbmOptimized(model, mlContext, foldData, persistWeights: false);
+                                result = _trainer.TrainLightGbmOptimized(model, mlContext, (LightGbmFoldData)preparedData, persistWeights: false);
                             }
                             else
                             {
-                                result = _trainer.Train(model, masterDataset, i, model.Folds, persistWeights: false);
+                                result = _trainer.TrainTensorFlowOptimized(model, (TensorFlowFoldData)preparedData, persistWeights: false);
                             }
 
                             if (result.TrainingRaceIds.Count == 0)
