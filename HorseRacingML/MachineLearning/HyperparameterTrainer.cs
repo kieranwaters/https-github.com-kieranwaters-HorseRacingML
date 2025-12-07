@@ -893,8 +893,10 @@ namespace HorseRacingML.ML
                     BuildLabelMatrix(valLabels),
                     dtype: tf.float32);
             }
-            using var graph = tf.Graph();
-            using var graphScope = graph.as_default();
+            // Note: In newer TensorFlow.NET versions, Graph and its context may not implement IDisposable directly.
+            // We remove 'using' to fix CS1674, relying on internal resource management or GC.
+            var graph = tf.Graph();
+            var graphScope = graph.as_default();
 
             var x = tf.placeholder(tf.float32, shape: new TensorShape(-1, featureCount), name: "x");
             var y = tf.placeholder(tf.float32, shape: new TensorShape(-1, 1), name: "y");
@@ -1970,9 +1972,8 @@ namespace HorseRacingML.ML
                 valLabelTensor = Tensorflow.NumPy.np.array(data.ValLabelMatrix, dtype: tf.float32);
             }
 
-            using var graph = tf.Graph();
-            using var graphScope = graph.as_default();
-
+            var graph = tf.Graph();
+            var graphScope = graph.as_default();
             int featureCount = data.TrainFeatureMatrix.GetLength(1);
             var x = tf.placeholder(tf.float32, shape: new TensorShape(-1, featureCount), name: "x");
             var y = tf.placeholder(tf.float32, shape: new TensorShape(-1, 1), name: "y");
