@@ -86,7 +86,7 @@ namespace HorseRacingML.Controllers
                         Console.WriteLine($"[Hyperparameter]  Training ONLY final fold {lastFoldIndex + 1}/{model.Folds}...");
 
                         TrainingResult result;
-                        var preparedData = _trainer.GetPreparedFold(lastFoldIndex, model.Folds, model.ModelType ?? 0, mlContext);
+                        var preparedData = _trainer.GetPreparedFold(lastFoldIndex, model.Folds, model.ModelType, mlContext);
 
                         if (model.ModelType == 1)
                         {
@@ -135,7 +135,7 @@ namespace HorseRacingML.Controllers
                             Console.WriteLine($"[Hyperparameter]  Fold {i + 1}/{model.Folds} - training in progress...");
 
                             TrainingResult result;
-                            var preparedData = _trainer.GetPreparedFold(i, model.Folds, model.ModelType ?? 0, mlContext);
+                            var preparedData = _trainer.GetPreparedFold(i, model.Folds, model.ModelType, mlContext);
 
                             if (model.ModelType == 1)
                             {
@@ -238,7 +238,7 @@ namespace HorseRacingML.Controllers
                         Console.WriteLine($"[Hyperparameter] Training ONLY final fold {lastFoldIndex + 1}/{model.Folds}...");
 
                         TrainingResult result;
-                        var preparedData = _trainer.GetPreparedFold(lastFoldIndex, model.Folds, model.ModelType ?? 0, mlContext);
+                        var preparedData = _trainer.GetPreparedFold(lastFoldIndex, model.Folds, model.ModelType, mlContext);
 
                         if (model.ModelType == 1)
                         {
@@ -287,7 +287,7 @@ namespace HorseRacingML.Controllers
                             Console.WriteLine($"[Hyperparameter] Fold {i + 1}/{model.Folds} - training in progress...");
 
                             TrainingResult result;
-                            var preparedData = _trainer.GetPreparedFold(i, model.Folds, model.ModelType ?? 0, mlContext);
+                            var preparedData = _trainer.GetPreparedFold(i, model.Folds, model.ModelType, mlContext);
 
                             if (model.ModelType == 1)
                             {

@@ -893,7 +893,8 @@ namespace HorseRacingML.ML
                     BuildLabelMatrix(valLabels),
                     dtype: tf.float32);
             }
-            using var graph = tf.Graph().as_default();
+            using var graph = tf.Graph();
+            using var graphScope = graph.as_default();
 
             var x = tf.placeholder(tf.float32, shape: new TensorShape(-1, featureCount), name: "x");
             var y = tf.placeholder(tf.float32, shape: new TensorShape(-1, 1), name: "y");
@@ -1237,6 +1238,7 @@ namespace HorseRacingML.ML
                 ValidationExamples = new ReadOnlyCollection<RunnerExample>(valExamples),
                 FeatureCorrelations = new ReadOnlyCollection<FeatureCorrelation>(featureCorrelations)
             };
+        }
             static float[][] ToJagged2D(NDArray array)
             {
                 if (array.ndim != 2)
@@ -1255,7 +1257,7 @@ namespace HorseRacingML.ML
                 }
                 return result;
             }
-        }
+        
         private static List<FeatureCorrelation> ComputeFeatureCorrelations(
             IList<float[]> normalizedFeatures,
             IReadOnlyList<float> predictions,
@@ -1968,7 +1970,8 @@ namespace HorseRacingML.ML
                 valLabelTensor = Tensorflow.NumPy.np.array(data.ValLabelMatrix, dtype: tf.float32);
             }
 
-            var graph = tf.Graph().as_default();
+            using var graph = tf.Graph();
+            using var graphScope = graph.as_default();
 
             int featureCount = data.TrainFeatureMatrix.GetLength(1);
             var x = tf.placeholder(tf.float32, shape: new TensorShape(-1, featureCount), name: "x");
