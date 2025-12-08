@@ -141,7 +141,7 @@ namespace HorseRacingML.ML
                 Console.WriteLine("[AI] Loading and preparing master dataset for custom training queue...");
                 // 1. Prepare raw dataset (Stage 1: SQL Load)
                 // includeIdentifiers: true is required to track race IDs for caching
-                var rawDataset = PrepareDataset(includeRaceIds: null, stateRaceWhitelist: null, includeIdentifiers: true);
+                var rawDataset = PrepareDataset(includeRaceIds: null, stateRaceWhitelist: null, includeIdentifiers: true, applyRepositoryBackfills: false);
                 Console.WriteLine($"[AI] Raw dataset loaded with {rawDataset.Races.Count} races.");
 
                 // 2. Create Master TrainingDataset (Stage 2: Metadata & Normalization Prep)
