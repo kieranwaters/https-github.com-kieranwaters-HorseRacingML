@@ -22,6 +22,7 @@ namespace HorseRacingML.Controllers
         private readonly RacingRepository _repository;
         private readonly HyperparameterTrainer _trainer;
         private readonly AIOddsCalculator _aiOddsCalculator;
+        private static readonly System.Threading.SemaphoreSlim _trainingLock = new(1, 1);
 
         private readonly decimal? _maxKellyFraction;
 
@@ -212,12 +213,21 @@ namespace HorseRacingML.Controllers
 
             try
             {
+                await _trainingLock.WaitAsync();
+
                 await Task.Run(() =>
                 {
                     // Ensure dataset is loaded and cached
                     var masterDataset = _trainer.EnsureMasterDatasetLoaded();
 
-                    Console.WriteLine($"[Hyperparameter] Starting custom model training (layers: {model.Layers}, units: {model.Units}, dropout: {model.Dropout}, lr: {model.LearningRate}).");
+                    if (model.ModelType == 1)
+                    {
+                        Console.WriteLine($"[Hyperparameter] Starting custom LightGBM model training (leaves: {model.LgbmLeaves}, min data: {model.LgbmMinDataInLeaf}, max depth: {model.LgbmMaxDepth}, lr: {model.LearningRate}).");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"[Hyperparameter] Starting custom Neural Network model training (layers: {model.Layers}, units: {model.Units}, dropout: {model.Dropout}, lr: {model.LearningRate}).");
+                    }
 
                     var foldCount = model.Folds;
                     if (foldCount <= 0)
@@ -351,6 +361,10 @@ namespace HorseRacingML.Controllers
             {
                 Console.Error.WriteLine($"[Hyperparameter] Error training custom model: {ex}");
                 return Json(new { success = false, message = ex.Message });
+            }
+            finally
+            {
+                _trainingLock.Release();
             }
         }
         [HttpGet]
