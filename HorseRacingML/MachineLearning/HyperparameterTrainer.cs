@@ -1974,6 +1974,19 @@ namespace HorseRacingML.ML
 
             var graph = tf.Graph();
             var graphScope = graph.as_default();
+            if (param.Threads.HasValue && param.Threads.Value > 0)
+            {
+                var config = new ConfigProto
+                {
+                    IntraOpParallelismThreads = param.Threads.Value,
+                    InterOpParallelismThreads = param.Threads.Value
+                };
+                try
+                {
+                    tf.Context.setConfig(config);
+                }
+                catch { /* Ignore if context already set */ }
+            }
             int featureCount = data.TrainFeatureMatrix.GetLength(1);
             var x = tf.placeholder(tf.float32, shape: new TensorShape(-1, featureCount), name: "x");
             var y = tf.placeholder(tf.float32, shape: new TensorShape(-1, 1), name: "y");
@@ -2186,9 +2199,60 @@ namespace HorseRacingML.ML
             if (persistWeights)
             {
                 var dataset = EnsureMasterDatasetLoaded();
-                // ... construct TrainedModel ...
-                // This part is skipped for brevity as search usually doesn't persist weights, 
-                // but if needed, we can access dataset properties here.
+                var featureKeys = dataset.FeatureKeys;
+                var featureDims = dataset.FeatureDimensions;
+                var stringMaps = dataset.StringMaps;
+                var trainedAtUtc = DateTime.UtcNow;
+                if (param.RunDate != default)
+                {
+                    trainedAtUtc = param.RunDate.Kind switch
+                    {
+                        DateTimeKind.Unspecified => DateTime.SpecifyKind(param.RunDate, DateTimeKind.Utc),
+                        DateTimeKind.Utc => param.RunDate,
+                        _ => param.RunDate.ToUniversalTime()
+                    };
+                }
+
+                var model = new TrainedModel
+                {
+                    HiddenLayers = hiddenLayers,
+                    OutputLayer = outputLayer,
+                    Metadata = new FeatureMetadata
+                    {
+                        Keys = new List<string>(featureKeys),
+                        FeatureDimensions = new Dictionary<string, int>(featureDims),
+                        StringMaps = stringMaps.ToDictionary(
+                            kvp => kvp.Key,
+                            kvp => new Dictionary<string, int>(kvp.Value))
+                    },
+                    Normalization = new NormalizationParameters
+                    {
+                        Mean = (float[])normalization.Mean.Clone(),
+                        StdDev = (float[])normalization.StdDev.Clone()
+                    },
+                    Hyperparameters = new HyperparameterSummary
+                    {
+                        Layers = param.Layers ?? 0,
+                        Units = param.Units ?? 10,
+                        Dropout = param.Dropout ?? 0,
+                        LearningRate = param.LearningRate,
+                        Epochs = param.Epochs,
+                        BatchSize = param.BatchSize ?? 32,
+                        Folds = param.Folds,
+                        Fold = param.Fold,
+                        TrainedAtUtc = trainedAtUtc
+                    }
+                };
+
+                var weightsDirectory = Path.GetDirectoryName(_modelPath);
+                if (weightsDirectory != null)
+                {
+                    Directory.CreateDirectory(weightsDirectory);
+                }
+
+                var options = new JsonSerializerOptions { WriteIndented = true };
+                var serialized = JsonSerializer.Serialize(model, options);
+                File.WriteAllText(_modelPath, serialized);
             }
 
             HyperparameterCompleted(param, trainAcc, valAcc, trainLoss, valLoss, trainBrier, valBrier, trainFocalLoss, valFocalLoss);
@@ -2221,7 +2285,7 @@ namespace HorseRacingML.ML
 
             NormalizeBatchSize(param);
 
-            var pipeline = mlContext.BinaryClassification.Trainers.LightGbm(new LightGbmBinaryTrainer.Options
+            var options = new LightGbmBinaryTrainer.Options
             {
                 LabelColumnName = "Label",
                 FeatureColumnName = "Features",
@@ -2229,7 +2293,14 @@ namespace HorseRacingML.ML
                 MinimumExampleCountPerLeaf = param.LgbmMinDataInLeaf > 0 ? param.LgbmMinDataInLeaf.Value : 20,
                 LearningRate = param.LearningRate > 0 ? param.LearningRate : 0.1,
                 NumberOfIterations = param.Epochs > 0 ? param.Epochs : 100,
-            });
+            };
+
+            if (param.Threads.HasValue && param.Threads.Value > 0)
+            {
+                options.NumberOfThreads = param.Threads.Value;
+            }
+
+            var pipeline = mlContext.BinaryClassification.Trainers.LightGbm(options);
 
             var model = pipeline.Fit(data.TrainData);
 
@@ -2251,7 +2322,32 @@ namespace HorseRacingML.ML
             double valAcc = ComputeWinnerAccuracy(valRaceIdsArr, valProbs, valLabelsArr);
             double trainBrier = ComputeBrier(trainProbs, trainLabelsArr);
             double valBrier = ComputeBrier(valProbs, valLabelsArr);
+            if (persistWeights)
+            {
+                var modelPath = Path.ChangeExtension(_modelPath, ".zip");
+                mlContext.Model.Save(model, data.TrainData.Schema, modelPath);
 
+                var dataset = EnsureMasterDatasetLoaded();
+                var metadataModel = new TrainedModel
+                {
+                    Metadata = new FeatureMetadata
+                    {
+                        Keys = new List<string>(dataset.FeatureKeys),
+                        FeatureDimensions = new Dictionary<string, int>(dataset.FeatureDimensions),
+                        StringMaps = dataset.StringMaps.ToDictionary(
+                            kvp => kvp.Key,
+                            kvp => new Dictionary<string, int>(kvp.Value))
+                    },
+                    Hyperparameters = new HyperparameterSummary
+                    {
+                        ModelType = 1, // LightGBM
+                        TrainedAtUtc = DateTime.UtcNow
+                    }
+                };
+                var optionsJson = new JsonSerializerOptions { WriteIndented = true };
+                var serialized = JsonSerializer.Serialize(metadataModel, optionsJson);
+                File.WriteAllText(_modelPath, serialized);
+            }
             return new TrainingResult
             {
                 TrainAccuracy = trainAcc,

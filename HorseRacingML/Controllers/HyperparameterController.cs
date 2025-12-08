@@ -420,7 +420,18 @@ namespace HorseRacingML.Controllers
                     model.Folds = 1;
                     model.Fold = null;
 
-                    var result = _trainer.Train(model, 0, 1, dataset, persistWeights: true);
+                    var mlContext = _trainer.CreateLightGbmContext();
+                    var preparedData = _trainer.GetPreparedFold(0, 1, model.ModelType, mlContext);
+                    TrainingResult result;
+
+                    if (model.ModelType == 1)
+                    {
+                        result = _trainer.TrainLightGbmOptimized(model, mlContext, (LightGbmFoldData)preparedData, persistWeights: true);
+                    }
+                    else
+                    {
+                        result = _trainer.TrainTensorFlowOptimized(model, (TensorFlowFoldData)preparedData, persistWeights: true);
+                    }
 
                     model.TrainAccuracy = result.TrainAccuracy;
                     model.TrainLoss = result.TrainLoss;
