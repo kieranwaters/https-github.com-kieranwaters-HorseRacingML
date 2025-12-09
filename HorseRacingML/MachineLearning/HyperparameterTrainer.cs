@@ -642,7 +642,7 @@ namespace HorseRacingML.ML
             {
                 LabelColumnName = "Label",
                 FeatureColumnName = "Features",
-                NumberOfLeaves = param.LgbmLeaves > 0 ? param.LgbmLeaves.Value : 31,
+                NumberOfLeaves = param.LgbmLeaves > 1 ? param.LgbmLeaves.Value : 31,
                 MinimumExampleCountPerLeaf = param.LgbmMinDataInLeaf > 0 ? param.LgbmMinDataInLeaf.Value : 20,
                 LearningRate = param.LearningRate > 0 ? param.LearningRate : 0.1,
                 NumberOfIterations = param.Epochs > 0 ? param.Epochs : 100,
@@ -1974,18 +1974,14 @@ namespace HorseRacingML.ML
 
             var graph = tf.Graph();
             var graphScope = graph.as_default();
+            ConfigProto? config = null;
             if (param.Threads.HasValue && param.Threads.Value > 0)
             {
-                var config = new ConfigProto
+                config = new ConfigProto
                 {
                     IntraOpParallelismThreads = param.Threads.Value,
                     InterOpParallelismThreads = param.Threads.Value
                 };
-                try
-                {
-                    tf.Context.setConfig(config);
-                }
-                catch { /* Ignore if context already set */ }
             }
             int featureCount = data.TrainFeatureMatrix.GetLength(1);
             var x = tf.placeholder(tf.float32, shape: new TensorShape(-1, featureCount), name: "x");
@@ -2017,7 +2013,7 @@ namespace HorseRacingML.ML
 
             var prediction = tf.sigmoid(logits);
             var rnd = new Random();
-            using var sess = tf.Session(graph);
+            using var sess = tf.Session(graph, config);
             sess.run(tf.global_variables_initializer());
             var allVariables = hiddenWeightVars.Concat(hiddenBiasVars).Concat(new[] { wOut, bOut }).ToList();
             var bestWeights = new List<NDArray>();
@@ -2282,14 +2278,19 @@ namespace HorseRacingML.ML
             {
                 return new TrainingResult();
             }
-
+            // Ensure we have actual data rows to prevent AccessViolation in LightGBM native
+            if (data.TrainData.GetRowCount() == 0)
+            {
+                Console.WriteLine("[LightGBM] Training skipped because training data view has 0 rows.");
+                return new TrainingResult();
+            }
             NormalizeBatchSize(param);
 
             var options = new LightGbmBinaryTrainer.Options
             {
                 LabelColumnName = "Label",
                 FeatureColumnName = "Features",
-                NumberOfLeaves = param.LgbmLeaves > 0 ? param.LgbmLeaves.Value : 31,
+                NumberOfLeaves = param.LgbmLeaves > 1 ? param.LgbmLeaves.Value : 31,
                 MinimumExampleCountPerLeaf = param.LgbmMinDataInLeaf > 0 ? param.LgbmMinDataInLeaf.Value : 20,
                 LearningRate = param.LearningRate > 0 ? param.LearningRate : 0.1,
                 NumberOfIterations = param.Epochs > 0 ? param.Epochs : 100,
