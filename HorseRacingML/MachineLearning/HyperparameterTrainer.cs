@@ -182,7 +182,7 @@ namespace HorseRacingML.ML
 
         public TrainingDataset LoadTrainingDataset(bool includeIdentifiers = false)
         {
-            var prepared = PrepareDataset(includeRaceIds: null, stateRaceWhitelist: null, includeIdentifiers: includeIdentifiers);
+            var prepared = PrepareDataset(includeRaceIds: null, stateRaceWhitelist: null, includeIdentifiers: includeIdentifiers, applyRepositoryBackfills: false);
             var emptyValidation = new PreparedDataset(new List<PreparedRace>());
             return BuildTrainingDataset(prepared, emptyValidation, includeIdentifiers);
         }
@@ -1445,7 +1445,8 @@ namespace HorseRacingML.ML
             var combinedPrepared = PrepareDataset(
                 ToNullableSet(combinedRaceIds),
                 ToNullableSet(trainingRaceIds),
-                includeIdentifiers);
+                includeIdentifiers,
+                applyRepositoryBackfills: false);
 
             var trainingPrepared = new PreparedDataset(
                 combinedPrepared.Races
