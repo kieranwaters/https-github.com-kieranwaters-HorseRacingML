@@ -3,6 +3,9 @@
 @model HorseRacingML.Models.TrainAIViewModel
 @{
     ViewData["Title"] = "Train AI";
+    var model = Model.Batch.Parameters.FirstOrDefault() ?? new HorseRacingML.Models.MLParameter();
+    // Default Folds to 1 if not set
+    if (model.Folds == 0) model.Folds = 1;
 }
 
 <h1>Train AI</h1>
@@ -12,45 +15,58 @@
         <thead>
             <tr>
                 <th>Model</th>
-                <th>Units</th>
-                <th>Dropout</th>
-                <th>Layers</th>
+                <th>Units / Leaves</th>
+                <th>Dropout / Min Data</th>
+                <th>Layers / Max Depth</th>
                 <th>Learning Rate</th>
                 <th>Epochs</th>
                 <th>Batch Size</th>
-                <th>Threads</th>
-                <th>Folds</th>
-                <th></th>
+                @* Folds hidden *@
             </tr>
         </thead>
-        <tbody id="parameterRows">
-            @for (int i = 0; i < Model.Batch.Parameters.Count; i++)
-            {
-                <tr>
-                    <td>
-                        <select asp-for="Batch.Parameters[i].ModelType" class="form-select">
-                            <option value="0">Neural Network</option>
-                            <option value="1">LightGBM</option>
-                        </select>
-                    </td>
-                    <td><input asp-for="Batch.Parameters[i].Units" class="form-control" /></td>
-                    <td><input asp-for="Batch.Parameters[i].Dropout" class="form-control" /></td>
-                    <td><input asp-for="Batch.Parameters[i].Layers" class="form-control" /></td>
-                    <td><input asp-for="Batch.Parameters[i].LearningRate" class="form-control" /></td>
-                    <td><input asp-for="Batch.Parameters[i].Epochs" class="form-control" /></td>
-                    <td><input asp-for="Batch.Parameters[i].BatchSize" class="form-control" /></td>
-                    <td><input asp-for="Batch.Parameters[i].Threads" class="form-control" /></td>
-                    <td><input asp-for="Batch.Parameters[i].Folds" class="form-control" /></td>
-                    <td>
-                        <button type="button" class="btn btn-danger" onclick="removeRow(this)">Delete</button>
-                    </td>
-                    <input type="hidden" asp-for="Batch.Parameters[i].RunDate" />
-                </tr>
-            }
+        <tbody>
+            <tr id="parameterRow">
+                <td>
+                    <select asp-for="Batch.Parameters[0].ModelType" class="form-select model-type-select" onchange="toggleInputs()">
+                        <option value="0">Neural Network</option>
+                        <option value="1">LightGBM</option>
+                    </select>
+                </td>
+                <td>
+                    <input asp-for="Batch.Parameters[0].Units" type="number" class="form-control nn-input" placeholder="Units" />
+                    <input asp-for="Batch.Parameters[0].LgbmLeaves" type="number" class="form-control lgbm-input" placeholder="Leaves" style="display:none" />
+                </td>
+                <td>
+                    <input asp-for="Batch.Parameters[0].Dropout" type="number" step="any" class="form-control nn-input" placeholder="Dropout" />
+                    <input asp-for="Batch.Parameters[0].LgbmMinDataInLeaf" type="number" class="form-control lgbm-input" placeholder="Min Data" style="display:none" />
+                </td>
+                <td>
+                    <input asp-for="Batch.Parameters[0].Layers" type="number" class="form-control nn-input" placeholder="Layers" />
+                    <input asp-for="Batch.Parameters[0].LgbmMaxDepth" type="number" class="form-control lgbm-input" placeholder="Max Depth" style="display:none" />
+                </td>
+                <td><input asp-for="Batch.Parameters[0].LearningRate" type="number" step="any" class="form-control" /></td>
+                <td><input asp-for="Batch.Parameters[0].Epochs" type="number" class="form-control" /></td>
+                <td>
+                    <input asp-for="Batch.Parameters[0].BatchSize" type="number" class="form-control nn-input" />
+                    <span class="lgbm-input text-muted small" style="display:none">N/A</span>
+                </td>
+
+                @* Hidden inputs for valid model binding *@
+                <input type="hidden" asp-for="Batch.Parameters[0].Folds" value="1" />
+                <input type="hidden" asp-for="Batch.Parameters[0].RunDate" />
+            </tr>
         </tbody>
     </table>
-    <button type="submit" class="btn btn-primary">Run</button>
-    <button type="button" class="btn btn-info ms-2" onclick="redirectToTestAI()">Test AI</button>
+
+    <div class="d-flex align-items-center gap-3 mt-3">
+        <button type="submit" class="btn btn-primary">Run</button>
+        <button type="button" class="btn btn-info" onclick="redirectToTestAI()">Test AI</button>
+
+        <div class="input-group ms-auto" style="width: 250px;" title="Number of CPU threads to use for training.">
+            <span class="input-group-text">CPU Threads</span>
+            <input asp-for="Batch.Parameters[0].Threads" type="number" class="form-control" min="1" max="32" value="@(Model.Batch.Parameters[0].Threads ?? 4)" />
+        </div>
+    </div>
 </form>
 
 @if (Model.Results?.Any() == true)
@@ -70,7 +86,14 @@
                 <div class="d-flex flex-column flex-lg-row justify-content-between">
                     <span>Run @runNumber correlations</span>
                     <span class="text-muted small">
-                        Units: @result.Parameters.Units · Layers: @result.Parameters.Layers · Dropout: @(result.Parameters.Dropout.HasValue? result.Parameters.Dropout.Value.ToString("0.###") : "N/A") · Learning Rate: @result.Parameters.LearningRate.ToString("0.#####")
+                        @if (result.Parameters.ModelType == 1)
+                        {
+                            <text>Leaves: @result.Parameters.LgbmLeaves · MinData: @result.Parameters.LgbmMinDataInLeaf · MaxDepth: @result.Parameters.LgbmMaxDepth · Learning Rate: @result.Parameters.LearningRate.ToString("0.#####")</text>
+                        }
+                        else
+                        {
+                            <text>Units: @result.Parameters.Units · Layers: @result.Parameters.Layers · Dropout: @(result.Parameters.Dropout.HasValue? result.Parameters.Dropout.Value.ToString("0.###") : "N/A") · Learning Rate: @result.Parameters.LearningRate.ToString("0.#####")</text>
+                        }
                     </span>
                 </div>
             </div>
@@ -147,99 +170,67 @@
         await Html.RenderPartialAsync("_ValidationScriptsPartial");
     }
     <script>
-        function addRow() {
-            const rows = document.querySelectorAll('#parameterRows tr');
-            const index = rows.length;
-            const template = `
-                <tr>
-                    <td>
-                        <select name="Batch.Parameters[${index}].ModelType" class="form-select">
-                            <option value="0">Neural Network</option>
-                            <option value="1">LightGBM</option>
-                        </select>
-                    </td>
-                    <td><input name="Batch.Parameters[${index}].Units" class="form-control" /></td>
-                    <td><input name="Batch.Parameters[${index}].Dropout" class="form-control" /></td>
-                    <td><input name="Batch.Parameters[${index}].Layers" class="form-control" /></td>
-                    <td><input name="Batch.Parameters[${index}].LearningRate" class="form-control" /></td>
-                    <td><input name="Batch.Parameters[${index}].Epochs" class="form-control" /></td>
-                    <td><input name="Batch.Parameters[${index}].BatchSize" class="form-control" /></td>
-                    <td><input name="Batch.Parameters[${index}].Folds" class="form-control" /></td>
-                    <td><button type="button" class="btn btn-danger" onclick="removeRow(this)">Delete</button></td>
-                    <input type="hidden" name="Batch.Parameters[${index}].RunDate" value="${new Date().toISOString()}" />
-                </tr>`;
-            document.getElementById('parameterRows').insertAdjacentHTML('beforeend', template);
+        document.addEventListener("DOMContentLoaded", function () {
+            toggleInputs();
+        });
+
+        function toggleInputs() {
+            const selectElement = document.querySelector('.model-type-select');
+            const row = document.getElementById('parameterRow');
+            const isLgbm = selectElement.value === "1";
+
+            row.querySelectorAll('.nn-input').forEach(el => el.style.display = isLgbm ? 'none' : '');
+            row.querySelectorAll('.lgbm-input').forEach(el => el.style.display = isLgbm ? '' : 'none');
         }
-        function removeRow(btn) {
-            btn.closest('tr').remove();
-            updateIndexes();
-        }
-        function updateIndexes() {
-            const rows = document.querySelectorAll('#parameterRows tr');
-            rows.forEach((row, idx) => {
-                row.querySelectorAll('input').forEach(input => {
-                    const name = input.getAttribute('name');
-                    if (name) {
-                        input.setAttribute('name', name.replace(/Parameters\[\d+\]/, `Parameters[${idx}]`));
-                    }
-                    const id = input.getAttribute('id');
-                    if (id) {
-                        input.setAttribute('id', id.replace(/_\d+__/, `_${idx}__`));
-                    }
-                });
-            });
-        }
+
         function redirectToTestAI() {
-            const firstRow = document.querySelector('#parameterRows tr');
+            const row = document.getElementById('parameterRow');
             const testAiUrl = '@Url.Action("TestAI", "Hyperparameter")';
-
-            if (!firstRow) {
-                window.location.href = testAiUrl;
-                return;
-            }
-
             const params = new URLSearchParams();
 
-            const addIntParam = (field, key) => {
-                const input = firstRow.querySelector(`input[name$=".${field}"]`);
-                if (!input) {
-                    return;
-                }
+            const modelTypeSelect = row.querySelector('.model-type-select');
+            const isLgbm = modelTypeSelect.value === "1";
+
+            params.set('modelType', modelTypeSelect.value);
+
+            const addIntParam = (selector, key) => {
+                const input = row.querySelector(selector);
+                if (!input) return;
                 const rawValue = input.value.trim();
-                if (!rawValue) {
-                    return;
-                }
+                if (!rawValue) return;
                 const parsed = Number.parseInt(rawValue, 10);
-                if (Number.isNaN(parsed)) {
-                    return;
-                }
+                if (Number.isNaN(parsed)) return;
                 params.set(key, parsed.toString());
             };
 
-            const addFloatParam = (field, key) => {
-                const input = firstRow.querySelector(`input[name$=".${field}"]`);
-                if (!input) {
-                    return;
-                }
+            const addFloatParam = (selector, key) => {
+                const input = row.querySelector(selector);
+                if (!input) return;
                 const rawValue = input.value.trim();
-                if (!rawValue) {
-                    return;
-                }
+                if (!rawValue) return;
                 const normalized = rawValue.replace(',', '.');
                 const parsed = Number.parseFloat(normalized);
-                if (!Number.isFinite(parsed)) {
-                    return;
-                }
+                if (!Number.isFinite(parsed)) return;
                 params.set(key, parsed.toString());
             };
 
-            addIntParam('Units', 'units');
-            addFloatParam('Dropout', 'dropout');
-            addIntParam('Layers', 'layers');
-            addFloatParam('LearningRate', 'learningRate');
-            addIntParam('Epochs', 'epochs');
-            addIntParam('BatchSize', 'batchSize');
-            addIntParam('Folds', 'folds');
+            // Common parameters
+            addFloatParam('input[name="Batch.Parameters[0].LearningRate"]', 'learningRate');
+            addIntParam('input[name="Batch.Parameters[0].Epochs"]', 'epochs');
+            addIntParam('input[name="Batch.Parameters[0].Folds"]', 'folds');
+
+            if (isLgbm) {
+                // LightGBM specific parameters
+                addIntParam('.lgbm-input[placeholder="Leaves"]', 'lgbmLeaves');
+                addIntParam('.lgbm-input[placeholder="Min Data"]', 'lgbmMinData');
+                addIntParam('.lgbm-input[placeholder="Max Depth"]', 'lgbmMaxDepth');
+            } else {
+                // Neural Network specific parameters
+                addIntParam('.nn-input[placeholder="Units"]', 'units');
+                addFloatParam('.nn-input[placeholder="Dropout"]', 'dropout');
+                addIntParam('.nn-input[placeholder="Layers"]', 'layers');
+                addIntParam('.nn-input[name="Batch.Parameters[0].BatchSize"]', 'batchSize');
+            }
 
             const query = params.toString();
             const target = query ? `${testAiUrl}?${query}` : testAiUrl;

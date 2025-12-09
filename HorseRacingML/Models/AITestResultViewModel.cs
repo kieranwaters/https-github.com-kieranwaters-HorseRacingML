@@ -50,6 +50,11 @@ namespace HorseRacingML.Models
         public int? RequestedEpochs { get; set; }
         public int? RequestedBatchSize { get; set; }
         public int? RequestedFolds { get; set; }
+        public int? RequestedLgbmLeaves { get; set; }
+        public int? RequestedLgbmMinDataInLeaf { get; set; }
+        public int? RequestedLgbmMaxDepth { get; set; }
+        public int RequestedModelType { get; set; }
+
         [Range(1, 24, ErrorMessage = "Please choose between 1 and 24 months.")]
         public int SelectedValidationMonths { get; set; } = 1;
         public string SelectedCountry { get; set; }

@@ -476,7 +476,11 @@ namespace HorseRacingML.Controllers
             [FromQuery(Name = "learningRate")] double? requestedLearningRate,
             [FromQuery(Name = "epochs")] int? requestedEpochs,
             [FromQuery(Name = "batchSize")] int? requestedBatchSize,
-            [FromQuery(Name = "folds")] int? requestedFolds)
+            [FromQuery(Name = "folds")] int? requestedFolds,
+            [FromQuery(Name = "lgbmLeaves")] int? requestedLgbmLeaves,
+            [FromQuery(Name = "lgbmMinData")] int? requestedLgbmMinData,
+            [FromQuery(Name = "lgbmMaxDepth")] int? requestedLgbmMaxDepth,
+            [FromQuery(Name = "modelType")] int requestedModelType = 0)
         {
             var viewModel = new AITestResultViewModel
             {
@@ -487,6 +491,10 @@ namespace HorseRacingML.Controllers
                 RequestedEpochs = requestedEpochs,
                 RequestedBatchSize = requestedBatchSize,
                 RequestedFolds = requestedFolds,
+                RequestedLgbmLeaves = requestedLgbmLeaves,
+                RequestedLgbmMinDataInLeaf = requestedLgbmMinData,
+                RequestedLgbmMaxDepth = requestedLgbmMaxDepth,
+                RequestedModelType = requestedModelType,
                 Countries = _repository.GetCountries().ToList()
             };
 
@@ -567,6 +575,10 @@ namespace HorseRacingML.Controllers
             var requestedBatchSize = ReadRequestedInt(request.RequestedBatchSize, nameof(request.RequestedBatchSize));
             var requestedFolds = ReadRequestedInt(request.RequestedFolds, nameof(request.RequestedFolds));
 
+            var requestedLgbmLeaves = ReadRequestedInt(request.RequestedLgbmLeaves, nameof(request.RequestedLgbmLeaves));
+            var requestedLgbmMinData = ReadRequestedInt(request.RequestedLgbmMinDataInLeaf, nameof(request.RequestedLgbmMinDataInLeaf));
+            var requestedLgbmMaxDepth = ReadRequestedInt(request.RequestedLgbmMaxDepth, nameof(request.RequestedLgbmMaxDepth));
+
             int months = request.SelectedValidationMonths;
             if (months <= 0)
             {
@@ -597,6 +609,9 @@ namespace HorseRacingML.Controllers
             viewModel.RequestedEpochs = requestedEpochs;
             viewModel.RequestedBatchSize = requestedBatchSize;
             viewModel.RequestedFolds = requestedFolds;
+            viewModel.RequestedLgbmLeaves = requestedLgbmLeaves;
+            viewModel.RequestedLgbmMinDataInLeaf = requestedLgbmMinData;
+            viewModel.RequestedLgbmMaxDepth = requestedLgbmMaxDepth;
             viewModel.Countries = _repository.GetCountries().ToList();
             var validationRaceIds = _repository.GetRaceIdsBetweenDates(validationStart, validationEnd, request.SelectedCountry);
             if (validationRaceIds.Count == 0)
@@ -641,28 +656,46 @@ namespace HorseRacingML.Controllers
             }
             else
             {
-                bool unitsValid = !requestedUnits.HasValue || HasValidUnits(requestedUnits.Value);
-                bool layersValid = !requestedLayers.HasValue || HasValidLayers(requestedLayers.Value);
                 int normalizedBatchSize = 0;
                 var invalidHyperparameters = new List<string>();
-                if (!unitsValid)
-                {
-                    invalidHyperparameters.Add("Units per layer");
-                }
 
-                if (requestedDropout.HasValue && !HasValidDropout(requestedDropout.Value))
-                {
-                    invalidHyperparameters.Add("Dropout");
-                }
+                bool isLgbm = request.RequestedModelType == 1;
 
-                if (!layersValid)
+                if (isLgbm)
                 {
-                    invalidHyperparameters.Add("Layers");
+                    if (requestedLgbmLeaves.HasValue && requestedLgbmLeaves.Value < 2)
+                    {
+                        invalidHyperparameters.Add("Leaves (must be >= 2)");
+                    }
                 }
-
-                if (layersValid && requestedLayers.GetValueOrDefault() > 0 && (!requestedUnits.HasValue || requestedUnits.Value <= 0))
+                else
                 {
-                    invalidHyperparameters.Add("Units per layer (must be positive when Layers > 0)");
+                    bool unitsValid = !requestedUnits.HasValue || HasValidUnits(requestedUnits.Value);
+                    bool layersValid = !requestedLayers.HasValue || HasValidLayers(requestedLayers.Value);
+
+                    if (!unitsValid)
+                    {
+                        invalidHyperparameters.Add("Units per layer");
+                    }
+
+                    if (requestedDropout.HasValue && !HasValidDropout(requestedDropout.Value))
+                    {
+                        invalidHyperparameters.Add("Dropout");
+                    }
+
+                    if (!layersValid)
+                    {
+                        invalidHyperparameters.Add("Layers");
+                    }
+
+                    if (layersValid && requestedLayers.GetValueOrDefault() > 0 && (!requestedUnits.HasValue || requestedUnits.Value <= 0))
+                    {
+                        invalidHyperparameters.Add("Units per layer (must be positive when Layers > 0)");
+                    }
+                    if (requestedBatchSize.HasValue && !TryNormalizeBatchSize(requestedBatchSize.Value, out normalizedBatchSize))
+                    {
+                        invalidHyperparameters.Add("Batch size");
+                    }
                 }
 
                 if (requestedLearningRate.HasValue && !HasValidLearningRate(requestedLearningRate.Value))
@@ -673,11 +706,6 @@ namespace HorseRacingML.Controllers
                 if (requestedEpochs.HasValue && !HasValidPositive(requestedEpochs.Value))
                 {
                     invalidHyperparameters.Add("Epochs");
-                }
-
-                if (requestedBatchSize.HasValue && !TryNormalizeBatchSize(requestedBatchSize.Value, out normalizedBatchSize))
-                {
-                    invalidHyperparameters.Add("Batch size");
                 }
 
                 if (requestedFolds.HasValue && !HasValidPositive(requestedFolds.Value))
@@ -692,15 +720,28 @@ namespace HorseRacingML.Controllers
                     return View(viewModel);
                 }
 
-
-                bool hasRequestedHyperparameters =
-                   requestedUnits.HasValue &&
-                   requestedDropout.HasValue &&
-                   requestedLayers.HasValue &&
-                   requestedLearningRate.HasValue &&
-                   requestedEpochs.HasValue &&
-                   requestedBatchSize.HasValue &&
-                   requestedFolds.HasValue;
+                bool hasRequestedHyperparameters;
+                if (isLgbm)
+                {
+                    hasRequestedHyperparameters =
+                       requestedLgbmLeaves.HasValue &&
+                       requestedLgbmMinData.HasValue &&
+                       requestedLgbmMaxDepth.HasValue &&
+                       requestedLearningRate.HasValue &&
+                       requestedEpochs.HasValue &&
+                       requestedFolds.HasValue;
+                }
+                else
+                {
+                    hasRequestedHyperparameters =
+                       requestedUnits.HasValue &&
+                       requestedDropout.HasValue &&
+                       requestedLayers.HasValue &&
+                       requestedLearningRate.HasValue &&
+                       requestedEpochs.HasValue &&
+                       requestedBatchSize.HasValue &&
+                       requestedFolds.HasValue;
+                }
 
                 if (!hasRequestedHyperparameters)
                 {
@@ -708,19 +749,23 @@ namespace HorseRacingML.Controllers
                     return View(viewModel);
                 }
 
-                if (normalizedBatchSize < requestedBatchSize.Value)
+                if (!isLgbm && normalizedBatchSize < requestedBatchSize.Value)
                 {
                     batchSizeAdjustmentMessage = $"Batch size reduced to {normalizedBatchSize} to respect the maximum of {MLParameterValidator.MaxBatchSize}.";
                 }
 
                 parameter = new MLParameter
                 {
-                    Units = requestedUnits.Value,
-                    Dropout = requestedDropout.Value,
-                    Layers = requestedLayers.Value,
+                    ModelType = request.RequestedModelType,
+                    Units = isLgbm ? null : requestedUnits,
+                    Dropout = isLgbm ? null : requestedDropout,
+                    Layers = isLgbm ? null : requestedLayers,
+                    LgbmLeaves = isLgbm ? requestedLgbmLeaves : null,
+                    LgbmMinDataInLeaf = isLgbm ? requestedLgbmMinData : null,
+                    LgbmMaxDepth = isLgbm ? requestedLgbmMaxDepth : null,
                     LearningRate = requestedLearningRate.Value,
                     Epochs = requestedEpochs.Value,
-                    BatchSize = normalizedBatchSize,
+                    BatchSize = isLgbm ? null : normalizedBatchSize,
                     Folds = requestedFolds.Value,
                     Fold = null,
                     RunDate = DateTime.UtcNow
