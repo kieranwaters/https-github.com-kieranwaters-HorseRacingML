@@ -22,7 +22,6 @@ namespace HorseRacingML.Controllers
         private readonly RacingRepository _repository;
         private readonly HyperparameterTrainer _trainer;
         private readonly AIOddsCalculator _aiOddsCalculator;
-        private static readonly System.Threading.SemaphoreSlim _trainingLock = new(1, 1);
 
         private readonly decimal? _maxKellyFraction;
 
@@ -213,8 +212,6 @@ namespace HorseRacingML.Controllers
 
             try
             {
-                await _trainingLock.WaitAsync();
-
                 await Task.Run(() =>
                 {
                     // Ensure dataset is loaded and cached
@@ -361,10 +358,6 @@ namespace HorseRacingML.Controllers
             {
                 Console.Error.WriteLine($"[Hyperparameter] Error training custom model: {ex}");
                 return Json(new { success = false, message = ex.Message });
-            }
-            finally
-            {
-                _trainingLock.Release();
             }
         }
         [HttpGet]
