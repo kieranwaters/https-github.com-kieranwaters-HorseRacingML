@@ -1,0 +1,147 @@
+﻿@using HorseRacingML.Models
+@model DayReportStatus
+
+@{
+    ViewData["Title"] = "Day Report Processing";
+}
+
+<div class="container-fluid">
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <h1 class="h3 mb-3">Processing Day Report</h1>
+            <p id="statusMessage" class="lead text-muted">Starting...</p>
+
+            <div class="progress mb-3" style="height: 25px;">
+                <div id="progressBar"
+                     class="progress-bar progress-bar-striped progress-bar-animated"
+                     role="progressbar"
+                     style="width: 0%;"
+                     aria-valuenow="0"
+                     aria-valuemin="0"
+                     aria-valuemax="100">
+                    0%
+                </div>
+            </div>
+
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <span id="processedCount">0</span> / <span id="totalCount">0</span> races processed
+                </div>
+                <div>
+                    <a asp-action="Index" asp-controller="Home" class="btn btn-outline-secondary btn-sm">Return to Dashboard</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="resultsContainer">
+        <!-- Results will be appended here -->
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const statusMessage = document.getElementById('statusMessage');
+            const progressBar = document.getElementById('progressBar');
+            const processedCount = document.getElementById('processedCount');
+            const totalCount = document.getElementById('totalCount');
+            const resultsContainer = document.getElementById('resultsContainer');
+
+            let pollInterval;
+            let lastProcessed = 0;
+
+            function pollStatus() {
+                fetch('@Url.Action("GetDayReportProgress", "Home")')
+                    .then(response => response.json())
+                    .then(data => {
+                        updateUI(data);
+                        if (data.isComplete) {
+                            clearInterval(pollInterval);
+                            progressBar.classList.remove('progress-bar-striped', 'progress-bar-animated');
+                            progressBar.classList.add('bg-success');
+                        }
+                    })
+                    .catch(error => console.error('Error polling status:', error));
+            }
+
+            function updateUI(data) {
+                statusMessage.textContent = data.message;
+                processedCount.textContent = data.processedRaces;
+                totalCount.textContent = data.totalRaces;
+
+                let percent = 0;
+                if (data.totalRaces > 0) {
+                    percent = Math.round((data.processedRaces / data.totalRaces) * 100);
+                }
+
+                progressBar.style.width = percent + '%';
+                progressBar.textContent = percent + '%';
+                progressBar.setAttribute('aria-valuenow', percent);
+
+                // Render new races if any
+                if (data.results && data.results.length > lastProcessed) {
+                    const newRaces = data.results.slice(lastProcessed);
+                    renderNewRaces(newRaces);
+                    lastProcessed = data.results.length;
+                }
+            }
+
+            function renderNewRaces(races) {
+                races.forEach(race => {
+                    const card = document.createElement('div');
+                    card.className = 'card shadow-sm mb-4';
+
+                    const header = document.createElement('div');
+                    header.className = 'card-header bg-light d-flex justify-content-between align-items-center';
+                    header.innerHTML = `
+                        <h5 class="mb-0">
+                            ${race.raceTime} ${race.venueName}
+                            <small class="text-muted">${race.raceTitle || ''}</small>
+                        </h5>
+                        <a href="${race.raceUrl}" target="_blank" class="btn btn-sm btn-outline-primary">View on Betfair</a>
+                    `;
+
+                    const body = document.createElement('div');
+                    body.className = 'card-body p-0';
+
+                    const table = document.createElement('table');
+                    table.className = 'table table-hover table-striped mb-0';
+                    table.innerHTML = `
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Runner</th>
+                                <th>Back</th>
+                                <th>AI Prob</th>
+                                <th>Edge</th>
+                                <th>Stake</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${race.runners.map(runner => `
+                                <tr class="${runner.isBet ? 'table-success' : ''}">
+                                    <td>${runner.clothNumber || '-'}</td>
+                                    <td>${runner.horseName}</td>
+                                    <td>${runner.backPrice ? runner.backPrice.toFixed(2) : '-'}</td>
+                                    <td>${(runner.aiProbability * 100).toFixed(1)}%</td>
+                                    <td>${(runner.edge * 100).toFixed(1)}%</td>
+                                    <td>${runner.stake > 0 ? '£' + runner.stake.toFixed(2) : '-'}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    `;
+
+                    body.appendChild(table);
+                    card.appendChild(header);
+                    card.appendChild(body);
+                    resultsContainer.appendChild(card);
+                });
+            }
+
+            // Start polling
+            pollInterval = setInterval(pollStatus, 2000);
+            pollStatus(); // Initial call
+        });
+    </script>
+}

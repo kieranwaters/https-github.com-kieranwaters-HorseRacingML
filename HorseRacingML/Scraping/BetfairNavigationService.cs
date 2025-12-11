@@ -28,6 +28,7 @@ namespace HorseRacingML.Scraping
         private readonly string _username;
         private readonly string _password;
         private IWebDriver _driver;
+        private bool _isHeadless;
         private readonly decimal _configuredBankroll;
         private decimal _bankroll;
         private readonly bool _useMarketFallbackForAiDegeneracy;
@@ -72,14 +73,15 @@ namespace HorseRacingML.Scraping
             _bankroll = _configuredBankroll;
             _useMarketFallbackForAiDegeneracy = config.GetValue<bool?>("Betting:UseMarketFallbackForAiDegeneracy") ?? true;
             _automationSettings = automationSettings ?? throw new ArgumentNullException(nameof(automationSettings));
-            _driver = CreateWebDriver();
+            _isHeadless = false;
+            _driver = CreateWebDriver(_isHeadless);
             _primaryWindowHandle = _driver.CurrentWindowHandle;
         }
         public string? GetActiveScheduleRegion()
         {
             return _activeScheduleRegion;
         }
-        private IWebDriver CreateWebDriver()
+        private IWebDriver CreateWebDriver(bool headless)
         {
             var options = new ChromeOptions();
             options.AddArguments(
@@ -89,7 +91,58 @@ namespace HorseRacingML.Scraping
                 "--no-sandbox",
                 "--disable-dev-shm-usage");
 
+            if (headless)
+            {
+                options.AddArgument("--headless=new");
+            }
+
             return new ChromeDriver(options);
+        }
+
+        public void EnsureDriverMode(bool headless)
+        {
+            lock (_driverLock)
+            {
+                if (_isHeadless == headless && _driver != null)
+                {
+                    try
+                    {
+                        var _ = _driver.CurrentWindowHandle; // Check if alive
+                        return;
+                    }
+                    catch
+                    {
+                        // Driver is dead, proceed to reset
+                    }
+                }
+
+                try
+                {
+                    _driver.Quit();
+                }
+                catch { }
+
+                try
+                {
+                    _driver.Dispose();
+                }
+                catch { }
+
+                _isHeadless = headless;
+                _driver = CreateWebDriver(_isHeadless);
+                _primaryWindowHandle = _driver.CurrentWindowHandle;
+                _bankroll = _configuredBankroll;
+
+                lock (_raceGoingLock)
+                {
+                    _raceGoingByMarketId.Clear();
+                    _raceGoingByVenue.Clear();
+                }
+                lock (_raceTabLock)
+                {
+                    _raceTabHandles.Clear();
+                }
+            }
         }
         private void ResetWebDriver()
         {
@@ -113,7 +166,7 @@ namespace HorseRacingML.Scraping
                     // Ignore failures while disposing the previous driver instance.
                 }
 
-                _driver = CreateWebDriver();
+                _driver = CreateWebDriver(_isHeadless);
                 _primaryWindowHandle = _driver.CurrentWindowHandle;
                 _bankroll = _configuredBankroll;
 
@@ -153,6 +206,8 @@ namespace HorseRacingML.Scraping
             ResetWebDriver();
             return true;
         }
+        // ... (methods kept: TryGetExistingRaceTab, RefreshRaceAsync, ShouldRecalculateAiForMarket, Driver prop, GetEffectiveBankroll, TryRefreshBankrollFromPage, FindDisplayedElement, TryParseCurrency, LoginAsync) ...
+
         private bool TryGetExistingRaceTab(string marketId, out string? handle)
         {
             if (string.IsNullOrWhiteSpace(marketId))
@@ -824,70 +879,9 @@ namespace HorseRacingML.Scraping
 
             wait.Until(d => IsScheduleUrl(d.Url));
         }
-        public DayReportViewModel GenerateDayReport(RacingRepository repo, HyperparameterTrainer trainer, bool showFeatureSignificance = true)
-        {
-            Console.WriteLine("[DayReport][Stage] Starting day report generation and AI probability calculation pipeline.");
-            ReturnToPrimaryWindow();
-            UpdateActiveScheduleRegion(CaptureActiveScheduleRegion());
-            if (!HasCapturedRaceGoing())
-            {
-                CaptureRaceGoingFromSchedule();
-            }
 
-            decimal bankroll;
-            HyperparameterSummary? hyperparameters;
-            List<RaceDayReport> orderedRaces;
-
-            using (repo.BeginDayReportScope())
-            {
-                Console.WriteLine("[DayReport][Stage] Initializing temporary storage and resolving bankroll configuration.");
-                repo.ClearDayReportTables();
-                bankroll = GetEffectiveBankroll();
-                Console.WriteLine($"[DayReport][Stage] Effective bankroll resolved: {bankroll:F2}.");
-                var settings = _automationSettings.GetSnapshot();
-                Console.WriteLine("[DayReport][Stage] Building market scraper and loading automation settings.");
-                var scraper = new BetfairMarketScraper(
-                    repo,
-                    trainer,
-                    _aiOddsCalculator,
-                    bankroll,
-                    settings,
-                    _useMarketFallbackForAiDegeneracy,
-                    GetRaceGoingSnapshot(),
-                    scheduleRegion: GetActiveScheduleRegion(),
-                    raceGoingByVenueLookup: GetRaceGoingByVenueSnapshot(),
-                    computeFeatureContributions: showFeatureSignificance);
-                Console.WriteLine("[DayReport][Stage] Scraping open race tabs and executing AI probability calculations.");
-                var races = scraper.ScrapeOpenRaceTabsForReport(_driver);
-                Console.WriteLine($"[DayReport][Stage] Scrape complete; {races.Count} race(s) captured for the day report.");
-                orderedRaces = races
-                    .OrderBy(r => GetRaceScheduleSortKey(r))
-                    .ThenBy(r => r.RaceTitle ?? string.Empty, StringComparer.OrdinalIgnoreCase)
-                    .ThenBy(r => r.MarketId, StringComparer.Ordinal)
-                    .ToList();
-                Console.WriteLine("[DayReport][Stage] Race ordering finalized; assembling final report view model.");
-                hyperparameters = scraper.LoadedHyperparameters;
-                ReturnToPrimaryWindow();
-            }
-
-            if (hyperparameters != null)
-            {
-                Console.WriteLine("[DayReport][Stage] AI hyperparameters loaded and attached to the report.");
-            }
-
-            Console.WriteLine("[DayReport][Stage] Day report generation complete.");
-
-            return new DayReportViewModel
-            {
-                GeneratedAt = DateTime.UtcNow,
-                Bankroll = bankroll,
-                AiHyperparameters = hyperparameters,
-                Races = orderedRaces
-            };
-        }
-        public async Task OpenHorseRaceMeetingsInNewTabsAsync(
-            int delayBetweenTabsMs = 0,
-            bool closeExistingRaceTabs = true,
+        // Renamed and modified to support URL collection for batching
+        public async Task<List<string>> CollectRaceUrlsAsync(
             TimeSpan? raceWindow = null,
             DateTime? windowReferenceUtc = null,
             TimeSpan? scheduleStartTime = null,
@@ -899,16 +893,6 @@ namespace HorseRacingML.Scraping
                 throw new ArgumentException(
                     "Race window and schedule time filters cannot be used at the same time.",
                     nameof(raceWindow));
-            }
-            HashSet<string> existingMarketIds;
-            if (closeExistingRaceTabs)
-            {
-                CloseAdditionalRaceTabs();
-                existingMarketIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            }
-            else
-            {
-                existingMarketIds = CaptureOpenRaceMarketIds();
             }
 
             ReturnToPrimaryWindow();
@@ -1030,19 +1014,7 @@ namespace HorseRacingML.Scraping
                         {
                             continue;
                         }
-                        string? marketIdFromLink = null;
-                        try
-                        {
-                            marketIdFromLink = BetfairMarketScraper.ExtractMarketId(href);
-                        }
-                        catch (Exception)
-                        {
-                            marketIdFromLink = null;
-                        }
-                        if (!string.IsNullOrWhiteSpace(marketIdFromLink) && existingMarketIds.Contains(marketIdFromLink))
-                        {
-                            continue;
-                        }
+
                         DateTime? raceTime = null;
                         if (raceWindow.HasValue || hasScheduleFilters)
                         {
@@ -1107,19 +1079,6 @@ namespace HorseRacingML.Scraping
                     var href = anchor.GetAttribute("href");
                     if (!string.IsNullOrWhiteSpace(href))
                     {
-                        string? marketIdFromLink = null;
-                        try
-                        {
-                            marketIdFromLink = BetfairMarketScraper.ExtractMarketId(href);
-                        }
-                        catch (Exception)
-                        {
-                            marketIdFromLink = null;
-                        }
-                        if (!string.IsNullOrWhiteSpace(marketIdFromLink) && existingMarketIds.Contains(marketIdFromLink))
-                        {
-                            continue;
-                        }
                         if (hasScheduleFilters)
                         {
                             var textValue = anchor.Text;
@@ -1151,23 +1110,27 @@ namespace HorseRacingML.Scraping
                 }
             }
 
-            IEnumerable<string> urlsToOpen;
             if (raceWindow.HasValue)
             {
-                urlsToOpen = (windowCandidates != null && windowCandidates.Count > 0)
+                return (windowCandidates != null && windowCandidates.Count > 0)
                     ? windowCandidates
                         .OrderBy(kvp => kvp.Value)
                         .Select(kvp => kvp.Key)
                         .ToList()
-                    : Array.Empty<string>();
+                    : new List<string>();
             }
             else
             {
-                urlsToOpen = seen!;
+                return seen!.ToList();
             }
+        }
 
+        public async Task OpenBatchAsync(IEnumerable<string> urls, int delayBetweenTabsMs = 0)
+        {
+            var existingMarketIds = CaptureOpenRaceMarketIds();
             var newlyOpenedMarketIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var url in urlsToOpen)
+
+            foreach (var url in urls)
             {
                 string? marketId = null;
                 try
@@ -1193,6 +1156,27 @@ namespace HorseRacingML.Scraping
                 }
             }
         }
+
+        // Kept for backward compatibility if needed, but redirects to new flow
+        public async Task OpenHorseRaceMeetingsInNewTabsAsync(
+            int delayBetweenTabsMs = 0,
+            bool closeExistingRaceTabs = true,
+            TimeSpan? raceWindow = null,
+            DateTime? windowReferenceUtc = null,
+            TimeSpan? scheduleStartTime = null,
+            TimeSpan? scheduleEndTime = null,
+            string? scheduleRegion = null)
+        {
+            if (closeExistingRaceTabs)
+            {
+                CloseAdditionalRaceTabs();
+            }
+
+            var urls = await CollectRaceUrlsAsync(raceWindow, windowReferenceUtc, scheduleStartTime, scheduleEndTime, scheduleRegion);
+            await OpenBatchAsync(urls, delayBetweenTabsMs);
+        }
+
+        // ... (rest of methods) ...
         private async Task<bool> TrySelectScheduleRegionAsync(string? region)
         {
             if (string.IsNullOrWhiteSpace(region))
@@ -1748,7 +1732,7 @@ return text.trim();";
                     var anchors = raceItem.FindElements(By.XPath(".//a[contains(@href, '/horse-racing/')]")).ToList();
                     if (anchors.Count == 0)
                     {
-                       
+
                         continue;
                     }
 

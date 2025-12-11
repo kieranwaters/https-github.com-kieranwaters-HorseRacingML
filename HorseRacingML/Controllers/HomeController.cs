@@ -26,6 +26,7 @@ namespace HorseRacingML.Controllers
         private readonly BetfairNavigationService _navigationService;
         private readonly AutomationSettingsService _automationSettings;
         private readonly HyperparameterTrainer _trainer;
+        private readonly ScrapingStatusService _statusService;
 
         public HomeController(
             ILogger<HomeController> logger,
@@ -33,7 +34,8 @@ namespace HorseRacingML.Controllers
             RaceResultsScraper raceResultsScraper,
             BetfairNavigationService navigationService,
             AutomationSettingsService automationSettings,
-            HyperparameterTrainer trainer)
+            HyperparameterTrainer trainer,
+            ScrapingStatusService statusService)
         {
             _logger = logger;
             _repo = repo;
@@ -41,6 +43,7 @@ namespace HorseRacingML.Controllers
             _navigationService = navigationService;
             _automationSettings = automationSettings;
             _trainer = trainer;
+            _statusService = statusService;
         }
 
         public IActionResult Index()
@@ -264,26 +267,104 @@ namespace HorseRacingML.Controllers
             return View(new DayReportFilterViewModel());
         }
 
-        [HttpGet]
-        public async Task<IActionResult> DayReport(string startTime, string endTime, string region, bool showFeatureSignificance)
+        // New action to start the background process
+        public IActionResult DayReport(string startTime, string endTime, string region, bool showFeatureSignificance, bool runHeadless)
         {
-            await _navigationService.LoginAsync();
-
             TimeSpan? start = null;
             TimeSpan? end = null;
-
             if (TimeSpan.TryParse(startTime, out var s)) start = s;
             if (TimeSpan.TryParse(endTime, out var e)) end = e;
 
-            await _navigationService.OpenHorseRaceMeetingsInNewTabsAsync(
-                scheduleStartTime: start,
-                scheduleEndTime: end,
-                scheduleRegion: region,
-                closeExistingRaceTabs: true);
+            _statusService.Reset();
 
-            var model = _navigationService.GenerateDayReport(_repo, _trainer, showFeatureSignificance);
+            // Run in background to allow immediate UI response
+            Task.Run(async () =>
+            {
+                try
+                {
+                    _statusService.Update("Initializing browser...");
+                    _navigationService.EnsureDriverMode(runHeadless);
 
-            return View(model);
+                    _statusService.Update("Logging in...");
+                    await _navigationService.LoginAsync();
+
+                    _statusService.Update("Scanning schedule for races...");
+                    var urls = await _navigationService.CollectRaceUrlsAsync(
+                        scheduleStartTime: start,
+                        scheduleEndTime: end,
+                        scheduleRegion: region);
+
+                    _statusService.SetTotal(urls.Count);
+                    _statusService.Update($"Found {urls.Count} races. Starting batch processing...");
+
+                    // Process in batches of 5 to save RAM
+                    const int batchSize = 5;
+                    for (int i = 0; i < urls.Count; i += batchSize)
+                    {
+                        var batch = urls.Skip(i).Take(batchSize).ToList();
+                        _statusService.Update($"Processing batch {(i / batchSize) + 1} ({i + 1}-{Math.Min(i + batchSize, urls.Count)} of {urls.Count})...");
+
+                        // Open batch
+                        await _navigationService.OpenBatchAsync(batch);
+
+                        // Scrape batch
+                        var report = _navigationService.GenerateDayReport(_repo, _trainer, showFeatureSignificance);
+
+                        // Add results to service
+                        if (report?.Races != null)
+                        {
+                            _statusService.AddResults(report.Races);
+                        }
+                    }
+
+                    _statusService.MarkComplete();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error generating day report");
+                    _statusService.Update($"Error: {ex.Message}");
+                }
+            });
+
+            return View("DayReportLive", new DayReportStatus());
+        }
+
+        [HttpGet]
+        public IActionResult GetDayReportProgress()
+        {
+            var snapshot = _statusService.GetSnapshot();
+            var status = new DayReportStatus
+            {
+                Message = _statusService.Message,
+                TotalRaces = _statusService.TotalRaces,
+                ProcessedRaces = _statusService.ProcessedRaces,
+                IsComplete = _statusService.IsComplete
+            };
+
+            // Map internal RaceDayReport to SimpleRaceResult for lightweight JSON transfer
+            foreach (var r in snapshot)
+            {
+                var simpleRace = new SimpleRaceResult
+                {
+                    VenueName = r.VenueName ?? "Unknown",
+                    RaceTime = r.OffTime?.ToString(@"hh\:mm") ?? "??:??",
+                    RaceTitle = r.RaceTitle ?? r.MarketId ?? "",
+                    RaceUrl = r.RaceUrl ?? "",
+                    Runners = r.Runners.Select(run => new SimpleRunnerResult
+                    {
+                        ClothNumber = run.ClothNumber?.ToString(),
+                        HorseName = run.HorseName ?? "Unknown",
+                        BackPrice = run.MarketDecimalOdds,
+                        AiProbability = run.AiProbability ?? 0,
+                        Edge = run.Differential ?? 0,
+                        Stake = run.SuggestedStake ?? 0,
+                        IsBet = (run.SuggestedStake ?? 0) > 0
+                    }).OrderByDescending(x => x.Edge).ToList()
+                };
+                status.Results.Add(simpleRace);
+            }
+
+            return Json(status);
         }
 
         public IActionResult AutomateBets()
