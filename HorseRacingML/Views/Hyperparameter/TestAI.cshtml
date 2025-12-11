@@ -112,7 +112,11 @@
             <input type="number" id="min-other-edge-filter" class="form-control" value="100" step="0.1" />
         </div>
         <div class="col-md-3">
-            <label for="min-lay-edge-filter" class="form-label">Min Edge % (Lay Bets)</label>
+            <label for="min-lay-edge-fav-filter" class="form-label">Min Edge % (Lay AI Favorite)</label>
+            <input type="number" id="min-lay-edge-fav-filter" class="form-control" value="100" step="0.1" />
+        </div>
+        <div class="col-md-3">
+            <label for="min-lay-edge-filter" class="form-label">Min Edge % (Lay Others)</label>
             <input type="number" id="min-lay-edge-filter" class="form-control" value="100" step="0.1" />
         </div>
         <div class="col-md-3 d-flex align-items-end">
@@ -351,6 +355,9 @@
                     const minEdgeLayVal = parseFloat(document.getElementById('min-lay-edge-filter').value);
                     const minEdgeLay = isNaN(minEdgeLayVal) ? 100 : minEdgeLayVal;
 
+                    const minEdgeLayFavVal = parseFloat(document.getElementById('min-lay-edge-fav-filter').value);
+                    const minEdgeLayFav = isNaN(minEdgeLayFavVal) ? 100 : minEdgeLayFavVal;
+
                     const includeFees = document.getElementById('include-fees-checkbox').checked;
                     const kellyDampener = parseFloat(document.getElementById('KellyDampener').value);
                     const startingBankroll = parseFloat(document.getElementById('StartingBankroll').value);
@@ -453,7 +460,15 @@
                             // Edge = MarketProb - AIProb
                             if (marketProb > aiProb) {
                                 const edgePercent = (marketProb - aiProb) * 100;
-                                if (edgePercent >= minEdgeLay) {
+                                let isCandidate = false;
+
+                                if (isFav && edgePercent >= minEdgeLayFav) {
+                                    isCandidate = true;
+                                } else if (!isFav && edgePercent >= minEdgeLay) {
+                                    isCandidate = true;
+                                }
+
+                                if (isCandidate) {
                                     bets.push({
                                         runner: r,
                                         type: 'Lay',
