@@ -1088,7 +1088,11 @@ namespace HorseRacingML.ML
                     {
                         for (int i = 0; i < allVariables.Count; i++)
                         {
-                            sess.run(allVariables[i].assign(bestWeights[i]));
+                            // Fix for InvalidCastException: Explicitly convert NDArray to constant Tensor
+                            var weightData = bestWeights[i].ToArray<float>();
+                            var shape = bestWeights[i].shape;
+                            var tensor = tf.constant(weightData, shape: shape);
+                            sess.run(allVariables[i].assign(tensor));
                         }
                     }
                     (trainLoss, trainFocalLoss) = ComputeDatasetMetrics(trainFeatureTensor, trainLabelTensor, trainPreds, trainLabels.Length);
@@ -2147,7 +2151,14 @@ namespace HorseRacingML.ML
 
                     if (hasValidationExamples && bestWeights.Count > 0)
                     {
-                        for (int i = 0; i < allVariables.Count; i++) sess.run(allVariables[i].assign(bestWeights[i]));
+                        for (int i = 0; i < allVariables.Count; i++)
+                        {
+                            // Fix for InvalidCastException: Explicitly convert NDArray to constant Tensor
+                            var weightData = bestWeights[i].ToArray<float>();
+                            var shape = bestWeights[i].shape;
+                            var tensor = tf.constant(weightData, shape: shape);
+                            sess.run(allVariables[i].assign(tensor));
+                        }
                     }
                     (trainLoss, trainFocalLoss) = ComputeDatasetMetrics(trainFeatureTensor, trainLabelTensor, trainPreds, n);
                     trainBrier = ComputeBrier(trainPreds, data.TrainLabels.ToArray()); // ToArray if List
