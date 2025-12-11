@@ -22,6 +22,9 @@ namespace HorseRacingML.Models
     {
         public string HorseName { get; set; }
         public int? HistoricalRaceCount { get; set; }
+        public double AiProbability { get; set; }
+        public decimal BookmakerOdds { get; set; }
+        public bool IsWinner { get; set; }
     }
 
     public class DayResultViewModel

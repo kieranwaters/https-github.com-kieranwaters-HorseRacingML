@@ -1,4 +1,5 @@
 ﻿@model HorseRacingML.Models.AITestResultViewModel
+@using System.Text.Json
 
 @{
     ViewData["Title"] = "Test AI";
@@ -103,8 +104,16 @@
             </select>
         </div>
         <div class="col-md-3">
-            <label for="min-edge-filter" class="form-label">Minimum Edge %</label>
+            <label for="min-edge-filter" class="form-label">Min Edge % (AI Favorite)</label>
             <input type="number" id="min-edge-filter" class="form-control" value="-100" step="0.1" />
+        </div>
+        <div class="col-md-3">
+            <label for="min-other-edge-filter" class="form-label">Min Edge % (Other Runners)</label>
+            <input type="number" id="min-other-edge-filter" class="form-control" value="100" step="0.1" />
+        </div>
+        <div class="col-md-3">
+            <label for="min-lay-edge-filter" class="form-label">Min Edge % (Lay Bets)</label>
+            <input type="number" id="min-lay-edge-filter" class="form-control" value="100" step="0.1" />
         </div>
         <div class="col-md-3 d-flex align-items-end">
             <div class="form-check mb-3 me-3">
@@ -161,9 +170,8 @@
                             <th>Actual Winner</th>
                             <th>Result</th>
                             <th>Bankroll</th>
-                            <th>Stake</th>
-                            <th>AI Odds</th>
-                            <th>Bookmaker Odds</th>
+                            <th>Net Profit</th>
+                            <th>Bets</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -171,20 +179,20 @@
                         {
                             var runnerCount = race.Runners?.Count() ?? 0;
                             var runnerStarts = race.Runners != null ? string.Join(",", race.Runners.Select(r => r.HistoricalRaceCount ?? 0)) : "";
+                            var runnersJson = JsonSerializer.Serialize(race.Runners);
+
                             <tr class="race-row clickable-row"
                                 data-runner-count="@runnerCount"
                                 data-runner-starts="@runnerStarts"
-                                data-is-correct="@race.IsCorrectPrediction.ToString()"
-                                data-ai-odds="@race.AiOdds"
-                                data-bookmaker-odds="@race.BookmakerOdds">
+                                data-predicted-winner="@race.PredictedWinner"
+                                data-runners="@runnersJson">
                                 <td>@race.RaceTitle</td>
                                 <td>@race.PredictedWinner</td>
                                 <td>@race.ActualWinner</td>
-                                <td>@(race.IsCorrectPrediction ? "Correct" : "Incorrect")</td>
-                                <td>@race.Bankroll.ToString("C")</td>
-                                <td>@race.Stake.ToString("C")</td>
-                                <td>@race.AiOdds.ToString("0.00")</td>
-                                <td>@race.BookmakerOdds.ToString("0.00")</td>
+                                <td class="race-outcome-cell">@(race.IsCorrectPrediction ? "Correct" : "Incorrect")</td>
+                                <td class="race-bankroll-cell">@race.Bankroll.ToString("C")</td>
+                                <td class="race-profit-cell">@(((race.IsCorrectPrediction ? (race.Stake * (race.BookmakerOdds - 1)) : -race.Stake)).ToString("C"))</td>
+                                <td class="race-bets-count-cell">1</td>
                             </tr>
                             <tr class="race-details hidden">
                                 <td colspan="8">
@@ -193,20 +201,15 @@
                                             <thead>
                                                 <tr>
                                                     <th>Horse Name</th>
-                                                    <th>Historical Races</th>
+                                                    <th>Type</th>
+                                                    <th>Odds</th>
+                                                    <th>Stake</th>
+                                                    <th>Result</th>
+                                                    <th>Profit</th>
                                                 </tr>
                                             </thead>
-                                            <tbody>
-                                                @if (race.Runners != null)
-                                                {
-                                                    @foreach (var runner in race.Runners)
-                                                    {
-                                                        <tr>
-                                                            <td>@runner.HorseName</td>
-                                                            <td>@(runner.HistoricalRaceCount.HasValue? runner.HistoricalRaceCount.Value.ToString() : "N/A")</td>
-                                                        </tr>
-                                                    }
-                                                }
+                                            <tbody class="bets-details-body">
+                                                <!-- Populated by JS -->
                                             </tbody>
                                         </table>
                                     </div>
@@ -321,8 +324,8 @@
     }
     <script>
         document.addEventListener('DOMContentLoaded', function () {
+            // Toggle details on row click
             const raceRows = document.querySelectorAll('.clickable-row');
-
             raceRows.forEach(row => {
                 row.addEventListener('click', function () {
                     const detailsRow = this.nextElementSibling;
@@ -335,102 +338,358 @@
             const hasResults = @Model.HasResult.ToString().ToLower();
             if (hasResults) {
                 document.getElementById('apply-filters-btn').addEventListener('click', function () {
-                    // Get filter and simulation values
+                    // --- 1. Gather User Inputs ---
                     const minStarts = parseInt(document.getElementById('min-starts-filter').value, 10);
                     const maxRunners = parseInt(document.getElementById('max-runners-filter').value, 10);
-                    const minEdgeVal = parseFloat(document.getElementById('min-edge-filter').value);
-                    const minEdge = isNaN(minEdgeVal) ? -100 : minEdgeVal;
+
+                    const minEdgeFavVal = parseFloat(document.getElementById('min-edge-filter').value);
+                    const minEdgeFav = isNaN(minEdgeFavVal) ? -100 : minEdgeFavVal;
+
+                    const minEdgeOtherVal = parseFloat(document.getElementById('min-other-edge-filter').value);
+                    const minEdgeOther = isNaN(minEdgeOtherVal) ? 100 : minEdgeOtherVal;
+
+                    const minEdgeLayVal = parseFloat(document.getElementById('min-lay-edge-filter').value);
+                    const minEdgeLay = isNaN(minEdgeLayVal) ? 100 : minEdgeLayVal;
+
                     const includeFees = document.getElementById('include-fees-checkbox').checked;
                     const kellyDampener = parseFloat(document.getElementById('KellyDampener').value);
                     const startingBankroll = parseFloat(document.getElementById('StartingBankroll').value);
 
-                    const allRaceRows = document.querySelectorAll('.race-row');
-                    const visibleRows = [];
-
-                    // Step 1: Filter rows based on visibility criteria
-                    allRaceRows.forEach(row => {
-                        const runnerCount = parseInt(row.dataset.runnerCount, 10);
-                        const runnerStarts = row.dataset.runnerStarts.split(',').map(s => parseInt(s, 10) || 0);
-
-                        const aiOdds = parseFloat(row.dataset.aiOdds);
-                        const bookmakerOdds = parseFloat(row.dataset.bookmakerOdds);
-                        const aiProb = 1 / aiOdds;
-                        const bookmakerProb = 1 / bookmakerOdds;
-                        const edgePercent = (aiProb - bookmakerProb) * 100;
-
-                        const meetsMinStarts = !runnerStarts.some(starts => starts < minStarts);
-                        const meetsMaxRunners = runnerCount <= maxRunners;
-                        const meetsMinEdge = edgePercent >= minEdge;
-
-                        const detailsRow = row.nextElementSibling;
-
-                        if (meetsMinStarts && meetsMaxRunners && meetsMinEdge) {
-                            visibleRows.push(row);
-                            row.style.display = '';
-                            if (detailsRow && detailsRow.classList.contains('race-details')) detailsRow.style.display = '';
-                        } else {
-                            row.style.display = 'none';
-                            if (detailsRow && detailsRow.classList.contains('race-details')) detailsRow.style.display = 'none';
-                        }
-                    });
-
-                    // Step 2: Recalculate simulation for visible rows
                     let currentBankroll = startingBankroll;
                     let totalStaked = 0;
                     let winCount = 0;
                     let lossCount = 0;
-                    let correctPredictions = 0;
+                    let totalBets = 0;
 
-                    visibleRows.forEach(row => {
-                        const aiOdds = parseFloat(row.dataset.aiOdds);
-                        const bookmakerOdds = parseFloat(row.dataset.bookmakerOdds);
-                        const isCorrect = row.dataset.isCorrect === 'True';
+                    const allRaceRows = document.querySelectorAll('.race-row');
 
-                        if (isCorrect) {
+                    let visibleRaceCount = 0;
+                    let correctPredictions = 0; // Tracks if AI's top pick won (for summary accuracy)
+
+                    // --- 2. Iterate Races ---
+                    allRaceRows.forEach(row => {
+                        const runnerCount = parseInt(row.dataset.runnerCount, 10);
+                        const runnerStartsArr = row.dataset.runnerStarts.split(',').map(s => parseInt(s, 10) || 0);
+                        const predictedWinnerName = row.dataset.predictedWinner;
+
+                        // Parse full runner data
+                        let runners = [];
+                        try {
+                            runners = JSON.parse(row.dataset.runners);
+                        } catch (e) {
+                            console.error("Failed to parse runners JSON", e);
+                        }
+
+                        // Basic filtering (Starts & Max Runners)
+                        const meetsMinStarts = !runnerStartsArr.some(starts => starts < minStarts);
+                        const meetsMaxRunners = runnerCount <= maxRunners;
+
+                        // If race doesn't meet basic criteria, hide it
+                        if (!meetsMinStarts || !meetsMaxRunners) {
+                            row.style.display = 'none';
+                            const detailsRow = row.nextElementSibling;
+                            if (detailsRow && detailsRow.classList.contains('race-details')) {
+                                detailsRow.style.display = 'none';
+                            }
+                            return;
+                        }
+
+                        // Race is visible
+                        visibleRaceCount++;
+                        row.style.display = '';
+                        const detailsRow = row.nextElementSibling;
+                        if (detailsRow && detailsRow.classList.contains('race-details')) {
+                            detailsRow.style.display = '';
+                        }
+
+                        // Determine AI Favorite (Max AI Prob)
+                        let aiFavorite = null;
+                        let maxProb = -1;
+                        runners.forEach(r => {
+                            if (r.AiProbability > maxProb) {
+                                maxProb = r.AiProbability;
+                                aiFavorite = r;
+                            }
+                        });
+
+                        // Identify Candidates & Calculate Edges
+                        let bets = [];
+
+                        runners.forEach(r => {
+                            const aiProb = r.AiProbability;
+                            const bookOdds = r.BookmakerOdds;
+                            const marketProb = bookOdds > 1 ? (1.0 / bookOdds) : 0;
+                            const isFav = (aiFavorite && r.HorseName === aiFavorite.HorseName);
+
+                            // Skip if no odds
+                            if (bookOdds <= 1) return;
+
+                            // 1. Back Bets (AI Fav or Other)
+                            if (aiProb > marketProb) {
+                                const edgePercent = (aiProb - marketProb) * 100;
+                                let isCandidate = false;
+
+                                if (isFav && edgePercent >= minEdgeFav) {
+                                    isCandidate = true;
+                                } else if (!isFav && edgePercent >= minEdgeOther) {
+                                    isCandidate = true;
+                                }
+
+                                if (isCandidate) {
+                                    bets.push({
+                                        runner: r,
+                                        type: 'Back',
+                                        edge: edgePercent,
+                                        odds: bookOdds,
+                                        aiProb: aiProb,
+                                        marketProb: marketProb
+                                    });
+                                }
+                            }
+
+                            // 2. Lay Bets
+                            // Lay Edge: Market Prob > AI Prob.
+                            // Meaning market thinks it wins (high prob), AI thinks it loses (low prob).
+                            // Edge = MarketProb - AIProb
+                            if (marketProb > aiProb) {
+                                const edgePercent = (marketProb - aiProb) * 100;
+                                if (edgePercent >= minEdgeLay) {
+                                    bets.push({
+                                        runner: r,
+                                        type: 'Lay',
+                                        edge: edgePercent,
+                                        odds: bookOdds,
+                                        aiProb: aiProb,
+                                        marketProb: marketProb
+                                    });
+                                }
+                            }
+                        });
+
+                        // Sort Bets by Edge Descending (Priority)
+                        bets.sort((a, b) => b.edge - a.edge);
+
+                        // Calculate Stakes & Outcomes
+                        let raceNetProfit = 0;
+                        let raceStaked = 0;
+                        let executedBets = [];
+
+                        bets.forEach(bet => {
+                            let stake = 0;
+                            let profit = 0;
+                            let won = false;
+
+                            // Calculate Kelly Stake
+                            if (bet.type === 'Back') {
+                                // Standard Kelly: (p(b-1) - q) / (b-1)  =  (p*b - 1) / (b - 1) ?
+                                // Simpler: Edge / (Odds - 1)
+                                // Edge is prob diff.
+                                // Proper Kelly Fraction f* = (p*b - 1) / (b - 1)
+                                // where p = winning prob, b = decimal odds.
+                                // Note: (p - 1/b) * b / (b-1) ... let's use the Edge / (Odds - 1) approx which is common
+                                // or the exact formula:
+                                // Fraction = (AiProb * bet.odds - 1) / (bet.odds - 1);
+
+                                const kellyFraction = (bet.aiProb * bet.odds - 1) / (bet.odds - 1);
+                                if (kellyFraction > 0) {
+                                    stake = (currentBankroll * kellyFraction) / kellyDampener;
+                                }
+
+                                // Outcome
+                                if (stake > 0) {
+                                    raceStaked += stake;
+                                    // Back bet wins if horse wins
+                                    if (bet.runner.IsWinner) {
+                                        won = true;
+                                        let grossProfit = stake * (bet.odds - 1);
+                                        if (includeFees) grossProfit *= 0.98;
+                                        profit = grossProfit;
+                                    } else {
+                                        won = false;
+                                        profit = -stake;
+                                    }
+                                }
+                            } else if (bet.type === 'Lay') {
+                                // Lay Kelly: Stake (backer's stake) = Bankroll * (MarketProb - AiProb) / (1 - MarketProb) ?
+                                // A common Lay Kelly formula: Liability = Bankroll * Fraction
+                                // Fraction = (q * (1 - p_market) - p_market * (1-q)) / (1-p_market) ... complex.
+                                // Let's use the simple "Back the other side" logic.
+                                // We are backing "Not Horse". Odds = 1 / (1 - MarketProb)? No, Lay Odds are specific.
+                                // Lay Odds = BookmakerOdds.
+                                // Effective Back Odds for us = Odds / (Odds - 1) ? No.
+                                // Let's use the formula: Fraction = (TrueProbOfLosing - ImpliedProbOfLosing) / ImpliedProbOfLosing ?
+                                // Let's stick to user's requirement: Dampener decides liability.
+                                // We will use Edge Magnitude to scale.
+                                // Edge = MarketProb - AiProb.
+                                // Let's assume proportional stake based on edge magnitude similar to Back.
+                                // Fraction = Edge / (1 - 1/Odds)?
+                                // Let's use a robust approximation:
+                                // Fraction = (Probability of Winning Lay - Market Probability of Winning Lay) / (Market Odds of Winning Lay - 1) ??
+                                // Actually, simpler: Treat it as backing "The Field".
+                                // Prob(Field Wins) = 1 - AiProb.
+                                // Market Prob(Field Wins) = 1 - MarketProb.
+                                // Odds(Field Wins) ~ 1 / (1 - MarketProb).
+                                // Edge for Field = (1 - AiProb) - (1 - MarketProb) = MarketProb - AiProb. (Matches our Edge calc).
+                                // Kelly Fraction = Edge / (OddsField - 1).
+                                // OddsField - 1 = (1 / (1 - MarketProb)) - 1 = MarketProb / (1 - MarketProb).
+                                // So Fraction = (MarketProb - AiProb) * (1 - MarketProb) / MarketProb.
+
+                                const edge = bet.marketProb - bet.aiProb;
+                                const oddsFieldMinus1 = (bet.marketProb / (1.0 - bet.marketProb));
+                                const kellyFraction = edge / oddsFieldMinus1;
+
+                                if (kellyFraction > 0) {
+                                    // Stake here represents LIABILITY or STAKE?
+                                    // User said "lose nearly my bankroll". Standard Kelly calculates AMOUNT TO RISK (Liability).
+                                    // So Liability = Bankroll * Fraction / Dampener.
+                                    const liability = (currentBankroll * kellyFraction) / kellyDampener;
+
+                                    // For a Lay bet at odds O, Liability = Stake * (O - 1).
+                                    // So Backer's Stake (Volume) = Liability / (O - 1).
+                                    const backersStake = liability / (bet.odds - 1);
+
+                                    stake = liability; // We track liability as our "stake" / risk.
+
+                                    if (stake > 0) {
+                                        raceStaked += stake;
+                                        // Lay bet wins if horse LOSES (IsWinner == false)
+                                        if (!bet.runner.IsWinner) {
+                                            won = true;
+                                            // We win the backer's stake
+                                            let grossProfit = backersStake;
+                                            if (includeFees) grossProfit *= 0.98;
+                                            profit = grossProfit;
+                                        } else {
+                                            won = false;
+                                            // We lose the liability
+                                            profit = -stake;
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Limits
+                            stake = Math.round(stake * 100) / 100;
+                            if (stake < 0.01) stake = 0;
+                            // Ensure we don't bet more than we have (simple check, though Kelly theoretically prevents ruin)
+                            // But since we are iterating bets in a race sequentially...
+                            // Actually, standard practice is to use STARTING bankroll for all bets in same event to avoid correlation issues,
+                            // OR update "Available Funds".
+                            // We will just cap at currentBankroll.
+                            if (stake > currentBankroll) stake = currentBankroll;
+
+                            if (stake > 0) {
+                                executedBets.push({
+                                    runner: bet.runner,
+                                    type: bet.type,
+                                    odds: bet.odds,
+                                    stake: stake, // Risk Amount
+                                    profit: profit,
+                                    won: won
+                                });
+
+                                // Update Bankroll immediately? Or after race?
+                                // "Priority given to biggest edge". This implies we use funds for best bets first.
+                                // So we deduct from 'available' currentBankroll.
+                                // BUT we add profit back only after race?
+                                // Let's simulate sequential allocation.
+                                // We deduct the RISK (stake) from currentBankroll immediately so next bet has less.
+                                // If we win, we add (Stake + Profit) back.
+                                // If we lose, we add nothing (Stake is gone).
+
+                                currentBankroll -= stake; // Deduct risk
+                                if (profit > 0) {
+                                    // Win: Get back risk + profit
+                                    // Lay Win: Risk (Liability) was "held", we get it back + profit.
+                                    // Back Win: Stake was paid, we get Stake + Profit.
+                                    // Math: currentBankroll = (current - Stake) + Stake + Profit = current + Profit.
+                                    // So just add (Stake + Profit) to the reduced bankroll.
+
+                                    // Actually, simpler:
+                                    // Bankroll is updated by Profit at end.
+                                    // But for staking calc of NEXT horse in SAME race, should we reduce?
+                                    // Yes, to respect "Priority".
+
+                                    // Deferred update for "Winning" part, immediate update for "Risking" part.
+                                    raceNetProfit += profit;
+                                } else {
+                                    // Loss: Risk is gone.
+                                    raceNetProfit += profit; // Profit is negative (-stake)
+                                }
+
+                                if (won) winCount++; else lossCount++;
+                                totalBets++;
+                            }
+                        });
+
+                        // End of Race Re-conciliation
+                        // We deducted stakes as we went. Now we add back the Returns (Stake + Profit) for winners?
+                        // Wait, my logic above: `currentBankroll -= stake`.
+                        // If Win: `profit` is positive net gain. Return = Stake + Profit.
+                        // If Lose: `profit` is -stake. Return = 0.
+                        // So correct update after race is:
+                        // We already subtracted stakes. Now add back Returns.
+
+                        executedBets.forEach(b => {
+                            if (b.profit > 0) {
+                                // We won. We get back our Risk (Stake) + Net Profit.
+                                currentBankroll += (b.stake + b.profit);
+                            }
+                            // If lost, we get back nothing. Stake remains deducted.
+                        });
+
+                        // Update Race Row UI
+                        // Summary Cells
+                        const profitCell = row.querySelector('.race-profit-cell');
+                        const bankrollCell = row.querySelector('.race-bankroll-cell');
+                        const betsCountCell = row.querySelector('.race-bets-count-cell');
+                        const outcomeCell = row.querySelector('.race-outcome-cell');
+
+                        profitCell.textContent = raceNetProfit.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+                        if (raceNetProfit > 0) profitCell.classList.add('text-success'); else if (raceNetProfit < 0) profitCell.classList.add('text-danger'); else profitCell.classList.remove('text-success', 'text-danger');
+
+                        bankrollCell.textContent = currentBankroll.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+                        betsCountCell.textContent = executedBets.length;
+
+                        // Check if Predicted Winner Won (for AI Accuracy stat only)
+                        const predWinner = runners.find(r => r.HorseName === predictedWinnerName);
+                        if (predWinner && predWinner.IsWinner) {
                             correctPredictions++;
+                            outcomeCell.textContent = "AI Winner";
+                            outcomeCell.classList.add('text-success');
+                        } else {
+                            outcomeCell.textContent = "AI Lost";
+                            outcomeCell.classList.remove('text-success');
                         }
 
-                        // Recalculate stake using Kelly Criterion
-                        const aiProb = 1 / aiOdds;
-                        const bookmakerProb = 1 / bookmakerOdds;
-                        const edge = aiProb - bookmakerProb;
-                        let stake = 0;
+                        // Update Details Table
+                        const detailsBody = detailsRow.querySelector('.bets-details-body');
+                        detailsBody.innerHTML = ''; // Clear previous
 
-                        if (edge > 0) {
-                            const kellyFraction = edge / (bookmakerOdds - 1);
-                            stake = currentBankroll * kellyFraction / kellyDampener;
+                        if (executedBets.length === 0) {
+                            detailsBody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No bets placed meeting criteria.</td></tr>';
+                        } else {
+                            executedBets.forEach(b => {
+                                const tr = document.createElement('tr');
+                                tr.innerHTML = `
+                                    <td>${b.runner.HorseName}</td>
+                                    <td><span class="badge ${b.type === 'Back' ? 'bg-success' : 'bg-danger'}">${b.type}</span></td>
+                                    <td>${b.odds.toFixed(2)}</td>
+                                    <td>${b.stake.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}</td>
+                                    <td class="${b.won ? 'text-success' : 'text-danger'}">${b.won ? 'Win' : 'Loss'}</td>
+                                    <td class="${b.profit >= 0 ? 'text-success' : 'text-danger'}">${b.profit.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}</td>
+                                `;
+                                detailsBody.appendChild(tr);
+                            });
                         }
 
-                        // Round stake to 2 decimal places and ensure minimums
-                        stake = Math.round(stake * 100) / 100;
-                        if (stake > 0 && stake < 0.01) stake = 0.01;
-                        if (stake > currentBankroll) stake = currentBankroll;
-
-                        let profit = isCorrect ? (stake * (bookmakerOdds - 1)) : -stake;
-
-                        if (includeFees && profit > 0) {
-                            profit *= 0.98; // Apply 2% commission
-                        }
-
-                        totalStaked += stake;
-                        currentBankroll += profit;
-
-                        if (stake > 0) {
-                            if (isCorrect) winCount++;
-                            else lossCount++;
-                        }
-
-                        // Update the row display
-                        row.querySelector('td:nth-child(5)').textContent = currentBankroll.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
-                        row.querySelector('td:nth-child(6)').textContent = stake.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+                        totalStaked += raceStaked;
                     });
 
-                    // Step 3: Update the summary display
-                    const visibleRaceCount = visibleRows.length;
-                    const accuracy = visibleRaceCount > 0 ? (correctPredictions / visibleRaceCount) : 0;
+                    // --- 3. Update Global Summary ---
                     const finalProfit = currentBankroll - startingBankroll;
                     const roi = totalStaked > 0 ? (finalProfit / totalStaked) : 0;
-                    const betsPlaced = winCount + lossCount;
+                    const accuracy = visibleRaceCount > 0 ? (correctPredictions / visibleRaceCount) : 0;
 
                     document.getElementById('summary-validation-races').textContent = visibleRaceCount;
                     document.getElementById('summary-validation-accuracy').textContent = accuracy.toLocaleString('en-US', { style: 'percent', minimumFractionDigits: 2 });
@@ -438,7 +697,7 @@
                     document.getElementById('summary-profit').textContent = finalProfit.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
                     document.getElementById('summary-total-staked').textContent = totalStaked.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
                     document.getElementById('summary-roi').textContent = roi.toLocaleString('en-US', { style: 'percent', minimumFractionDigits: 2 });
-                    document.getElementById('summary-bets-placed').textContent = `${betsPlaced} (Wins: ${winCount}, Losses: ${lossCount})`;
+                    document.getElementById('summary-bets-placed').textContent = `${totalBets} (Wins: ${winCount}, Losses: ${lossCount})`;
                 });
             }
         });
