@@ -2227,6 +2227,35 @@ return text.trim();";
                 // Ignore if the window cannot be focused; caller will handle subsequent failures.
             }
         }
+        public BetfairScrapeResult GenerateDayReport(
+           RacingRepository repo,
+           HyperparameterTrainer trainer,
+           bool showFeatureSignificance)
+        {
+            var bankroll = GetEffectiveBankroll(refreshFromPage: true);
+            var settings = _automationSettings.GetSnapshot();
+            var scraper = new BetfairMarketScraper(
+                repo,
+                trainer,
+                _aiOddsCalculator,
+                bankroll,
+                settings,
+                useMarketFallbackForAiDegeneracy: _useMarketFallbackForAiDegeneracy,
+                raceGoingLookup: GetRaceGoingSnapshot(),
+                computeAiProbabilities: true,
+                scheduleRegion: GetActiveScheduleRegion(),
+                raceGoingByVenueLookup: GetRaceGoingByVenueSnapshot(),
+                computeFeatureContributions: showFeatureSignificance);
+
+            var result = new BetfairScrapeResult();
+            var races = scraper.ScrapeOpenRaceTabsForReport(_driver);
+            if (races != null)
+            {
+                result.Races.AddRange(races);
+            }
+
+            return result;
+        }
         private static DateTime GetRaceScheduleSortKey(RaceDayReport race)
         {
             var schedule = GetRaceScheduleDateTime(race);

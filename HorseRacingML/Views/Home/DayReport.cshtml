@@ -2759,7 +2759,7 @@ else
                         }
                     }
                     let stake = NaN;
-                    const bankroll = customKellyBankroll ?? impliedBankroll ?? reportBankroll ?? null;
+                    const bankroll = customKellyBankroll ?? reportBankroll ?? null;
                     if (customStakeAmount !== null && effectiveStakeType !== 'none') {
                         stake = customStakeAmount;
                     } else if (bankroll !== null &&
@@ -2775,6 +2775,12 @@ else
                             stake = bankroll * effectiveKellyFraction;
                         }
                     }
+                    row.classList.remove('runner-edge-back', 'runner-edge-lay');
+                    if (effectiveStakeType === 'back') {
+                        row.classList.add('runner-edge-back');
+                    } else if (effectiveStakeType === 'lay') {
+                        row.classList.add('runner-edge-lay');
+                    }
                     if (kellyCell) {
                         const kellyText = formatKellyPercent(effectiveKellyFraction);
                         if (effectiveStakeType === 'lay') {
@@ -2783,7 +2789,13 @@ else
                             kellyCell.textContent = kellyText ?? '-';
                         }
                     }
-                    if (Number.isFinite(stake) && stake > 0) {
+                     let displayedText = '-';
+
+                    // If no active stake but there was original text and NO current recommendation, show original text (or dash)
+                    if (effectiveStakeType === 'none') {
+                         displayedText = '-';
+                    }
+                   if (Number.isFinite(stake) && stake > 0) {
                         let adjustedStake = stake;
                         if (Number.isFinite(stakeDampener) && stakeDampener > 0) {
                             adjustedStake /= stakeDampener;
@@ -2791,12 +2803,12 @@ else
                         if (adjustedStake > 0) {
                             const formatted = formatStakeDisplay(adjustedStake, effectiveStakeType);
                             if (formatted) {
-                                element.textContent = formatted;
-                                return;
+                                displayedText = formatted;
                             }
                         }
                     }
-                    element.textContent = originalText && originalText.trim() !== '-' ? originalText : '-';
+
+                    element.textContent = displayedText;
                 });
             };
             const setCustomKellyBankroll = (value) => {
