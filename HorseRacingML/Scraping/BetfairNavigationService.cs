@@ -2184,7 +2184,7 @@ return text.trim();";
             return false;
         }
 
-        private void CloseAdditionalRaceTabs()
+        public void CloseAdditionalRaceTabs()
         {
             var handles = _driver.WindowHandles.ToList();
             foreach (var handle in handles)

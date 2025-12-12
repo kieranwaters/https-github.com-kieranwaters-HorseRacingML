@@ -316,7 +316,7 @@ namespace HorseRacingML.Controllers
                             _statusService.AddResults(report.Races);
                         }
                     }
-
+                    _navigationService.CloseAdditionalRaceTabs();
                     _statusService.MarkComplete();
                 }
                 catch (Exception ex)
