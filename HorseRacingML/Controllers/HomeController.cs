@@ -268,103 +268,36 @@ namespace HorseRacingML.Controllers
         }
 
         // New action to start the background process
-        public IActionResult DayReport(string startTime, string endTime, string region, bool showFeatureSignificance, bool runHeadless)
+        public async Task<IActionResult> DayReport(string startTime, string endTime, string region, bool showFeatureSignificance, bool runHeadless)
         {
             TimeSpan? start = null;
             TimeSpan? end = null;
             if (TimeSpan.TryParse(startTime, out var s)) start = s;
             if (TimeSpan.TryParse(endTime, out var e)) end = e;
 
-            _statusService.Reset();
+            _navigationService.EnsureDriverMode(runHeadless);
+            await _navigationService.LoginAsync();
+            await _navigationService.OpenHorseRaceMeetingsInNewTabsAsync(
+                delayBetweenTabsMs: 0,
+                closeExistingRaceTabs: true,
+                scheduleStartTime: start,
+                scheduleEndTime: end,
+                scheduleRegion: region);
 
-            // Run in background to allow immediate UI response
-            Task.Run(async () =>
+            var result = _navigationService.GenerateDayReport(_repo, _trainer, showFeatureSignificance);
+            var bankroll = _navigationService.GetEffectiveBankroll();
+            var model = new DayReportViewModel
             {
-                try
-                {
-                    _statusService.Update("Initializing browser...");
-                    _navigationService.EnsureDriverMode(runHeadless);
-
-                    _statusService.Update("Logging in...");
-                    await _navigationService.LoginAsync();
-
-                    _statusService.Update("Scanning schedule for races...");
-                    var urls = await _navigationService.CollectRaceUrlsAsync(
-                        scheduleStartTime: start,
-                        scheduleEndTime: end,
-                        scheduleRegion: region);
-
-                    _statusService.SetTotal(urls.Count);
-                    _statusService.Update($"Found {urls.Count} races. Starting batch processing...");
-
-                    // Process in batches of 5 to save RAM
-                    const int batchSize = 5;
-                    for (int i = 0; i < urls.Count; i += batchSize)
-                    {
-                        var batch = urls.Skip(i).Take(batchSize).ToList();
-                        _statusService.Update($"Processing batch {(i / batchSize) + 1} ({i + 1}-{Math.Min(i + batchSize, urls.Count)} of {urls.Count})...");
-
-                        // Open batch
-                        await _navigationService.OpenBatchAsync(batch);
-
-                        // Scrape batch
-                        var report = _navigationService.GenerateDayReport(_repo, _trainer, showFeatureSignificance);
-
-                        // Add results to service
-                        if (report?.Races != null)
-                        {
-                            _statusService.AddResults(report.Races);
-                        }
-                    }
-                    _navigationService.CloseAdditionalRaceTabs();
-                    _statusService.MarkComplete();
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error generating day report");
-                    _statusService.Update($"Error: {ex.Message}");
-                }
-            });
-
-            return View("DayReportLive", new DayReportStatus());
-        }
-
-        [HttpGet]
-        public IActionResult GetDayReportProgress()
-        {
-            var snapshot = _statusService.GetSnapshot();
-            var status = new DayReportStatus
-            {
-                Message = _statusService.Message,
-                TotalRaces = _statusService.TotalRaces,
-                ProcessedRaces = _statusService.ProcessedRaces,
-                IsComplete = _statusService.IsComplete
+                GeneratedAt = DateTime.UtcNow,
+                Bankroll = bankroll,
+                AiHyperparameters = _trainer.GetBestModelSummary(),
+                Races = result.Races,
+                FilterStartTime = start,
+                FilterEndTime = end,
+                InitialRegion = region
             };
 
-            // Map internal RaceDayReport to SimpleRaceResult for lightweight JSON transfer
-            foreach (var r in snapshot)
-            {
-                var simpleRace = new SimpleRaceResult
-                {
-                    VenueName = r.VenueName ?? "Unknown",
-                    RaceTime = r.OffTime?.ToString(@"hh\:mm") ?? "??:??",
-                    RaceTitle = r.RaceTitle ?? r.MarketId ?? "",
-                    RaceUrl = r.RaceUrl ?? "",
-                    Runners = r.Runners.Select(run => new SimpleRunnerResult
-                    {
-                        ClothNumber = run.ClothNumber?.ToString(),
-                        HorseName = run.HorseName ?? "Unknown",
-                        BackPrice = run.MarketDecimalOdds,
-                        AiProbability = run.AiProbability ?? 0,
-                        Edge = run.Differential ?? 0,
-                        Stake = run.SuggestedStake ?? 0,
-                        IsBet = (run.SuggestedStake ?? 0) > 0
-                    }).OrderByDescending(x => x.Edge).ToList()
-                };
-                status.Results.Add(simpleRace);
-            }
-
-            return Json(status);
+            return View("DayReport", model);
         }
 
         public IActionResult AutomateBets()

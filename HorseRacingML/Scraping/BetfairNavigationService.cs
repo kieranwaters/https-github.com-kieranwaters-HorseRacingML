@@ -557,7 +557,7 @@ namespace HorseRacingML.Scraping
             return recommendations;
         }
 
-        private decimal GetEffectiveBankroll(bool refreshFromPage = true)
+        public decimal GetEffectiveBankroll(bool refreshFromPage = true)
         {
             if (refreshFromPage)
             {
