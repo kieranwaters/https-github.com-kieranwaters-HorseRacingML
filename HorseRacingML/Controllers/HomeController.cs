@@ -290,7 +290,7 @@ namespace HorseRacingML.Controllers
             {
                 GeneratedAt = DateTime.UtcNow,
                 Bankroll = bankroll,
-                AiHyperparameters = _trainer.GetBestModelSummary(),
+                AiHyperparameters = _trainer.LoadPersistedHyperparameters(),
                 Races = result.Races,
                 FilterStartTime = start,
                 FilterEndTime = end,
