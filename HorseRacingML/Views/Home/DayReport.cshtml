@@ -2520,8 +2520,7 @@ else
                     delete row.dataset.displayedDifferential;
                 }
 
-                const edgeCell = row.querySelector('.edge-cell'); if (edgeCell) { const kBack = Number.parseFloat(row.dataset.kelly ?? ''); const kLay = Number.parseFloat(row.dataset.layKelly ?? ''); const useLay = Number.isFinite(kLay) && kLay > 0 && (!(Number.isFinite(kBack) && kBack > 0)); const diff = useLay ? (marketProbability - safeProbability) : (safeProbability - marketProbability); const diffText = formatPercentage(diff * 100); edgeCell.textContent = (marketProbability > 0) ? (diffText ?? '-') : '-'; } // useLay -> positive edge for lays; else -> positive edge for backs
-            };
+               }
 
             const refreshRowAiProbabilityDisplay = (row) => {
                 if (!row) {
@@ -2646,6 +2645,7 @@ else
                         }
 
                         applyMarketProbabilityToRow(targetRow);
+                        updateStakeDisplays();
                     });
                 });
             };
@@ -2788,6 +2788,21 @@ else
                         } else {
                             kellyCell.textContent = kellyText ?? '-';
                         }
+                    }
+                    const edgeCell = row.querySelector('.edge-cell');
+                    if (edgeCell) {
+                        let currentEdge = 0;
+                        if (effectiveStakeType === 'lay' && layOdds > 1) {
+                            currentEdge = (1.0 / layOdds) - aiProbability;
+                        } else if (marketOdds > 1) {
+                            currentEdge = aiProbability - (1.0 / marketOdds);
+                        } else if (layOdds > 1) {
+                            currentEdge = (1.0 / layOdds) - aiProbability;
+                        } else {
+                            currentEdge = 0;
+                        }
+
+                        edgeCell.textContent = formatPercentage(currentEdge * 100) ?? '-';
                     }
                      let displayedText = '-';
 
