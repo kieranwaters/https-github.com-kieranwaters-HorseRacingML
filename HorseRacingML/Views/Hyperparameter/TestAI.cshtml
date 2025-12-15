@@ -206,7 +206,9 @@
                                                 <tr>
                                                     <th>Horse Name</th>
                                                     <th>Type</th>
-                                                    <th>Odds</th>
+                                                    <th>Bookie Odds</th>
+                                                    <th>AI Odds</th>
+                                                    <th>Edge</th>
                                                     <th>Stake</th>
                                                     <th>Result</th>
                                                     <th>Profit</th>
@@ -682,7 +684,7 @@
                         detailsBody.innerHTML = ''; // Clear previous
 
                         if (executedBets.length === 0) {
-                            detailsBody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No bets placed meeting criteria.</td></tr>';
+                            detailsBody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">No bets placed meeting criteria.</td></tr>';
                         } else {
                             executedBets.forEach(b => {
                                 const tr = document.createElement('tr');
@@ -690,6 +692,8 @@
                                     <td>${b.runner.HorseName}</td>
                                     <td><span class="badge ${b.type === 'Back' ? 'bg-success' : 'bg-danger'}">${b.type}</span></td>
                                     <td>${b.odds.toFixed(2)}</td>
+                                    <td>${(b.aiProb > 0 ? (1 / b.aiProb).toFixed(2) : '-')}</td>
+                                    <td>${b.edge.toFixed(2)}%</td>
                                     <td>${b.stake.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}</td>
                                     <td class="${b.won ? 'text-success' : 'text-danger'}">${b.won ? 'Win' : 'Loss'}</td>
                                     <td class="${b.profit >= 0 ? 'text-success' : 'text-danger'}">${b.profit.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}</td>
