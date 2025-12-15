@@ -70,6 +70,7 @@ namespace HorseRacingML.Models
         public ValidationSimulationResult? Simulation { get; set; }
         public bool HasResult => ValidationAccuracy.HasValue || ValidationLoss.HasValue;
         public bool UseExistingWeights { get; set; }
+        public bool UseHybrid { get; set; }
         public List<DayResultViewModel> DailyResults { get; set; }
     }
 }

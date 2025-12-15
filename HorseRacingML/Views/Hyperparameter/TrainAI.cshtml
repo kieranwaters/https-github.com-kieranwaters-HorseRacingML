@@ -30,6 +30,7 @@
                     <select asp-for="Batch.Parameters[0].ModelType" class="form-select model-type-select" onchange="toggleInputs()">
                         <option value="0">Neural Network</option>
                         <option value="1">LightGBM</option>
+                        <option value="2">NN + LightGBM</option>
                     </select>
                 </td>
                 <td>
@@ -177,10 +178,13 @@
         function toggleInputs() {
             const selectElement = document.querySelector('.model-type-select');
             const row = document.getElementById('parameterRow');
-            const isLgbm = selectElement.value === "1";
+            const mode = selectElement.value; // "0"=NN, "1"=LGBM, "2"=Hybrid
 
-            row.querySelectorAll('.nn-input').forEach(el => el.style.display = isLgbm ? 'none' : '');
-            row.querySelectorAll('.lgbm-input').forEach(el => el.style.display = isLgbm ? '' : 'none');
+            const showNn = mode === "0" || mode === "2";
+            const showLgbm = mode === "1" || mode === "2";
+
+            row.querySelectorAll('.nn-input').forEach(el => el.style.display = showNn ? '' : 'none');
+            row.querySelectorAll('.lgbm-input').forEach(el => el.style.display = showLgbm ? '' : 'none');
         }
 
         function redirectToTestAI() {
@@ -189,9 +193,11 @@
             const params = new URLSearchParams();
 
             const modelTypeSelect = row.querySelector('.model-type-select');
-            const isLgbm = modelTypeSelect.value === "1";
+            const mode = modelTypeSelect.value;
+            const isLgbm = mode === "1";
+            const isHybrid = mode === "2";
 
-            params.set('modelType', modelTypeSelect.value);
+            params.set('modelType', mode);
 
             const addIntParam = (selector, key) => {
                 const input = row.querySelector(selector);
@@ -219,13 +225,15 @@
             addIntParam('input[name="Batch.Parameters[0].Epochs"]', 'epochs');
             addIntParam('input[name="Batch.Parameters[0].Folds"]', 'folds');
 
-            if (isLgbm) {
-                // LightGBM specific parameters
+            // Hybrid or LightGBM
+            if (isLgbm || isHybrid) {
                 addIntParam('.lgbm-input[placeholder="Leaves"]', 'lgbmLeaves');
                 addIntParam('.lgbm-input[placeholder="Min Data"]', 'lgbmMinData');
                 addIntParam('.lgbm-input[placeholder="Max Depth"]', 'lgbmMaxDepth');
-            } else {
-                // Neural Network specific parameters
+            }
+
+            // Hybrid or NN
+            if (!isLgbm) { // i.e., NN or Hybrid
                 addIntParam('.nn-input[placeholder="Units"]', 'units');
                 addFloatParam('.nn-input[placeholder="Dropout"]', 'dropout');
                 addIntParam('.nn-input[placeholder="Layers"]', 'layers');

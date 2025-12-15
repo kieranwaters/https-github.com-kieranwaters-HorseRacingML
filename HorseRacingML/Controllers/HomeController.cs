@@ -268,7 +268,7 @@ namespace HorseRacingML.Controllers
         }
 
         // New action to start the background process
-        public async Task<IActionResult> DayReport(string startTime, string endTime, string region, bool showFeatureSignificance, bool runHeadless)
+        public async Task<IActionResult> DayReport(string startTime, string endTime, string region, bool showFeatureSignificance, bool runHeadless, bool useHybrid)
         {
             TimeSpan? start = null;
             TimeSpan? end = null;
@@ -284,7 +284,7 @@ namespace HorseRacingML.Controllers
                 scheduleEndTime: end,
                 scheduleRegion: region);
 
-            var result = _navigationService.GenerateDayReport(_repo, _trainer, showFeatureSignificance);
+            var result = _navigationService.GenerateDayReport(_repo, _trainer, showFeatureSignificance, useHybrid);
             var bankroll = _navigationService.GetEffectiveBankroll();
             var model = new DayReportViewModel
             {

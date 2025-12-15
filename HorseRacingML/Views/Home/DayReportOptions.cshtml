@@ -76,6 +76,15 @@
                         </div>
                         <div class="form-text">Runs the browser in the background for faster processing and lower memory usage.</div>
                     </div>
+                    <div class="col-12">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="useHybridCheck" name="useHybrid" value="true">
+                            <label class="form-check-label" for="useHybridCheck">
+                                Use Hybrid Model (NN + LightGBM)
+                            </label>
+                        </div>
+                        <div class="form-text">Uses the separately trained 'NNLightGBM.json' model which combines predictions from both Neural Network and LightGBM models.</div>
+                    </div>
                     <div class="col-12 d-flex justify-content-between flex-wrap gap-2 mt-3">
                         <a asp-action="Index" asp-controller="Home" class="btn btn-outline-secondary">Back to dashboard</a>
                         <button type="submit" class="btn btn-primary">Generate day report</button>

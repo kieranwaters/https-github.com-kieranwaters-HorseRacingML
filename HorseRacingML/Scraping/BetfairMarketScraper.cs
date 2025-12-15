@@ -28,6 +28,7 @@ namespace HorseRacingML.Scraping
         private readonly bool _showFeatureSignificance;
         private readonly bool _computeAiProbabilities;
         private readonly bool _computeFeatureContributions;
+        private readonly bool _useHybrid;
         private static IReadOnlyList<string>? _neuralFeatureKeys;
         private readonly Dictionary<RacePreparationKey, FeatureLookup> _featureLookupCache = new();
         private readonly Dictionary<RacePreparationKey, string?> _featureLookupErrorCache = new();
@@ -70,7 +71,8 @@ namespace HorseRacingML.Scraping
             System.Collections.Generic.IReadOnlyDictionary<string, string?>? raceGoingLookup = null,
             string? scheduleRegion = null,
             System.Collections.Generic.IReadOnlyDictionary<string, string?>? raceGoingByVenueLookup = null,
-            bool computeFeatureContributions = false)
+            bool computeFeatureContributions = false,
+            bool useHybrid = false)
         {
             _repo = repo ?? throw new ArgumentNullException(nameof(repo));
             _trainer = trainer ?? throw new ArgumentNullException(nameof(trainer));
@@ -91,6 +93,7 @@ namespace HorseRacingML.Scraping
             _computeAiProbabilities = computeAiProbabilities;
             _scheduleRegion = string.IsNullOrWhiteSpace(scheduleRegion) ? null : scheduleRegion.Trim();
             _computeFeatureContributions = computeFeatureContributions;
+            _useHybrid = useHybrid;
         }
 
         public BetfairMarketScraper(
@@ -104,7 +107,8 @@ namespace HorseRacingML.Scraping
             bool computeAiProbabilities = true,
             string? scheduleRegion = null,
             System.Collections.Generic.IReadOnlyDictionary<string, string?>? raceGoingByVenueLookup = null,
-            bool computeFeatureContributions = false)
+            bool computeFeatureContributions = false,
+            bool useHybrid = false)
             : this(
                 repo,
                 trainer,
@@ -120,7 +124,8 @@ namespace HorseRacingML.Scraping
                raceGoingLookup,
                 scheduleRegion,
                 raceGoingByVenueLookup,
-                computeFeatureContributions)
+                computeFeatureContributions,
+                useHybrid)
         {
             if (settings == null)
             {

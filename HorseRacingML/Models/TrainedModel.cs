@@ -20,7 +20,7 @@ namespace HorseRacingML.Models
         public int Folds { get; set; }
         public int? Fold { get; set; }
         public DateTime? TrainedAtUtc { get; set; }
-        public int ModelType { get; internal set; }
+        public int ModelType { get; set; }
     }
     public class FeatureMetadata
     {
@@ -34,6 +34,7 @@ namespace HorseRacingML.Models
         public List<LayerWeights> HiddenLayers { get; set; } = new();
         public LayerWeights OutputLayer { get; set; } = new LayerWeights();
         public FeatureMetadata Metadata { get; set; } = new FeatureMetadata();
+        public FeatureMetadata? HybridLgbmMetadata { get; set; }
         public NormalizationParameters Normalization { get; set; } = new NormalizationParameters();
         public HyperparameterSummary? Hyperparameters { get; set; }
     }

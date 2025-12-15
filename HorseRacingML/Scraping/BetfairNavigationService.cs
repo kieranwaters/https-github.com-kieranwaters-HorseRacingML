@@ -2230,7 +2230,8 @@ return text.trim();";
         public BetfairScrapeResult GenerateDayReport(
            RacingRepository repo,
            HyperparameterTrainer trainer,
-           bool showFeatureSignificance)
+           bool showFeatureSignificance,
+           bool useHybrid = false)
         {
             var bankroll = GetEffectiveBankroll(refreshFromPage: true);
             var settings = _automationSettings.GetSnapshot();
@@ -2245,7 +2246,8 @@ return text.trim();";
                 computeAiProbabilities: true,
                 scheduleRegion: GetActiveScheduleRegion(),
                 raceGoingByVenueLookup: GetRaceGoingByVenueSnapshot(),
-                computeFeatureContributions: showFeatureSignificance);
+                computeFeatureContributions: showFeatureSignificance,
+                useHybrid: useHybrid);
 
             var result = new BetfairScrapeResult();
             var races = scraper.ScrapeOpenRaceTabsForReport(_driver);

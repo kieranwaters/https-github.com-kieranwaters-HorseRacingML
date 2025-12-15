@@ -814,8 +814,10 @@ namespace HorseRacingML.Scraping
                                 var rfIdentifier = DescribeRunner(rf);
                                 try
                                 {
-                                    var probability = aiCalculator.CalculateOdds(rf, _computeFeatureContributions); // compute AI odds
-                                    if (double.IsFinite(probability) && probability > 0 && probability <= 1)
+
+                                    {
+                                        var probability = aiCalculator.CalculateOdds(rf, _computeFeatureContributions, useHybrid: _useHybrid); // compute AI odds
+                                        if (double.IsFinite(probability) && probability > 0 && probability <= 1)
                                     {
                                         rf.AiOdds = probability;
                                         rf.AiProbabilityMarketDerived = false;
@@ -1129,7 +1131,7 @@ private void ProcessDeferredRaceEvaluations(
                                 var rfIdentifier = DescribeRunner(rf);
                                 try
                                 {
-                                    var probability = aiCalculator.CalculateOdds(rf, _computeFeatureContributions);
+                                    var probability = aiCalculator.CalculateOdds(rf, _computeFeatureContributions, useHybrid: _useHybrid);
                                     if (double.IsFinite(probability) && probability > 0 && probability <= 1)
                                     {
                                         rf.AiOdds = probability;

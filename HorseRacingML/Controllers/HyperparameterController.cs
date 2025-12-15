@@ -886,7 +886,7 @@ namespace HorseRacingML.Controllers
                 var summary = race.Summary;
 
                 var runnersForOddsCalc = raceGroup.Select(r => r.Example).ToList();
-                var calculatedProbs = _aiOddsCalculator.CalculateProbabilities(runnersForOddsCalc);
+                var calculatedProbs = _aiOddsCalculator.CalculateProbabilities(runnersForOddsCalc, useHybrid: viewModel.UseHybrid);
 
                 var runnersWithProbs = raceGroup
                     .Select(r => new
@@ -965,13 +965,16 @@ namespace HorseRacingML.Controllers
                         }
                     }
                 }
-                var runnersForRace = raceGroup.Select(r =>
+                var runnersForRace = runnersWithProbs.Select(r =>
                 {
                     historicalCounts.TryGetValue(r.Example.HorseName, out var count);
                     return new RunnerViewModel
                     {
                         HorseName = r.Example.HorseName,
-                        HistoricalRaceCount = count > 0 ? count : (int?)null
+                        HistoricalRaceCount = count > 0 ? count : (int?)null,
+                        AiProbability = r.CalculatedProbability,
+                        BookmakerOdds = r.Example.StartingPriceDecimal ?? 0m,
+                        IsWinner = r.Example.Label >= 0.5f
                     };
                 }).ToList();
                 dailyRaceResults.Add(new RaceResultViewModel
