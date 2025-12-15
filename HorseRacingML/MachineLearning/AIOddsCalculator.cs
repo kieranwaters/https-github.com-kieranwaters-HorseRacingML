@@ -17,8 +17,9 @@ namespace HorseRacingML.ML
     /// the legacy logistic regression that considered only a handful of market
     /// prices.
     /// </summary>
-    public class AIOddsCalculator
+     public class AIOddsCalculator
     {
+        // Standard Model State (NN or LGBM)
         private readonly List<double[][]> _hiddenWeights = new();
         private readonly List<double[]> _hiddenBiases = new();
         private double[][]? _outputWeights;
@@ -27,15 +28,31 @@ namespace HorseRacingML.ML
         private double[]? _mean;
         private double[]? _std;
         private int _featureCount;
-        private readonly bool _hasTrainedModel;
+        private bool _hasTrainedModel;
+        private string _modelStatus;
+        private HyperparameterSummary? _hyperparameters;
+        private bool _isLightGbm;
+        private PredictionEngine<HyperparameterTrainer.LightGbmInput, HyperparameterTrainer.LightGbmOutput>? _predictionEngine;
+
+        // Hybrid Model State (NN + LGBM)
+        private bool _hasHybridModel;
+        private FeatureMetadata? _hybridNnMetadata;
+        private FeatureMetadata? _hybridLgbmMetadata;
+        private double[]? _hybridNnMean;
+        private double[]? _hybridNnStd;
+        private List<double[][]> _hybridNnHiddenWeights = new();
+        private List<double[]> _hybridNnHiddenBiases = new();
+        private double[][]? _hybridNnOutputWeights;
+        private double[]? _hybridNnOutputBias;
+        private PredictionEngine<HyperparameterTrainer.LightGbmInput, HyperparameterTrainer.LightGbmOutput>? _hybridLgbmEngine;
+        private int _hybridNnFeatureCount;
+        private int _hybridLgbmFeatureCount;
+
+        // Legacy
         private readonly double[] _legacyWeights;
         private readonly double _legacyBias;
-        private readonly string _modelStatus;
-        private HyperparameterSummary? _hyperparameters;
         private static readonly object _gpuStatusLock = new();
         private static bool _gpuStatusLogged;
-        private readonly bool _isLightGbm;
-        private readonly PredictionEngine<HyperparameterTrainer.LightGbmInput, HyperparameterTrainer.LightGbmOutput>? _predictionEngine;
 
         private static readonly DateTime BaseDate = new DateTime(2005, 1, 1);
         private static readonly int[] PerformanceWindows = { 1, 2, 3, 4, 5, 10, 15, 20, 25, 30, 50, 100 };

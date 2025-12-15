@@ -965,16 +965,13 @@ namespace HorseRacingML.Controllers
                         }
                     }
                 }
-                var runnersForRace = runnersWithProbs.Select(r =>
+                var runnersForRace = raceGroup.Select(r =>
                 {
                     historicalCounts.TryGetValue(r.Example.HorseName, out var count);
                     return new RunnerViewModel
                     {
                         HorseName = r.Example.HorseName,
-                        HistoricalRaceCount = count > 0 ? count : (int?)null,
-                        AiProbability = r.CalculatedProbability,
-                        BookmakerOdds = r.Example.StartingPriceDecimal ?? 0m,
-                        IsWinner = r.Example.Label >= 0.5f
+                        HistoricalRaceCount = count > 0 ? count : (int?)null
                     };
                 }).ToList();
                 dailyRaceResults.Add(new RaceResultViewModel
