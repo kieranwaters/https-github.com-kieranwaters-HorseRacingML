@@ -69,7 +69,7 @@ namespace HorseRacingML.Scraping
         {
             var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10)); // short explicit wait
             List<string> handles = handlesToProcess?.ToList() ?? driver.WindowHandles.ToList(); // collect tab handles
-            var orderedHandles = OrderHandlesByScheduledStart(driver, handles);
+            var orderedHandles = OrderHandlesByScheduledStart(driver, (IReadOnlyList<string>)handles);
             Console.WriteLine($"[DayReport][Stage] Preparing to process {orderedHandles.Count} open tab(s) for the day report.");
             _loadedHyperparameters = null;
             AIOddsCalculator? aiCalculator = null;
