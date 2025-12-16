@@ -69,7 +69,7 @@ namespace HorseRacingML.Scraping
         {
             var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10)); // short explicit wait
             List<string> handles = handlesToProcess?.ToList() ?? driver.WindowHandles.ToList(); // collect tab handles
-            var orderedHandles = OrderHandlesByScheduledStart(driver, (IReadOnlyList<string>)handles);
+            var orderedHandles = OrderHandlesByScheduledStart(driver: driver, handlesInput: handles);
             Console.WriteLine($"[DayReport][Stage] Preparing to process {orderedHandles.Count} open tab(s) for the day report.");
             _loadedHyperparameters = null;
             AIOddsCalculator? aiCalculator = null;
@@ -78,7 +78,7 @@ namespace HorseRacingML.Scraping
             {
                 aiCalculator = _aiOddsCalculator;
                 _neuralFeatureKeys = aiCalculator.FeatureKeys?.ToArray();
-                UpdateNeuralFeatureKeys(aiCalculator.GetRawFeatureKeys());
+                UpdateNeuralFeatureKeys((IReadOnlyList<string>?)aiCalculator.GetRawFeatureKeys());
                 Console.WriteLine($"\tAI model status: {aiCalculator.ModelStatus}"); // log model status
                 _loadedHyperparameters = aiCalculator.Hyperparameters;
             }

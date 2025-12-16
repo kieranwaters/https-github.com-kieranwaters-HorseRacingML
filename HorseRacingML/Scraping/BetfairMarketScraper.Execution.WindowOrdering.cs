@@ -11,9 +11,9 @@ namespace HorseRacingML.Scraping
     {
         private static readonly TimeSpan HandleScheduleCacheLifetime = TimeSpan.FromSeconds(45);
 
-        private IReadOnlyList<string> OrderHandlesByScheduledStart(IWebDriver driver, IReadOnlyList<string>? handlesInput)
+        private IReadOnlyList<string> OrderHandlesByScheduledStart(IWebDriver driver, IEnumerable<string>? handlesInput)
         {
-            var handles = handlesInput ?? new List<string>();
+            var handles = handlesInput?.ToList() ?? new List<string>();
             if (handles.Count <= 2)
             {
                 return handles;
