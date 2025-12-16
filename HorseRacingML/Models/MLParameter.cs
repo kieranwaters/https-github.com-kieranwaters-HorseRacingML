@@ -34,6 +34,8 @@ namespace HorseRacingML.Models
         public int? LgbmLeaves { get; set; }
         public int? LgbmMinDataInLeaf { get; set; }
         public int? LgbmMaxDepth { get; set; }
+        public double? LgbmLearningRate { get; set; }
+        public int? LgbmEpochs { get; set; }
         public int? Threads { get; set; }
     }
 }

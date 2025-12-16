@@ -1459,8 +1459,24 @@ namespace HorseRacingML.ML
             var mlContext = CreateLightGbmContext();
             var lgbmFoldData = PrepareLightGbmFold(mlContext, lgbmDataset, foldIndex, foldCount);
             // We tell it to persist weights to "NNLightGBM.json" (which triggers .zip save), but it won't write the JSON due to the override check.
-            var lgbmResult = TrainLightGbmOptimized(param, mlContext, lgbmFoldData, persistWeights: persistWeights, modelPathOverride: hybridJsonPath);
+            var lgbmParam = new MLParameter
+            {
+                ModelType = param.ModelType,
+                RunDate = param.RunDate,
+                Folds = param.Folds,
+                Fold = param.Fold,
+                TrainFinalFoldOnly = param.TrainFinalFoldOnly,
+                Threads = param.Threads,
+                LgbmLeaves = param.LgbmLeaves,
+                LgbmMinDataInLeaf = param.LgbmMinDataInLeaf,
+                LgbmMaxDepth = param.LgbmMaxDepth,
+                // Use explicit LGBM values if present, otherwise fallback to main (NN) values
+                LearningRate = param.LgbmLearningRate ?? param.LearningRate,
+                Epochs = param.LgbmEpochs ?? param.Epochs
+            };
 
+            // We tell it to persist weights to "NNLightGBM.json" (which triggers .zip save), but it won't write the JSON due to the override check.
+            var lgbmResult = TrainLightGbmOptimized(lgbmParam, mlContext, lgbmFoldData, persistWeights: persistWeights, modelPathOverride: hybridJsonPath);
             // 4. Train Neural Network (needs to return weights, but TrainTensorFlowOptimized is void of that return)
             Console.WriteLine("[Hybrid] Training Neural Network component...");
             var nnFoldData = PrepareTensorFlowFold(nnDataset, foldIndex, foldCount);

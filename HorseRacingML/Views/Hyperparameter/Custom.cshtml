@@ -45,8 +45,32 @@
                         <input asp-for="Parameters[i].Layers" type="number" class="form-control nn-input" placeholder="Layers" />
                         <input asp-for="Parameters[i].LgbmMaxDepth" type="number" class="form-control lgbm-input" placeholder="Max Depth" style="display:none" />
                     </td>
-                    <td><input asp-for="Parameters[i].LearningRate" type="number" step="any" class="form-control" /></td>
-                    <td><input asp-for="Parameters[i].Epochs" type="number" class="form-control" /></td>
+                    <td>
+                        <input asp-for="Parameters[i].LearningRate" type="number" step="any" class="form-control standard-input" placeholder="LR" />
+                        <div class="hybrid-input" style="display:none">
+                            <div class="input-group input-group-sm mb-1">
+                                <span class="input-group-text">NN</span>
+                                <input asp-for="Parameters[i].LearningRate" type="number" step="any" class="form-control" placeholder="LR" />
+                            </div>
+                            <div class="input-group input-group-sm">
+                                <span class="input-group-text">LGBM</span>
+                                <input asp-for="Parameters[i].LgbmLearningRate" type="number" step="any" class="form-control" placeholder="LR" />
+                            </div>
+                        </div>
+                    </td>
+                    <td>
+                        <input asp-for="Parameters[i].Epochs" type="number" class="form-control standard-input" placeholder="Epochs" />
+                        <div class="hybrid-input" style="display:none">
+                            <div class="input-group input-group-sm mb-1">
+                                <span class="input-group-text">NN</span>
+                                <input asp-for="Parameters[i].Epochs" type="number" class="form-control" placeholder="Epochs" />
+                            </div>
+                            <div class="input-group input-group-sm">
+                                <span class="input-group-text">LGBM</span>
+                                <input asp-for="Parameters[i].LgbmEpochs" type="number" class="form-control" placeholder="Epochs" />
+                            </div>
+                        </div>
+                    </td>
                     <td>
                         <input asp-for="Parameters[i].BatchSize" type="number" class="form-control nn-input" />
                         <span class="lgbm-input text-muted small" style="display:none">N/A</span>
@@ -96,9 +120,14 @@
 
             const showNn = mode === "0" || mode === "2";
             const showLgbm = mode === "1" || mode === "2";
+            const showHybrid = mode === "2";
 
             row.querySelectorAll('.nn-input').forEach(el => el.style.display = showNn ? '' : 'none');
             row.querySelectorAll('.lgbm-input').forEach(el => el.style.display = showLgbm ? '' : 'none');
+
+            // Handle dual inputs for Hybrid Learning Rate and Epochs
+            row.querySelectorAll('.standard-input').forEach(el => el.style.display = showHybrid ? 'none' : '');
+            row.querySelectorAll('.hybrid-input').forEach(el => el.style.display = showHybrid ? '' : 'none');
         }
 
         function addRow() {
@@ -125,8 +154,32 @@
                         <input name="Parameters[${index}].Layers" type="number" class="form-control nn-input" placeholder="Layers" />
                         <input name="Parameters[${index}].LgbmMaxDepth" type="number" class="form-control lgbm-input" placeholder="Max Depth" style="display:none" />
                     </td>
-                    <td><input name="Parameters[${index}].LearningRate" type="number" step="any" class="form-control" /></td>
-                    <td><input name="Parameters[${index}].Epochs" type="number" class="form-control" /></td>
+                    <td>
+                        <input name="Parameters[${index}].LearningRate" type="number" step="any" class="form-control standard-input" placeholder="LR" />
+                        <div class="hybrid-input" style="display:none">
+                            <div class="input-group input-group-sm mb-1">
+                                <span class="input-group-text">NN</span>
+                                <input name="Parameters[${index}].LearningRate" type="number" step="any" class="form-control" placeholder="LR" />
+                            </div>
+                            <div class="input-group input-group-sm">
+                                <span class="input-group-text">LGBM</span>
+                                <input name="Parameters[${index}].LgbmLearningRate" type="number" step="any" class="form-control" placeholder="LR" />
+                            </div>
+                        </div>
+                    </td>
+                    <td>
+                        <input name="Parameters[${index}].Epochs" type="number" class="form-control standard-input" placeholder="Epochs" />
+                        <div class="hybrid-input" style="display:none">
+                            <div class="input-group input-group-sm mb-1">
+                                <span class="input-group-text">NN</span>
+                                <input name="Parameters[${index}].Epochs" type="number" class="form-control" placeholder="Epochs" />
+                            </div>
+                            <div class="input-group input-group-sm">
+                                <span class="input-group-text">LGBM</span>
+                                <input name="Parameters[${index}].LgbmEpochs" type="number" class="form-control" placeholder="Epochs" />
+                            </div>
+                        </div>
+                    </td>
                     <td>
                          <input name="Parameters[${index}].BatchSize" type="number" class="form-control nn-input" />
                          <span class="lgbm-input text-muted small" style="display:none">N/A</span>
@@ -226,15 +279,39 @@
                 const isLgbm = modelType === 1;
                 const isHybrid = modelType === 2;
 
+                // Handle reading from correct input based on mode
+                let learningRate, epochs;
+                if (isHybrid) {
+                    // For hybrid, we read the NN inputs for the base values
+                    // Note: We use the inputs inside .hybrid-input container which are visible
+                    // In addRow/Razor, we have two inputs with the SAME NAME 'LearningRate' (one in standard, one in hybrid > NN)
+                    // This is valid in HTML forms but messy for selector.
+                    // We target the visible one.
+                    const visibleLr = row.querySelector('.hybrid-input input[name*=".LearningRate"]');
+                    const visibleEpochs = row.querySelector('.hybrid-input input[name*=".Epochs"]');
+                    learningRate = parseFloat(visibleLr.value) || 0.1;
+                    epochs = parseInt(visibleEpochs.value) || 100;
+                } else {
+                    const visibleLr = row.querySelector('.standard-input[name*=".LearningRate"]');
+                    const visibleEpochs = row.querySelector('.standard-input[name*=".Epochs"]');
+                    learningRate = parseFloat(visibleLr.value) || 0.1;
+                    epochs = parseInt(visibleEpochs.value) || 100;
+                }
+
                 const model = {
                     ModelType: modelType,
-                    LearningRate: parseFloat(row.querySelector('input[name*=".LearningRate"]').value) || 0.1,
-                    Epochs: parseInt(row.querySelector('input[name*=".Epochs"]').value) || 100,
+                    LearningRate: learningRate,
+                    Epochs: epochs,
                     Folds: parseInt(row.querySelector('input[name*=".Folds"]').value) || 1,
                     TrainFinalFoldOnly: row.querySelector('input[name*=".TrainFinalFoldOnly"]').checked,
                     Threads: cpuThreads,
                     RunDate: new Date().toISOString()
                 };
+
+                if (isHybrid) {
+                     model.LgbmLearningRate = parseFloat(row.querySelector('input[name*=".LgbmLearningRate"]').value) || 0.1;
+                     model.LgbmEpochs = parseInt(row.querySelector('input[name*=".LgbmEpochs"]').value) || 100;
+                }
 
                 if (isLgbm || isHybrid) {
                     model.LgbmLeaves = parseInt(row.querySelector('.lgbm-input[placeholder="Leaves"]').value) || 31;

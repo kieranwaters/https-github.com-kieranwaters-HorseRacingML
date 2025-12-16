@@ -1929,8 +1929,19 @@ BEGIN
     ALTER TABLE dbo.MLParameters ADD ModelType INT NOT NULL DEFAULT 0;
 END;
 
-INSERT INTO MLParameters(RunDate, Units, Dropout, Layers, LearningRate, TrainAccuracy, ValidationAccuracy, ValidationLoss, Epochs, BatchSize, Folds, TrainLoss, TrainBrier, Fold, ValidationBrier, TrainFocalLoss, ValidationFocalLoss, ModelType, LgbmLeaves, LgbmMinDataInLeaf, LgbmMaxDepth)
-VALUES(@RunDate, @Units, @Dropout, @Layers, @LearningRate, @TrainAccuracy, @ValidationAccuracy, @ValidationLoss, @Epochs, @BatchSize, @Folds, @TrainLoss, @TrainBrier, @Fold, @ValidationBrier, @TrainFocalLoss, @ValidationFocalLoss, @ModelType, @LgbmLeaves, @LgbmMinDataInLeaf, @LgbmMaxDepth);
+
+IF COL_LENGTH('dbo.MLParameters', 'LgbmLearningRate') IS NULL
+BEGIN
+    ALTER TABLE dbo.MLParameters ADD LgbmLearningRate FLOAT NULL;
+END;
+
+IF COL_LENGTH('dbo.MLParameters', 'LgbmEpochs') IS NULL
+BEGIN
+    ALTER TABLE dbo.MLParameters ADD LgbmEpochs INT NULL;
+END;
+
+INSERT INTO MLParameters(RunDate, Units, Dropout, Layers, LearningRate, TrainAccuracy, ValidationAccuracy, ValidationLoss, Epochs, BatchSize, Folds, TrainLoss, TrainBrier, Fold, ValidationBrier, TrainFocalLoss, ValidationFocalLoss, ModelType, LgbmLeaves, LgbmMinDataInLeaf, LgbmMaxDepth, LgbmLearningRate, LgbmEpochs)
+VALUES(@RunDate, @Units, @Dropout, @Layers, @LearningRate, @TrainAccuracy, @ValidationAccuracy, @ValidationLoss, @Epochs, @BatchSize, @Folds, @TrainLoss, @TrainBrier, @Fold, @ValidationBrier, @TrainFocalLoss, @ValidationFocalLoss, @ModelType, @LgbmLeaves, @LgbmMinDataInLeaf, @LgbmMaxDepth, @LgbmLearningRate, @LgbmEpochs);
 SELECT CAST(SCOPE_IDENTITY() as int);";
             using var conn = OpenConnection();
 
