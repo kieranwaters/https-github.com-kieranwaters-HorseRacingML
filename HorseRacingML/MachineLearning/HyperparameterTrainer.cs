@@ -2177,7 +2177,7 @@ namespace HorseRacingML.ML
             var zeros = tf.zeros_like(sigmoidP);
             var ones = tf.ones_like(sigmoidP);
             // pt = p if y=1 else 1-p
-            var pt = tf.where(tf.equal(yTrue, 1), sigmoidP, ones - sigmoidP);
+            var pt = tf.where(tf.equal(yTrue, tf.constant(1.0f)), sigmoidP, ones - sigmoidP);
             // CE = -log(pt)
             // But focal loss: -alpha * (1-pt)^gamma * log(pt)
             // We use standard sigmoid_cross_entropy for numerical stability of the log part if possible, but implementing manually here:
@@ -2188,13 +2188,12 @@ namespace HorseRacingML.ML
             // Fix: Wrap alpha in tf.constant
             var alphaTensor = tf.constant(alpha);
             var oneMinusAlphaTensor = tf.constant(1 - alpha);
-            var alpha_t = tf.where(tf.equal(yTrue, 1), tf.fill(tf.shape(yTrue), alphaTensor), tf.fill(tf.shape(yTrue), oneMinusAlphaTensor));
-            var p_t = tf.where(tf.equal(yTrue, 1), sigmoidP, 1 - sigmoidP);
+            var alpha_t = tf.where(tf.equal(yTrue, tf.constant(1.0f)), tf.fill(tf.shape(yTrue), alphaTensor), tf.fill(tf.shape(yTrue), oneMinusAlphaTensor));
+            var p_t = tf.where(tf.equal(yTrue, tf.constant(1.0f)), sigmoidP, ones - sigmoidP);
 
-            var loss = alpha_t * tf.pow(1 - p_t, gamma) * bce;
+            var loss = alpha_t * tf.pow(ones - p_t, gamma) * bce;
             return loss;
         }
-
         private void HyperparameterStarted(MLParameter p, int trainCount, int valCount, int features)
         {
             // Placeholder logging
