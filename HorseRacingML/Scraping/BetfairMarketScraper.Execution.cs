@@ -818,20 +818,21 @@ namespace HorseRacingML.Scraping
                                     {
                                         var probability = aiCalculator.CalculateOdds(rf, _computeFeatureContributions, useHybrid: _useHybrid); // compute AI odds
                                         if (double.IsFinite(probability) && probability > 0 && probability <= 1)
-                                    {
-                                        rf.AiOdds = probability;
-                                        rf.AiProbabilityMarketDerived = false;
-                                        rf.AiProbabilityFallbackReason = null;
-                                    }
-                                    else
-                                    {
-                                        rf.AiOdds = null;
-                                        rf.AiProbabilityMarketDerived = false;
-                                        rf.AiProbabilityFallbackReason = null;
-                                        var probabilityText = double.IsFinite(probability)
-                                            ? probability.ToString("0.####", CultureInfo.InvariantCulture)
-                                            : "non-finite";
-                                        Console.WriteLine($"            Discarding non-positive AI probability {probabilityText} for {rfIdentifier}; treating as missing.");
+                                        {
+                                            rf.AiOdds = probability;
+                                            rf.AiProbabilityMarketDerived = false;
+                                            rf.AiProbabilityFallbackReason = null;
+                                        }
+                                        else
+                                        {
+                                            rf.AiOdds = null;
+                                            rf.AiProbabilityMarketDerived = false;
+                                            rf.AiProbabilityFallbackReason = null;
+                                            var probabilityText = double.IsFinite(probability)
+                                                ? probability.ToString("0.####", CultureInfo.InvariantCulture)
+                                                : "non-finite";
+                                            Console.WriteLine($"            Discarding non-positive AI probability {probabilityText} for {rfIdentifier}; treating as missing.");
+                                        }
                                     }
                                 }
                                 catch (Exception ex)
