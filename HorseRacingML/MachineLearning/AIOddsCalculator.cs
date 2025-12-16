@@ -857,5 +857,17 @@ namespace HorseRacingML.ML
         {
             return source?.Select(f => (double)f).ToArray() ?? Array.Empty<double>();
         }
+        private sealed class EncodedVector
+        {
+            public EncodedVector(double[] values, bool[] active)
+            {
+                Values = values;
+                Active = active;
+            }
+
+            public double[] Values { get; }
+            public bool[] Active { get; }
+        }
     }
+
 }

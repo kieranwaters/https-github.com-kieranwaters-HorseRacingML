@@ -1520,6 +1520,688 @@ namespace HorseRacingML.ML
                 ValidationExamples = nnResult.ValidationExamples
             };
         }
+        public class TensorFlowFoldData
+        {
+            public float[,] TrainFeatureMatrix { get; init; }
+            public float[,] TrainLabelMatrix { get; init; }
+            public float[,] ValFeatureMatrix { get; init; }
+            public float[,] ValLabelMatrix { get; init; }
+            public IReadOnlyList<float> TrainLabels { get; init; }
+            public IReadOnlyList<float> ValLabels { get; init; }
+            public IReadOnlyList<int> TrainRaceIds { get; init; }
+            public IReadOnlyList<int> ValRaceIds { get; init; }
+            public IReadOnlyList<RunnerExample> ValExamples { get; init; }
+            public NormalizationParameters Normalization { get; init; }
+            public bool IsEmpty { get; init; }
+        }
 
+        public object GetPreparedFold(int foldIndex, int foldCount, int modelType, MLContext mlContext = null)
+        {
+            var key = (foldIndex, foldCount, modelType);
+            if (_foldCache.TryGetValue(key, out var cached))
+            {
+                return cached;
+            }
+
+            var dataset = EnsureMasterDatasetLoaded();
+
+            if (modelType == 1) // LightGBM
+            {
+                if (mlContext == null) throw new ArgumentNullException(nameof(mlContext));
+                var data = PrepareLightGbmFold(mlContext, dataset, foldIndex, foldCount);
+                _foldCache[key] = data;
+                return data;
+            }
+            else // TensorFlow
+            {
+                var data = PrepareTensorFlowFold(dataset, foldIndex, foldCount);
+                _foldCache[key] = data;
+                return data;
+            }
+        }
+
+        private TensorFlowFoldData PrepareTensorFlowFold(TrainingDataset dataset, int foldIndex, int foldCount)
+        {
+            int totalRaces = dataset.Races.Count;
+            int foldSize = totalRaces / foldCount;
+            int valStart = foldIndex * foldSize;
+            int valEnd = foldIndex == foldCount - 1 ? totalRaces : valStart + foldSize;
+
+            var trainRaceIds = dataset.Races
+                           .Select((race, idx) => new { race, idx })
+                           .Where(x => x.idx < valStart)
+                           .Select(x => x.race.RaceId)
+                           .ToHashSet();
+
+            if (trainRaceIds.Count == 0) return new TensorFlowFoldData { IsEmpty = true };
+
+            var validationRaceIds = dataset.Races.Skip(valStart).Take(valEnd - valStart).Select(r => r.RaceId).ToHashSet();
+
+            var trainExamples = dataset.Races.Where(r => trainRaceIds.Contains(r.RaceId)).SelectMany(r => r.Runners).ToList();
+            var valExamples = dataset.Races.Where(r => validationRaceIds.Contains(r.RaceId)).SelectMany(r => r.Runners).ToList();
+            int featureCount = dataset.FeatureCount;
+
+            // Deep clone features for training set to avoid in-place corruption of the master dataset
+            var trainFeatures = trainExamples.AsParallel().AsOrdered()
+                .Select(r => (float[])(r.EncodedFeatures ?? EncodeFeatureVector(r.Features, dataset.FeatureKeys, dataset.FeatureDimensions, dataset.StringMaps, featureCount)).Clone())
+                .ToList();
+
+            var valFeatures = valExamples.AsParallel().AsOrdered()
+                .Select(r => (float[])(r.EncodedFeatures ?? EncodeFeatureVector(r.Features, dataset.FeatureKeys, dataset.FeatureDimensions, dataset.StringMaps, featureCount)).Clone())
+                .ToList();
+
+            var means = new float[featureCount];
+            var stdDevs = new float[featureCount];
+
+            if (trainFeatures.Count > 0)
+            {
+                Parallel.For(0, featureCount, j =>
+                {
+                    double sum = 0;
+                    foreach (var feature in trainFeatures) sum += feature[j];
+                    means[j] = (float)(sum / trainFeatures.Count);
+                });
+
+                Parallel.For(0, featureCount, j =>
+                {
+                    double variance = 0;
+                    foreach (var feature in trainFeatures)
+                    {
+                        double diff = feature[j] - means[j];
+                        variance += diff * diff;
+                    }
+                    stdDevs[j] = (float)Math.Sqrt(variance / trainFeatures.Count);
+                    if (stdDevs[j] == 0f) stdDevs[j] = 1f;
+                });
+            }
+            else
+            {
+                for (int j = 0; j < featureCount; j++) stdDevs[j] = 1f;
+            }
+
+            void Normalize(IList<float[]> data)
+            {
+                Parallel.ForEach(data, arr =>
+                {
+                    for (int i = 0; i < featureCount; i++)
+                    {
+                        arr[i] = (arr[i] - means[i]) / stdDevs[i];
+                    }
+                });
+            }
+            Normalize(trainFeatures);
+            Normalize(valFeatures);
+
+            float[,] BuildMatrix(List<float[]> source)
+            {
+                var matrix = new float[source.Count, featureCount];
+                for (int i = 0; i < source.Count; i++)
+                {
+                    var row = source[i];
+                    for (int j = 0; j < featureCount; j++) matrix[i, j] = row[j];
+                }
+                return matrix;
+            }
+            float[,] BuildLabelMatrix(List<RunnerExample> runners)
+            {
+                var matrix = new float[runners.Count, 1];
+                for (int i = 0; i < runners.Count; i++) matrix[i, 0] = runners[i].Label;
+                return matrix;
+            }
+
+            return new TensorFlowFoldData
+            {
+                TrainFeatureMatrix = BuildMatrix(trainFeatures),
+                TrainLabelMatrix = BuildLabelMatrix(trainExamples),
+                ValFeatureMatrix = BuildMatrix(valFeatures),
+                ValLabelMatrix = BuildLabelMatrix(valExamples),
+                TrainLabels = trainExamples.Select(r => r.Label).ToArray(),
+                ValLabels = valExamples.Select(r => r.Label).ToArray(),
+                TrainRaceIds = trainExamples.Select(r => r.RaceId).ToArray(),
+                ValRaceIds = valExamples.Select(r => r.RaceId).ToArray(),
+                ValExamples = valExamples,
+                Normalization = new NormalizationParameters { Mean = means, StdDev = stdDevs },
+                IsEmpty = false
+            };
+        }
+        public class LightGbmFoldData
+        {
+            public IDataView TrainData { get; init; }
+            public IDataView ValData { get; init; }
+            public IReadOnlyList<float> ValLabels { get; init; } = Array.Empty<float>();
+            public IReadOnlyList<int> ValRaceIds { get; init; } = Array.Empty<int>();
+            public IReadOnlyList<RunnerExample> ValExamples { get; init; } = Array.Empty<RunnerExample>();
+            public IReadOnlyList<float> TrainLabels { get; init; } = Array.Empty<float>();
+            public IReadOnlyList<int> TrainRaceIds { get; init; } = Array.Empty<int>();
+            public bool IsEmpty { get; init; }
+        }
+
+        public MLContext CreateLightGbmContext()
+        {
+            return new MLContext(seed: 42);
+        }
+
+        public LightGbmFoldData PrepareLightGbmFold(MLContext mlContext, TrainingDataset dataset, int foldIndex, int foldCount)
+        {
+            if (dataset is null) throw new ArgumentNullException(nameof(dataset));
+            if (foldCount <= 0) throw new ArgumentOutOfRangeException(nameof(foldCount));
+            if (foldIndex < 0 || foldIndex >= foldCount) throw new ArgumentOutOfRangeException(nameof(foldIndex));
+
+            int totalRaces = dataset.Races.Count;
+            int foldSize = totalRaces / foldCount;
+            int valStart = foldIndex * foldSize;
+            int valEnd = foldIndex == foldCount - 1 ? totalRaces : valStart + foldSize;
+
+            var trainRaceIds = dataset.Races
+                           .Select((race, idx) => new { race, idx })
+                           .Where(x => x.idx < valStart)
+                           .Select(x => x.race.RaceId)
+                           .ToHashSet();
+
+            if (trainRaceIds.Count == 0)
+            {
+                return new LightGbmFoldData { IsEmpty = true };
+            }
+
+            var validationRaceIds = dataset.Races
+                .Skip(valStart)
+                .Take(valEnd - valStart)
+                .Select(r => r.RaceId)
+                .ToHashSet();
+
+            var trainingRaces = new List<RaceExample>();
+            var validationRaces = new List<RaceExample>();
+
+            foreach (var race in dataset.Races)
+            {
+                if (trainRaceIds.Contains(race.RaceId))
+                {
+                    trainingRaces.Add(race);
+                }
+                else if (validationRaceIds.Contains(race.RaceId))
+                {
+                    validationRaces.Add(race);
+                }
+            }
+
+            var trainExamples = trainingRaces.SelectMany(r => r.Runners).ToList();
+            var valExamples = validationRaces.SelectMany(r => r.Runners).ToList();
+
+            int featureCount = dataset.FeatureCount;
+
+            var trainFeatures = trainExamples.AsParallel().AsOrdered()
+                .Select(r => r.EncodedFeatures ?? EncodeFeatureVector(r.Features, dataset.FeatureKeys, dataset.FeatureDimensions, dataset.StringMaps, featureCount))
+                .ToList();
+            var valFeatures = valExamples.AsParallel().AsOrdered()
+                .Select(r => r.EncodedFeatures ?? EncodeFeatureVector(r.Features, dataset.FeatureKeys, dataset.FeatureDimensions, dataset.StringMaps, featureCount))
+                .ToList();
+
+            var trainData = trainFeatures.Zip(trainExamples, (f, r) => new LightGbmInput { Features = f, Label = r.Label == 1f }).ToList();
+            var valData = valFeatures.Zip(valExamples, (f, r) => new LightGbmInput { Features = f, Label = r.Label == 1f }).ToList();
+
+            var schemaDef = SchemaDefinition.Create(typeof(LightGbmInput));
+            schemaDef["Features"].ColumnType = new VectorDataViewType(NumberDataViewType.Single, featureCount);
+
+            var trainDataView = mlContext.Data.LoadFromEnumerable(trainData, schemaDef);
+            var valDataView = mlContext.Data.LoadFromEnumerable(valData, schemaDef);
+
+            return new LightGbmFoldData
+            {
+                TrainData = trainDataView,
+                ValData = valDataView,
+                TrainLabels = trainData.Select(x => x.Label ? 1f : 0f).ToArray(),
+                TrainRaceIds = trainExamples.Select(r => r.RaceId).ToArray(),
+                ValLabels = valData.Select(x => x.Label ? 1f : 0f).ToArray(),
+                ValRaceIds = valExamples.Select(r => r.RaceId).ToArray(),
+                ValExamples = valExamples,
+                IsEmpty = false
+            };
+        }
+        public TrainingResult TrainTensorFlowOptimized(MLParameter param, TensorFlowFoldData data, bool persistWeights = true)
+        {
+            if (data.IsEmpty) return new TrainingResult();
+            NormalizeBatchSize(param);
+            var gpus = tf.config.list_physical_devices("GPU");
+            if (gpus.Length > 0)
+            {
+                try { tf.config.experimental.set_memory_growth(gpus[0], true); } catch { }
+            }
+
+            var trainFeatureTensor = Tensorflow.NumPy.np.array(data.TrainFeatureMatrix, dtype: tf.float32);
+            var trainLabelTensor = Tensorflow.NumPy.np.array(data.TrainLabelMatrix, dtype: tf.float32);
+            NDArray? valFeatureTensor = null;
+            NDArray? valLabelTensor = null;
+            bool hasValidationExamples = data.ValLabelMatrix.GetLength(0) > 0;
+
+            if (hasValidationExamples)
+            {
+                valFeatureTensor = Tensorflow.NumPy.np.array(data.ValFeatureMatrix, dtype: tf.float32);
+                valLabelTensor = Tensorflow.NumPy.np.array(data.ValLabelMatrix, dtype: tf.float32);
+            }
+
+            var graph = tf.Graph();
+            var graphScope = graph.as_default();
+            ConfigProto? config = null;
+            if (param.Threads.HasValue && param.Threads.Value > 0)
+            {
+                config = new ConfigProto
+                {
+                    IntraOpParallelismThreads = param.Threads.Value,
+                    InterOpParallelismThreads = param.Threads.Value
+                };
+            }
+            int featureCount = data.TrainFeatureMatrix.GetLength(1);
+            var x = tf.placeholder(tf.float32, shape: new TensorShape(-1, featureCount), name: "x");
+            var y = tf.placeholder(tf.float32, shape: new TensorShape(-1, 1), name: "y");
+            Tensor layer = x;
+            int inputDim = featureCount;
+            var hiddenWeightVars = new List<ResourceVariable>();
+            var hiddenBiasVars = new List<ResourceVariable>();
+            for (int i = 0; i < param.Layers; i++)
+            {
+                var w = tf.Variable(tf.random.normal((inputDim, param.Units ?? 10)), name: $"w{i}");
+                var b = tf.Variable(tf.zeros(param.Units ?? 10), name: $"b{i}");
+                hiddenWeightVars.Add(w);
+                hiddenBiasVars.Add(b);
+                layer = tf.nn.relu(tf.matmul(layer, w) + b);
+                if (param.Dropout > 0)
+                {
+                    layer = tf.nn.dropout(layer, rate: (float)param.Dropout);
+                }
+                inputDim = param.Units ?? 10;
+            }
+
+            var wOut = tf.Variable(tf.random.normal((inputDim, 1)), name: "wOut");
+            var bOut = tf.Variable(tf.zeros(1), name: "bOut");
+            var logits = tf.matmul(layer, wOut) + bOut;
+            var loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels: y, logits: logits));
+            var focalLoss = tf.reduce_mean(SigmoidFocalLoss(y, logits));
+            var optimizer = tf.train.AdamOptimizer((float)param.LearningRate).minimize(focalLoss);
+
+            var prediction = tf.sigmoid(logits);
+            var rnd = new Random();
+            using var sess = tf.Session(graph, config);
+            sess.run(tf.global_variables_initializer());
+            var allVariables = hiddenWeightVars.Concat(hiddenBiasVars).Concat(new[] { wOut, bOut }).ToList();
+            var bestWeights = new List<NDArray>();
+
+            // Note: We use the normalization from the fold data
+            var normalization = data.Normalization;
+            // Only persist normalization if we are persisting weights (saving the model)
+            if (persistWeights)
+            {
+                var normPath = Path.Combine(AppContext.BaseDirectory, "normalization.json");
+                var normalizationJson = JsonSerializer.Serialize(normalization);
+                WriteTextIfChanged(normPath, normalizationJson);
+            }
+
+            var trainPreds = new float[data.TrainLabels.Count];
+            var valPreds = new float[data.ValLabels.Count];
+            var epochPredBuffer = new float[data.TrainLabels.Count];
+
+            (double loss, double focalLoss) ComputeDatasetMetrics(NDArray featureTensor, NDArray labelTensor, float[] preds, int count)
+            {
+                if (preds.Length != count)
+                    throw new ArgumentException("Prediction buffer size must match example count.", nameof(preds));
+
+                if (count == 0) return (0, 0);
+
+                const int evalBatchSize = 8192;
+                double weightedLoss = 0;
+                double weightedFocalLoss = 0;
+                int totalExamples = 0;
+
+                for (int start = 0; start < count; start += evalBatchSize)
+                {
+                    int batchCount = Math.Min(evalBatchSize, count - start);
+                    var featureSlice = featureTensor[new Slice(start, start + batchCount), Slice.All];
+                    var labelSlice = labelTensor[new Slice(start, start + batchCount), Slice.All];
+
+                    var results = sess.run(new[] { loss, focalLoss, prediction },
+                        new FeedItem(x, featureSlice),
+                        new FeedItem(y, labelSlice));
+
+                    var chunkLoss = results[0].ToArray<float>()[0];
+                    var chunkFocalLoss = results[1].ToArray<float>()[0];
+                    var chunkPreds = results[2].ToArray<float>();
+                    Array.Copy(chunkPreds, 0, preds, start, batchCount);
+                    weightedLoss += chunkLoss * batchCount;
+                    weightedFocalLoss += chunkFocalLoss * batchCount;
+                    totalExamples += batchCount;
+                }
+
+                return totalExamples > 0 ? (weightedLoss / totalExamples, weightedFocalLoss / totalExamples) : (0, 0);
+            }
+
+            // Shuffle helper reused
+            static void Shuffle(int[] values, Random random)
+            {
+                for (int i = values.Length - 1; i > 0; i--)
+                {
+                    int j = random.Next(i + 1);
+                    (values[i], values[j]) = (values[j], values[i]);
+                }
+            }
+
+            double trainLoss = 0;
+            double valLoss = 0;
+            double trainBrier = 0;
+            double valBrier = 0;
+            double trainFocalLoss = 0;
+            double valFocalLoss = 0;
+            double trainAcc = 0;
+            double valAcc = 0;
+            double bestValLoss = double.MaxValue;
+            int patienceCounter = 0;
+            string? bestModelPath = null;
+            List<FeatureCorrelation> featureCorrelations = new();
+            HyperparameterStarted(param, data.TrainLabels.Count, data.ValLabels.Count, featureCount);
+
+            try
+            {
+                int n = data.TrainLabels.Count;
+                if (n > 0)
+                {
+                    var indices = Enumerable.Range(0, n).ToArray();
+                    var batchIndexBuffer = new int[param.BatchSize ?? 32];
+                    for (int epoch = 0; epoch < param.Epochs; epoch++)
+                    {
+                        Shuffle(indices, rnd);
+                        for (int start = 0; start < n; start += (param.BatchSize ?? 32))
+                        {
+                            int batchCount = Math.Min(param.BatchSize ?? 32, n - start);
+                            var batchIndices = indices.AsSpan(start, batchCount);
+                            batchIndices.CopyTo(batchIndexBuffer);
+                            var batchIndexArray = batchIndexBuffer.AsSpan(0, batchCount).ToArray();
+                            using var batchIndexTensor = Tensorflow.NumPy.np.array(batchIndexArray, dtype: tf.int32);
+                            using var batchFeatures = trainFeatureTensor[batchIndexTensor];
+                            using var batchLabels = trainLabelTensor[batchIndexTensor];
+
+                            sess.run(optimizer, new FeedItem(x, batchFeatures), new FeedItem(y, batchLabels));
+                        }
+
+                        (var epochLoss, var epochFocalLoss) = ComputeDatasetMetrics(trainFeatureTensor, trainLabelTensor, epochPredBuffer, n);
+                        var epochAcc = ComputeWinnerAccuracy(data.TrainRaceIds, epochPredBuffer, data.TrainLabels);
+
+                        if (hasValidationExamples)
+                        {
+                            (var epochValLoss, var epochValFocalLoss) = ComputeDatasetMetrics(valFeatureTensor, valLabelTensor, valPreds, data.ValLabels.Count);
+                            var epochValAcc = ComputeWinnerAccuracy(data.ValRaceIds, valPreds, data.ValLabels);
+                            Console.WriteLine($"Epoch {epoch + 1}/{param.Epochs} - loss: {epochLoss:F4} - focal_loss: {epochFocalLoss:F4} - winner acc: {epochAcc:F4} - val_loss: {epochValLoss:F4} - val_focal_loss: {epochValFocalLoss:F4} - val_acc: {epochValAcc:F4}");
+
+                            if (epochValLoss < bestValLoss)
+                            {
+                                bestValLoss = epochValLoss;
+                                patienceCounter = 0;
+                                bestModelPath = Path.GetTempFileName();
+                                var saver = tf.train.Saver();
+                                saver.save(sess, bestModelPath);
+                                // Save best weights in memory
+                                bestWeights.Clear();
+                                foreach (var v in allVariables) bestWeights.Add(sess.run(v));
+                            }
+                            else
+                            {
+                                patienceCounter++;
+                            }
+                        }
+                        else
+                        {
+                            Console.WriteLine($"Epoch {epoch + 1}/{param.Epochs} - loss: {epochLoss:F4} - winner acc: {epochAcc:F4}");
+                        }
+                    }
+
+                    if (hasValidationExamples && bestWeights.Count > 0)
+                    {
+                        for (int i = 0; i < allVariables.Count; i++)
+                        {
+                            // Fix for InvalidCastException: Explicitly convert NDArray to constant Tensor
+                            var weightData = bestWeights[i].ToArray<float>();
+                            var shape = bestWeights[i].shape;
+                            var tensor = tf.constant(weightData, shape: shape);
+                            sess.run(allVariables[i].assign(tensor));
+                        }
+                    }
+                    (trainLoss, trainFocalLoss) = ComputeDatasetMetrics(trainFeatureTensor, trainLabelTensor, trainPreds, n);
+                    trainBrier = ComputeBrier(trainPreds, data.TrainLabels.ToArray()); // ToArray if List
+
+                    if (hasValidationExamples)
+                    {
+                        (valLoss, valFocalLoss) = ComputeDatasetMetrics(valFeatureTensor, valLabelTensor, valPreds, data.ValLabels.Count);
+                        valBrier = ComputeBrier(valPreds, data.ValLabels.ToArray());
+                    }
+
+                    trainAcc = ComputeWinnerAccuracy(data.TrainRaceIds, trainPreds, data.TrainLabels);
+                    valAcc = hasValidationExamples ? ComputeWinnerAccuracy(data.ValRaceIds, valPreds, data.ValLabels) : 0;
+                }
+            }
+            catch (Exception ex)
+            {
+                HyperparameterFailed(param, ex);
+                throw;
+            }
+            finally
+            {
+                if (bestModelPath != null && File.Exists(bestModelPath))
+                {
+                    File.Delete(bestModelPath);
+                }
+            }
+            var hiddenLayers = new List<LayerWeights>();
+            foreach (var (wVar, bVar) in hiddenWeightVars.Zip(hiddenBiasVars, (wVar, bVar) => (wVar, bVar)))
+            {
+                var weightArray = ToJagged2D(sess.run(wVar));
+                var biasArray = sess.run(bVar).ToArray<float>();
+                hiddenLayers.Add(new LayerWeights { Weights = weightArray, Bias = biasArray });
+            }
+
+            var outputLayer = new LayerWeights
+            {
+                Weights = ToJagged2D(sess.run(wOut)),
+                Bias = sess.run(bOut).ToArray<float>()
+            };
+
+            // Declare model variable outside the persistWeights block so it's accessible for return
+            TrainedModel? trainedModel = null;
+
+            // Feature metadata is not passed in the fold data explicitly, we need it if we want to save metadata
+            // For now, assuming standard metadata usage if we had it. 
+            // Since this optimized path is mostly for search (persistWeights=false), we skip saving full metadata if not available.
+
+            // Re-fetch master dataset just for metadata if persisting
+            if (persistWeights)
+            {
+                var dataset = EnsureMasterDatasetLoaded();
+                var featureKeys = dataset.FeatureKeys;
+                var featureDims = dataset.FeatureDimensions;
+                var stringMaps = dataset.StringMaps;
+                var trainedAtUtc = DateTime.UtcNow;
+                if (param.RunDate != default)
+                {
+                    trainedAtUtc = param.RunDate.Kind switch
+                    {
+                        DateTimeKind.Unspecified => DateTime.SpecifyKind(param.RunDate, DateTimeKind.Utc),
+                        DateTimeKind.Utc => param.RunDate,
+                        _ => param.RunDate.ToUniversalTime()
+                    };
+                }
+
+                trainedModel = new TrainedModel
+                {
+                    HiddenLayers = hiddenLayers,
+                    OutputLayer = outputLayer,
+                    Metadata = new FeatureMetadata
+                    {
+                        Keys = new List<string>(featureKeys),
+                        FeatureDimensions = new Dictionary<string, int>(featureDims),
+                        StringMaps = stringMaps.ToDictionary(
+                            kvp => kvp.Key,
+                            kvp => new Dictionary<string, int>(kvp.Value))
+                    },
+                    Normalization = new NormalizationParameters
+                    {
+                        Mean = (float[])normalization.Mean.Clone(),
+                        StdDev = (float[])normalization.StdDev.Clone()
+                    },
+                    Hyperparameters = new HyperparameterSummary
+                    {
+                        Layers = param.Layers ?? 0,
+                        Units = param.Units ?? 10,
+                        Dropout = param.Dropout ?? 0,
+                        LearningRate = param.LearningRate,
+                        Epochs = param.Epochs,
+                        BatchSize = param.BatchSize ?? 32,
+                        Folds = param.Folds,
+                        Fold = param.Fold,
+                        TrainedAtUtc = trainedAtUtc
+                    }
+                };
+
+                var weightsDirectory = Path.GetDirectoryName(_modelPath);
+                if (weightsDirectory != null)
+                {
+                    Directory.CreateDirectory(weightsDirectory);
+                }
+
+                var options = new JsonSerializerOptions { WriteIndented = true };
+                var serialized = JsonSerializer.Serialize(trainedModel, options);
+                File.WriteAllText(_modelPath, serialized);
+            }
+            else
+            {
+                // Create minimal model structure for return if not persisting (e.g. for Hybrid combination)
+                trainedModel = new TrainedModel
+                {
+                    HiddenLayers = hiddenLayers,
+                    OutputLayer = outputLayer,
+                    Normalization = normalization
+                };
+            }
+
+            HyperparameterCompleted(param, trainAcc, valAcc, trainLoss, valLoss, trainBrier, valBrier, trainFocalLoss, valFocalLoss);
+            return new TrainingResult
+            {
+                TrainAccuracy = trainAcc,
+                TrainLoss = trainLoss,
+                TrainBrier = trainBrier,
+                TrainFocalLoss = trainFocalLoss,
+                ValidationAccuracy = valAcc,
+                ValidationLoss = valLoss,
+                ValidationBrier = valBrier,
+                ValidationFocalLoss = valFocalLoss,
+                TrainingPredictions = Array.AsReadOnly(trainPreds),
+                TrainingLabels = new ReadOnlyCollection<float>(data.TrainLabels.ToList()),
+                TrainingRaceIds = new ReadOnlyCollection<int>(data.TrainRaceIds.ToList()),
+                ValidationPredictions = Array.AsReadOnly(valPreds),
+                ValidationLabels = new ReadOnlyCollection<float>(data.ValLabels.ToList()),
+                ValidationRaceIds = new ReadOnlyCollection<int>(data.ValRaceIds.ToList()),
+                ValidationExamples = new ReadOnlyCollection<RunnerExample>(data.ValExamples.ToList()),
+                FeatureCorrelations = new ReadOnlyCollection<FeatureCorrelation>(featureCorrelations),
+                Model = trainedModel // Return the model object for potential external usage
+            };
+        }
+        public TrainingResult TrainLightGbmOptimized(MLParameter param, MLContext mlContext, LightGbmFoldData data, bool persistWeights = false, string? modelPathOverride = null)
+        {
+            if (data.IsEmpty)
+            {
+                return new TrainingResult();
+            }
+            // Ensure we have actual data rows to prevent AccessViolation in LightGBM native
+            if (data.TrainData.GetRowCount() == 0)
+            {
+                Console.WriteLine("[LightGBM] Training skipped because training data view has 0 rows.");
+                return new TrainingResult();
+            }
+            NormalizeBatchSize(param);
+
+            var options = new LightGbmBinaryTrainer.Options
+            {
+                LabelColumnName = "Label",
+                FeatureColumnName = "Features",
+                NumberOfLeaves = param.LgbmLeaves > 1 ? param.LgbmLeaves.Value : 31,
+                MinimumExampleCountPerLeaf = param.LgbmMinDataInLeaf > 0 ? param.LgbmMinDataInLeaf.Value : 20,
+                LearningRate = param.LearningRate > 0 ? param.LearningRate : 0.1,
+                NumberOfIterations = param.Epochs > 0 ? param.Epochs : 100,
+            };
+
+            if (param.Threads.HasValue && param.Threads.Value > 0)
+            {
+                options.NumberOfThreads = param.Threads.Value;
+            }
+
+            var pipeline = mlContext.BinaryClassification.Trainers.LightGbm(options);
+
+            var model = pipeline.Fit(data.TrainData);
+
+            var trainPredictions = model.Transform(data.TrainData);
+            var valPredictions = model.Transform(data.ValData);
+
+            var trainMetrics = mlContext.BinaryClassification.Evaluate(trainPredictions, labelColumnName: "Label");
+            var valMetrics = mlContext.BinaryClassification.Evaluate(valPredictions, labelColumnName: "Label");
+
+            var trainProbs = trainPredictions.GetColumn<float>("Probability").ToArray();
+            var valProbs = valPredictions.GetColumn<float>("Probability").ToArray();
+
+            var trainLabelsArr = data.TrainLabels.ToArray();
+            var valLabelsArr = data.ValLabels.ToArray();
+            var trainRaceIdsArr = data.TrainRaceIds.ToArray();
+            var valRaceIdsArr = data.ValRaceIds.ToArray();
+
+            double trainAcc = ComputeWinnerAccuracy(trainRaceIdsArr, trainProbs, trainLabelsArr);
+            double valAcc = ComputeWinnerAccuracy(valRaceIdsArr, valProbs, valLabelsArr);
+            double trainBrier = ComputeBrier(trainProbs, trainLabelsArr);
+            double valBrier = ComputeBrier(valProbs, valLabelsArr);
+            if (persistWeights)
+            {
+                var targetPath = !string.IsNullOrEmpty(modelPathOverride)
+                    ? (Path.IsPathRooted(modelPathOverride) ? modelPathOverride : Path.Combine(AppContext.BaseDirectory, modelPathOverride))
+                    : _modelPath;
+
+                var modelPath = Path.ChangeExtension(targetPath, ".zip");
+                mlContext.Model.Save(model, data.TrainData.Schema, modelPath);
+
+                // Only save JSON metadata if standard flow (no override)
+                // In Hybrid flow, we handle JSON creation in TrainHybrid to avoid race conditions/overwrites
+                if (string.IsNullOrEmpty(modelPathOverride))
+                {
+                    var dataset = EnsureMasterDatasetLoaded();
+                    var metadataModel = new TrainedModel
+                    {
+                        Metadata = new FeatureMetadata
+                        {
+                            Keys = new List<string>(dataset.FeatureKeys),
+                            FeatureDimensions = new Dictionary<string, int>(dataset.FeatureDimensions),
+                            StringMaps = dataset.StringMaps.ToDictionary(
+                                kvp => kvp.Key,
+                                kvp => new Dictionary<string, int>(kvp.Value))
+                        },
+                        Hyperparameters = new HyperparameterSummary
+                        {
+                            ModelType = 1, // LightGBM
+                            TrainedAtUtc = DateTime.UtcNow
+                        }
+                    };
+                    var optionsJson = new JsonSerializerOptions { WriteIndented = true };
+                    var serialized = JsonSerializer.Serialize(metadataModel, optionsJson);
+                    File.WriteAllText(targetPath, serialized);
+                }
+            }
+            return new TrainingResult
+            {
+                TrainAccuracy = trainAcc,
+                TrainLoss = trainMetrics.LogLoss,
+                TrainBrier = trainBrier,
+                ValidationAccuracy = valAcc,
+                ValidationLoss = valMetrics.LogLoss,
+                ValidationBrier = valBrier,
+                TrainingPredictions = Array.AsReadOnly(trainProbs),
+                TrainingLabels = Array.AsReadOnly(trainLabelsArr),
+                TrainingRaceIds = Array.AsReadOnly(trainRaceIdsArr),
+                ValidationPredictions = Array.AsReadOnly(valProbs),
+                ValidationLabels = Array.AsReadOnly(valLabelsArr),
+                ValidationRaceIds = Array.AsReadOnly(valRaceIdsArr),
+                ValidationExamples = new ReadOnlyCollection<RunnerExample>(data.ValExamples.ToList())
+            };
+        }
     }
 }
