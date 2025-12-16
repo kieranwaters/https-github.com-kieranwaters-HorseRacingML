@@ -30,6 +30,7 @@
                         <select asp-for="Parameters[i].ModelType" class="form-select model-type-select" onchange="toggleInputs(this)">
                             <option value="0">Neural Network</option>
                             <option value="1">LightGBM</option>
+                            <option value="2">NN + LightGBM</option>
                         </select>
                     </td>
                     <td>
@@ -91,10 +92,13 @@
 
         function toggleInputs(selectElement) {
             const row = selectElement.closest('tr');
-            const isLgbm = selectElement.value === "1";
+            const mode = selectElement.value; // "0"=NN, "1"=LGBM, "2"=Hybrid
 
-            row.querySelectorAll('.nn-input').forEach(el => el.style.display = isLgbm ? 'none' : '');
-            row.querySelectorAll('.lgbm-input').forEach(el => el.style.display = isLgbm ? '' : 'none');
+            const showNn = mode === "0" || mode === "2";
+            const showLgbm = mode === "1" || mode === "2";
+
+            row.querySelectorAll('.nn-input').forEach(el => el.style.display = showNn ? '' : 'none');
+            row.querySelectorAll('.lgbm-input').forEach(el => el.style.display = showLgbm ? '' : 'none');
         }
 
         function addRow() {
@@ -106,6 +110,7 @@
                         <select name="Parameters[${index}].ModelType" class="form-select model-type-select" onchange="toggleInputs(this)">
                             <option value="0">Neural Network</option>
                             <option value="1">LightGBM</option>
+                            <option value="2">NN + LightGBM</option>
                         </select>
                     </td>
                     <td>
@@ -138,6 +143,7 @@
                     <input type="hidden" name="Parameters[${index}].RunDate" value="${new Date().toISOString()}" />
                 </tr>`;
             document.getElementById('parameterRows').insertAdjacentHTML('beforeend', template);
+            // Trigger toggle for new row (defaults to NN 0, so no visual change, but good practice)
         }
         function removeRow(btn) {
             btn.closest('tr').remove();
@@ -218,6 +224,7 @@
                 // Extract data from the row inputs
                 const modelType = parseInt(row.querySelector('.model-type-select').value);
                 const isLgbm = modelType === 1;
+                const isHybrid = modelType === 2;
 
                 const model = {
                     ModelType: modelType,
@@ -229,11 +236,13 @@
                     RunDate: new Date().toISOString()
                 };
 
-                if (isLgbm) {
+                if (isLgbm || isHybrid) {
                     model.LgbmLeaves = parseInt(row.querySelector('.lgbm-input[placeholder="Leaves"]').value) || 31;
                     model.LgbmMinDataInLeaf = parseInt(row.querySelector('.lgbm-input[placeholder="Min Data"]').value) || 20;
                     model.LgbmMaxDepth = parseInt(row.querySelector('.lgbm-input[placeholder="Max Depth"]').value) || -1;
-                } else {
+                }
+
+                if (!isLgbm) { // NN or Hybrid
                     model.Units = parseInt(row.querySelector('.nn-input[placeholder="Units"]').value) || 10;
                     model.Dropout = parseFloat(row.querySelector('.nn-input[placeholder="Dropout"]').value) || 0;
                     model.Layers = parseInt(row.querySelector('.nn-input[placeholder="Layers"]').value) || 1;
