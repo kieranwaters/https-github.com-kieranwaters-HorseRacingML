@@ -3,11 +3,11 @@ using HorseRacingML.Data;
 using HorseRacingML.ML;
 using HorseRacingML.Models;
 using HorseRacingML.Services;
+using HorseRacingML.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using System;
-using HorseRacingML.Services;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -85,16 +85,16 @@ namespace HorseRacingML.Controllers
                         var lastFoldIndex = model.Folds - 1;
                         Console.WriteLine($"[Hyperparameter]  Training ONLY final fold {lastFoldIndex + 1}/{model.Folds}...");
 
-                        TrainingResult result;
+                        HyperparameterTrainer.TrainingResult result;
                         var preparedData = _trainer.GetPreparedFold(lastFoldIndex, model.Folds, model.ModelType, mlContext);
 
                         if (model.ModelType == 1)
                         {
-                            result = _trainer.TrainLightGbmOptimized(model, mlContext, (LightGbmFoldData)preparedData, persistWeights: false);
+                            result = _trainer.TrainLightGbmOptimized(model, mlContext, (HyperparameterTrainer.LightGbmFoldData)preparedData, persistWeights: false);
                         }
                         else
                         {
-                            result = _trainer.TrainTensorFlowOptimized(model, (TensorFlowFoldData)preparedData, persistWeights: false);
+                            result = _trainer.TrainTensorFlowOptimized(model, (HyperparameterTrainer.TensorFlowFoldData)preparedData, persistWeights: false);
                         }
 
                         model.TrainAccuracy = result.TrainAccuracy;
@@ -134,16 +134,16 @@ namespace HorseRacingML.Controllers
                         {
                             Console.WriteLine($"[Hyperparameter]  Fold {i + 1}/{model.Folds} - training in progress...");
 
-                            TrainingResult result;
+                            HyperparameterTrainer.TrainingResult result;
                             var preparedData = _trainer.GetPreparedFold(i, model.Folds, model.ModelType, mlContext);
 
                             if (model.ModelType == 1)
                             {
-                                result = _trainer.TrainLightGbmOptimized(model, mlContext, (LightGbmFoldData)preparedData, persistWeights: false);
+                                result = _trainer.TrainLightGbmOptimized(model, mlContext, (HyperparameterTrainer.LightGbmFoldData)preparedData, persistWeights: false);
                             }
                             else
                             {
-                                result = _trainer.TrainTensorFlowOptimized(model, (TensorFlowFoldData)preparedData, persistWeights: false);
+                                result = _trainer.TrainTensorFlowOptimized(model, (HyperparameterTrainer.TensorFlowFoldData)preparedData, persistWeights: false);
                             }
 
                             if (result.TrainingRaceIds.Count == 0)
@@ -244,16 +244,16 @@ namespace HorseRacingML.Controllers
                         var lastFoldIndex = model.Folds - 1;
                         Console.WriteLine($"[Hyperparameter] Training ONLY final fold {lastFoldIndex + 1}/{model.Folds}...");
 
-                        TrainingResult result;
+                        HyperparameterTrainer.TrainingResult result;
                         var preparedData = _trainer.GetPreparedFold(lastFoldIndex, model.Folds, model.ModelType, mlContext);
 
                         if (model.ModelType == 1)
                         {
-                            result = _trainer.TrainLightGbmOptimized(model, mlContext, (LightGbmFoldData)preparedData, persistWeights: false);
+                            result = _trainer.TrainLightGbmOptimized(model, mlContext, (HyperparameterTrainer.LightGbmFoldData)preparedData, persistWeights: false);
                         }
                         else
                         {
-                            result = _trainer.TrainTensorFlowOptimized(model, (TensorFlowFoldData)preparedData, persistWeights: false);
+                            result = _trainer.TrainTensorFlowOptimized(model, (HyperparameterTrainer.TensorFlowFoldData)preparedData, persistWeights: false);
                         }
 
                         model.TrainAccuracy = result.TrainAccuracy;
@@ -293,16 +293,16 @@ namespace HorseRacingML.Controllers
                         {
                             Console.WriteLine($"[Hyperparameter] Fold {i + 1}/{model.Folds} - training in progress...");
 
-                            TrainingResult result;
+                            HyperparameterTrainer.TrainingResult result;
                             var preparedData = _trainer.GetPreparedFold(i, model.Folds, model.ModelType, mlContext);
 
                             if (model.ModelType == 1)
                             {
-                                result = _trainer.TrainLightGbmOptimized(model, mlContext, (LightGbmFoldData)preparedData, persistWeights: false);
+                                result = _trainer.TrainLightGbmOptimized(model, mlContext, (HyperparameterTrainer.LightGbmFoldData)preparedData, persistWeights: false);
                             }
                             else
                             {
-                                result = _trainer.TrainTensorFlowOptimized(model, (TensorFlowFoldData)preparedData, persistWeights: false);
+                                result = _trainer.TrainTensorFlowOptimized(model, (HyperparameterTrainer.TensorFlowFoldData)preparedData, persistWeights: false);
                             }
 
                             if (result.TrainingRaceIds.Count == 0)
@@ -415,15 +415,15 @@ namespace HorseRacingML.Controllers
 
                     var mlContext = _trainer.CreateLightGbmContext();
                     var preparedData = _trainer.GetPreparedFold(0, 1, model.ModelType, mlContext);
-                    TrainingResult result;
+                    HyperparameterTrainer.TrainingResult result;
 
                     if (model.ModelType == 1)
                     {
-                        result = _trainer.TrainLightGbmOptimized(model, mlContext, (LightGbmFoldData)preparedData, persistWeights: true);
+                        result = _trainer.TrainLightGbmOptimized(model, mlContext, (HyperparameterTrainer.LightGbmFoldData)preparedData, persistWeights: true);
                     }
                     else
                     {
-                        result = _trainer.TrainTensorFlowOptimized(model, (TensorFlowFoldData)preparedData, persistWeights: true);
+                        result = _trainer.TrainTensorFlowOptimized(model, (HyperparameterTrainer.TensorFlowFoldData)preparedData, persistWeights: true);
                     }
 
                     model.TrainAccuracy = result.TrainAccuracy;

@@ -254,6 +254,13 @@ namespace HorseRacingML.ML
                 return null;
             }
         }
+
+        public HyperparameterSummary? LoadPersistedHyperparameters()
+        {
+            var model = LoadModel();
+            return model?.Hyperparameters;
+        }
+
         public TrainingResult Train(MLParameter param, int foldIndex, int foldCount, bool persistWeights = true)
         {
             NormalizeBatchSize(param);
@@ -1036,11 +1043,11 @@ namespace HorseRacingML.ML
             int patienceCounter = 0;
             string? bestModelPath = null;
             List<FeatureCorrelation> featureCorrelations = new();
-            HyperparameterStarted(param, data.TrainLabels.Count, data.ValLabels.Count, featureCount);
+            HyperparameterStarted(param, trainLabels.Length, valLabels.Length, featureCount);
 
             try
             {
-                int n = data.TrainLabels.Count;
+                int n = trainLabels.Length;
                 if (n > 0)
                 {
                     var indices = Enumerable.Range(0, n).ToArray();
@@ -1062,12 +1069,12 @@ namespace HorseRacingML.ML
                         }
 
                         (var epochLoss, var epochFocalLoss) = ComputeDatasetMetrics(trainFeatureTensor, trainLabelTensor, epochPredBuffer, n);
-                        var epochAcc = ComputeWinnerAccuracy(data.TrainRaceIds, epochPredBuffer, data.TrainLabels);
+                        var epochAcc = ComputeWinnerAccuracy(trainRaceIds, epochPredBuffer, trainLabels);
 
                         if (hasValidationExamples)
                         {
-                            (var epochValLoss, var epochValFocalLoss) = ComputeDatasetMetrics(valFeatureTensor, valLabelTensor, valPreds, data.ValLabels.Count);
-                            var epochValAcc = ComputeWinnerAccuracy(data.ValRaceIds, valPreds, data.ValLabels);
+                            (var epochValLoss, var epochValFocalLoss) = ComputeDatasetMetrics(valFeatureTensor, valLabelTensor, valPreds, valLabels.Length);
+                            var epochValAcc = ComputeWinnerAccuracy(valRaceIds, valPreds, valLabels);
                             Console.WriteLine($"Epoch {epoch + 1}/{param.Epochs} - loss: {epochLoss:F4} - focal_loss: {epochFocalLoss:F4} - winner acc: {epochAcc:F4} - val_loss: {epochValLoss:F4} - val_focal_loss: {epochValFocalLoss:F4} - val_acc: {epochValAcc:F4}");
 
                             if (epochValLoss < bestValLoss)
@@ -1104,16 +1111,16 @@ namespace HorseRacingML.ML
                         }
                     }
                     (trainLoss, trainFocalLoss) = ComputeDatasetMetrics(trainFeatureTensor, trainLabelTensor, trainPreds, n);
-                    trainBrier = ComputeBrier(trainPreds, data.TrainLabels.ToArray()); // ToArray if List
+                    trainBrier = ComputeBrier(trainPreds, trainLabels); // ToArray if List
 
                     if (hasValidationExamples)
                     {
-                        (valLoss, valFocalLoss) = ComputeDatasetMetrics(valFeatureTensor, valLabelTensor, valPreds, data.ValLabels.Count);
-                        valBrier = ComputeBrier(valPreds, data.ValLabels.ToArray());
+                        (valLoss, valFocalLoss) = ComputeDatasetMetrics(valFeatureTensor, valLabelTensor, valPreds, valLabels.Length);
+                        valBrier = ComputeBrier(valPreds, valLabels);
                     }
 
-                    trainAcc = ComputeWinnerAccuracy(data.TrainRaceIds, trainPreds, data.TrainLabels);
-                    valAcc = hasValidationExamples ? ComputeWinnerAccuracy(data.ValRaceIds, valPreds, data.ValLabels) : 0;
+                    trainAcc = ComputeWinnerAccuracy(trainRaceIds, trainPreds, trainLabels);
+                    valAcc = hasValidationExamples ? ComputeWinnerAccuracy(valRaceIds, valPreds, valLabels) : 0;
                 }
             }
             catch (Exception ex)
@@ -1164,65 +1171,60 @@ namespace HorseRacingML.ML
 
             if (persistWeights)
             {
-                var targetPath = !string.IsNullOrEmpty(modelPathOverride)
-                    ? (Path.IsPathRooted(modelPathOverride) ? modelPathOverride : Path.Combine(AppContext.BaseDirectory, modelPathOverride))
-                    : _modelPath;
+                var targetPath = _modelPath;
 
-                var dataset = EnsureMasterDatasetLoaded();
+                // var dataset = EnsureMasterDatasetLoaded(); // Already available as parameter 'dataset'
 
-                if (string.IsNullOrEmpty(modelPathOverride)) // Only save full metadata if not overridden (standard flow)
+                var featureKeys = dataset.FeatureKeys;
+                var featureDims = dataset.FeatureDimensions;
+                var stringMaps = dataset.StringMaps;
+                var trainedAtUtc = DateTime.UtcNow;
+                if (param.RunDate != default)
                 {
-                    var featureKeys = dataset.FeatureKeys;
-                    var featureDims = dataset.FeatureDimensions;
-                    var stringMaps = dataset.StringMaps;
-                    var trainedAtUtc = DateTime.UtcNow;
-                    if (param.RunDate != default)
+                    trainedAtUtc = param.RunDate.Kind switch
                     {
-                        trainedAtUtc = param.RunDate.Kind switch
-                        {
-                            DateTimeKind.Unspecified => DateTime.SpecifyKind(param.RunDate, DateTimeKind.Utc),
-                            DateTimeKind.Utc => param.RunDate,
-                            _ => param.RunDate.ToUniversalTime()
-                        };
-                    }
-
-                    // Populate model properties for standard save
-                    trainedModel.Metadata = new FeatureMetadata
-                    {
-                        Keys = new List<string>(featureKeys),
-                        FeatureDimensions = new Dictionary<string, int>(featureDims),
-                        StringMaps = stringMaps.ToDictionary(
-                            kvp => kvp.Key,
-                            kvp => new Dictionary<string, int>(kvp.Value))
+                        DateTimeKind.Unspecified => DateTime.SpecifyKind(param.RunDate, DateTimeKind.Utc),
+                        DateTimeKind.Utc => param.RunDate,
+                        _ => param.RunDate.ToUniversalTime()
                     };
-                    trainedModel.Normalization = new NormalizationParameters
-                    {
-                        Mean = (float[])normalization.Mean.Clone(),
-                        StdDev = (float[])normalization.StdDev.Clone()
-                    };
-                    trainedModel.Hyperparameters = new HyperparameterSummary
-                    {
-                        Layers = param.Layers ?? 0,
-                        Units = param.Units ?? 10,
-                        Dropout = param.Dropout ?? 0,
-                        LearningRate = param.LearningRate,
-                        Epochs = param.Epochs,
-                        BatchSize = param.BatchSize ?? 32,
-                        Folds = param.Folds,
-                        Fold = param.Fold,
-                        TrainedAtUtc = trainedAtUtc
-                    };
-
-                    var weightsDirectory = Path.GetDirectoryName(targetPath);
-                    if (weightsDirectory != null)
-                    {
-                        Directory.CreateDirectory(weightsDirectory);
-                    }
-
-                    var options = new JsonSerializerOptions { WriteIndented = true };
-                    var serialized = JsonSerializer.Serialize(trainedModel, options);
-                    File.WriteAllText(targetPath, serialized);
                 }
+
+                // Populate model properties for standard save
+                trainedModel.Metadata = new FeatureMetadata
+                {
+                    Keys = new List<string>(featureKeys),
+                    FeatureDimensions = new Dictionary<string, int>(featureDims),
+                    StringMaps = stringMaps.ToDictionary(
+                        kvp => kvp.Key,
+                        kvp => new Dictionary<string, int>(kvp.Value))
+                };
+                trainedModel.Normalization = new NormalizationParameters
+                {
+                    Mean = (float[])dataset.Normalization.Mean.Clone(),
+                    StdDev = (float[])dataset.Normalization.StdDev.Clone()
+                };
+                trainedModel.Hyperparameters = new HyperparameterSummary
+                {
+                    Layers = param.Layers ?? 0,
+                    Units = param.Units ?? 10,
+                    Dropout = param.Dropout ?? 0,
+                    LearningRate = param.LearningRate,
+                    Epochs = param.Epochs,
+                    BatchSize = param.BatchSize ?? 32,
+                    Folds = param.Folds,
+                    Fold = param.Fold,
+                    TrainedAtUtc = trainedAtUtc
+                };
+
+                var weightsDirectory = Path.GetDirectoryName(targetPath);
+                if (weightsDirectory != null)
+                {
+                    Directory.CreateDirectory(weightsDirectory);
+                }
+
+                var options = new JsonSerializerOptions { WriteIndented = true };
+                var serialized = JsonSerializer.Serialize(trainedModel, options);
+                File.WriteAllText(targetPath, serialized);
             }
 
             HyperparameterCompleted(param, trainAcc, valAcc, trainLoss, valLoss, trainBrier, valBrier, trainFocalLoss, valFocalLoss);
@@ -1237,12 +1239,12 @@ namespace HorseRacingML.ML
                 ValidationBrier = valBrier,
                 ValidationFocalLoss = valFocalLoss,
                 TrainingPredictions = Array.AsReadOnly(trainPreds),
-                TrainingLabels = new ReadOnlyCollection<float>(data.TrainLabels.ToList()),
-                TrainingRaceIds = new ReadOnlyCollection<int>(data.TrainRaceIds.ToList()),
+                TrainingLabels = new ReadOnlyCollection<float>(trainLabels.ToList()),
+                TrainingRaceIds = new ReadOnlyCollection<int>(trainRaceIds.ToList()),
                 ValidationPredictions = Array.AsReadOnly(valPreds),
-                ValidationLabels = new ReadOnlyCollection<float>(data.ValLabels.ToList()),
-                ValidationRaceIds = new ReadOnlyCollection<int>(data.ValRaceIds.ToList()),
-                ValidationExamples = new ReadOnlyCollection<RunnerExample>(data.ValExamples.ToList()),
+                ValidationLabels = new ReadOnlyCollection<float>(valLabels.ToList()),
+                ValidationRaceIds = new ReadOnlyCollection<int>(valRaceIds.ToList()),
+                ValidationExamples = new ReadOnlyCollection<RunnerExample>(valExamples.ToList()),
                 FeatureCorrelations = new ReadOnlyCollection<FeatureCorrelation>(featureCorrelations),
                 Model = trainedModel // Return the model object for potential external usage
             };
@@ -1796,7 +1798,7 @@ namespace HorseRacingML.ML
                 IsEmpty = false
             };
         }
-        public TrainingResult TrainTensorFlowOptimized(MLParameter param, TensorFlowFoldData data, bool persistWeights = true)
+        public TrainingResult TrainTensorFlowOptimized(MLParameter param, TensorFlowFoldData data, bool persistWeights = true, string? modelPathOverride = null)
         {
             if (data.IsEmpty) return new TrainingResult();
             NormalizeBatchSize(param);
@@ -2048,8 +2050,20 @@ namespace HorseRacingML.ML
             // Since this optimized path is mostly for search (persistWeights=false), we skip saving full metadata if not available.
 
             // Re-fetch master dataset just for metadata if persisting
+            // Warning: If we are in Hybrid training, EnsureMasterDatasetLoaded returns the FULL dataset,
+            // but the NN model was trained on a SUBSET (from 'data' argument).
+            // We must use the keys from 'data' (if available?) or we need to pass metadata in.
+            // TensorFlowFoldData does not contain metadata.
+            // However, in TrainHybrid, we call this with persistWeights=true/false. 
+            // If we are in TrainHybrid, we handle persistence manually OR we rely on the override.
+            // If modelPathOverride is set, we assume we want to save there.
+
             if (persistWeights)
             {
+                var targetPath = !string.IsNullOrEmpty(modelPathOverride)
+                    ? (Path.IsPathRooted(modelPathOverride) ? modelPathOverride : Path.Combine(AppContext.BaseDirectory, modelPathOverride))
+                    : _modelPath;
+
                 var dataset = EnsureMasterDatasetLoaded();
                 var featureKeys = dataset.FeatureKeys;
                 var featureDims = dataset.FeatureDimensions;
@@ -2096,7 +2110,7 @@ namespace HorseRacingML.ML
                     }
                 };
 
-                var weightsDirectory = Path.GetDirectoryName(_modelPath);
+                var weightsDirectory = Path.GetDirectoryName(targetPath);
                 if (weightsDirectory != null)
                 {
                     Directory.CreateDirectory(weightsDirectory);
@@ -2104,7 +2118,7 @@ namespace HorseRacingML.ML
 
                 var options = new JsonSerializerOptions { WriteIndented = true };
                 var serialized = JsonSerializer.Serialize(trainedModel, options);
-                File.WriteAllText(_modelPath, serialized);
+                File.WriteAllText(targetPath, serialized);
             }
             else
             {
@@ -2139,18 +2153,18 @@ namespace HorseRacingML.ML
                 Model = trainedModel // Return the model object for potential external usage
             };
         }
-        private static double[][] ToJagged2D(NDArray nd)
+        private static float[][] ToJagged2D(NDArray nd)
         {
-            // Helper to convert TF NDArray to double[][]
-            if (nd.ndim != 2) return Array.Empty<double[]>();
+            // Helper to convert TF NDArray to float[][]
+            if (nd.ndim != 2) return Array.Empty<float[]>();
             var rows = nd.shape[0];
             var cols = nd.shape[1];
-            // This is a naive implementation; optimize if needed
-            var result = new double[rows][];
+
+            var result = new float[rows][];
             var flat = nd.ToArray<float>();
             for (int i = 0; i < rows; i++)
             {
-                var row = new double[cols];
+                var row = new float[cols];
                 for (int j = 0; j < cols; j++) row[j] = flat[i * cols + j];
                 result[i] = row;
             }
@@ -2171,7 +2185,10 @@ namespace HorseRacingML.ML
             // However, implementing via standard TF ops:
 
             var bce = tf.nn.sigmoid_cross_entropy_with_logits(labels: yTrue, logits: yLogits);
-            var alpha_t = tf.where(tf.equal(yTrue, 1), tf.fill(tf.shape(yTrue), alpha), tf.fill(tf.shape(yTrue), 1 - alpha));
+            // Fix: Wrap alpha in tf.constant
+            var alphaTensor = tf.constant(alpha);
+            var oneMinusAlphaTensor = tf.constant(1 - alpha);
+            var alpha_t = tf.where(tf.equal(yTrue, 1), tf.fill(tf.shape(yTrue), alphaTensor), tf.fill(tf.shape(yTrue), oneMinusAlphaTensor));
             var p_t = tf.where(tf.equal(yTrue, 1), sigmoidP, 1 - sigmoidP);
 
             var loss = alpha_t * tf.pow(1 - p_t, gamma) * bce;

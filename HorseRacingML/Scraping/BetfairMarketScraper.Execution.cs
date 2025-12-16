@@ -68,7 +68,7 @@ namespace HorseRacingML.Scraping
         private BetfairScrapeResult ScrapeOpenRaceTabsInternal(IWebDriver driver, bool executeBets, bool captureReport, IEnumerable<string>? handlesToProcess = null)
         {
             var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10)); // short explicit wait
-            var handles = handlesToProcess?.ToList() ?? driver.WindowHandles.ToList(); // collect tab handles
+            List<string> handles = handlesToProcess?.ToList() ?? driver.WindowHandles.ToList(); // collect tab handles
             var orderedHandles = OrderHandlesByScheduledStart(driver, handles);
             Console.WriteLine($"[DayReport][Stage] Preparing to process {orderedHandles.Count} open tab(s) for the day report.");
             _loadedHyperparameters = null;
