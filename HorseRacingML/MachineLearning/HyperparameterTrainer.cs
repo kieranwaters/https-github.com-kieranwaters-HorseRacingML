@@ -1461,7 +1461,7 @@ namespace HorseRacingML.ML
             // We tell it to persist weights to "NNLightGBM.json" (which triggers .zip save), but it won't write the JSON due to the override check.
             var lgbmParam = new MLParameter
             {
-                ModelType = param.ModelType,
+                ModelType = 1, // Explicitly set to LightGBM so validation (e.g. BatchSize) is handled correctly
                 RunDate = param.RunDate,
                 Folds = param.Folds,
                 Fold = param.Fold,
