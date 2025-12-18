@@ -994,7 +994,7 @@ namespace HorseRacingML.ML
 
                 if (count == 0) return (0, 0);
 
-                const int evalBatchSize = 8192;
+                const int evalBatchSize = 2048;
                 double weightedLoss = 0;
                 double weightedFocalLoss = 0;
                 int totalExamples = 0;
@@ -1002,20 +1002,30 @@ namespace HorseRacingML.ML
                 for (int start = 0; start < count; start += evalBatchSize)
                 {
                     int batchCount = Math.Min(evalBatchSize, count - start);
-                    var featureSlice = featureTensor[new Slice(start, start + batchCount), Slice.All];
-                    var labelSlice = labelTensor[new Slice(start, start + batchCount), Slice.All];
+                    using var featureSlice = featureTensor[new Slice(start, start + batchCount), Slice.All];
+                    using var labelSlice = labelTensor[new Slice(start, start + batchCount), Slice.All];
 
                     var results = sess.run(new[] { loss, focalLoss, prediction },
                         new FeedItem(x, featureSlice),
                         new FeedItem(y, labelSlice));
 
-                    var chunkLoss = results[0].ToArray<float>()[0];
-                    var chunkFocalLoss = results[1].ToArray<float>()[0];
-                    var chunkPreds = results[2].ToArray<float>();
-                    Array.Copy(chunkPreds, 0, preds, start, batchCount);
-                    weightedLoss += chunkLoss * batchCount;
-                    weightedFocalLoss += chunkFocalLoss * batchCount;
-                    totalExamples += batchCount;
+                    try
+                    {
+                        var chunkLoss = results[0].ToArray<float>()[0];
+                        var chunkFocalLoss = results[1].ToArray<float>()[0];
+                        var chunkPreds = results[2].ToArray<float>();
+                        Array.Copy(chunkPreds, 0, preds, start, batchCount);
+                        weightedLoss += chunkLoss * batchCount;
+                        weightedFocalLoss += chunkFocalLoss * batchCount;
+                        totalExamples += batchCount;
+                    }
+                    finally
+                    {
+                        foreach (var result in results)
+                        {
+                            result.Dispose();
+                        }
+                    }
                 }
 
                 return totalExamples > 0 ? (weightedLoss / totalExamples, weightedFocalLoss / totalExamples) : (0, 0);
@@ -1228,6 +1238,11 @@ namespace HorseRacingML.ML
             }
 
             HyperparameterCompleted(param, trainAcc, valAcc, trainLoss, valLoss, trainBrier, valBrier, trainFocalLoss, valFocalLoss);
+
+            // Force garbage collection to clean up native TensorFlow resources
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+
             return new TrainingResult
             {
                 TrainAccuracy = trainAcc,
@@ -1571,7 +1586,6 @@ namespace HorseRacingML.ML
                 ValidationAccuracy = valAcc,
                 ValidationLoss = (nnResult.ValidationLoss + lgbmResult.ValidationLoss) / 2,
                 ValidationBrier = valBrier,
-                TrainingRaceIds = nnResult.TrainingRaceIds,
                 ValidationPredictions = Array.AsReadOnly(valPreds),
                 ValidationLabels = valLabels,
                 ValidationRaceIds = valRaceIds,
@@ -1906,7 +1920,7 @@ namespace HorseRacingML.ML
 
                 const int evalBatchSize = 8192;
                 double weightedLoss = 0;
-                double weightedFocalLoss = 0;//
+                double weightedFocalLoss = 0;
                 int totalExamples = 0;
 
                 for (int start = 0; start < count; start += evalBatchSize)
