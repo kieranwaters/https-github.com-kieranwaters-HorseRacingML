@@ -227,13 +227,89 @@ namespace HorseRacingML.ML
 
         public TrainingResult Evaluate(TrainingDataset dataset)
         {
-            // Placeholder for missing Evaluate method. 
-            // Logic: Load model, predict on dataset, return metrics.
-            var model = LoadModel();
-            if (model == null) return new TrainingResult();
-            // Minimal impl: just return empty if real eval logic is complex and missing.
-            // Or call AIOddsCalculator logic... but this returns TrainingResult.
-            return new TrainingResult();
+            if (dataset is null) throw new ArgumentNullException(nameof(dataset));
+
+            Console.WriteLine("[AI] Evaluating model using AIOddsCalculator...");
+            var calculator = new AIOddsCalculator(_modelPath);
+
+            // Determine if Hybrid logic should be used based on the loaded model's metadata
+            bool useHybrid = calculator.Hyperparameters?.ModelType == 2;
+
+            var valPreds = new List<float>();
+            var valLabels = new List<float>();
+            var valRaceIds = new List<int>();
+            var valExamples = new List<RunnerExample>();
+
+            // Process races sequentially as AIOddsCalculator (specifically PredictionEngine) is not thread-safe
+            foreach (var race in dataset.ValidationRaces)
+            {
+                var probabilities = calculator.CalculateProbabilities(race.Runners, useHybrid: useHybrid);
+
+                for (int i = 0; i < race.Runners.Count; i++)
+                {
+                    var runner = race.Runners[i];
+                    var prob = (float)probabilities[i].Probability;
+
+                    valPreds.Add(prob);
+                    valLabels.Add(runner.Label);
+                    valRaceIds.Add(runner.RaceId);
+                    valExamples.Add(runner);
+                }
+            }
+
+            var predictions = valPreds.ToArray();
+            var labels = valLabels.ToArray();
+            var raceIds = valRaceIds.ToArray();
+
+            double valAcc = ComputeWinnerAccuracy(raceIds, predictions, labels);
+            double valBrier = ComputeBrier(predictions, labels);
+
+            // Compute LogLoss and FocalLoss manually
+            double totalLogLoss = 0;
+            double totalFocalLoss = 0;
+            int count = predictions.Length;
+            float alpha = 0.25f;
+            float gamma = 2.0f;
+
+            for (int i = 0; i < count; i++)
+            {
+                float p = predictions[i];
+                float y = labels[i];
+
+                // Clamp p to avoid log(0)
+                p = Math.Clamp(p, 1e-7f, 1f - 1e-7f);
+
+                // Log Loss
+                double logP = Math.Log(p);
+                double log1MinusP = Math.Log(1 - p);
+                double sampleLogLoss = -(y * logP + (1 - y) * log1MinusP);
+                totalLogLoss += sampleLogLoss;
+
+                // Focal Loss
+                // p_t = p if y=1 else 1-p
+                // alpha_t = alpha if y=1 else 1-alpha
+                float pt = (y == 1f) ? p : (1f - p);
+                float alphaT = (y == 1f) ? alpha : (1f - alpha);
+                double sampleFocalLoss = -alphaT * Math.Pow(1 - pt, gamma) * Math.Log(pt);
+                totalFocalLoss += sampleFocalLoss;
+            }
+
+            double avgLogLoss = count > 0 ? totalLogLoss / count : 0;
+            double avgFocalLoss = count > 0 ? totalFocalLoss / count : 0;
+
+            Console.WriteLine($"[AI] Evaluation complete. Accuracy: {valAcc:P2}, Loss: {avgLogLoss:F4}");
+
+            return new TrainingResult
+            {
+                ValidationAccuracy = valAcc,
+                ValidationLoss = avgLogLoss,
+                ValidationBrier = valBrier,
+                ValidationFocalLoss = avgFocalLoss,
+                ValidationPredictions = predictions,
+                ValidationLabels = labels,
+                ValidationRaceIds = raceIds,
+                ValidationExamples = valExamples
+            };
         }
 
         public bool IsModelPersisted()
