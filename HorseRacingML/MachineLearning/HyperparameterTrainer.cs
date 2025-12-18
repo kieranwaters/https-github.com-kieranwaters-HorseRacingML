@@ -1906,7 +1906,7 @@ namespace HorseRacingML.ML
 
                 const int evalBatchSize = 8192;
                 double weightedLoss = 0;
-                double weightedFocalLoss = 0;
+                double weightedFocalLoss = 0;//
                 int totalExamples = 0;
 
                 for (int start = 0; start < count; start += evalBatchSize)
