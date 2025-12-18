@@ -1571,6 +1571,7 @@ namespace HorseRacingML.ML
                 ValidationAccuracy = valAcc,
                 ValidationLoss = (nnResult.ValidationLoss + lgbmResult.ValidationLoss) / 2,
                 ValidationBrier = valBrier,
+                TrainingRaceIds = nnResult.TrainingRaceIds,
                 ValidationPredictions = Array.AsReadOnly(valPreds),
                 ValidationLabels = valLabels,
                 ValidationRaceIds = valRaceIds,
