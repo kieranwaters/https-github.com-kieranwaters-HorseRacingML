@@ -527,7 +527,17 @@ namespace HorseRacingML.ML
                     int horseId = PreparedDataset.GetRequiredInt32(row, "HorseId");
                     DateTime date = (DateTime)row["RaceDate"];
 
-                    if (!_horseHistory.TryGetValue(horseId, out var history))
+                    if (_horseHistory.TryGetValue(horseId, out var history) && history.Count > 0)
+                    {
+                        var last = history[^1];
+                        if ((date - last.Date).TotalDays > 1095) // 3 years (3 * 365)
+                        {
+                            ResetHorseStats(horseId);
+                            history.Clear();
+                        }
+                    }
+
+                    if (!_horseHistory.TryGetValue(horseId, out history))
                     {
                         history = new List<HistoryEntry>();
                         _horseHistory[horseId] = history;
@@ -5507,6 +5517,24 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
                 }
 
                 return map;
+            }
+            private void ResetHorseStats(int horseId)
+            {
+                _surfaceStats.Remove(horseId);
+                _goingStats.Remove(horseId);
+                _goingCourseStats.Remove(horseId);
+                _courseStats.Remove(horseId);
+                _distanceBucketStats.Remove(horseId);
+                _horseDistanceAll.Remove(horseId);
+                _horseDistanceWins.Remove(horseId);
+                _horseLastDistance.Remove(horseId);
+
+                // Complex keys
+                var classKeys = _horseClassStats.Keys.Where(k => k.horseId == horseId).ToList();
+                foreach (var key in classKeys) _horseClassStats.Remove(key);
+
+                var goingDistanceKeys = _goingDistanceStats.Keys.Where(k => k.horseId == horseId).ToList();
+                foreach (var key in goingDistanceKeys) _goingDistanceStats.Remove(key);
             }
         }
         public virtual PreparedDataset PrepareDataset(

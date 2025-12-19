@@ -209,7 +209,7 @@ namespace HorseRacingML.ML
                 ToNullableSet(validationRaceIds),
                 ToNullableSet(trainingRaceIdsForState),
                 includeIdentifiers,
-                applyRepositoryBackfills: false);
+                applyRepositoryBackfills: true);
 
             var emptyTraining = new PreparedDataset(new List<PreparedRace>());
 
@@ -231,9 +231,11 @@ namespace HorseRacingML.ML
 
             Console.WriteLine("[AI] Evaluating model using AIOddsCalculator...");
             var calculator = new AIOddsCalculator(_modelPath);
+            Console.WriteLine($"[AI] Calculator status: {calculator.ModelStatus}");
 
             // Determine if Hybrid logic should be used based on the loaded model's metadata
             bool useHybrid = calculator.Hyperparameters?.ModelType == 2;
+            Console.WriteLine($"[AI] Hybrid mode: {useHybrid}");
 
             var valPreds = new List<float>();
             var valLabels = new List<float>();
@@ -241,9 +243,19 @@ namespace HorseRacingML.ML
             var valExamples = new List<RunnerExample>();
 
             // Process races sequentially as AIOddsCalculator (specifically PredictionEngine) is not thread-safe
+            int raceCount = 0;
             foreach (var race in dataset.ValidationRaces)
             {
                 var probabilities = calculator.CalculateProbabilities(race.Runners, useHybrid: useHybrid);
+
+                if (raceCount == 0 && race.Runners.Count > 0)
+                {
+                    var firstRunner = race.Runners[0];
+                    Console.WriteLine($"[AI] First runner: {firstRunner.HorseName}");
+                    Console.WriteLine($"[AI] Feature keys count: {firstRunner.Features.Count}");
+                    Console.WriteLine($"[AI] Sample features: {string.Join(", ", firstRunner.Features.Take(5).Select(kvp => $"{kvp.Key}={kvp.Value}"))}");
+                    Console.WriteLine($"[AI] Calculated probability: {probabilities[0].Probability}");
+                }
 
                 for (int i = 0; i < race.Runners.Count; i++)
                 {
@@ -255,9 +267,14 @@ namespace HorseRacingML.ML
                     valRaceIds.Add(runner.RaceId);
                     valExamples.Add(runner);
                 }
+                raceCount++;
             }
 
             var predictions = valPreds.ToArray();
+            if (predictions.Length > 0)
+            {
+                Console.WriteLine($"[AI] Predictions summary: Min={predictions.Min():F4}, Max={predictions.Max():F4}, Avg={predictions.Average():F4}, Count={predictions.Length}");
+            }
             var labels = valLabels.ToArray();
             var raceIds = valRaceIds.ToArray();
 
