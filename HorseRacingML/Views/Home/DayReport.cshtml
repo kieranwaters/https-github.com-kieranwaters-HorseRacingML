@@ -566,6 +566,7 @@ else
                                 <th scope="col" class="text-end">Edge</th>
                                 <th scope="col" class="text-end">Kelly %</th>
                                 <th scope="col" class="text-end">Stake</th>
+                                        <th scope="col" class="text-end">ROI</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -737,13 +738,17 @@ else
                                 : string.Empty;
                                 var marketOddsAttr = runner.MarketDecimalOdds.HasValue
                                 ? runner.MarketDecimalOdds.Value.ToString("0.########", CultureInfo.InvariantCulture)
-                                : string.Empty;
+                                        : string.Empty;
+                                        var layOddsAttr = runner.LayDecimalOdds.HasValue
+                                        ? runner.LayDecimalOdds.Value.ToString("0.########", CultureInfo.InvariantCulture)
+                                        : string.Empty;
                                 var aiProbabilitySourceAttr = displayAiFromMarket ? "market" : "model";
                                         <tr class="@rowClass"
                                             data-horse-name="@horseNameAttr"
                                             data-ai-probability="@aiProbabilityAttr"
                                             data-market-probability="@marketProbabilityAttr"
                                             data-market-odds="@marketOddsAttr"
+                                            data-lay-odds="@layOddsAttr"
                                             data-ai-probability-source="@aiProbabilitySourceAttr"
                                             data-kelly="@((runner.KellyFraction ?? 0).ToString("0.################", CultureInfo.InvariantCulture))"
                                             data-lay-kelly="@((runner.LayKellyFraction ?? 0).ToString("0.################", CultureInfo.InvariantCulture))">
@@ -1278,6 +1283,7 @@ else
                                     </td>
                                     <td class="text-end market-win-cell">@marketProb</td>
                                     <td class="text-end edge-cell">@diff</td>
+                                            <td class="text-end roi-cell">-</td>
                                     <td class="text-end kelly-cell">@displayedKelly</td>
                                     <td class="text-end">
                                         <span class="stake-value"
@@ -2330,6 +2336,7 @@ else
 
                 input.classList.remove('is-invalid');
                 stakeSpan.dataset.layOdds = parsed.toString();
+                 row.dataset.layOdds = parsed.toString();
                 if (options.formatValue) {
                     input.value = formatDecimal(parsed);
                 }
@@ -2724,7 +2731,7 @@ else
                     const originalLayOdds = Number.parseFloat(element.dataset.originalLayOdds ?? '');
                     const aiProbability = parseProbabilityAttribute(row.dataset.aiProbability);
                     const marketOdds = Number.parseFloat(row.dataset.marketOdds ?? '');
-                    const layOdds = Number.parseFloat(element.dataset.layOdds ?? '');
+                    const layOdds = Number.parseFloat(row.dataset.layOdds ?? element.dataset.layOdds ?? '');
                     const kellyCell = row.querySelector('.kelly-cell');
                     const computedBackKelly = calculateBackKellyFraction(aiProbability, marketOdds);
                     const computedLayKelly = calculateLayKellyFractionFromOdds(aiProbability, layOdds);
@@ -2803,6 +2810,31 @@ else
                         }
 
                         edgeCell.textContent = formatPercentage(currentEdge * 100) ?? '-';
+                    }
+                    const roiCell = row.querySelector('.roi-cell');
+                    if (roiCell) {
+                        let roiValue = null;
+                        if (effectiveStakeType === 'back') {
+                             if (Number.isFinite(marketOdds) && marketOdds > 1) {
+                                 roiValue = (aiProbability * marketOdds) - 1;
+                             }
+                        } else if (effectiveStakeType === 'lay') {
+                             if (Number.isFinite(layOdds) && layOdds > 1) {
+                                 roiValue = (1 - (aiProbability * layOdds)) / (layOdds - 1);
+                             }
+                        } else {
+                             if (Number.isFinite(marketOdds) && marketOdds > 1) {
+                                 roiValue = (aiProbability * marketOdds) - 1;
+                             } else if (Number.isFinite(layOdds) && layOdds > 1) {
+                                 roiValue = (1 - (aiProbability * layOdds)) / (layOdds - 1);
+                             }
+                        }
+
+                        if (roiValue !== null) {
+                            roiCell.textContent = formatPercentage(roiValue * 100) ?? '-';
+                        } else {
+                            roiCell.textContent = '-';
+                        }
                     }
                      let displayedText = '-';
 
@@ -3146,7 +3178,11 @@ else
                     } else {
                         delete row.dataset.marketOdds;
                     }
-
+                    if (typeof runner?.layDecimalOdds === 'number' && Number.isFinite(runner.layDecimalOdds) && runner.layDecimalOdds > 1) {
+                        row.dataset.layOdds = runner.layDecimalOdds.toString();
+                    } else {
+                        delete row.dataset.layOdds;
+                    }
                     const appendCell = (text, className) => {
                         const cell = document.createElement('td');
                         if (className) {
@@ -3468,7 +3504,7 @@ else
                     appendCell(marketPercent ?? '-', 'text-end market-win-cell');
 
                     appendCell('-', 'text-end edge-cell');
-
+                    appendCell('-', 'text-end roi-cell');
                     const betting = resolveBettingRecommendation(runner);
                     if (betting.rowClass) {
                         row.classList.add(betting.rowClass);

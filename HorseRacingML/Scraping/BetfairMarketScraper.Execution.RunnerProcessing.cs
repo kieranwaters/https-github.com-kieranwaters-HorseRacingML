@@ -759,7 +759,7 @@ namespace HorseRacingML.Scraping
                 runner.HistoricalRaceCount = historyCount;
                 flow.HistoricalRaceCount = historyCount;
                 EnsureCareerStartsFeature(historyCount.Value);
-                if (historyCount.Value >1)
+                if (historyCount.Value > 0)
                 {
                     var historicalRaces = ResolveRunnerHistory(flow);
                     if (historicalRaces.Count > 0)
