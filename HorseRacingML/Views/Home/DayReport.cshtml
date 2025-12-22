@@ -1283,7 +1283,6 @@ else
                                     </td>
                                     <td class="text-end market-win-cell">@marketProb</td>
                                     <td class="text-end edge-cell">@diff</td>
-                                            <td class="text-end roi-cell">-</td>
                                     <td class="text-end kelly-cell">@displayedKelly</td>
                                     <td class="text-end">
                                         <span class="stake-value"
@@ -1294,6 +1293,7 @@ else
                                               data-original-lay-odds="@layOddsData"
                                               data-original-text="@displayedStake">@displayedStake</span>
                                     </td>
+                                            <td class="text-end roi-cell">-</td>
                                 </tr>
                             }
                         </tbody>
@@ -3504,7 +3504,6 @@ else
                     appendCell(marketPercent ?? '-', 'text-end market-win-cell');
 
                     appendCell('-', 'text-end edge-cell');
-                    appendCell('-', 'text-end roi-cell');
                     const betting = resolveBettingRecommendation(runner);
                     if (betting.rowClass) {
                         row.classList.add(betting.rowClass);
@@ -3524,7 +3523,7 @@ else
                     stakeSpan.textContent = betting.stakeText;
                     stakeCell.appendChild(stakeSpan);
                     row.appendChild(stakeCell);
-
+                      appendCell('-', 'text-end roi-cell');
                     const initialProbability = Number.isFinite(aiProbability) && aiProbability >= 0 ? aiProbability : 0;
                     const fromMarket = (row.dataset.aiProbabilitySource ?? '').toLowerCase() === 'market';
                     const parsedMarketOdds = Number.parseFloat(row.dataset.marketOdds ?? '');
