@@ -268,35 +268,109 @@ namespace HorseRacingML.Controllers
         }
 
         // New action to start the background process
-        public async Task<IActionResult> DayReport(string startTime, string endTime, string region, bool showFeatureSignificance, bool runHeadless, bool useHybrid)
+        public IActionResult DayReport(string startTime, string endTime, string region, bool showFeatureSignificance, bool runHeadless, bool useHybrid)
         {
             TimeSpan? start = null;
             TimeSpan? end = null;
             if (TimeSpan.TryParse(startTime, out var s)) start = s;
             if (TimeSpan.TryParse(endTime, out var e)) end = e;
 
-            _navigationService.EnsureDriverMode(runHeadless);
-            await _navigationService.LoginAsync();
-            await _navigationService.OpenHorseRaceMeetingsInNewTabsAsync(
-                delayBetweenTabsMs: 0,
-                closeExistingRaceTabs: true,
-                scheduleStartTime: start,
-                scheduleEndTime: end,
-                scheduleRegion: region);
+            _statusService.Reset();
+            _statusService.Update("Starting browser session...");
 
-            var result = _navigationService.GenerateDayReport(_repo, _trainer, showFeatureSignificance, useHybrid);
-            var bankroll = _navigationService.GetEffectiveBankroll();
-            var model = new DayReportViewModel
+            // Run in background to prevent request timeout
+            Task.Run(async () =>
             {
-                GeneratedAt = DateTime.UtcNow,
-                Bankroll = bankroll,
-                AiHyperparameters = _trainer.LoadPersistedHyperparameters(),
-                Races = result.Races,
-                FilterStartTime = start,
-                FilterEndTime = end,
-                InitialRegion = region
-            };
+                try
+                {
+                    _navigationService.EnsureDriverMode(runHeadless);
+                    await _navigationService.LoginAsync();
 
+                    _statusService.Update("Finding race meetings...");
+                    await _navigationService.OpenHorseRaceMeetingsInNewTabsAsync(
+                        delayBetweenTabsMs: 0,
+                        closeExistingRaceTabs: true,
+                        scheduleStartTime: start,
+                        scheduleEndTime: end,
+                        scheduleRegion: region);
+
+                    _statusService.Update("Scraping race data...");
+
+                    var result = _navigationService.GenerateDayReport(
+                        _repo,
+                        _trainer,
+                        showFeatureSignificance,
+                        useHybrid,
+                        progressCallback: (processed, total, message) =>
+                        {
+                            _statusService.UpdateProgress(processed, total, message);
+                        });
+
+                    var bankroll = _navigationService.GetEffectiveBankroll();
+                    var model = new DayReportViewModel
+                    {
+                        GeneratedAt = DateTime.UtcNow,
+                        Bankroll = bankroll,
+                        AiHyperparameters = _trainer.LoadPersistedHyperparameters(),
+                        Races = result.Races,
+                        FilterStartTime = start,
+                        FilterEndTime = end,
+                        InitialRegion = region
+                    };
+
+                    _statusService.SetFinalReport(model);
+                    _statusService.MarkComplete();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Background Day Report generation failed.");
+                    _statusService.Update($"Error: {ex.Message}");
+                }
+            });
+
+            return RedirectToAction(nameof(DayReportProgress));
+        }
+
+        public IActionResult DayReportProgress()
+        {
+            // Simple view that polls GetDayReportProgress
+            // If the process is already complete (e.g. user refreshed), we can just render the live view which will redirect.
+            return View("DayReportLive", new DayReportStatus
+            {
+                Message = _statusService.Message,
+                IsComplete = _statusService.IsComplete
+            });
+        }
+
+        [HttpGet]
+        public IActionResult GetDayReportProgress()
+        {
+            var snapshot = _statusService.GetSnapshot();
+            return Json(new DayReportStatus
+            {
+                Message = _statusService.Message,
+                TotalRaces = _statusService.TotalRaces,
+                ProcessedRaces = _statusService.ProcessedRaces,
+                IsComplete = _statusService.IsComplete,
+                // We don't necessarily need to return the full list of results here if we just want a progress bar
+                // But keeping it for potential future live updates
+                Results = snapshot.Select(r => new SimpleRaceResult
+                {
+                    RaceTitle = r.RaceTitle,
+                    VenueName = r.VenueName,
+                    RaceTime = r.OffTime?.ToString(@"hh\:mm") ?? "",
+                    RaceUrl = r.RaceUrl
+                }).ToList()
+            });
+        }
+
+        public IActionResult DayReportResult()
+        {
+            var model = _statusService.GetFinalReport();
+            if (model == null)
+            {
+                return RedirectToAction(nameof(DayReportOptions));
+            }
             return View("DayReport", model);
         }
 

@@ -173,9 +173,15 @@ namespace HorseRacingML.Scraping
                     _neuralFeatureKeys ?? Array.Empty<string>();
         public IReadOnlyCollection<string> MissingScrapeFieldDescriptions => _missingScrapedFieldDescriptions;
 
-        public IReadOnlyList<RaceDayReport> ScrapeOpenRaceTabsForReport(IWebDriver driver, IEnumerable<string>? handlesToProcess = null)
+        public IReadOnlyList<RaceDayReport> ScrapeOpenRaceTabsForReport(IWebDriver driver, IEnumerable<string>? handlesToProcess = null, Action<int, int, string>? progressCallback = null)
         {
-            var result = ScrapeOpenRaceTabsInternal(driver, executeBets: false, captureReport: true, handlesToProcess: handlesToProcess);
+            var result = ScrapeOpenRaceTabsInternal(
+                driver,
+                executeBets: false,
+                captureReport: true,
+                handlesToProcess: handlesToProcess,
+                progressCallback: progressCallback);
+
             var deduplicatedRaces = RaceDayReportDeduplicator.ByMarketId(result.Races);
             PopulateWinnerProbabilities(deduplicatedRaces);
             result.Races.Clear();

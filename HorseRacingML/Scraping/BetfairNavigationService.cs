@@ -2231,7 +2231,8 @@ return text.trim();";
            RacingRepository repo,
            HyperparameterTrainer trainer,
            bool showFeatureSignificance,
-           bool useHybrid = false)
+            bool useHybrid = false,
+           Action<int, int, string>? progressCallback = null)
         {
             var bankroll = GetEffectiveBankroll(refreshFromPage: true);
             var settings = _automationSettings.GetSnapshot();
@@ -2250,7 +2251,7 @@ return text.trim();";
                 useHybrid: useHybrid);
 
             var result = new BetfairScrapeResult();
-            var races = scraper.ScrapeOpenRaceTabsForReport(_driver);
+            var races = scraper.ScrapeOpenRaceTabsForReport(_driver, progressCallback: progressCallback);
             if (races != null)
             {
                 result.Races.AddRange(races);

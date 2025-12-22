@@ -80,5 +80,6 @@ namespace HorseRacingML.Models
         public double? JockeyTop3FinishRate { get; set; }
         public double? JockeyTop5FinishRate { get; set; }
         public double? JockeyFinishPositionVolatility { get; set; }
+        public List<string> ImputedFeatures { get; set; } = new();
     }
 }

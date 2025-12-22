@@ -65,7 +65,7 @@ namespace HorseRacingML.Scraping
 
             return null;
         }
-        private BetfairScrapeResult ScrapeOpenRaceTabsInternal(IWebDriver driver, bool executeBets, bool captureReport, IEnumerable<string>? handlesToProcess = null)
+        private BetfairScrapeResult ScrapeOpenRaceTabsInternal(IWebDriver driver, bool executeBets, bool captureReport, IEnumerable<string>? handlesToProcess = null, Action<int, int, string>? progressCallback = null)
         {
             var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10)); // short explicit wait
             List<string> handles = handlesToProcess?.ToList() ?? driver.WindowHandles.ToList(); // collect tab handles
@@ -995,20 +995,21 @@ namespace HorseRacingML.Scraping
             }
             if (pendingEvaluations != null && pendingEvaluations.Count > 0)
             {
-                ProcessDeferredRaceEvaluations(pendingEvaluations, aiCalculator, captureReport, result, recommendations);
+                ProcessDeferredRaceEvaluations(pendingEvaluations, aiCalculator, captureReport, result, recommendations, progressCallback);
             }
             Console.WriteLine("[DayReport][Stage] Completed scraping and AI evaluation for all open race tabs.");
             return result; // done
         }
-    
 
 
-private void ProcessDeferredRaceEvaluations(
-            List<PendingRaceEvaluation> pendingEvaluations,
-            AIOddsCalculator? aiCalculator,
-            bool captureReport,
-            BetfairScrapeResult result,
-            List<BetRecommendation> recommendations)
+
+        private void ProcessDeferredRaceEvaluations(
+                    List<PendingRaceEvaluation> pendingEvaluations,
+                    AIOddsCalculator? aiCalculator,
+                    bool captureReport,
+                    BetfairScrapeResult result,
+                    List<BetRecommendation> recommendations,
+                    Action<int, int, string>? progressCallback)
         {
             if (pendingEvaluations == null || pendingEvaluations.Count == 0)
             {
@@ -1052,8 +1053,15 @@ private void ProcessDeferredRaceEvaluations(
                 PreloadFeatureLookupsForBatch(pendingEvaluations);
             }
 
+            int processedCount = 0;
+            int totalEvaluations = pendingEvaluations.Count;
+
             foreach (var evaluation in pendingEvaluations)
             {
+                processedCount++;
+                string progressMessage = $"Calculating probabilities for race {processedCount} of {totalEvaluations} ({evaluation.VenueName ?? "Unknown"} {evaluation.OffTime})";
+                progressCallback?.Invoke(processedCount, totalEvaluations, progressMessage);
+
                 var flows = evaluation.Flows;
                 if (flows == null || flows.Count == 0)
                 {
@@ -1434,4 +1442,5 @@ private void ProcessDeferredRaceEvaluations(
                 }
             }
         }
-    } }
+    }
+}

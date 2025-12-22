@@ -11,6 +11,7 @@ namespace HorseRacingML.Services
         private string _message = "Idle";
         private readonly object _lock = new object();
         private readonly List<RaceDayReport> _results = new List<RaceDayReport>();
+        private DayReportViewModel? _finalReport;
 
         public int TotalRaces { get; private set; }
         public int ProcessedRaces { get; private set; }
@@ -37,12 +38,24 @@ namespace HorseRacingML.Services
             }
         }
 
+        public void UpdateProgress(int processed, int total, string message)
+        {
+            lock (_lock)
+            {
+                ProcessedRaces = processed;
+                TotalRaces = total;
+                _message = message;
+                LastUpdated = DateTime.UtcNow;
+            }
+        }
+
         public void Reset()
         {
             lock (_lock)
             {
                 _message = "Starting...";
                 _results.Clear();
+                _finalReport = null;
                 TotalRaces = 0;
                 ProcessedRaces = 0;
                 IsComplete = false;
@@ -69,6 +82,23 @@ namespace HorseRacingML.Services
                     ProcessedRaces = _results.Count;
                 }
                 LastUpdated = DateTime.UtcNow;
+            }
+        }
+
+        public void SetFinalReport(DayReportViewModel report)
+        {
+            lock (_lock)
+            {
+                _finalReport = report;
+                LastUpdated = DateTime.UtcNow;
+            }
+        }
+
+        public DayReportViewModel? GetFinalReport()
+        {
+            lock (_lock)
+            {
+                return _finalReport;
             }
         }
 

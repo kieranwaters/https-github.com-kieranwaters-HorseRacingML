@@ -462,6 +462,21 @@ namespace HorseRacingML.ML
                     return null;
                 }
             }
+            private static void RegisterImputation(Dictionary<string, object?> row, string field)
+            {
+                if (row == null || string.IsNullOrWhiteSpace(field)) return;
+
+                if (!row.TryGetValue("__ImputedFeatures", out var listObj) || listObj is not List<string> list)
+                {
+                    list = new List<string>();
+                    row["__ImputedFeatures"] = list;
+                }
+
+                if (!list.Contains(field))
+                {
+                    list.Add(field);
+                }
+            }
             public void ProcessRace(List<Dictionary<string, object?>> rows, bool includeRace, bool updateState)
             {
                 if (rows is null)
@@ -659,6 +674,7 @@ namespace HorseRacingML.ML
                     bool classMissing = !classValue.HasValue;
                     int classVal = classValue ?? 0;
                     row["ClassMissing"] = classMissing;
+                    if (classMissing) RegisterImputation(row, "Class");
                     bool ratingMissing = !(row.TryGetValue("OfficialRating", out var ratingObj) && ratingObj != null);
                     float rating = ratingMissing ? raceStat.AvgRating : Convert.ToSingle(ratingObj);
                     if (!ratingMissing && (float.IsNaN(rating) || rating <= 0f))
@@ -667,6 +683,7 @@ namespace HorseRacingML.ML
                         rating = raceStat.AvgRating;
                     }
                     row["RatingMissing"] = ratingMissing;
+                    if (ratingMissing) RegisterImputation(row, "OfficialRating");
                     if ((ratingMissing && (rating <= 0f || float.IsNaN(rating))) ||
                             (!ratingMissing && (float.IsNaN(rating) || rating <= 0f)))
                     {
@@ -689,6 +706,7 @@ namespace HorseRacingML.ML
                         row["Going"] = goingValue;
                     }
                     row["GoingMissing"] = goingMissing;
+                    if (goingMissing) RegisterImputation(row, "Going");
                     string going = goingValue ?? "Unknown";
                     string? surfaceValue = NormalizeStringValue(
                         row.TryGetValue("Surface", out var surfaceObj) ? surfaceObj : null);
@@ -698,6 +716,7 @@ namespace HorseRacingML.ML
                         row["Surface"] = surfaceValue;
                     }
                     row["SurfaceMissing"] = surfaceMissing;
+                    if (surfaceMissing) RegisterImputation(row, "Surface");
                     string surface = surfaceValue ?? "Unknown";
                     string? distanceTextValue = NormalizeStringValue(
                         row.TryGetValue("DistanceText", out var distanceTextObj) ? distanceTextObj : null);
@@ -714,6 +733,7 @@ namespace HorseRacingML.ML
                     int distanceYards = distanceYardsValue ?? 0;
                     string bucket = distanceMissing ? "Unknown" : DistanceBucket(distanceYards);
                     row["DistanceMissing"] = distanceMissing;
+                    if (distanceMissing) RegisterImputation(row, "Distance");
                     row["DistanceTextMissing"] = distanceTextMissing;
                     row["RaceDate"] = normalizedRaceDate;
                     bool backBookMissing = !row.TryGetValue("BackBookPercentage", out var backBookObj) || backBookObj == null;
@@ -1096,6 +1116,7 @@ namespace HorseRacingML.ML
                         row["TrainerClassWinRate"] = trainerClassWinFallback;
                         row["TrainerClassAvgNorm"] = trainerClassAvgFallback;
                         row["LastTrainerClassNormPos"] = trainerClassLastFallback;
+                        RegisterImputation(row, "TrainerClassWinRate");
                     }
 
                     float? jockeyWinRateValue = ResolveFloat(row, "JockeyWinRate");
@@ -1121,6 +1142,7 @@ namespace HorseRacingML.ML
                         row["JockeyClassWinRate"] = _trainer.SmoothedWinRate(jockeyClassStat.wins, jockeyClassStat.starts);
                         row["JockeyClassAvgNorm"] = jockeyClassStat.sumNorm / jockeyClassStat.starts;
                         row["LastJockeyClassNormPos"] = jockeyClassStat.lastNorm;
+                        RegisterImputation(row, "JockeyClassWinRate");
                     }
                     else
                     {
@@ -4378,15 +4400,23 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
 
                 using var conn = new SqlConnection(_trainer._connectionString);
                 conn.Open();
-                var (sql, runnerColumns, featureState) = BuildUpcomingPreparationContext(conn);
 
                 var sorted = valid
                     .OrderBy(v => v.Upcoming.RaceDate.Date)
                     .ToList();
-
+                var participantIds = ResolveParticipantIds(conn, sorted);
+                var (sql, runnerColumns, featureState) = BuildUpcomingPreparationContext(conn, participantIds.HorseIds, participantIds.TrainerIds, participantIds.JockeyIds);
                 var maxTargetDate = sorted[^1].Upcoming.RaceDate.Date;
 
-                var historicalRecords = conn.Query(sql, new { TargetDate = maxTargetDate }, commandTimeout: 6000, buffered: false);
+                var queryParams = new
+                {
+                    TargetDate = maxTargetDate,
+                    HorseIds = participantIds.HorseIds.ToArray(),
+                    TrainerIds = participantIds.TrainerIds.ToArray(),
+                    JockeyIds = participantIds.JockeyIds.ToArray()
+                };
+
+                var historicalRecords = conn.Query(sql, queryParams, commandTimeout: 6000, buffered: false);
                 var historicalRaces = MaterializeHistoricalRaces(conn, historicalRecords);
 
                 int historyIndex = 0;
@@ -4406,7 +4436,92 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
                 return results;
             }
 
-            private (string Sql, HashSet<string> RunnerColumns, FeatureEngineeringState FeatureState) BuildUpcomingPreparationContext(SqlConnection conn)
+            private (HashSet<int> HorseIds, HashSet<int> TrainerIds, HashSet<int> JockeyIds) ResolveParticipantIds(
+                SqlConnection conn,
+                List<(int Index, UpcomingRace Upcoming, IReadOnlyList<RunnerFlow> Flows)> requests)
+            {
+                var horseIds = new HashSet<int>();
+                var trainerIds = new HashSet<int>();
+                var jockeyIds = new HashSet<int>();
+
+                // Collect raw names to resolve
+                var horseNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var trainerNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var jockeyNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var req in requests)
+                {
+                    if (req.Flows == null) continue;
+                    foreach (var flow in req.Flows)
+                    {
+                        if (flow == null) continue;
+                        if (!string.IsNullOrWhiteSpace(flow.HorseName)) horseNames.Add(flow.HorseName);
+                        if (!string.IsNullOrWhiteSpace(flow.TrainerName)) trainerNames.Add(flow.TrainerName);
+                        if (!string.IsNullOrWhiteSpace(flow.JockeyName)) jockeyNames.Add(flow.JockeyName);
+
+                        // If IDs are already present in flows (e.g. from scraping context or previous lookup)
+                        if (flow.FeatureValues != null)
+                        {
+                            if (flow.FeatureValues.TryGetValue("HorseId", out var hObj) && PreparedDataset.TryConvertToInt32(hObj, out var hId) && hId > 0)
+                                horseIds.Add(hId);
+                            if (flow.FeatureValues.TryGetValue("TrainerId", out var tObj) && PreparedDataset.TryConvertToInt32(tObj, out var tId) && tId > 0)
+                                trainerIds.Add(tId);
+                            if (flow.FeatureValues.TryGetValue("JockeyId", out var jObj) && PreparedDataset.TryConvertToInt32(jObj, out var jId) && jId > 0)
+                                jockeyIds.Add(jId);
+                        }
+                    }
+                }
+
+                // Resolve Horse IDs
+                if (horseNames.Count > 0)
+                {
+                    var resolved = ResolveHorseIdsByName(conn, horseNames);
+                    foreach (var id in resolved.Values)
+                    {
+                        if (id > 0) horseIds.Add(id);
+                    }
+                }
+
+                // Resolve Trainer IDs
+                if (trainerNames.Count > 0)
+                {
+                    var candidateMap = BuildNameCandidateMap(trainerNames);
+                    if (candidateMap.Count > 0)
+                    {
+                        const string sql = "SELECT Name, MIN(TrainerId) AS TrainerId FROM Trainer WHERE Name IN @Names GROUP BY Name";
+                        var candidates = candidateMap.Keys.ToArray();
+                        var results = conn.Query<(string Name, int TrainerId)>(sql, new { Names = candidates });
+                        foreach (var res in results)
+                        {
+                            if (res.TrainerId > 0) trainerIds.Add(res.TrainerId);
+                        }
+                    }
+                }
+
+                // Resolve Jockey IDs
+                if (jockeyNames.Count > 0)
+                {
+                    var candidateMap = BuildNameCandidateMap(jockeyNames);
+                    if (candidateMap.Count > 0)
+                    {
+                        const string sql = "SELECT Name, MIN(JockeyId) AS JockeyId FROM Jockey WHERE Name IN @Names GROUP BY Name";
+                        var candidates = candidateMap.Keys.ToArray();
+                        var results = conn.Query<(string Name, int JockeyId)>(sql, new { Names = candidates });
+                        foreach (var res in results)
+                        {
+                            if (res.JockeyId > 0) jockeyIds.Add(res.JockeyId);
+                        }
+                    }
+                }
+
+                return (horseIds, trainerIds, jockeyIds);
+            }
+
+            private (string Sql, HashSet<string> RunnerColumns, FeatureEngineeringState FeatureState) BuildUpcomingPreparationContext(
+                SqlConnection conn,
+                HashSet<int>? horseIds = null,
+                HashSet<int>? trainerIds = null,
+                HashSet<int>? jockeyIds = null)
             {
                 var raceColumns = PreparedDataset.LoadColumnNames(conn, "Race");
                 var runnerColumns = PreparedDataset.LoadColumnNames(conn, "RunnerResult");
@@ -4444,6 +4559,25 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
                 string openingFractionColumn = SelectColumn(runnerColumns, "rr", "OpeningFraction", "nvarchar(50)");
                 string touchedHighColumn = SelectColumn(runnerColumns, "rr", "TouchedHighFraction", "nvarchar(50)");
                 string touchedLowColumn = SelectColumn(runnerColumns, "rr", "TouchedLowFraction", "nvarchar(50)");
+                var participantFilter = new StringBuilder();
+                if (horseIds != null && horseIds.Count > 0)
+                {
+                    participantFilter.Append("(rr.HorseId IN @HorseIds)");
+                }
+                if (trainerIds != null && trainerIds.Count > 0)
+                {
+                    if (participantFilter.Length > 0) participantFilter.Append(" OR ");
+                    participantFilter.Append("(rr.TrainerId IN @TrainerIds)");
+                }
+                if (jockeyIds != null && jockeyIds.Count > 0)
+                {
+                    if (participantFilter.Length > 0) participantFilter.Append(" OR ");
+                    participantFilter.Append("(rr.JockeyId IN @JockeyIds)");
+                }
+
+                var filterClause = participantFilter.Length > 0
+                    ? $"AND ({participantFilter})"
+                    : string.Empty;
                 var sql = $@"SELECT c.Name AS CourseName,
                                    h.Name AS HorseName,
                                    j.Name AS JockeyName,
@@ -4489,7 +4623,7 @@ ORDER BY rr.HorseId, r.RaceDate, rr.RunnerResultId;";
                             LEFT JOIN Horse h ON rr.HorseId = h.HorseId
                             LEFT JOIN Trainer t ON rr.TrainerId = t.TrainerId
                             LEFT JOIN Jockey j ON rr.JockeyId = j.JockeyId
-                            WHERE r.RaceDate < @TargetDate
+                            WHERE r.RaceDate < @TargetDate {filterClause}
                             ORDER BY r.RaceDate, r.RaceId, rr.RunnerResultId";
 
                 var identifierKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)

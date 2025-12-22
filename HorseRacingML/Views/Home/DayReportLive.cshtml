@@ -60,6 +60,7 @@
                             clearInterval(pollInterval);
                             progressBar.classList.remove('progress-bar-striped', 'progress-bar-animated');
                             progressBar.classList.add('bg-success');
+                            window.location.href = '@Url.Action("DayReportResult", "Home")';
                         }
                     })
                     .catch(error => console.error('Error polling status:', error));

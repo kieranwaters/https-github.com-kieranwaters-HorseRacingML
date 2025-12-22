@@ -756,7 +756,19 @@ else
                                     <td>@cloth</td>
                                     <td>@draw</td>
                                     <td>
-                                       <div class="fw-semibold">@runner.HorseName</div>
+                                                <div class="fw-semibold">
+                                                    @runner.HorseName
+                                                    @if (runner.ImputedFeatures != null && runner.ImputedFeatures.Count > 0)
+                                                    {
+                                                        var imputedText = string.Join(", ", runner.ImputedFeatures);
+                                                        <span class="text-warning ms-1 text-decoration-underline"
+                                                              style="cursor: pointer;"
+                                                              title="Imputed: @imputedText"
+                                                              onclick="alert('Imputed data: @imputedText')">
+                                                            (!)
+                                                        </span>
+                                                    }
+                                                </div>
                                         @{
                                             var historyEntries = new List<(string Label, string Value, string? Tooltip)>();
                                             if (!string.IsNullOrWhiteSpace(top3RateTitle) && top3RateText != "-")

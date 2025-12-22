@@ -173,6 +173,7 @@ namespace HorseRacingML.Models
         public string? TrainerName { get; set; }
         public bool MatchedDatabaseRecord { get; set; }
 
+        public List<string> ImputedFeatures { get; set; } = new();
 
 
         public FeaturePopulationSummary FeaturePopulationSummary { get; set; } = FeaturePopulationSummary.Empty;

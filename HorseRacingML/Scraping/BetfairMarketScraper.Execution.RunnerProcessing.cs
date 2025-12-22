@@ -631,6 +631,14 @@ namespace HorseRacingML.Scraping
                 LogDisplayTrainerClassFeatureOutcomes(displayFeatureValues, identifier);
                 LogDisplayJockeyClassFeatureOutcomes(displayFeatureValues, identifier);
             }
+            var imputed = flow.ImputedFeatures ?? new List<string>();
+            if (flow.FeatureValues != null && flow.FeatureValues.TryGetValue("__ImputedFeatures", out var listObj) && listObj is List<string> list)
+            {
+                foreach (var item in list)
+                {
+                    if (!imputed.Contains(item)) imputed.Add(item);
+                }
+            }
             var runner = new RunnerDayReport
             {
                 ClothNumber = flow.ClothNumber,
@@ -641,7 +649,8 @@ namespace HorseRacingML.Scraping
                 FeatureValues = displayFeatureValues,
                 HasPreparedFeatures = flow.HasPreparedFeatures,
                 HasPartialPreparedFeatures = flow.HasPartialPreparedFeatures,
-                FeaturePopulation = (flow.FeaturePopulationSummary ?? FeaturePopulationSummary.Empty).WithSortedKeys()
+                FeaturePopulation = (flow.FeaturePopulationSummary ?? FeaturePopulationSummary.Empty).WithSortedKeys(),
+                ImputedFeatures = imputed
             };
 
             PopulateRunnerPricing(flow, runner);
