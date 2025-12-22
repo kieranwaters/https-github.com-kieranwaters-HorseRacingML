@@ -125,6 +125,22 @@
             <label for="min-lay-edge-filter" class="form-label">Min Edge % (Lay Others)</label>
             <input type="number" id="min-lay-edge-filter" class="form-control" value="100" step="0.1" />
         </div>
+        <div class="col-md-3">
+            <label for="min-roi-filter" class="form-label">Min ROI % (AI Favorite)</label>
+            <input type="number" id="min-roi-filter" class="form-control" value="-100" step="0.1" />
+        </div>
+        <div class="col-md-3">
+            <label for="min-other-roi-filter" class="form-label">Min ROI % (Other Runners)</label>
+            <input type="number" id="min-other-roi-filter" class="form-control" value="100" step="0.1" />
+        </div>
+        <div class="col-md-3">
+            <label for="min-lay-roi-fav-filter" class="form-label">Min ROI % (Lay AI Favorite)</label>
+            <input type="number" id="min-lay-roi-fav-filter" class="form-control" value="100" step="0.1" />
+        </div>
+        <div class="col-md-3">
+            <label for="min-lay-roi-filter" class="form-label">Min ROI % (Lay Others)</label>
+            <input type="number" id="min-lay-roi-filter" class="form-control" value="100" step="0.1" />
+        </div>
         <div class="col-md-3 d-flex align-items-end">
             <div class="form-check mb-3 me-3">
                 <input id="include-fees-checkbox" class="form-check-input" type="checkbox" />
@@ -366,6 +382,18 @@
                     const minEdgeLayFavVal = parseFloat(document.getElementById('min-lay-edge-fav-filter').value);
                     const minEdgeLayFav = isNaN(minEdgeLayFavVal) ? 100 : minEdgeLayFavVal;
 
+                    const minRoiFavVal = parseFloat(document.getElementById('min-roi-filter').value);
+                    const minRoiFav = isNaN(minRoiFavVal) ? -100 : minRoiFavVal;
+
+                    const minRoiOtherVal = parseFloat(document.getElementById('min-other-roi-filter').value);
+                    const minRoiOther = isNaN(minRoiOtherVal) ? 100 : minRoiOtherVal;
+
+                    const minLayRoiFavVal = parseFloat(document.getElementById('min-lay-roi-fav-filter').value);
+                    const minLayRoiFav = isNaN(minLayRoiFavVal) ? 100 : minLayRoiFavVal;
+
+                    const minLayRoiVal = parseFloat(document.getElementById('min-lay-roi-filter').value);
+                    const minLayRoi = isNaN(minLayRoiVal) ? 100 : minLayRoiVal;
+
                     const includeFees = document.getElementById('include-fees-checkbox').checked;
                     const kellyDampener = parseFloat(document.getElementById('KellyDampener').value);
                     const startingBankroll = parseFloat(document.getElementById('StartingBankroll').value);
@@ -442,11 +470,12 @@
                             // 1. Back Bets (AI Fav or Other)
                             if (aiProb > marketProb) {
                                 const edgePercent = (aiProb - marketProb) * 100;
+                                const roiPercent = ((aiProb * bookOdds) - 1) * 100;
                                 let isCandidate = false;
 
-                                if (isFav && edgePercent >= minEdgeFav) {
+                                if (isFav && edgePercent >= minEdgeFav && roiPercent >= minRoiFav) {
                                     isCandidate = true;
-                                } else if (!isFav && edgePercent >= minEdgeOther) {
+                                } else if (!isFav && edgePercent >= minEdgeOther && roiPercent >= minRoiOther) {
                                     isCandidate = true;
                                 }
 
@@ -464,15 +493,15 @@
 
                             // 2. Lay Bets
                             // Lay Edge: Market Prob > AI Prob.
-                            // Meaning market thinks it wins (high prob), AI thinks it loses (low prob).
-                            // Edge = MarketProb - AIProb
+                            // ROI for Lay: (1 - (AIProb * Odds)) / (Odds - 1)
                             if (marketProb > aiProb) {
                                 const edgePercent = (marketProb - aiProb) * 100;
+                                const roiPercent = ((1 - (aiProb * bookOdds)) / (bookOdds - 1)) * 100;
                                 let isCandidate = false;
 
-                                if (isFav && edgePercent >= minEdgeLayFav) {
+                                if (isFav && edgePercent >= minEdgeLayFav && roiPercent >= minLayRoiFav) {
                                     isCandidate = true;
-                                } else if (!isFav && edgePercent >= minEdgeLay) {
+                                } else if (!isFav && edgePercent >= minEdgeLay && roiPercent >= minLayRoi) {
                                     isCandidate = true;
                                 }
 
@@ -728,3 +757,4 @@
         });
     </script>
 }
+
