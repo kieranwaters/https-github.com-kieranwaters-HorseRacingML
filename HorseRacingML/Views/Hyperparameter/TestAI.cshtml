@@ -368,6 +368,19 @@
             if (hasResults) {
                 const applyBtn = document.getElementById('apply-filters-btn');
 
+                function formatCurrencyAndDigits(amount) {
+                    const formatted = amount.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+                    const absInt = Math.floor(Math.abs(amount));
+                    // Check if value is >= 1,000,000 (meaning > 6 digits)
+                    // 1,000,000 has 7 digits. User asked for "longer than a million" (threshold).
+                    // If amount is 1,000,000 -> 7 digits.
+                    const digits = absInt.toString().length;
+                    if (digits > 6) {
+                        return `${formatted} (${digits})`;
+                    }
+                    return formatted;
+                }
+
                 function applyFilters() {
                     // Update UI to show processing state
                     const originalBtnText = applyBtn.innerText;
@@ -686,9 +699,9 @@
 
                         document.getElementById('summary-validation-races').textContent = visibleRaceCount;
                         document.getElementById('summary-validation-accuracy').textContent = accuracy.toLocaleString('en-US', { style: 'percent', minimumFractionDigits: 2 });
-                        document.getElementById('summary-ending-bankroll').textContent = currentBankroll.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
-                        document.getElementById('summary-profit').textContent = finalProfit.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
-                        document.getElementById('summary-total-staked').textContent = totalStaked.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+                        document.getElementById('summary-ending-bankroll').textContent = formatCurrencyAndDigits(currentBankroll);
+                        document.getElementById('summary-profit').textContent = formatCurrencyAndDigits(finalProfit);
+                        document.getElementById('summary-total-staked').textContent = formatCurrencyAndDigits(totalStaked);
                         document.getElementById('summary-roi').textContent = roi.toLocaleString('en-US', { style: 'percent', minimumFractionDigits: 2 });
                         document.getElementById('summary-bets-placed').textContent = `${totalBets} (Wins: ${winCount}, Losses: ${lossCount})`;
 
