@@ -426,6 +426,8 @@
                         let winCount = 0;
                         let lossCount = 0;
                         let totalBets = 0;
+                        let totalRaceRoi = 0;
+                        let bettingRaceCount = 0;
 
                         const allRaceRows = document.querySelectorAll('.race-row');
 
@@ -642,6 +644,11 @@
                                 }
                             });
 
+                            if (raceStaked > 0) {
+                                totalRaceRoi += (raceNetProfit / raceStaked);
+                                bettingRaceCount++;
+                            }
+
                             // Update Race Row UI
                             // Summary Cells
                             const profitCell = row.querySelector('.race-profit-cell');
@@ -695,6 +702,7 @@
                         // --- 3. Update Global Summary ---
                         const finalProfit = currentBankroll - startingBankroll;
                         const roi = totalStaked > 0 ? (finalProfit / totalStaked) : 0;
+                        const avgRoiPerRace = bettingRaceCount > 0 ? (totalRaceRoi / bettingRaceCount) : 0;
                         const accuracy = visibleRaceCount > 0 ? (correctPredictions / visibleRaceCount) : 0;
 
                         document.getElementById('summary-validation-races').textContent = visibleRaceCount;
@@ -703,6 +711,7 @@
                         document.getElementById('summary-profit').textContent = formatCurrencyAndDigits(finalProfit);
                         document.getElementById('summary-total-staked').textContent = formatCurrencyAndDigits(totalStaked);
                         document.getElementById('summary-roi').textContent = roi.toLocaleString('en-US', { style: 'percent', minimumFractionDigits: 2 });
+                        document.getElementById('summary-roi-per-race').textContent = avgRoiPerRace.toLocaleString('en-US', { style: 'percent', minimumFractionDigits: 2 });
                         document.getElementById('summary-bets-placed').textContent = `${totalBets} (Wins: ${winCount}, Losses: ${lossCount})`;
 
                         // Restore button state
@@ -720,4 +729,8 @@
         });
     </script>
 }
+
+
+
+
 

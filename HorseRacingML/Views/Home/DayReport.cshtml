@@ -458,7 +458,16 @@ else
             ? null
             : race.Going.Trim();
         var orderedRunners = (race.Runners ?? new List<RunnerDayReport>())
-                .OrderByDescending(r => r.AiProbability ?? double.MinValue)
+                .OrderByDescending(r =>
+                {
+                    if (!r.LayDecimalOdds.HasValue || r.LayDecimalOdds.Value == 0)
+                    {
+                        return double.MinValue;
+                    }
+                    var prob = r.DisplayedAiProbability ?? r.AiProbability ?? 0;
+                    var layProb = 1.0d / (double)r.LayDecimalOdds.Value;
+                    return layProb - prob;
+                })
                 .ThenBy(r => r.ClothNumber ?? byte.MaxValue)
             .ThenBy(r => r.HorseName ?? string.Empty)
             .ToList();

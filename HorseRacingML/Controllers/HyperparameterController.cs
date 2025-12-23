@@ -1058,7 +1058,8 @@ namespace HorseRacingML.Controllers
                 TotalStaked = totalStaked,
                 BetCount = bets.Count,
                 WinCount = wins,
-                Bets = bets
+                Bets = bets,
+                AverageRoiPerRace = bets.Count > 0 ? bets.Average(b => b.Profit / b.Stake) : 0m
             };
         }
     }
