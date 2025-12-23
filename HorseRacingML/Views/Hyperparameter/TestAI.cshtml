@@ -480,7 +480,7 @@
                                 const isFav = (aiFavorite && r.HorseName === aiFavorite.HorseName);
 
                                 // Skip if no odds
-                                if (bookOdds <= 1) return;
+                                if (!bookOdds || bookOdds <= 1) return;
 
                                 // 1. Back Bets (AI Fav or Other)
                                 if (aiProb > marketProb) {
