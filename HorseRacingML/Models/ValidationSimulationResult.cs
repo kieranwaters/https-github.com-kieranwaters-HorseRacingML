@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Linq;
 
 namespace HorseRacingML.Models
@@ -16,6 +17,7 @@ namespace HorseRacingML.Models
         public int LossCount => BetCount - WinCount;
         public decimal Profit => EndingBankroll - StartingBankroll;
         public decimal Roi => StartingBankroll <= 0 ? 0 : Profit / StartingBankroll;
+        public decimal AverageRoiPerRace { get; init; }
     }
 
     public class ValidationBetResult
