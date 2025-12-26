@@ -146,6 +146,10 @@
                 <input id="include-fees-checkbox" class="form-check-input" type="checkbox" />
                 <label for="include-fees-checkbox" class="form-check-label">Include 2% Commission</label>
             </div>
+            <div class="form-check mb-3 me-3">
+                <input id="lay-best-only-filter" class="form-check-input" type="checkbox" />
+                <label for="lay-best-only-filter" class="form-check-label">Lay Best Edge Only (Excl. Back)</label>
+            </div>
             <button type="button" id="apply-filters-btn" class="btn btn-secondary">Apply Filters</button>
         </div>
     </div>
@@ -172,6 +176,8 @@
                     <dd class="col-sm-8" id="summary-total-staked">@Model.Simulation.TotalStaked.ToString("C")</dd>
                     <dt class="col-sm-4">ROI</dt>
                     <dd class="col-sm-8" id="summary-roi">@Model.Simulation.Roi.ToString("P2")</dd>
+                    <dt class="col-sm-4">ROI per Race</dt>
+                    <dd class="col-sm-8" id="summary-roi-per-race">0.00%</dd>
                     <dt class="col-sm-4">Bets placed</dt>
                     <dd class="col-sm-8" id="summary-bets-placed">@Model.Simulation.BetCount (Wins: @Model.Simulation.WinCount, Losses: @Model.Simulation.LossCount)</dd>
                 }
@@ -369,13 +375,14 @@
                 const applyBtn = document.getElementById('apply-filters-btn');
 
                 function formatCurrencyAndDigits(amount) {
-                    const formatted = amount.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
-                    const absInt = Math.floor(Math.abs(amount));
-                    // Check if value is >= 1,000,000 (meaning > 6 digits)
-                    // 1,000,000 has 7 digits. User asked for "longer than a million" (threshold).
-                    // If amount is 1,000,000 -> 7 digits.
+                    const num = parseFloat(amount);
+                    if (isNaN(num)) return '$0.00';
+                    const formatted = num.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+                    const absInt = Math.floor(Math.abs(num));
                     const digits = absInt.toString().length;
-                    if (digits > 6) {
+
+                    // Show digit count for values >= 1,000,000 (7 digits)
+                    if (digits >= 7) {
                         return `${formatted} (${digits})`;
                     }
                     return formatted;
@@ -418,6 +425,7 @@
                         const minLayRoi = isNaN(minLayRoiVal) ? 100 : minLayRoiVal;
 
                         const includeFees = document.getElementById('include-fees-checkbox').checked;
+                        const layBestOnly = document.getElementById('lay-best-only-filter').checked;
                         const kellyDampener = parseFloat(document.getElementById('KellyDampener').value);
                         const startingBankroll = parseFloat(document.getElementById('StartingBankroll').value);
 
@@ -546,8 +554,20 @@
                                 }
                             });
 
-                            // Sort Bets by Edge Descending (Priority)
-                            bets.sort((a, b) => b.edge - a.edge);
+                            // Filter for Best Lay Only if enabled
+                            if (layBestOnly) {
+                                // Keep only Lay bets
+                                bets = bets.filter(b => b.type === 'Lay');
+                                // Sort by edge descending
+                                bets.sort((a, b) => b.edge - a.edge);
+                                // Keep only the single best lay bet
+                                if (bets.length > 1) {
+                                    bets = [bets[0]];
+                                }
+                            } else {
+                                // Standard sorting: prioritize highest edge regardless of type
+                                bets.sort((a, b) => b.edge - a.edge);
+                            }
 
                             // Calculate Stakes & Outcomes
                             let raceNetProfit = 0;
@@ -711,7 +731,12 @@
                         document.getElementById('summary-profit').textContent = formatCurrencyAndDigits(finalProfit);
                         document.getElementById('summary-total-staked').textContent = formatCurrencyAndDigits(totalStaked);
                         document.getElementById('summary-roi').textContent = roi.toLocaleString('en-US', { style: 'percent', minimumFractionDigits: 2 });
-                        document.getElementById('summary-roi-per-race').textContent = avgRoiPerRace.toLocaleString('en-US', { style: 'percent', minimumFractionDigits: 2 });
+
+                        const roiPerRaceEl = document.getElementById('summary-roi-per-race');
+                        if (roiPerRaceEl) {
+                            roiPerRaceEl.textContent = avgRoiPerRace.toLocaleString('en-US', { style: 'percent', minimumFractionDigits: 2 });
+                        }
+
                         document.getElementById('summary-bets-placed').textContent = `${totalBets} (Wins: ${winCount}, Losses: ${lossCount})`;
 
                         // Restore button state
@@ -729,6 +754,7 @@
         });
     </script>
 }
+
 
 
 
