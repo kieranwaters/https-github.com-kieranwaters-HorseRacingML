@@ -732,7 +732,8 @@
                             const outcomeCell = row.querySelector('.race-outcome-cell');
 
                             profitCell.textContent = raceNetProfit.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
-                            if (raceNetProfit > 0) profitCell.classList.add('text-success'); else if (raceNetProfit < 0) profitCell.classList.add('text-danger'); else profitCell.classList.remove('text-success', 'text-danger');
+                            profitCell.classList.remove('text-success', 'text-danger');
+                            if (raceNetProfit > 0) profitCell.classList.add('text-success'); else if (raceNetProfit < 0) profitCell.classList.add('text-danger');
 
                             bankrollCell.textContent = currentBankroll.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
                             betsCountCell.textContent = executedBets.length;
@@ -832,6 +833,13 @@
         });
     </script>
 }
+
+
+
+
+
+
+
 
 
 
