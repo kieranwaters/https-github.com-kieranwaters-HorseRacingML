@@ -182,6 +182,28 @@
                     <dd class="col-sm-8" id="summary-bets-placed">@Model.Simulation.BetCount (Wins: @Model.Simulation.WinCount, Losses: @Model.Simulation.LossCount)</dd>
                 }
             </dl>
+
+            @if (Model.Simulation != null)
+            {
+                <h6 class="mt-3">Downswing Analysis</h6>
+                <table class="table table-sm table-bordered" style="max-width: 300px;">
+                    <thead>
+                        <tr>
+                            <th>Factor (Drawdown)</th>
+                            <th>Count</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @for (int i = 2; i <= 10; i++)
+                        {
+                            <tr>
+                                <td>@i</td>
+                                <td id="downswing-count-@i">0</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
         </div>
     </div>
 }
@@ -437,6 +459,12 @@
                         let totalRaceRoi = 0;
                         let bettingRaceCount = 0;
 
+                        // Downswing Analysis Variables
+                        let peakBankroll = startingBankroll;
+                        let currentDrawdownLow = startingBankroll;
+                        let inDrawdown = false;
+                        let downswingCounts = new Array(11).fill(0); // Indices 2 to 10 used
+
                         const allRaceRows = document.querySelectorAll('.race-row');
 
                         let visibleRaceCount = 0;
@@ -664,6 +692,33 @@
                                 }
                             });
 
+                            // Downswing Tracking (Post-Race)
+                            if (currentBankroll > peakBankroll) {
+                                if (inDrawdown) {
+                                    // Drawdown ended
+                                    if (currentDrawdownLow > 0) {
+                                        const factor = peakBankroll / currentDrawdownLow;
+                                        if (factor >= 2) {
+                                            const bin = Math.min(Math.floor(factor), 10);
+                                            if (bin >= 2) {
+                                                downswingCounts[bin]++;
+                                            }
+                                        }
+                                    } else {
+                                        // Bankroll went to 0 or negative during drawdown
+                                        downswingCounts[10]++;
+                                    }
+                                    inDrawdown = false;
+                                }
+                                peakBankroll = currentBankroll;
+                                currentDrawdownLow = currentBankroll;
+                            } else if (currentBankroll < peakBankroll) {
+                                inDrawdown = true;
+                                if (currentBankroll < currentDrawdownLow) {
+                                    currentDrawdownLow = currentBankroll;
+                                }
+                            }
+
                             if (raceStaked > 0) {
                                 totalRaceRoi += (raceNetProfit / raceStaked);
                                 bettingRaceCount++;
@@ -719,11 +774,34 @@
                             totalStaked += raceStaked;
                         });
 
+                        // Finalize any open drawdown at the end of simulation
+                        if (inDrawdown) {
+                            if (currentDrawdownLow > 0) {
+                                const factor = peakBankroll / currentDrawdownLow;
+                                if (factor >= 2) {
+                                    const bin = Math.min(Math.floor(factor), 10);
+                                    if (bin >= 2) {
+                                        downswingCounts[bin]++;
+                                    }
+                                }
+                            } else {
+                                downswingCounts[10]++;
+                            }
+                        }
+
                         // --- 3. Update Global Summary ---
                         const finalProfit = currentBankroll - startingBankroll;
                         const roi = totalStaked > 0 ? (finalProfit / totalStaked) : 0;
                         const avgRoiPerRace = bettingRaceCount > 0 ? (totalRaceRoi / bettingRaceCount) : 0;
                         const accuracy = visibleRaceCount > 0 ? (correctPredictions / visibleRaceCount) : 0;
+
+                        // Update Downswing Table
+                        for (let i = 2; i <= 10; i++) {
+                            const cell = document.getElementById(`downswing-count-${i}`);
+                            if (cell) {
+                                cell.textContent = downswingCounts[i];
+                            }
+                        }
 
                         document.getElementById('summary-validation-races').textContent = visibleRaceCount;
                         document.getElementById('summary-validation-accuracy').textContent = accuracy.toLocaleString('en-US', { style: 'percent', minimumFractionDigits: 2 });
@@ -754,6 +832,10 @@
         });
     </script>
 }
+
+
+
+
 
 
 
