@@ -619,7 +619,10 @@ namespace HorseRacingML.Tests
             {
                 return null;
             }
-
+            public DateTime GetLatestRaceDate(string? country = null)
+            {
+                return DateTime.Now;
+            }
             public UpcomingRace? GetUpcomingRaceByMarketId(string? marketId)
             {
                 return null;

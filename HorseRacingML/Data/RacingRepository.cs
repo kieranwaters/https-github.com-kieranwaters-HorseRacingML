@@ -1350,11 +1350,30 @@ WHERE h.Name IN @Names;";
             lower = Regex.Replace(lower, "\\s+", " ").Trim();
             return lower;
         }
-        public DateTime GetLatestRaceDate()
+        public DateTime GetLatestRaceDate(string? country = null)
         {
             using var conn = OpenConnection();
-            const string sql = "SELECT MAX(RaceDate) FROM Race WHERE RaceDate IS NOT NULL AND RaceDate <= CAST(GETDATE() AS date)";
-            var latest = conn.QuerySingleOrDefault<DateTime?>(sql);
+            var sql = new StringBuilder("SELECT MAX(r.RaceDate) FROM Race r");
+
+            if (!string.IsNullOrEmpty(country))
+            {
+                if (string.Equals(country, "UK Ireland", StringComparison.OrdinalIgnoreCase))
+                {
+                    sql.Append(" INNER JOIN Course c ON r.CourseId = c.CourseId WHERE c.Country IN ('UK Ireland', 'GB', 'IE') AND");
+                }
+                else
+                {
+                    sql.Append(" INNER JOIN Course c ON r.CourseId = c.CourseId WHERE c.Country = @Country AND");
+                }
+            }
+            else
+            {
+                sql.Append(" WHERE");
+            }
+
+            sql.Append(" r.RaceDate IS NOT NULL AND r.RaceDate <= CAST(GETDATE() AS date)");
+
+            var latest = conn.QuerySingleOrDefault<DateTime?>(sql.ToString(), new { Country = country });
             // When no races exist yet, return a past date so scraping can begin
             return latest ?? new DateTime(2000, 1, 1);
         }

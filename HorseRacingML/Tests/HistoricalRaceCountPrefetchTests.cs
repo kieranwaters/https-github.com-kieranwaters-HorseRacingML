@@ -134,7 +134,10 @@ namespace HorseRacingML.Tests
             {
                 return null;
             }
-
+            public DateTime GetLatestRaceDate(string? country = null)
+            {
+                return DateTime.Now;
+            }
             public int? GetHistoricalRaceCountByHorseName(string? horseName)
             {
                 SingleCallCount++;
