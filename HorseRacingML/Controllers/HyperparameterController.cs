@@ -637,7 +637,11 @@ namespace HorseRacingML.Controllers
 
             var monthLabel = months == 1 ? "month" : "months";
 
-            var validationEnd = DateTime.Today;
+            // Anchor the validation window to the latest available race date in the DB
+            // to ensure we capture the most recent "month" of actual data, even if
+            // the scraping is a few days behind or if testing on historical snapshots.
+            var latestRaceDate = _repository.GetLatestRaceDate(request.SelectedCountry);
+            var validationEnd = latestRaceDate;
             var validationStart = validationEnd.AddMonths(-months);
             var startingBankroll = request.StartingBankroll < 0 ? 0m : request.StartingBankroll;
             var viewModel = new AITestResultViewModel

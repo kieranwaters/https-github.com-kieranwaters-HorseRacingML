@@ -1965,7 +1965,14 @@ SELECT CAST(SCOPE_IDENTITY() as int);";
             var sql = new StringBuilder(@"SELECT r.RaceId FROM Race r");
             if (!string.IsNullOrEmpty(country))
             {
-                sql.Append(" INNER JOIN Course c ON r.CourseId = c.CourseId WHERE c.Country = @Country AND");
+                if (string.Equals(country, "UK Ireland", StringComparison.OrdinalIgnoreCase))
+                {
+                    sql.Append(" INNER JOIN Course c ON r.CourseId = c.CourseId WHERE c.Country IN ('UK Ireland', 'GB', 'IE') AND");
+                }
+                else
+                {
+                    sql.Append(" INNER JOIN Course c ON r.CourseId = c.CourseId WHERE c.Country = @Country AND");
+                }
             }
             else
             {
@@ -1986,7 +1993,14 @@ SELECT CAST(SCOPE_IDENTITY() as int);";
             var sql = new StringBuilder(@"SELECT r.RaceId FROM Race r");
             if (!string.IsNullOrEmpty(country))
             {
-                sql.Append(" INNER JOIN Course c ON r.CourseId = c.CourseId WHERE c.Country = @Country AND");
+                if (string.Equals(country, "UK Ireland", StringComparison.OrdinalIgnoreCase))
+                {
+                    sql.Append(" INNER JOIN Course c ON r.CourseId = c.CourseId WHERE c.Country IN ('UK Ireland', 'GB', 'IE') AND");
+                }
+                else
+                {
+                    sql.Append(" INNER JOIN Course c ON r.CourseId = c.CourseId WHERE c.Country = @Country AND");
+                }
             }
             else
             {
