@@ -1371,7 +1371,7 @@ WHERE h.Name IN @Names;";
                 sql.Append(" WHERE");
             }
 
-            sql.Append(" r.RaceDate IS NOT NULL AND r.RaceDate <= CAST(GETDATE() AS date)");
+            sql.Append(" r.RaceDate IS NOT NULL");
 
             var latest = conn.QuerySingleOrDefault<DateTime?>(sql.ToString(), new { Country = country });
             // When no races exist yet, return a past date so scraping can begin
