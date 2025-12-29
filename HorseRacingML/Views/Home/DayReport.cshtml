@@ -168,7 +168,7 @@
     var initialRegionSelection = string.IsNullOrWhiteSpace(Model?.InitialRegion)
         ? DayReportFilterViewModel.DefaultRegion
         : Model.InitialRegion!;
-        string DetermineRaceRegion(string? country)
+    string DetermineRaceRegion(string? country)
     {
         if (string.IsNullOrWhiteSpace(country))
         {
@@ -212,9 +212,9 @@
             return "FRA";
         }
 
-    if (normalized.Contains("AUSTRALIA") ||
-            normalized == "AUS" ||
-            normalized == "AUST")
+        if (normalized.Contains("AUSTRALIA") ||
+                normalized == "AUS" ||
+                normalized == "AUST")
         {
             return "AUS";
         }
@@ -301,46 +301,46 @@
 </div>
 
 @if (!string.IsNullOrEmpty(filterSummary))
-    {
+{
     <div class="alert alert-secondary">@filterSummary</div>
-    }
+}
 
-    @if (Model.Races != null && Model.Races.Count > 0)
-    {
-        <input type="hidden" id="dayReportInitialRegion" value="@initialRegionSelection" />
-        <div class="card mb-4">
-            <div class="card-body">
-                <div class="row g-3 align-items-end">
-                    <div class="col-sm-6 col-md-4 col-lg-3">
-                        <label for="dayReportRegionSelect" class="form-label mb-1">Region</label>
-                        <select id="dayReportRegionSelect" class="form-select form-select-sm">
-                            <option value="GB &amp; IRE" selected='@(initialRegionSelection == "GB & IRE" ? "selected" : null)'>GB &amp; IRE</option>
-                            <option value="USA" selected='@(initialRegionSelection == "USA" ? "selected" : null)'>USA</option>
-                            <option value="RSA" selected='@(initialRegionSelection == "RSA" ? "selected" : null)'>RSA</option>
-                            <option value="FRA" selected='@(initialRegionSelection == "FRA" ? "selected" : null)'>FRA</option>
-                            <option value="AUS" selected='@(initialRegionSelection == "AUS" ? "selected" : null)'>AUS</option>
-                            <option value="All" selected='@(initialRegionSelection == "All" ? "selected" : null)'>All</option>
-                        </select>
-                        <div class="form-text">Use the selector to focus on specific race regions.</div>
-                    </div>
-                    <div class="col-12">
-                        <div class="d-flex flex-wrap gap-2" id="dayReportRegionButtons">
-                            @foreach (var summary in regionSummaries)
-                            {
-                                var trackLabel = summary.TrackCount == 1 ? "track" : "tracks";
-                                var raceLabel = summary.RaceCount == 1 ? "race" : "races";
-                                <button type="button"
-                                        class="btn btn-outline-secondary btn-sm region-filter-btn"
-                                        data-region="@summary.Region">
-                                    @summary.Region (@summary.TrackCount @trackLabel / @summary.RaceCount @raceLabel)
-                                </button>
-                            }
-                        </div>
+@if (Model.Races != null && Model.Races.Count > 0)
+{
+    <input type="hidden" id="dayReportInitialRegion" value="@initialRegionSelection" />
+    <div class="card mb-4">
+        <div class="card-body">
+            <div class="row g-3 align-items-end">
+                <div class="col-sm-6 col-md-4 col-lg-3">
+                    <label for="dayReportRegionSelect" class="form-label mb-1">Region</label>
+                    <select id="dayReportRegionSelect" class="form-select form-select-sm">
+                        <option value="GB &amp; IRE" selected='@(initialRegionSelection == "GB & IRE" ? "selected" : null)'>GB &amp; IRE</option>
+                        <option value="USA" selected='@(initialRegionSelection == "USA" ? "selected" : null)'>USA</option>
+                        <option value="RSA" selected='@(initialRegionSelection == "RSA" ? "selected" : null)'>RSA</option>
+                        <option value="FRA" selected='@(initialRegionSelection == "FRA" ? "selected" : null)'>FRA</option>
+                        <option value="AUS" selected='@(initialRegionSelection == "AUS" ? "selected" : null)'>AUS</option>
+                        <option value="All" selected='@(initialRegionSelection == "All" ? "selected" : null)'>All</option>
+                    </select>
+                    <div class="form-text">Use the selector to focus on specific race regions.</div>
+                </div>
+                <div class="col-12">
+                    <div class="d-flex flex-wrap gap-2" id="dayReportRegionButtons">
+                        @foreach (var summary in regionSummaries)
+                        {
+                            var trackLabel = summary.TrackCount == 1 ? "track" : "tracks";
+                            var raceLabel = summary.RaceCount == 1 ? "race" : "races";
+                            <button type="button"
+                                    class="btn btn-outline-secondary btn-sm region-filter-btn"
+                                    data-region="@summary.Region">
+                                @summary.Region (@summary.TrackCount @trackLabel / @summary.RaceCount @raceLabel)
+                            </button>
+                        }
                     </div>
                 </div>
             </div>
         </div>
-    }
+    </div>
+}
 <div class="card mb-4">
     <div class="card-body">
         <div class="row g-3 align-items-end">
@@ -420,24 +420,8 @@
 }
 else
 {
- var sequentialIndex = 0;
-    <div id="dayReportSequentialRoot" data-total-races="@Model.Races.Count">
-        <div id="raceSequentialProgress" class="alert alert-info d-flex align-items-center gap-2 mb-4" role="status">
-            <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
-            <div>
-                <strong>Processing races…</strong>
-                <span class="ms-2" id="raceSequentialProgressCount"></span>
-            </div>
-            <button type="button" class="btn btn-outline-secondary btn-sm ms-auto" id="raceSequentialRevealAllButton">
-                Show all now
-            </button>
-        </div>
-        <div id="raceCardsContainer" data-sequential-delay="200"></div>
-        <div id="raceCardsStaging" class="d-none">
     @for (var raceIndex = 0; raceIndex < Model.Races.Count; raceIndex++)
     {
-        sequentialIndex++;
-    
         var race = Model.Races[raceIndex];
         var raceTitle = string.IsNullOrWhiteSpace(race.RaceTitle)
             ? "Unknown Race"
@@ -503,10 +487,10 @@ else
         var raceStartIso = raceStart.HasValue
             ? raceStart.Value.ToString("o", CultureInfo.InvariantCulture)
             : string.Empty;
-            var raceRegion = DetermineRaceRegion(race.VenueCountry);
-        
+        var raceRegion = DetermineRaceRegion(race.VenueCountry);
 
-                <div class="card mb-4 race-card sequential-pending" data-market-id="@race.MarketId" data-race-start="@raceStartIso" data-region="@raceRegion" data-sequential-index="@sequentialIndex" data-sequential-pending="true">
+
+        <div class="card mb-4 race-card" data-market-id="@race.MarketId" data-race-start="@raceStartIso" data-region="@raceRegion">
             <div class="card-header bg-light">
                 <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
                     <div>
@@ -541,24 +525,22 @@ else
                         </div>
                     </div>
                     <div class="d-flex flex-column align-items-end gap-2 text-end">
-                        <button
-                            type="button"
-                            class="btn btn-sm btn-outline-secondary refresh-market-only-btn"
-                            data-market-id="@race.MarketId"
-                            data-race-url="@race.RaceUrl"
-                            data-current-going="@goingText"
-                            @(string.IsNullOrWhiteSpace(race.RaceUrl) ? "disabled" : string.Empty)>
+                        <button type="button"
+                                class="btn btn-sm btn-outline-secondary refresh-market-only-btn"
+                                data-market-id="@race.MarketId"
+                                data-race-url="@race.RaceUrl"
+                                data-current-going="@goingText"
+                                @(string.IsNullOrWhiteSpace(race.RaceUrl) ? "disabled" : string.Empty)>
                             Refresh market odds
                         </button>
-                        <button
-                            type="button"
-                            class="btn btn-sm btn-outline-secondary refresh-race-btn"
-                            data-market-id="@race.MarketId"
-                            data-race-url="@race.RaceUrl"
-                            @(string.IsNullOrWhiteSpace(race.RaceUrl) ? "disabled" : string.Empty)>
+                        <button type="button"
+                                class="btn btn-sm btn-outline-secondary refresh-race-btn"
+                                data-market-id="@race.MarketId"
+                                data-race-url="@race.RaceUrl"
+                                @(string.IsNullOrWhiteSpace(race.RaceUrl) ? "disabled" : string.Empty)>
                             Full refresh (AI + odds)
                         </button>
-                          </div>
+                    </div>
                 </div>
             </div>
             <div class="card-body">
@@ -589,19 +571,19 @@ else
                                 <th scope="col" class="text-end">Edge</th>
                                 <th scope="col" class="text-end">Kelly %</th>
                                 <th scope="col" class="text-end">Stake</th>
-                                        <th scope="col" class="text-end">ROI</th>
+                                <th scope="col" class="text-end">ROI</th>
                             </tr>
                         </thead>
                         <tbody>
                             @foreach (var runner in orderedRunners)
                             {
                                 var cloth = runner.ClothNumber.HasValue
-                                    ? runner.ClothNumber.Value.ToString(CultureInfo.CurrentCulture)
-                                    : "-";
+                                ? runner.ClothNumber.Value.ToString(CultureInfo.CurrentCulture)
+                                : "-";
 
                                 var draw = runner.Draw.HasValue
-                                    ? runner.Draw.Value.ToString(CultureInfo.CurrentCulture)
-                                    : "-";
+                                ? runner.Draw.Value.ToString(CultureInfo.CurrentCulture)
+                                : "-";
                                 string historyCountText = "-";
                                 string? historicalRacesJson = null;
                                 if (runner.HistoricalRaceCount.HasValue)
@@ -615,39 +597,39 @@ else
                                     .ToList();
                                     historicalRacesJson = JsonSerializer.Serialize(orderedHistorical, historicalRaceSerializerOptions);
                                 }
-            var top3RateText = "-";
-            string? top3RateTitle = null;
-            if (runner.Top3FinishRate.HasValue)
-            {
-                var rate = runner.Top3FinishRate.Value * 100d;
-                top3RateText = rate.ToString("0.##", CultureInfo.CurrentCulture) + "%";
-                top3RateTitle = $"{rate.ToString("0.###", CultureInfo.CurrentCulture)}% of historical runs finished in the top 3";
-            }
+                                var top3RateText = "-";
+                                string? top3RateTitle = null;
+                                if (runner.Top3FinishRate.HasValue)
+                                {
+                                    var rate = runner.Top3FinishRate.Value * 100d;
+                                    top3RateText = rate.ToString("0.##", CultureInfo.CurrentCulture) + "%";
+                                    top3RateTitle = $"{rate.ToString("0.###", CultureInfo.CurrentCulture)}% of historical runs finished in the top 3";
+                                }
 
-            var top5RateText = "-";
-            string? top5RateTitle = null;
-            if (runner.Top5FinishRate.HasValue)
-            {
-                var rate = runner.Top5FinishRate.Value * 100d;
-                top5RateText = rate.ToString("0.##", CultureInfo.CurrentCulture) + "%";
-                top5RateTitle = $"{rate.ToString("0.###", CultureInfo.CurrentCulture)}% of historical runs finished in the top 5";
-            }
+                                var top5RateText = "-";
+                                string? top5RateTitle = null;
+                                if (runner.Top5FinishRate.HasValue)
+                                {
+                                    var rate = runner.Top5FinishRate.Value * 100d;
+                                    top5RateText = rate.ToString("0.##", CultureInfo.CurrentCulture) + "%";
+                                    top5RateTitle = $"{rate.ToString("0.###", CultureInfo.CurrentCulture)}% of historical runs finished in the top 5";
+                                }
 
-            var volatilityText = "-";
-            string? volatilityTitle = null;
-            if (runner.FinishPositionVolatility.HasValue)
-            {
-                var volatilityPercent = runner.FinishPositionVolatility.Value * 100d;
-                volatilityText = volatilityPercent.ToString("0.##", CultureInfo.CurrentCulture) + "%";
-                volatilityTitle = "Standard deviation of normalized finishing positions across historical runs";
-            }
+                                var volatilityText = "-";
+                                string? volatilityTitle = null;
+                                if (runner.FinishPositionVolatility.HasValue)
+                                {
+                                    var volatilityPercent = runner.FinishPositionVolatility.Value * 100d;
+                                    volatilityText = volatilityPercent.ToString("0.##", CultureInfo.CurrentCulture) + "%";
+                                    volatilityTitle = "Standard deviation of normalized finishing positions across historical runs";
+                                }
 
                                 var marketOdds = runner.MarketDecimalOdds.HasValue
-                                    ? runner.MarketDecimalOdds.Value.ToString("0.00", CultureInfo.CurrentCulture)
-                                    : "-";
+                                ? runner.MarketDecimalOdds.Value.ToString("0.00", CultureInfo.CurrentCulture)
+                                : "-";
                                 var layOdds = runner.LayDecimalOdds.HasValue
-                                    ? runner.LayDecimalOdds.Value.ToString("0.00", CultureInfo.CurrentCulture)
-                                    : "-";
+                                ? runner.LayDecimalOdds.Value.ToString("0.00", CultureInfo.CurrentCulture)
+                                : "-";
                                 var displayAiProbability = runner.DisplayedAiProbability ?? runner.AiProbability;
                                 var displayAiFromMarket = runner.DisplayedAiProbability.HasValue
                                 ? runner.DisplayedAiProbabilityMarketDerived
@@ -699,15 +681,25 @@ else
                                     aiWinPrimary = aiOdds;
                                 }
                                 var marketProb = runner.MarketProbability.HasValue
-                                    ? (runner.MarketProbability.Value * 100).ToString("0.##", CultureInfo.CurrentCulture) + "%"
-                                    : "-";
+                                ? (runner.MarketProbability.Value * 100).ToString("0.##", CultureInfo.CurrentCulture) + "%"
+                                : "-";
 
                                 var aiProbabilityAttrValue = runner.DisplayedAiProbability ?? runner.AiProbability;
                                 var effectiveAiProbability = aiProbabilityAttrValue;
+                                var hasBackEdge = runner.KellyFraction.HasValue && runner.KellyFraction.Value > 0;
+                                var hasLayEdge = runner.LayKellyFraction.HasValue && runner.LayKellyFraction.Value > 0;
+
                                 double? displayedDifferential = runner.DisplayedDifferential;
-                                if (!displayedDifferential.HasValue && effectiveAiProbability.HasValue && runner.MarketProbability.HasValue)
+                                if (!displayedDifferential.HasValue && effectiveAiProbability.HasValue)
                                 {
-                                    displayedDifferential = effectiveAiProbability.Value - runner.MarketProbability.Value;
+                                    if (hasLayEdge && runner.LayDecimalOdds.HasValue && runner.LayDecimalOdds.Value > 0)
+                                    {
+                                        displayedDifferential = (1.0 / (double)runner.LayDecimalOdds.Value) - effectiveAiProbability.Value;
+                                    }
+                                    else if (runner.MarketProbability.HasValue)
+                                    {
+                                        displayedDifferential = effectiveAiProbability.Value - runner.MarketProbability.Value;
+                                    }
                                 }
                                 if (!displayedDifferential.HasValue && runner.Differential.HasValue)
                                 {
@@ -715,44 +707,41 @@ else
                                 }
                                 var diff = displayedDifferential.HasValue
                                 ? (displayedDifferential.Value * 100).ToString("0.##", CultureInfo.CurrentCulture) + "%"
-                                    : "-";
-
-                               var hasBackEdge = runner.KellyFraction.HasValue && runner.KellyFraction.Value > 0;
-                                var hasLayEdge = runner.LayKellyFraction.HasValue && runner.LayKellyFraction.Value > 0;
+                                : "-";
                                 var rowClass = hasBackEdge
-                                    ? "runner-edge-back"
-                                    : hasLayEdge
-                                        ? "runner-edge-lay"
-                                        : string.Empty;
+                                ? "runner-edge-back"
+                                : hasLayEdge
+                                ? "runner-edge-lay"
+                                : string.Empty;
 
                                 var horseNameAttr = runner.HorseName?.Trim() ?? string.Empty;
                                 var marketProbabilityAttr = runner.MarketProbability.HasValue
-                                    ? runner.MarketProbability.Value.ToString("0.################", CultureInfo.InvariantCulture)
-                                    : string.Empty;
+                                ? runner.MarketProbability.Value.ToString("0.################", CultureInfo.InvariantCulture)
+                                : string.Empty;
 
                                 var displayedKelly = hasBackEdge
-                                    ? (runner.KellyFraction!.Value * 100).ToString("0.##", CultureInfo.CurrentCulture) + "%"
-                                    : hasLayEdge
-                                        ? "Lay " + (runner.LayKellyFraction!.Value * 100).ToString("0.##", CultureInfo.CurrentCulture) + "%"
-                                        : "-";
+                                ? (runner.KellyFraction!.Value * 100).ToString("0.##", CultureInfo.CurrentCulture) + "%"
+                                : hasLayEdge
+                                ? "Lay " + (runner.LayKellyFraction!.Value * 100).ToString("0.##", CultureInfo.CurrentCulture) + "%"
+                                : "-";
                                 var kellyData = hasBackEdge
-                                    ? runner.KellyFraction!.Value.ToString("0.######", CultureInfo.InvariantCulture)
-                                    : hasLayEdge
-                                        ? runner.LayKellyFraction!.Value.ToString("0.######", CultureInfo.InvariantCulture)
-                                        : string.Empty;
+                                ? runner.KellyFraction!.Value.ToString("0.######", CultureInfo.InvariantCulture)
+                                : hasLayEdge
+                                ? runner.LayKellyFraction!.Value.ToString("0.######", CultureInfo.InvariantCulture)
+                                : string.Empty;
 
                                 var useLayRecommendation = !hasBackEdge && hasLayEdge;
                                 var displayedStakeValue = useLayRecommendation ? runner.LaySuggestedStake : runner.SuggestedStake;
                                 var stakeType = useLayRecommendation ? "lay" : hasBackEdge ? "back" : "none";
                                 var layOddsData = useLayRecommendation && runner.LayDecimalOdds.HasValue
-                                    ? runner.LayDecimalOdds.Value.ToString("0.########", CultureInfo.InvariantCulture)
-                                    : string.Empty;
+                                ? runner.LayDecimalOdds.Value.ToString("0.########", CultureInfo.InvariantCulture)
+                                : string.Empty;
 
                                 var displayedStake = displayedStakeValue.HasValue && displayedStakeValue.Value > 0
-                                    ? (useLayRecommendation
-                                        ? "Lay " + displayedStakeValue.Value.ToString("0.00", CultureInfo.CurrentCulture)
-                                        : displayedStakeValue.Value.ToString("0.00", CultureInfo.CurrentCulture))
-                                    : "-";
+                                ? (useLayRecommendation
+                                ? "Lay " + displayedStakeValue.Value.ToString("0.00", CultureInfo.CurrentCulture)
+                                : displayedStakeValue.Value.ToString("0.00", CultureInfo.CurrentCulture))
+                                : "-";
                                 var stakeData = displayedStakeValue.HasValue && displayedStakeValue.Value > 0
                                 ? displayedStakeValue.Value.ToString("0.00", CultureInfo.InvariantCulture)
                                 : string.Empty;
@@ -761,37 +750,37 @@ else
                                 : string.Empty;
                                 var marketOddsAttr = runner.MarketDecimalOdds.HasValue
                                 ? runner.MarketDecimalOdds.Value.ToString("0.########", CultureInfo.InvariantCulture)
-                                        : string.Empty;
-                                        var layOddsAttr = runner.LayDecimalOdds.HasValue
-                                        ? runner.LayDecimalOdds.Value.ToString("0.########", CultureInfo.InvariantCulture)
-                                        : string.Empty;
+                                : string.Empty;
+                                var layOddsAttr = runner.LayDecimalOdds.HasValue
+                                ? runner.LayDecimalOdds.Value.ToString("0.########", CultureInfo.InvariantCulture)
+                                : string.Empty;
                                 var aiProbabilitySourceAttr = displayAiFromMarket ? "market" : "model";
-                                        <tr class="@rowClass"
-                                            data-horse-name="@horseNameAttr"
-                                            data-ai-probability="@aiProbabilityAttr"
-                                            data-market-probability="@marketProbabilityAttr"
-                                            data-market-odds="@marketOddsAttr"
-                                            data-lay-odds="@layOddsAttr"
-                                            data-ai-probability-source="@aiProbabilitySourceAttr"
-                                            data-kelly="@((runner.KellyFraction ?? 0).ToString("0.################", CultureInfo.InvariantCulture))"
-                                            data-lay-kelly="@((runner.LayKellyFraction ?? 0).ToString("0.################", CultureInfo.InvariantCulture))">
+                                <tr class="@rowClass"
+                                    data-horse-name="@horseNameAttr"
+                                    data-ai-probability="@aiProbabilityAttr"
+                                    data-market-probability="@marketProbabilityAttr"
+                                    data-market-odds="@marketOddsAttr"
+                                    data-lay-odds="@layOddsAttr"
+                                    data-ai-probability-source="@aiProbabilitySourceAttr"
+                                    data-kelly="@((runner.KellyFraction ?? 0).ToString("0.################", CultureInfo.InvariantCulture))"
+                                    data-lay-kelly="@((runner.LayKellyFraction ?? 0).ToString("0.################", CultureInfo.InvariantCulture))">
 
                                     <td>@cloth</td>
                                     <td>@draw</td>
                                     <td>
-                                                <div class="fw-semibold">
-                                                    @runner.HorseName
-                                                    @if (runner.ImputedFeatures != null && runner.ImputedFeatures.Count > 0)
-                                                    {
-                                                        var imputedText = string.Join(", ", runner.ImputedFeatures);
-                                                        <span class="text-warning ms-1 text-decoration-underline"
-                                                              style="cursor: pointer;"
-                                                              title="Imputed: @imputedText"
-                                                              onclick="alert('Imputed data: @imputedText')">
-                                                            (!)
-                                                        </span>
-                                                    }
-                                                </div>
+                                        <div class="fw-semibold">
+                                            @runner.HorseName
+                                            @if (runner.ImputedFeatures != null && runner.ImputedFeatures.Count > 0)
+                                            {
+                                                var imputedText = string.Join(", ", runner.ImputedFeatures);
+                                                <span class="text-warning ms-1 text-decoration-underline"
+                                                      style="cursor: pointer;"
+                                                      title="Imputed: @imputedText"
+                                                      onclick="alert('Imputed data: @imputedText')">
+                                                    (!)
+                                                </span>
+                                            }
+                                        </div>
                                         @{
                                             var historyEntries = new List<(string Label, string Value, string? Tooltip)>();
                                             if (!string.IsNullOrWhiteSpace(top3RateTitle) && top3RateText != "-")
@@ -895,8 +884,8 @@ else
                                             if (historyEntries.Count > 0)
                                             {
                                                 var horseTitle = trainerStats.Count > 0 || jockeyStats.Count > 0
-                                                    ? "Horse historical"
-                                                    : null;
+                                                ? "Horse historical"
+                                                : null;
                                                 snapshotSections.Add((horseTitle, historyEntries));
                                             }
 
@@ -918,7 +907,9 @@ else
                                             <details class="small runner-history-details mt-1">
                                                 <summary class="text-muted">Form snapshot</summary>
                                                 <div class="runner-history-body mt-2">
-                                                    @{ var sectionIndex = 0; }
+                                                    @{
+                                                        var sectionIndex = 0;
+                                                    }
                                                     @foreach (var section in snapshotSections)
                                                     {
                                                         var headingClass = sectionIndex > 0 ? "mt-3" : string.Empty;
@@ -929,10 +920,10 @@ else
                                                         }
 
                                                         var listClass = section.Title != null
-                                                            ? $"row small mb-0 {headingClass}".Trim()
-                                                            : sectionIndex > 0
-                                                                ? "row small mb-0 mt-3"
-                                                                : "row small mb-0";
+                                                        ? $"row small mb-0 {headingClass}".Trim()
+                                                        : sectionIndex > 0
+                                                        ? "row small mb-0 mt-3"
+                                                        : "row small mb-0";
 
                                                         <dl class="@listClass">
                                                             @foreach (var entry in section.Entries)
@@ -1034,27 +1025,28 @@ else
                                             }
                                             <details class="small mt-1">
                                                 <summary class="text-muted">@summaryLabel</summary>
-                @{        var topContributorItems = showContribution && hasEncodedValues
-                    ? encodedValues
-                    .Where(value => value.Active && value.Contribution.HasValue && value.Contribution.Value > 0)
-                    .OrderByDescending(value => value.Contribution!.Value)
-                    .ToList()
-                    : new List<EncodedFeatureValue>();
-                    var suppressedHeadwinds = showContribution && hasEncodedValues
-                    ? encodedValues
-                    .Where(value => value.Active && value.Contribution.HasValue && value.Contribution.Value < 0)
-                    .OrderBy(value => value.Contribution!.Value)
-                    .ToList()
-                    : new List<EncodedFeatureValue>();
-                }
-                @if (topContributorItems.Count > 0 || suppressedHeadwinds.Count > 0)
-                {
+                                                @{
+                                                    var topContributorItems = showContribution && hasEncodedValues
+                                                    ? encodedValues
+                                                    .Where(value => value.Active && value.Contribution.HasValue && value.Contribution.Value > 0)
+                                                    .OrderByDescending(value => value.Contribution!.Value)
+                                                    .ToList()
+                                                    : new List<EncodedFeatureValue>();
+                                                    var suppressedHeadwinds = showContribution && hasEncodedValues
+                                                    ? encodedValues
+                                                    .Where(value => value.Active && value.Contribution.HasValue && value.Contribution.Value < 0)
+                                                    .OrderBy(value => value.Contribution!.Value)
+                                                    .ToList()
+                                                    : new List<EncodedFeatureValue>();
+                                                }
+                                                @if (topContributorItems.Count > 0 || suppressedHeadwinds.Count > 0)
+                                                {
                                                     <div class="mt-2">
                                                         <div class="small text-muted text-uppercase fw-semibold">Model signal explainer</div>
                                                         @if (topContributorItems.Count > 0)
                                                         {
                                                             <div class="small mt-1">
-                                                                                <span class="fw-semibold">Positive signal features:</span>
+                                                                <span class="fw-semibold">Positive signal features:</span>
                                                                 <ul class="mb-0 ps-3">
                                                                     @foreach (var item in topContributorItems)
                                                                     {
@@ -1070,7 +1062,7 @@ else
                                                         @if (suppressedHeadwinds.Count > 0)
                                                         {
                                                             <div class="small mt-2">
-                                                                                <span class="fw-semibold">Negative signal features:</span>
+                                                                <span class="fw-semibold">Negative signal features:</span>
                                                                 <ul class="mb-0 ps-3">
                                                                     @foreach (var item in suppressedHeadwinds)
                                                                     {
@@ -1084,7 +1076,7 @@ else
                                                             </div>
                                                         }
                                                     </div>
-                                                    }
+                                                }
                                                 <dl class="row mb-0">
                                                     @if (hasFeatureValues)
                                                     {
@@ -1188,10 +1180,10 @@ else
                                                             </div>
                                                         }
                                                     </div>
-                                                                         
+
+                                                }
+                                            </details>
                                         }
-                                                    </details>
-                                                    }
                                     </td>
                                     <td>@runner.JockeyName</td>
                                     <td class="text-end">
@@ -1328,7 +1320,7 @@ else
                                               data-original-lay-odds="@layOddsData"
                                               data-original-text="@displayedStake">@displayedStake</span>
                                     </td>
-                                            <td class="text-end roi-cell">-</td>
+                                    <td class="text-end roi-cell">-</td>
                                 </tr>
                             }
                         </tbody>
@@ -1337,8 +1329,6 @@ else
             </div>
         </div>
     }
-        </div>
-    </div>
 }
 <div class="modal fade" id="historicalRacesModal" tabindex="-1" aria-labelledby="historicalRacesModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-xl modal-dialog-scrollable">
@@ -1364,7 +1354,7 @@ else
             const regionSelect = document.getElementById('dayReportRegionSelect');
             const initialRegionInput = document.getElementById('dayReportInitialRegion');
             const regionButtons = Array.from(document.querySelectorAll('.region-filter-btn'));
-            const getActiveRaceCards = () => Array.from(document.querySelectorAll('.race-card')).filter(card => card.dataset.sequentialPending !== 'true');
+            const getActiveRaceCards = () => Array.from(document.querySelectorAll('.race-card'));
             const MARKET_INPUT_HANDLER_FLAG = '__hrmlMarketOddsHandler';
             const LAY_INPUT_HANDLER_FLAG = '__hrmlLayOddsHandler';
             const APPLY_MARKET_HANDLER_FLAG = '__hrmlApplyMarketHandler';
@@ -4129,164 +4119,12 @@ else
                 });
             };
 
-            const startSequentialRaceDisplay = () => {
-                const sequentialRoot = document.getElementById('dayReportSequentialRoot');
-                const sequentialContainer = document.getElementById('raceCardsContainer');
-                const sequentialStaging = document.getElementById('raceCardsStaging');
-                const sequentialProgress = document.getElementById('raceSequentialProgress');
-                const sequentialCount = document.getElementById('raceSequentialProgressCount');
-                const revealAllButton = document.getElementById('raceSequentialRevealAllButton');
-
-                if (!sequentialContainer || !sequentialStaging) {
-                    if (sequentialProgress) {
-                        sequentialProgress.classList.add('d-none');
-                    }
-                    if (revealAllButton) {
-                        revealAllButton.classList.add('d-none');
-                    }
-                    return;
-                }
-
-                const pendingCards = Array.from(sequentialStaging.querySelectorAll('.race-card'));
-                const total = pendingCards.length;
-                const prefersReducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-                const configuredDelayRaw = sequentialContainer.dataset.sequentialDelay ?? sequentialRoot?.dataset.sequentialDelay;
-                const parsedDelay = Number.parseInt(configuredDelayRaw ?? '', 10);
-                const baseDelay = Number.isFinite(parsedDelay) && parsedDelay >= 0 ? parsedDelay : 200;
-                const revealDelay = prefersReducedMotion ? 0 : baseDelay;
-
-                const state = {
-                    pending: pendingCards,
-                    total,
-                    revealed: 0,
-                    timerId: null,
-                    cancelled: false
-                };
-
-                const updateProgress = () => {
-                    if (!sequentialProgress) {
-                        return;
-                    }
-
-                    if (state.total === 0 || state.revealed >= state.total) {
-                        sequentialProgress.classList.add('d-none');
-                        return;
-                    }
-
-                    sequentialProgress.classList.remove('d-none');
-                    if (sequentialCount) {
-                        sequentialCount.textContent = `${state.revealed} of ${state.total} displayed`;
-                    }
-                };
-
-                const applyActiveRegion = () => {
-                    const currentRegion = (regionSelect?.value ?? '').trim();
-                    if (currentRegion.length > 0) {
-                        filterRacesByRegion(currentRegion);
-                    } else {
-                        filterRacesByRegion('GB & IRE');
-                    }
-                };
-
-                const finalize = () => {
-                    if (state.timerId !== null) {
-                        window.clearTimeout(state.timerId);
-                        state.timerId = null;
-                    }
-                    state.pending.length = 0;
-                    state.revealed = state.total;
-                    if (sequentialProgress) {
-                        if (sequentialCount) {
-                            sequentialCount.textContent = `${state.total} of ${state.total} displayed`;
-                        }
-                        sequentialProgress.classList.add('d-none');
-                    }
-                    if (revealAllButton) {
-                        revealAllButton.disabled = true;
-                    }
-                };
-
-                const revealCard = (card) => {
-                    if (!card) {
-                        return;
-                    }
-
-                    sequentialContainer.appendChild(card);
-                    card.dataset.sequentialPending = 'false';
-                    card.classList.remove('sequential-pending');
-                    state.revealed += 1;
-                    applyActiveRegion();
-                    updateStakeDisplays();
-                    updateProgress();
-                };
-
-                const revealAllPending = () => {
-                    while (state.pending.length > 0) {
-                        const card = state.pending.shift();
-                        revealCard(card);
-                    }
-                    finalize();
-                };
-
-                const revealNext = () => {
-                    if (state.pending.length === 0) {
-                        finalize();
-                        return;
-                    }
-
-                    const card = state.pending.shift();
-                    revealCard(card);
-
-                    if (state.pending.length === 0 || state.cancelled) {
-                        finalize();
-                        return;
-                    }
-
-                    if (revealDelay > 0) {
-                        state.timerId = window.setTimeout(revealNext, revealDelay);
-                    } else {
-                        revealNext();
-                    }
-                };
-
-                if (revealAllButton) {
-                    revealAllButton.addEventListener('click', () => {
-                        if (state.timerId !== null) {
-                            window.clearTimeout(state.timerId);
-                            state.timerId = null;
-                        }
-                        state.cancelled = true;
-                        revealAllPending();
-                    });
-                }
-
-                if (state.total === 0) {
-                    if (sequentialProgress) {
-                        sequentialProgress.classList.add('d-none');
-                    }
-                    if (revealAllButton) {
-                        revealAllButton.classList.add('d-none');
-                    }
-                    return;
-                }
-
-                updateProgress();
-
-                if (revealDelay <= 0 || state.total === 1) {
-                    revealAllPending();
-                    return;
-                }
-
-                revealNext();
-            };
-
             bindOddsInputs(document);
             bindHistoricalRaceButtons(document);
             bindApplyMarketButtons(document);
             bindMarketRefreshButtons(document);
             bindFullRefreshButtons(document);
-            startSequentialRaceDisplay();
             updateStakeDisplays();
         })();
     </script>
-}
+}wfe
