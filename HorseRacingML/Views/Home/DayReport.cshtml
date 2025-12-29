@@ -1,5 +1,4 @@
-﻿﻿
-@model HorseRacingML.Models.DayReportViewModel
+﻿@model HorseRacingML.Models.DayReportViewModel
 @using System.Collections.Generic
 @using System.Globalization
 @using System
@@ -382,6 +381,18 @@
                 <div class="form-text">Divide every stake by this value to temper staking.</div>
                 <div class="invalid-feedback">Enter a dampener greater than zero.</div>
             </div>
+            <div class="col-sm-6 col-md-4 col-lg-3">
+                <label for="minEdgeInput" class="form-label mb-1">Min Edge %</label>
+                <input type="number"
+                       class="form-control form-control-sm"
+                       id="minEdgeInput"
+                       placeholder="e.g. 5"
+                       step="0.1"
+                       min="0"
+                       inputmode="decimal" />
+                <div class="form-text">Hide runners with an edge below this %.</div>
+                <div class="invalid-feedback">Enter a non-negative percentage.</div>
+            </div>
             <div class="col-12 d-flex flex-wrap gap-2">
                 <button type="button" id="kellyBankrollUseReport" class="btn btn-outline-secondary btn-sm">
                     Use report bankroll (@bankrollText)
@@ -394,6 +405,9 @@
                 </button>
                 <button type="button" id="stakeDampenerReset" class="btn btn-outline-secondary btn-sm">
                     Reset dampener
+                </button>
+                <button type="button" id="minEdgeReset" class="btn btn-outline-secondary btn-sm">
+                    Reset edge filter
                 </button>
             </div>
         </div>
@@ -1408,18 +1422,29 @@ else
                 });
             };
 
+            const updateAllCardsVisibility = () => {
+                const raceCards = getActiveRaceCards();
+                raceCards.forEach(card => {
+                    const regionMatch = card.dataset.regionMatch !== 'false';
+                    const hasVisibleRunners = card.dataset.hasVisibleRunners !== 'false';
+
+                    if (regionMatch && hasVisibleRunners) {
+                        card.classList.remove('d-none');
+                    } else {
+                        card.classList.add('d-none');
+                    }
+                });
+            };
+
             const filterRacesByRegion = (region) => {
                 const normalized = (region ?? '').trim().toLowerCase();
                 const raceCards = getActiveRaceCards();
                 raceCards.forEach(card => {
                     const cardRegion = (card.dataset.region ?? '').trim().toLowerCase();
                     const shouldShow = normalized.length === 0 || normalized === 'all' || cardRegion === normalized;
-                    if (shouldShow) {
-                        card.classList.remove('d-none');
-                    } else {
-                        card.classList.add('d-none');
-                    }
+                    card.dataset.regionMatch = shouldShow ? 'true' : 'false';
                 });
+                updateAllCardsVisibility();
             };
 
             const openVisibleRaceDetails = () => {
@@ -2680,6 +2705,49 @@ else
             let customKellyBankroll = null;
             let customStakeAmount = null;
             let stakeDampener = 1;
+            let minEdgeFilter = null;
+
+            const filterRunnersByEdge = () => {
+                const raceCards = getActiveRaceCards();
+                raceCards.forEach(card => {
+                    const rows = Array.from(card.querySelectorAll('tbody tr'));
+                    let visibleCount = 0;
+
+                    rows.forEach(row => {
+                        if (minEdgeFilter === null) {
+                            row.classList.remove('d-none');
+                            visibleCount++;
+                            return;
+                        }
+
+                        const edge = Number.parseFloat(row.dataset.edge ?? '0');
+                        const meetsCriteria = (edge * 100) >= (minEdgeFilter - 1e-9);
+
+                        if (meetsCriteria) {
+                            row.classList.remove('d-none');
+                            visibleCount++;
+                        } else {
+                            row.classList.add('d-none');
+                        }
+                    });
+
+                    card.dataset.hasVisibleRunners = visibleCount > 0 ? 'true' : 'false';
+                });
+
+                updateAllCardsVisibility();
+            };
+
+            const setMinEdgeFilter = (value) => {
+                if (value === null) {
+                    minEdgeFilter = null;
+                } else if (Number.isFinite(value)) {
+                    minEdgeFilter = value;
+                } else {
+                    minEdgeFilter = null;
+                }
+                filterRunnersByEdge();
+            };
+
             const calculateBackKellyFraction = (probability, decimalOdds) => {
                 if (!(typeof probability === 'number' && Number.isFinite(probability) && probability > 0 && probability < 1)) {
                     return 0;
@@ -2832,6 +2900,8 @@ else
 
                         edgeCell.textContent = formatPercentage(currentEdge * 100) ?? '-';
                     }
+                    row.dataset.edge = currentEdge.toString();
+
                     const roiCell = row.querySelector('.roi-cell');
                     if (roiCell) {
                         let roiValue = null;
@@ -2878,6 +2948,7 @@ else
 
                     element.textContent = displayedText;
                 });
+                filterRunnersByEdge();
             };
             const setCustomKellyBankroll = (value) => {
                 if (Number.isFinite(value) && value > 0) {
@@ -3041,6 +3112,45 @@ else
                     setStakeDampener(1);
                     stakeDampenerInput.focus();
                     stakeDampenerInput.select();
+                });
+            }
+
+            const minEdgeInput = document.getElementById('minEdgeInput');
+            const minEdgeReset = document.getElementById('minEdgeReset');
+
+            const handleMinEdgeInput = () => {
+                if (!minEdgeInput) {
+                    return;
+                }
+
+                const raw = minEdgeInput.value.trim();
+                if (raw.length === 0) {
+                    minEdgeInput.classList.remove('is-invalid');
+                    setMinEdgeFilter(null);
+                    return;
+                }
+
+                const parsed = Number.parseFloat(raw);
+                if (!Number.isFinite(parsed) || parsed < 0) {
+                    minEdgeInput.classList.add('is-invalid');
+                    return;
+                }
+
+                minEdgeInput.classList.remove('is-invalid');
+                setMinEdgeFilter(parsed);
+            };
+
+            if (minEdgeInput) {
+                minEdgeInput.addEventListener('input', handleMinEdgeInput);
+                minEdgeInput.addEventListener('change', handleMinEdgeInput);
+            }
+
+            if (minEdgeReset && minEdgeInput) {
+                minEdgeReset.addEventListener('click', () => {
+                    minEdgeInput.value = '';
+                    minEdgeInput.classList.remove('is-invalid');
+                    setMinEdgeFilter(null);
+                    minEdgeInput.focus();
                 });
             }
 
