@@ -2876,16 +2876,30 @@ else
                         }
                     }
                     const edgeCell = row.querySelector('.edge-cell');
+                    let currentEdge = 0;
                     if (edgeCell) {
-                        let currentEdge = 0;
-                        if (effectiveStakeType === 'lay' && layOdds > 1) {
-                            currentEdge = (1.0 / layOdds) - aiProbability;
-                        } else if (marketOdds > 1) {
-                            currentEdge = aiProbability - (1.0 / marketOdds);
-                        } else if (layOdds > 1) {
-                            currentEdge = (1.0 / layOdds) - aiProbability;
+                        let backEdge = -Infinity;
+                        if (marketOdds > 1) {
+                            backEdge = aiProbability - (1.0 / marketOdds);
+                        }
+
+                        let layEdge = -Infinity;
+                        if (layOdds > 1) {
+                            layEdge = (1.0 / layOdds) - aiProbability;
+                        }
+
+                        if (effectiveStakeType === 'back') {
+                            currentEdge = backEdge;
+                        } else if (effectiveStakeType === 'lay') {
+                            currentEdge = layEdge;
                         } else {
-                            currentEdge = 0;
+                            if (backEdge !== -Infinity && layEdge !== -Infinity) {
+                                currentEdge = Math.max(backEdge, layEdge);
+                            } else if (backEdge !== -Infinity) {
+                                currentEdge = backEdge;
+                            } else if (layEdge !== -Infinity) {
+                                currentEdge = layEdge;
+                            }
                         }
 
                         edgeCell.textContent = formatPercentage(currentEdge * 100) ?? '-';
@@ -4127,4 +4141,5 @@ else
             updateStakeDisplays();
         })();
     </script>
-}wfe
+}
+wfe
