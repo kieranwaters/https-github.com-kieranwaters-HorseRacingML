@@ -1566,7 +1566,7 @@ new RunnerFlow { HorseName = "Alpha Runner" },
             Assert.Equal(12, Convert.ToInt32(runner.FeatureValues["RunnerCount"]));
         }
 
-        private sealed class InMemoryRacingRepository : IRacingRepository
+        public sealed class InMemoryRacingRepository : IRacingRepository
         {
             private readonly Dictionary<string, UpcomingRace> _upcomingByMarket = new(StringComparer.OrdinalIgnoreCase);
             private int _nextId = 1;

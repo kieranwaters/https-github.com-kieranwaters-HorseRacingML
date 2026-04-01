@@ -1,5 +1,6 @@
 ﻿using HorseRacingML.Data;
 using HorseRacingML.ML;
+using System.Collections.Generic;
 using HorseRacingML.Models;
 using Microsoft.Extensions.Configuration;
 using System.IO;
