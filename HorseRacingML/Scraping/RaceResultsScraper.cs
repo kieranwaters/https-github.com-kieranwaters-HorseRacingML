@@ -364,7 +364,7 @@ namespace HorseRacingML.Scraping
                     while (queue.TryDequeue(out var date))
                     {
                         ScrapeDay(driver, date);
-                        var msg = $"[{date:yyyy-MM-dd}] parsed and inserted";
+                        var msg = $"[{date:yyyy-MM-dd}] Daily historical results data parsed and inserted";
                         Console.WriteLine(msg);
                         _status.Update(msg);
                         try { _ = driver.WindowHandles.Count; }
