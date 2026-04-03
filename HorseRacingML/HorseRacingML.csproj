@@ -7,6 +7,10 @@
 	</PropertyGroup>
 
 	<ItemGroup>
+		<InternalsVisibleTo Include="HorseRacingML.Tests" />
+	</ItemGroup>
+
+	<ItemGroup>
 		<Compile Remove="Views\NewFolder\**" />
 		<Content Remove="Views\NewFolder\**" />
 		<EmbeddedResource Remove="Views\NewFolder\**" />
