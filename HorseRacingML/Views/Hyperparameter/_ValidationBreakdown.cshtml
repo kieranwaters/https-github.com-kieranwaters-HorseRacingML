@@ -1,0 +1,35 @@
+@model HorseRacingML.Models.ValidationBreakdownViewModel
+
+@if (Model.Rows.Count > 0)
+{
+    <h6 class="mt-4">@Model.Title</h6>
+    <div class="table-responsive">
+        <table class="table table-sm table-striped align-middle">
+            <thead>
+                <tr>
+                    <th scope="col">Group</th>
+                    <th scope="col" class="text-end">Bets</th>
+                    <th scope="col" class="text-end">Wins</th>
+                    <th scope="col" class="text-end">Strike</th>
+                    <th scope="col" class="text-end">Staked</th>
+                    <th scope="col" class="text-end">Profit</th>
+                    <th scope="col" class="text-end">ROI</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var row in Model.Rows)
+                {
+                    <tr>
+                        <td>@row.Group</td>
+                        <td class="text-end">@row.Bets</td>
+                        <td class="text-end">@row.Wins</td>
+                        <td class="text-end">@row.StrikeRate.ToString("P1")</td>
+                        <td class="text-end">@row.Staked.ToString("C")</td>
+                        <td class="text-end @(row.Profit >= 0 ? "text-success" : "text-danger")">@row.Profit.ToString("C")</td>
+                        <td class="text-end @(row.Roi >= 0 ? "text-success" : "text-danger")">@row.Roi.ToString("P2")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}

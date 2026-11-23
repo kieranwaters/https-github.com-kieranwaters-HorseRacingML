@@ -513,116 +513,77 @@ namespace HorseRacingML.Scraping
             return (decimal)inverted;
         }
 
-        private static void NormalizeAiOdds(ICollection<RunnerFlow> flows, bool useMarketFallbackForDegeneracy)
-      {
+        private static bool NormalizeAiOdds(ICollection<RunnerFlow> flows, bool useMarketFallbackForDegeneracy)
+        {
+            if (flows is null || flows.Count == 0)
+            {
+                return false;
+            }
+
+            // Kept for configuration compatibility. We abstain instead of
+            // fabricating a distribution from the market when the model is
+            // degenerate.
+            _ = useMarketFallbackForDegeneracy;
+
             var valid = flows
-                .Where(f => f.AiOdds.HasValue && double.IsFinite(f.AiOdds.Value) && f.AiOdds.Value >= 0)
+                .Where(f => f.AiOdds.HasValue && double.IsFinite(f.AiOdds.Value) && f.AiOdds.Value > 0)
                 .ToList();
             var totalRunners = flows.Count;
             var missingCount = totalRunners - valid.Count;
 
             if (valid.Count == 0)
             {
-                if (totalRunners > 0)
-                {
-                    Console.WriteLine($"\tNormalizeAiOdds: no valid AI probabilities across {totalRunners} runner(s); skipping normalization.");
-                }
-                return;
+                Console.WriteLine($"\tNormalizeAiOdds: no valid AI probabilities across {totalRunners} runner(s); skipping race.");
+                return false;
             }
+
+            if (missingCount > 0)
+            {
+                Console.WriteLine($"\tNormalizeAiOdds: {missingCount} runner(s) have no AI probability; refusing to renormalise a partial field.");
+                return false;
+            }
+
             const double degeneracyTolerance = 1e-8;
+            const double minimumSpread = 0.01;
             double minValue = valid.Min(f => f.AiOdds!.Value);
             double maxValue = valid.Max(f => f.AiOdds!.Value);
 
             if (maxValue - minValue <= degeneracyTolerance)
             {
                 Console.WriteLine("\t\tDetected degenerate AI probability distribution; raw outputs are identical across runners.");
-
-                if (TryApplyLegacyFallback(flows))
+                if (!TryApplyLegacyFallback(flows))
                 {
-                    valid = flows
-                        .Where(f => f.AiOdds.HasValue && double.IsFinite(f.AiOdds.Value) && f.AiOdds.Value >= 0)
-                        .ToList();
-                    missingCount = flows.Count - valid.Count;
-                    minValue = valid.Min(f => f.AiOdds!.Value);
-                    maxValue = valid.Max(f => f.AiOdds!.Value);
+                    Console.WriteLine("\t\tAbstaining: the trained model produced no usable ranking and no legacy model is available.");
+                    return false;
                 }
-                else if (TryResolveDegenerateDistribution(flows))
+
+                valid = flows
+                    .Where(f => f.AiOdds.HasValue && double.IsFinite(f.AiOdds.Value) && f.AiOdds.Value > 0)
+                    .ToList();
+                missingCount = flows.Count - valid.Count;
+                if (valid.Count == 0 || missingCount > 0)
                 {
-                    valid = flows
-                         .Where(f => f.AiOdds.HasValue && double.IsFinite(f.AiOdds.Value) && f.AiOdds.Value >= 0)
-                         .ToList();
-                    missingCount = flows.Count - valid.Count;
-                    if (valid.Count == 0)
-                    {
-                        Console.WriteLine("\t\tUnable to normalize after resolving degeneracy; all AI probabilities were discarded.");
-                        return;
-                    }
-
-                    minValue = valid.Min(f => f.AiOdds!.Value);
-                    maxValue = valid.Max(f => f.AiOdds!.Value);
+                    Console.WriteLine("\t\tAbstaining: legacy fallback did not produce a complete field.");
+                    return false;
                 }
-                else if (useMarketFallbackForDegeneracy)
-                {
-                    Console.WriteLine("\t\tFalling back to market-implied probabilities.");
 
-                    bool anyFallbackApplied = false;
-                    foreach (var flow in flows)
-                    {
-                        if (flow.BackPrice1.HasValue && flow.BackPrice1.Value > 1m)
-                        {
-                            flow.AiOdds = 1.0 / (double)flow.BackPrice1.Value;
-                            anyFallbackApplied = true;
-                        }
-                        else
-                        {
-                            flow.AiOdds = null;
-                        }
-                    }
-
-                    if (!anyFallbackApplied)
-                    {
-                        Console.WriteLine("\t\tUnable to apply market fallback due to missing back prices; AI odds will remain unavailable for this race.");
-                        return;
-                    }
-
-                    valid = flows
-                        .Where(f => f.AiOdds.HasValue && double.IsFinite(f.AiOdds.Value) && f.AiOdds.Value >= 0)
-                        .ToList();
-                    missingCount = flows.Count - valid.Count;
-                    if (valid.Count == 0)
-                    {
-                        Console.WriteLine("\t\tMarket fallback produced no usable probabilities; skipping normalization.");
-                        return;
-                    }
-
-                    minValue = valid.Min(f => f.AiOdds!.Value);
-                    maxValue = valid.Max(f => f.AiOdds!.Value);
-                }
-                else
-                {
-                    Console.WriteLine("\t\tPreserving raw AI outputs (market fallback disabled).");
-                    Console.WriteLine("\t\tSkipping normalization to avoid fabricating probabilities from degenerate model output.");
-                    return;
-                }
+                minValue = valid.Min(f => f.AiOdds!.Value);
+                maxValue = valid.Max(f => f.AiOdds!.Value);
             }
 
-        NormalizationSummary:
+            if (maxValue - minValue < minimumSpread)
+            {
+                Console.WriteLine($"\t\tAI probability spread {maxValue - minValue:0.####} is too small to rank runners; abstaining rather than turning a near-uniform vector into longshot bets.");
+                return false;
+            }
+
             var sum = valid.Sum(f => f.AiOdds!.Value);
             Console.WriteLine($"\tNormalizeAiOdds: normalizing {valid.Count} runner(s) (missing={missingCount}, raw sum={sum.ToString("0.####", CultureInfo.InvariantCulture)}).");
-            if (missingCount > 0)
-            {
-                Console.WriteLine($"\t\tMissing AI predictions detected for {missingCount} runner(s); surviving probabilities may be inflated relative to the full field.");
-            }
 
-            if (sum <= double.Epsilon)
+            if (sum <= double.Epsilon || !double.IsFinite(sum))
             {
-                var uniform = 1.0 / valid.Count;
-                foreach (var flow in valid)
-                {
-                    flow.AiOdds = uniform;
-                }
-                Console.WriteLine($"\t\tRaw probabilities summed to ~0; distributing uniform probability {uniform.ToString("0.####", CultureInfo.InvariantCulture)} across valid runners.");
-                return;
+                Console.WriteLine("\t\tRaw probabilities summed to ~0; abstaining.");
+                return false;
             }
 
             foreach (var flow in valid)
@@ -632,6 +593,7 @@ namespace HorseRacingML.Scraping
 
             var normalizedSum = valid.Sum(f => f.AiOdds!.Value);
             Console.WriteLine($"\t\tNormalized probability sum: {normalizedSum.ToString("0.####", CultureInfo.InvariantCulture)}.");
+            return true;
         }
         private static bool TryApplyLegacyFallback(ICollection<RunnerFlow> flows)
         {

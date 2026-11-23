@@ -8,6 +8,15 @@ namespace HorseRacingML.Models
         public double? ValidationAccuracy { get; set; }
         public double? ValidationLoss { get; set; }
         public double? ValidationBrier { get; set; }
+        public double? ValidationTemperature { get; set; }
+        public double? MarketLogLoss { get; set; }
+        public double? MarketBrier { get; set; }
+        public double? FairMarketLogLoss { get; set; }
+        public double? FairMarketBrier { get; set; }
+        public double? BlendLogLoss { get; set; }
+        public double? BlendBrier { get; set; }
+        public double? BlendModelWeight { get; set; }
+        public double? BlendMarketWeight { get; set; }
         public double? TrainAccuracy { get; set; }
         public double? TrainLoss { get; set; }
         public double? TrainBrier { get; set; }

@@ -33,6 +33,8 @@ namespace HorseRacingML.Models
         public string? HorseName { get; set; }
         public string? JockeyName { get; set; }
         public decimal? MarketDecimalOdds { get; set; }
+        public decimal? EffectiveMarketDecimalOdds { get; set; }
+        public decimal? CommissionRate { get; set; }
         public decimal? AiDecimalOdds { get; set; }
         public double? AiProbability { get; set; }
         public double? MarketProbability { get; set; }

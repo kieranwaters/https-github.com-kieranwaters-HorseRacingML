@@ -1,6 +1,8 @@
 ﻿@{
     ViewData["Title"] = "Home Page";
 }
+@using System.Linq
+@using HorseRacingML.Jobs
 @if (TempData["Message"] != null)
 {
     <div class="alert alert-info text-center" role="alert">
@@ -18,3 +20,51 @@
     <h1 class="display-4">Welcome</h1>
     <p>Learn about <a href="https://learn.microsoft.com/aspnet/core">building Web apps with ASP.NET Core</a>.</p>
 </div>
+
+@{
+    var jobs = ViewData["Jobs"] as IReadOnlyList<BackgroundJobRecord>
+        ?? Array.Empty<BackgroundJobRecord>();
+    var recentJobs = jobs.Take(10).ToList();
+}
+<h2 class="h4 mt-4">Recent background jobs</h2>
+@if (recentJobs.Count == 0)
+{
+    <div class="alert alert-secondary" role="status">No background jobs have been submitted yet.</div>
+}
+else
+{
+    <table class="table table-sm table-striped align-middle">
+        <thead>
+            <tr>
+                <th>Job</th>
+                <th>Status</th>
+                <th>Progress</th>
+                <th>Message</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+        @foreach (var job in recentJobs)
+        {
+            <tr>
+                <td>@job.DisplayName</td>
+                <td>
+                    <span class="badge bg-@(job.Status switch
+                    {
+                        BackgroundJobStatus.Succeeded => "success",
+                        BackgroundJobStatus.Failed => "danger",
+                        BackgroundJobStatus.Cancelled => "warning",
+                        BackgroundJobStatus.Running => "primary",
+                        _ => "secondary"
+                    })">@job.Status</span>
+                </td>
+                <td>@(job.Progress.HasValue ? $"{job.Progress}%" : "-")</td>
+                <td>@job.Message</td>
+                <td class="text-end">
+                    <a class="btn btn-sm btn-outline-secondary" asp-controller="Jobs" asp-action="Index">All jobs</a>
+                </td>
+            </tr>
+        }
+        </tbody>
+    </table>
+}

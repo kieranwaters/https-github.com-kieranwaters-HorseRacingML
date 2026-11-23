@@ -17,6 +17,8 @@ namespace HorseRacingML.Models
         public string? VenueName { get; init; }
         public DateTime? RaceDate { get; init; }
         public decimal DecimalOdds { get; init; }
+        public decimal EffectiveDecimalOdds { get; init; }
+        public decimal CommissionRate { get; init; }
         public decimal AiDecimalOdds { get; init; }
         public double AiProbability { get; init; }
         public double MarketProbability { get; init; }

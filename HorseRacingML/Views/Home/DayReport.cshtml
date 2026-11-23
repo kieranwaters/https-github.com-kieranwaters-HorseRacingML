@@ -53,6 +53,7 @@
         <p class="text-muted mb-0">
             Generated @generatedLocal.ToString("f", CultureInfo.CurrentCulture)
             <span class="ms-2">Bankroll: @bankrollText</span>
+            <span class="ms-2">Edge and Kelly are net of commission.</span>
         </p>
     </div>
     <button type="button" id="saveReportButton" class="btn btn-outline-primary">Save Report</button>
@@ -135,6 +136,7 @@ else
                                 <th scope="col">Horse</th>
                                 <th scope="col">Jockey</th>
                                 <th scope="col" class="text-end">Market Odds</th>
+                                <th scope="col" class="text-end">Net Odds</th>
                                 <th scope="col" class="text-end">AI Win %</th>
                                 <th scope="col" class="text-end">AI Odds</th>
                                 <th scope="col" class="text-end">Market Win %</th>
@@ -156,6 +158,10 @@ else
 
                                 var marketOdds = runner.MarketDecimalOdds.HasValue
                                     ? runner.MarketDecimalOdds.Value.ToString("0.00", CultureInfo.CurrentCulture)
+                                    : "-";
+
+                                var effectiveOdds = runner.EffectiveMarketDecimalOdds.HasValue
+                                    ? runner.EffectiveMarketDecimalOdds.Value.ToString("0.00", CultureInfo.CurrentCulture)
                                     : "-";
 
                                 string aiProb;
@@ -223,6 +229,7 @@ else
                                     </td>
                                     <td>@runner.JockeyName</td>
                                     <td class="text-end">@marketOdds</td>
+                                    <td class="text-end">@effectiveOdds</td>
                                     <td class="text-end">
                                         @if (runner.AiProbability.HasValue)
                                         {

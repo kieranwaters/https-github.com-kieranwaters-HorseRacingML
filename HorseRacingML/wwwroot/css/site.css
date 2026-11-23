@@ -20,3 +20,330 @@ html {
 body {
   margin-bottom: 60px;
 }
+
+/* -------------------------------------------------------------------------
+   Theme tokens
+   The app defaults to dark mode. Setting data-theme="light" on <html>
+   switches back to the original light styling.
+   ------------------------------------------------------------------------- */
+:root {
+  color-scheme: light;
+  --app-bg: #ffffff;
+  --app-surface: #f8f9fa;
+  --app-surface-alt: #ffffff;
+  --app-border: #dee2e6;
+  --app-text: #212529;
+  --app-muted: #6c757d;
+  --app-link: #0077cc;
+  --app-link-hover: #005fa3;
+  --app-shadow: 0 0.25rem 0.75rem rgba(0, 0, 0, 0.05);
+}
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --app-bg: #0f1216;
+  --app-surface: #1a1f26;
+  --app-surface-alt: #151a20;
+  --app-border: #2b333d;
+  --app-text: #e6eaf0;
+  --app-muted: #9aa6b4;
+  --app-link: #6cb6ff;
+  --app-link-hover: #9ccdff;
+  --app-shadow: 0 0.25rem 0.75rem rgba(0, 0, 0, 0.5);
+}
+
+html[data-theme="dark"] body {
+  background-color: var(--app-bg);
+  color: var(--app-text);
+}
+
+html[data-theme="dark"] a {
+  color: var(--app-link);
+}
+
+html[data-theme="dark"] a:hover,
+html[data-theme="dark"] a:focus {
+  color: var(--app-link-hover);
+}
+
+html[data-theme="dark"] .text-dark {
+  color: var(--app-text) !important;
+}
+
+html[data-theme="dark"] .text-muted {
+  color: var(--app-muted) !important;
+}
+
+html[data-theme="dark"] .text-body,
+html[data-theme="dark"] .text-black {
+  color: var(--app-text) !important;
+}
+
+html[data-theme="dark"] hr {
+  border-color: var(--app-border);
+}
+
+/* Borders, shadows and the footer */
+html[data-theme="dark"] .border,
+html[data-theme="dark"] .border-top,
+html[data-theme="dark"] .border-bottom,
+html[data-theme="dark"] .border-start,
+html[data-theme="dark"] .border-end {
+  border-color: var(--app-border) !important;
+}
+
+html[data-theme="dark"] .box-shadow {
+  box-shadow: var(--app-shadow) !important;
+}
+
+html[data-theme="dark"] .footer {
+  color: var(--app-muted) !important;
+}
+
+/* Navbar */
+html[data-theme="dark"] .navbar.bg-white,
+html[data-theme="dark"] .navbar-light,
+html[data-theme="dark"] .bg-white {
+  background-color: var(--app-surface-alt) !important;
+}
+
+html[data-theme="dark"] .navbar-brand,
+html[data-theme="dark"] .navbar-light .navbar-brand {
+  color: var(--app-text);
+}
+
+html[data-theme="dark"] .navbar-light .navbar-nav .nav-link,
+html[data-theme="dark"] .navbar-light .navbar-nav .nav-link:hover,
+html[data-theme="dark"] .navbar-light .navbar-nav .nav-link:focus {
+  color: var(--app-text);
+}
+
+html[data-theme="dark"] .navbar-light .navbar-toggler {
+  color: var(--app-text);
+  border-color: var(--app-border);
+}
+
+/* Outline buttons that rely on dark text need lighter text in dark mode */
+html[data-theme="dark"] .btn-outline-dark {
+  color: var(--app-text);
+  border-color: var(--app-muted);
+}
+
+html[data-theme="dark"] .btn-outline-dark:hover,
+html[data-theme="dark"] .btn-outline-dark:focus,
+html[data-theme="dark"] .btn-outline-dark:active {
+  color: var(--app-bg);
+  background-color: var(--app-text);
+  border-color: var(--app-text);
+}
+
+html[data-theme="dark"] .btn-outline-secondary {
+  color: #c3ccd6;
+  border-color: #5b6672;
+}
+
+html[data-theme="dark"] .btn-outline-secondary:hover,
+html[data-theme="dark"] .btn-outline-secondary:focus,
+html[data-theme="dark"] .btn-outline-secondary:active {
+  color: var(--app-bg);
+  background-color: #c3ccd6;
+  border-color: #c3ccd6;
+}
+
+html[data-theme="dark"] .btn-close {
+  filter: invert(1) grayscale(100%) brightness(200%);
+}
+
+/* Surfaces */
+html[data-theme="dark"] .bg-light,
+html[data-theme="dark"] .card-header.bg-light {
+  background-color: var(--app-surface) !important;
+}
+
+html[data-theme="dark"] .card,
+html[data-theme="dark"] .modal-content,
+html[data-theme="dark"] .dropdown-menu,
+html[data-theme="dark"] .list-group-item,
+html[data-theme="dark"] .offcanvas,
+html[data-theme="dark"] .popover,
+html[data-theme="dark"] .toast {
+  background-color: var(--app-surface);
+  color: var(--app-text);
+  border-color: var(--app-border);
+}
+
+html[data-theme="dark"] .card-header,
+html[data-theme="dark"] .card-footer,
+html[data-theme="dark"] .modal-header,
+html[data-theme="dark"] .modal-footer {
+  border-color: var(--app-border);
+}
+
+html[data-theme="dark"] .dropdown-item {
+  color: var(--app-text);
+}
+
+html[data-theme="dark"] .dropdown-item:hover,
+html[data-theme="dark"] .dropdown-item:focus {
+  background-color: #232b34;
+  color: #ffffff;
+}
+
+html[data-theme="dark"] .dropdown-divider {
+  border-color: var(--app-border);
+}
+
+/* Tables */
+html[data-theme="dark"] .table {
+  --bs-table-bg: transparent;
+  --bs-table-striped-color: var(--app-text);
+  --bs-table-striped-bg: rgba(255, 255, 255, 0.04);
+  --bs-table-active-color: var(--app-text);
+  --bs-table-active-bg: rgba(255, 255, 255, 0.08);
+  --bs-table-hover-color: var(--app-text);
+  --bs-table-hover-bg: rgba(255, 255, 255, 0.06);
+  color: var(--app-text);
+  border-color: var(--app-border);
+}
+
+html[data-theme="dark"] .table > :not(caption) > * > * {
+  border-color: var(--app-border);
+}
+
+html[data-theme="dark"] .table > thead {
+  color: var(--app-text);
+}
+
+/* Alerts */
+html[data-theme="dark"] .alert-info {
+  color: #a5d8ff;
+  background-color: #10283b;
+  border-color: #16405c;
+}
+
+html[data-theme="dark"] .alert-secondary {
+  color: #d0d7df;
+  background-color: #222a33;
+  border-color: #333d48;
+}
+
+html[data-theme="dark"] .alert-success {
+  color: #b3f0c8;
+  background-color: #102c1c;
+  border-color: #1c4a2f;
+}
+
+html[data-theme="dark"] .alert-warning {
+  color: #ffe8a3;
+  background-color: #332910;
+  border-color: #574518;
+}
+
+html[data-theme="dark"] .alert-danger {
+  color: #ffc2c8;
+  background-color: #3a1519;
+  border-color: #5c2127;
+}
+
+html[data-theme="dark"] .alert a {
+  color: inherit;
+  text-decoration: underline;
+}
+
+/* Forms */
+html[data-theme="dark"] .form-control,
+html[data-theme="dark"] .form-select,
+html[data-theme="dark"] .input-group-text {
+  background-color: var(--app-surface-alt);
+  color: var(--app-text);
+  border-color: #3a444f;
+}
+
+html[data-theme="dark"] .form-control:focus,
+html[data-theme="dark"] .form-select:focus {
+  background-color: var(--app-surface-alt);
+  color: var(--app-text);
+  border-color: #4d8fd6;
+}
+
+html[data-theme="dark"] .form-control::placeholder {
+  color: #7d8996;
+}
+
+html[data-theme="dark"] .form-control:disabled,
+html[data-theme="dark"] .form-control[readonly],
+html[data-theme="dark"] .form-select:disabled {
+  background-color: #1b2129;
+  color: var(--app-muted);
+}
+
+html[data-theme="dark"] .form-check-input {
+  background-color: var(--app-surface-alt);
+  border-color: #4a5560;
+}
+
+html[data-theme="dark"] .form-check-input:checked {
+  background-color: #0d6efd;
+  border-color: #0d6efd;
+}
+
+html[data-theme="dark"] .form-text {
+  color: var(--app-muted);
+}
+
+/* Code blocks */
+html[data-theme="dark"] pre,
+html[data-theme="dark"] code,
+html[data-theme="dark"] kbd {
+  color: #e6eaf0;
+}
+
+html[data-theme="dark"] pre {
+  background-color: var(--app-surface-alt);
+  border: 1px solid var(--app-border);
+  padding: 0.75rem;
+  border-radius: 0.25rem;
+}
+
+html[data-theme="dark"] ::selection {
+  background-color: #2b5f9e;
+  color: #ffffff;
+}
+
+/* Theme toggle button */
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-left: 0.5rem;
+  padding: 0.35rem 0.55rem;
+  line-height: 1;
+  color: var(--app-text);
+  background-color: transparent;
+  border: 1px solid var(--app-border);
+  border-radius: 0.375rem;
+}
+
+.theme-toggle:hover,
+.theme-toggle:focus {
+  color: var(--app-text);
+  background-color: rgba(127, 127, 127, 0.12);
+}
+
+.theme-toggle svg {
+  width: 1rem;
+  height: 1rem;
+  fill: currentColor;
+}
+
+.theme-toggle .icon-sun {
+  display: none;
+}
+
+html[data-theme="dark"] .theme-toggle .icon-sun {
+  display: inline-block;
+}
+
+html[data-theme="dark"] .theme-toggle .icon-moon {
+  display: none;
+}

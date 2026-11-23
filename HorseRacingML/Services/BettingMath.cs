@@ -31,6 +31,17 @@ namespace HorseRacingML.Services
             return (decimal)inverted;
         }
 
+        public static decimal CalculateEffectiveDecimalOdds(decimal decimalOdds, decimal commissionRate)
+        {
+            if (decimalOdds <= 1m)
+            {
+                return decimalOdds;
+            }
+
+            var rate = commissionRate < 0m ? 0m : commissionRate > 1m ? 1m : commissionRate;
+            return 1m + (decimalOdds - 1m) * (1m - rate);
+        }
+
         public static decimal CalculateKellyFraction(double probability, double decimalOdds, decimal? maxFraction = null)
         {
             if (probability <= 0 || probability >= 1 || decimalOdds <= 1)

@@ -23,7 +23,9 @@ namespace HorseRacingML.Scraping
         private readonly object _repoLock = new();
         private readonly decimal _bankroll;
         private readonly decimal? _maxKellyFraction;
+        private readonly decimal _commissionRate;
         private readonly bool _useMarketFallbackForAiDegeneracy;
+        private readonly string _modelDirectory;
         private decimal _availableBankroll;
         private int _betSlipSelectionsFilled;
         private const string MarketHeaderXPath = "/html/body/ui-view/div/div/div[2]/div/ui-view/div/div/div[1]/div[1]/div/bf-sports-header/div/div/div/div[1]/div/span[1]";
@@ -32,15 +34,19 @@ namespace HorseRacingML.Scraping
             HyperparameterTrainer trainer,
             decimal bankroll,
             decimal? maxKellyFraction = null,
-            bool useMarketFallbackForAiDegeneracy = true)
+            bool useMarketFallbackForAiDegeneracy = true,
+            decimal commissionRate = 0.05m,
+            string? modelDirectory = null)
         {
             _repo = repo ?? throw new ArgumentNullException(nameof(repo));
             _trainer = trainer ?? throw new ArgumentNullException(nameof(trainer));
             _bankroll = bankroll;
             _availableBankroll = bankroll;
             _maxKellyFraction = maxKellyFraction;
+            _commissionRate = Math.Clamp(commissionRate, 0m, 1m);
             _betSlipSelectionsFilled = 0;
             _useMarketFallbackForAiDegeneracy = useMarketFallbackForAiDegeneracy;
+            _modelDirectory = ModelArtifactStore.ResolveDirectory(modelDirectory);
         }
         public IReadOnlyList<RaceDayReport> ScrapeOpenRaceTabsForReport(IWebDriver driver)
         {
@@ -102,20 +108,11 @@ namespace HorseRacingML.Scraping
                 if (upcomingRecord != null)
                 {
                     race.UpcomingRaceId = upcomingRecord.UpcomingRaceId;
-                    Console.WriteLine($"	[DayReport] Using upcoming race {upcomingRecord.UpcomingRaceId} (market {upcomingRecord.MarketId}) for probability alignment.");
+                    Console.WriteLine($"\t[DayReport] Using upcoming race {upcomingRecord.UpcomingRaceId} (market {upcomingRecord.MarketId}) for probability alignment.");
                 }
                 else
                 {
-                    var upcomingRecord = TryResolveUpcomingRace(race);
-                    if (upcomingRecord != null)
-                    {
-                        race.UpcomingRaceId = upcomingRecord.UpcomingRaceId;
-                        Console.WriteLine($"\t[DayReport] Using upcoming race {upcomingRecord.UpcomingRaceId} (market {upcomingRecord.MarketId}) for probability alignment.");
-                    }
-                    else
-                    {
-                        Console.WriteLine($"	[DayReport] Race {raceName} is upcoming; recorded upcoming race id {upcomingId?.ToString() ?? "n/a"}. Using saved AI probabilities for reporting.");
-                    }
+                    Console.WriteLine($"\t[DayReport] Race {raceName} is upcoming; recorded upcoming race id {race.UpcomingRaceId?.ToString() ?? "n/a"}. Using saved AI probabilities for reporting.");
                 }
 
                 foreach (var runner in race.Runners)
@@ -140,18 +137,15 @@ namespace HorseRacingML.Scraping
                         runner.AiDecimalOdds = BettingMath.CalculateAiDecimalOdds(runner.AiProbability.Value);
                     }
 
-                    if (!runner.MarketProbability.HasValue && runner.MarketDecimalOdds.HasValue && runner.MarketDecimalOdds.Value > 0m)
-                    {
-                        runner.MarketProbability = 1.0 / (double)runner.MarketDecimalOdds.Value;
-                    }
-
-                    runner.Differential = runner.MarketProbability.HasValue
-                        ? runner.AiProbability.Value - runner.MarketProbability.Value
-                        : (double?)null;
-
                     if (runner.MarketDecimalOdds.HasValue && runner.MarketDecimalOdds.Value > 1m)
                     {
-                        var kelly = BettingMath.CalculateKellyFraction(runner.AiProbability.Value, (double)runner.MarketDecimalOdds.Value, _maxKellyFraction);
+                        var effectiveOdds = BettingMath.CalculateEffectiveDecimalOdds(runner.MarketDecimalOdds.Value, _commissionRate);
+                        runner.EffectiveMarketDecimalOdds = effectiveOdds;
+                        runner.CommissionRate = _commissionRate;
+                        runner.MarketProbability = 1.0 / (double)effectiveOdds;
+                        runner.Differential = runner.AiProbability.Value - runner.MarketProbability.Value;
+
+                        var kelly = BettingMath.CalculateKellyFraction(runner.AiProbability.Value, (double)effectiveOdds, _maxKellyFraction);
                         runner.KellyFraction = kelly;
                         runner.SuggestedStake = (kelly > 0m && _bankroll > 0m)
                             ? BettingMath.CalculateSequentialStake(_bankroll, kelly)
@@ -159,8 +153,26 @@ namespace HorseRacingML.Scraping
                     }
                     else
                     {
+                        runner.MarketProbability = null;
+                        runner.Differential = null;
                         runner.KellyFraction = null;
                         runner.SuggestedStake = null;
+                    }
+                }
+
+                var bestStakeCandidate = race.Runners
+                    .Where(r => r != null && r.Differential.HasValue)
+                    .OrderByDescending(r => r!.Differential!.Value)
+                    .FirstOrDefault();
+                if (bestStakeCandidate != null)
+                {
+                    foreach (var runner in race.Runners)
+                    {
+                        if (!ReferenceEquals(runner, bestStakeCandidate))
+                        {
+                            runner.KellyFraction = null;
+                            runner.SuggestedStake = null;
+                        }
                     }
                 }
 
@@ -313,22 +325,19 @@ namespace HorseRacingML.Scraping
             "UNITED STATES OF AMERICA"
         };
 
-        private static bool IsUnitedStatesRace(RaceDayReport race)
+        private static bool IsUnitedStatesCountry(string? country)
         {
-            if (race == null)
-            {
-                return false;
-            }
-
-            var country = race.VenueCountry;
-
             if (string.IsNullOrWhiteSpace(country))
             {
                 return false;
             }
 
-            country = country.Trim();
-            return s_usVenueCountryCodes.Contains(country);
+            return s_usVenueCountryCodes.Contains(country.Trim());
+        }
+
+        private static bool IsUnitedStatesRace(RaceDayReport race)
+        {
+            return race != null && IsUnitedStatesCountry(race.VenueCountry);
         }
         private static bool IsFutureRace(DateTime raceDate, TimeSpan? offTime)
         {
@@ -345,7 +354,9 @@ namespace HorseRacingML.Scraping
 
             if (offTime.HasValue)
             {
-                return offTime.Value > now.TimeOfDay;
+                // Keep a small buffer so we do not scrape and click a market that
+                // is already suspended or about to jump.
+                return offTime.Value > now.TimeOfDay.Add(TimeSpan.FromMinutes(5));
             }
 
             return true;
@@ -453,7 +464,8 @@ namespace HorseRacingML.Scraping
         {
             var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10)); // short explicit wait
             var handles = driver.WindowHandles.ToList(); // collect tab handles
-            var weightPath = ResolveAiWeightPath(); // resolve AI weights path
+            var weightPath = ModelArtifactStore.ResolveActivePath(_modelDirectory)
+                ?? Path.Combine(_modelDirectory, ModelArtifactStore.LegacyFileName); // resolve active AI weights path
 
             if (File.Exists(weightPath))
             {
@@ -497,6 +509,22 @@ namespace HorseRacingML.Scraping
                 {
                     Console.Error.WriteLine($"\tFailed to extract market ID from URL: {driver.Url}"); // log failure
                     continue; // next tab
+                }
+
+                if (executeBets)
+                {
+                    try
+                    {
+                        if (_repo.HasPlacedBet(marketId))
+                        {
+                            Console.WriteLine($"\tSkipping market {marketId}: a bet has already been recorded for it.");
+                            continue;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.Error.WriteLine($"\tCould not check placed-bet history for {marketId}: {ex.Message}");
+                    }
                 }
 
                 var title = ReadFirstNonEmptyText(driver,
@@ -557,6 +585,12 @@ namespace HorseRacingML.Scraping
                 var parsedRaceDate = ParseEventDate(eventDateText, DateTime.Today); // parse date
                 var backBookPercentage = ParsePercentage(backBookText); // parse %
                 var layBookPercentage = ParsePercentage(layBookText); // parse %
+
+                if (parsedRaceDate.HasValue && !IsFutureRace(parsedRaceDate.Value, offTime))
+                {
+                    Console.WriteLine($"\tSkipping market {marketId}: the race has already started or is within five minutes of the off.");
+                    continue;
+                }
 
                 Console.WriteLine($"\tScraping market {marketId} - {title}"); // progress
 
@@ -801,8 +835,13 @@ namespace HorseRacingML.Scraping
                     preparedRows: null,
                     persistedUpcoming: persistedUpcoming); // build features
 
-                foreach (var rf in flows) // process each runner
+                // Race-softmax models must be evaluated across the whole field.
+                // Fall back to per-runner scoring for binary/legacy models.
+                var hasRaceProbabilities = aiCalculator.TryCalculateRaceOdds(flows, out var raceProbabilities);
+
+                for (int runnerIndex = 0; runnerIndex < flows.Count; runnerIndex++) // process each runner
                 {
+                    var rf = flows[runnerIndex];
                     if (rf.FeatureValues != null && !rf.FeatureValues.ContainsKey("RunnerCount") && rows.Count > 0)
                     {
                         rf.FeatureValues["RunnerCount"] = rows.Count; // ensure runner count
@@ -822,7 +861,19 @@ namespace HorseRacingML.Scraping
 
                     try
                     {
-                        var probability = aiCalculator.CalculateOdds(rf); // compute AI odds
+                        // A race-softmax model is only valid when every runner
+                        // in the field was scored together. Never fall back to
+                        // per-runner sigmoid scoring for these models.
+                        if (aiCalculator.IsRaceSoftmax && !hasRaceProbabilities)
+                        {
+                            rf.AiOdds = null;
+                            Console.WriteLine($"\tSkipping {rfIdentifier}: race-softmax model could not score the complete field.");
+                            continue;
+                        }
+
+                        var probability = hasRaceProbabilities && runnerIndex < raceProbabilities.Length
+                            ? raceProbabilities[runnerIndex]
+                            : aiCalculator.CalculateOdds(rf); // compute AI odds
                         if (double.IsFinite(probability) && probability > 0 && probability <= 1)
                         {
                             rf.AiOdds = probability;
@@ -878,7 +929,23 @@ namespace HorseRacingML.Scraping
                     Console.WriteLine($"\tAI probability summary before normalization for market {marketId}: valid={validAiBefore.Count}, missing={missingAiCount}, sum={sumProb.ToString("0.####", CultureInfo.InvariantCulture)}, min={minProb.ToString("0.####", CultureInfo.InvariantCulture)}, max={maxProb.ToString("0.####", CultureInfo.InvariantCulture)}"); // log
                 }
 
-                NormalizeAiOdds(flows, _useMarketFallbackForAiDegeneracy); // normalize
+                var aiDistributionUsable = NormalizeAiOdds(flows, _useMarketFallbackForAiDegeneracy); // normalize or abstain
+                if (!aiDistributionUsable)
+                {
+                    foreach (var flow in flows)
+                    {
+                        flow.AiOdds = null;
+                    }
+                }
+
+                if (IsUnitedStatesCountry(venueCountry))
+                {
+                    Console.WriteLine("\tSkipping AI betting for United States race.");
+                    foreach (var flow in flows)
+                    {
+                        flow.AiOdds = null;
+                    }
+                }
 
                 if (captureReport)
                 {
@@ -990,6 +1057,22 @@ namespace HorseRacingML.Scraping
                 report.Runners.Add(CreateRunnerReport(flow));
             }
 
+            var best = report.Runners
+                .Where(r => r.Differential.HasValue)
+                .OrderByDescending(r => r.Differential)
+                .FirstOrDefault();
+            if (best != null)
+            {
+                foreach (var runner in report.Runners)
+                {
+                    if (!ReferenceEquals(runner, best))
+                    {
+                        runner.KellyFraction = null;
+                        runner.SuggestedStake = null;
+                    }
+                }
+            }
+
             return report;
         }
 
@@ -1012,7 +1095,10 @@ namespace HorseRacingML.Scraping
                 runner.MarketDecimalOdds = flow.BackPrice1.Value;
                 if (flow.BackPrice1.Value > 1m)
                 {
-                    runner.MarketProbability = 1.0 / (double)flow.BackPrice1.Value;
+                    var effectiveOdds = BettingMath.CalculateEffectiveDecimalOdds(flow.BackPrice1.Value, _commissionRate);
+                    runner.EffectiveMarketDecimalOdds = effectiveOdds;
+                    runner.CommissionRate = _commissionRate;
+                    runner.MarketProbability = 1.0 / (double)effectiveOdds;
                 }
             }
 
@@ -1027,11 +1113,11 @@ namespace HorseRacingML.Scraping
                 runner.Differential = runner.AiProbability.Value - runner.MarketProbability.Value;
             }
 
-            if (runner.AiProbability.HasValue && runner.MarketDecimalOdds.HasValue && runner.MarketDecimalOdds.Value > 1m)
+            if (runner.AiProbability.HasValue && runner.EffectiveMarketDecimalOdds.HasValue && runner.EffectiveMarketDecimalOdds.Value > 1m)
             {
                 var kelly = BettingMath.CalculateKellyFraction(
                     runner.AiProbability.Value,
-                    (double)runner.MarketDecimalOdds.Value,
+                    (double)runner.EffectiveMarketDecimalOdds.Value,
                     _maxKellyFraction);
                 runner.KellyFraction = kelly;
                 if (kelly > 0m && _bankroll > 0m)
@@ -1395,26 +1481,27 @@ namespace HorseRacingML.Scraping
                 }
 
                 var decimalOdds = flow.BackPrice1.Value;
+                var effectiveOdds = BettingMath.CalculateEffectiveDecimalOdds(decimalOdds, _commissionRate);
                 var aiProbability = flow.AiOdds.Value;
-                var marketProbability = 1.0 / (double)decimalOdds;
+                var marketProbability = 1.0 / (double)effectiveOdds;
                 var differential = aiProbability - marketProbability;
 
-                Console.WriteLine($"\tRunner {identifier}: decimalOdds={decimalOdds.ToString("0.##", CultureInfo.InvariantCulture)}, aiProb={aiProbability.ToString("0.####", CultureInfo.InvariantCulture)}, marketProb={marketProbability.ToString("0.####", CultureInfo.InvariantCulture)}, diff={differential.ToString("0.####", CultureInfo.InvariantCulture)}");
+                Console.WriteLine($"\tRunner {identifier}: decimalOdds={decimalOdds.ToString("0.##", CultureInfo.InvariantCulture)}, effectiveOdds={effectiveOdds.ToString("0.###", CultureInfo.InvariantCulture)}, aiProb={aiProbability.ToString("0.####", CultureInfo.InvariantCulture)}, marketProb={marketProbability.ToString("0.####", CultureInfo.InvariantCulture)}, diff={differential.ToString("0.####", CultureInfo.InvariantCulture)}");
 
                 if (differential <= 0)
                 {
-                    Console.WriteLine($"\t\tRejected {identifier}: differential {differential.ToString("0.####", CultureInfo.InvariantCulture)} is not positive after ignoring exchange commission.");
+                    Console.WriteLine($"\t\tRejected {identifier}: differential {differential.ToString("0.####", CultureInfo.InvariantCulture)} is not positive after commission.");
                     continue;
                 }
 
-                var kellyFraction = CalculateKellyFraction(aiProbability, (double)decimalOdds);
+                var kellyFraction = CalculateKellyFraction(aiProbability, (double)effectiveOdds);
                 if (kellyFraction <= 0)
                 {
                     Console.WriteLine($"\t\tRejected {identifier}: Kelly fraction {kellyFraction.ToString("0.####", CultureInfo.InvariantCulture)} is non-positive.");
                     continue;
                 }
 
-                Console.WriteLine($"\t\tAccepted {identifier}: Kelly fraction {kellyFraction.ToString("0.####", CultureInfo.InvariantCulture)} (commission not yet deducted).");
+                Console.WriteLine($"\t\tAccepted {identifier}: Kelly fraction {kellyFraction.ToString("0.####", CultureInfo.InvariantCulture)} (net of commission).");
 
                 recommendations.Add(new BetRecommendation
                 {
@@ -1425,6 +1512,8 @@ namespace HorseRacingML.Scraping
                     VenueName = venueName,
                     RaceDate = raceDate,
                     DecimalOdds = decimalOdds,
+                    EffectiveDecimalOdds = effectiveOdds,
+                    CommissionRate = _commissionRate,
                     AiDecimalOdds = CalculateAiDecimalOdds(aiProbability),
                     AiProbability = aiProbability,
                     MarketProbability = marketProbability,
@@ -1434,7 +1523,11 @@ namespace HorseRacingML.Scraping
                 });
             }
 
-            return recommendations;
+            return recommendations
+                .OrderByDescending(r => r.Differential)
+                .ThenByDescending(r => r.KellyFraction)
+                .Take(1)
+                .ToList();
         }
         private IReadOnlyList<BetRecommendation> ExecuteBackAllClicks(
             IWebDriver driver,
@@ -1497,6 +1590,27 @@ namespace HorseRacingML.Scraping
                     if (_availableBankroll < 0m)
                     {
                         _availableBankroll = 0m;
+                    }
+
+                    try
+                    {
+                        _repo.InsertPlacedBet(new PlacedBet
+                        {
+                            MarketId = recommendation.MarketId,
+                            SelectionId = recommendation.SelectionId,
+                            HorseName = recommendation.HorseName,
+                            RequestedOdds = recommendation.DecimalOdds,
+                            EffectiveOdds = recommendation.EffectiveDecimalOdds,
+                            Stake = stake,
+                            AiProbability = recommendation.AiProbability,
+                            MarketProbability = recommendation.MarketProbability,
+                            Differential = recommendation.Differential,
+                            PlacedUtc = DateTime.UtcNow
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.Error.WriteLine($"\t\tBet was clicked but could not be recorded: {ex.Message}");
                     }
 
                     Console.WriteLine($"\t\tStake {stake.ToString("0.##", CultureInfo.InvariantCulture)} accepted for {identifier}; bankroll now {_availableBankroll.ToString("0.##", CultureInfo.InvariantCulture)}");

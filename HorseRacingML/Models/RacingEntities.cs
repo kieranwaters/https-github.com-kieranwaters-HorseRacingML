@@ -9,6 +9,9 @@ namespace HorseRacingML.Models
         public short CourseId { get; set; }
         public string Name { get; set; } = string.Empty;
         public string? Country { get; set; }
+        public double? Latitude { get; set; }
+        public double? Longitude { get; set; }
+        public string? TimeZoneId { get; set; }
     }
 
     public class Race
@@ -30,6 +33,13 @@ namespace HorseRacingML.Models
         public string? Status { get; set; }
         public int? WinningTimeMs { get; set; }
         public string? WinningTimeText { get; set; }
+        public decimal? Purse { get; set; }
+        public string? Source { get; set; }
+        public string? SourceRaceId { get; set; }
+        public string? BetfairMarketId { get; set; }
+        public string? BetfairMarketName { get; set; }
+        public decimal? BetfairTotalMatched { get; set; }
+        public bool? BetfairBspReconciled { get; set; }
     }
 
     public class Trainer
@@ -62,6 +72,9 @@ namespace HorseRacingML.Models
         public byte? Age { get; set; }
         public byte? WeightLbs { get; set; }
         public string? WeightText { get; set; }
+        public short? OfficialRating { get; set; }
+        public string? Headgear { get; set; }
+        public string? Medication { get; set; }
         public short? FinishPos { get; set; }
         public string? OutcomeCode { get; set; }
         public string? DistanceBeatenText { get; set; }
@@ -72,11 +85,22 @@ namespace HorseRacingML.Models
         public string? OpeningFraction { get; set; }
         public string? TouchedHighFraction { get; set; }
         public string? TouchedLowFraction { get; set; }
+        public long? BetfairSelectionId { get; set; }
+        public decimal? BetfairSP { get; set; }
+        public decimal? BetfairPreOffHigh { get; set; }
+        public decimal? BetfairPreOffLow { get; set; }
+        public decimal? BetfairLastTradedPrice { get; set; }
+        public decimal? BetfairTradedVolume { get; set; }
+        public decimal? BetfairProjectedSP { get; set; }
+        public decimal? BetfairAvailableToBack { get; set; }
+        public decimal? BetfairAvailableToLay { get; set; }
         public string? Comment { get; set; }
         public string? Going { get; set; }
         public string? Surface { get; set; }
         public short? CourseId { get; set; }
         public short DistanceYards { get; set; }
+        public string? Source { get; set; }
+        public string? SourceRunnerId { get; set; }
     }
     public class RaceScreen
     {
@@ -109,6 +133,7 @@ namespace HorseRacingML.Models
         public decimal? LayPrice1 { get; set; }
         public decimal? LayPrice2 { get; set; }
         public decimal? LayPrice3 { get; set; }
+        public DateTime CapturedUtc { get; set; } = DateTime.UtcNow;
         public double? AiOdds { get; set; }
         public double? LegacyProbability { get; set; }
         public Dictionary<string, object?>? FeatureValues { get; set; }
@@ -144,6 +169,34 @@ namespace HorseRacingML.Models
         public DateTime? RaceDate { get; set; }
         public string? Title { get; set; }
         public string? CourseName { get; set; }
+        public string? RaceType { get; set; }
+        public byte? Class { get; set; }
+        public string? AgeRestriction { get; set; }
+        public string? Surface { get; set; }
+        public string? Going { get; set; }
+        public short? DistanceYards { get; set; }
+        public string? DistanceText { get; set; }
+        public byte? RunnerCount { get; set; }
+    }
+
+    /// <summary>
+    /// Record of a bet the automated path attempted to place. Matched prices are
+    /// reconciled separately; this row prevents a second scan from betting the
+    /// same market again and gives an auditable request record.
+    /// </summary>
+    public class PlacedBet
+    {
+        public long PlacedBetId { get; set; }
+        public string MarketId { get; set; } = string.Empty;
+        public string? SelectionId { get; set; }
+        public string? HorseName { get; set; }
+        public decimal RequestedOdds { get; set; }
+        public decimal EffectiveOdds { get; set; }
+        public decimal Stake { get; set; }
+        public double AiProbability { get; set; }
+        public double MarketProbability { get; set; }
+        public double Differential { get; set; }
+        public DateTime PlacedUtc { get; set; }
     }
 
 }

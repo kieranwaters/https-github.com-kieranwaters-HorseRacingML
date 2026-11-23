@@ -229,7 +229,7 @@ namespace HorseRacingML.Tests
                 _dataset = new PreparedDataset(new List<PreparedRace>());
             }
 
-            public override PreparedDataset PrepareDataset(ISet<int>? includeRaceIds = null, ISet<int>? stateRaceWhitelist = null, bool includeIdentifiers = false)
+            public override PreparedDataset PrepareDataset(ISet<int>? includeRaceIds = null, ISet<int>? stateRaceWhitelist = null, bool includeIdentifiers = false, DateTime? minimumRaceDate = null)
             {
                 return _dataset;
             }

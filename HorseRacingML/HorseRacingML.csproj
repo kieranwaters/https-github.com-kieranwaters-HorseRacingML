@@ -4,6 +4,8 @@
 		<TargetFramework>net8.0</TargetFramework>
 		<Nullable>enable</Nullable>
 		<ImplicitUsings>enable</ImplicitUsings>
+		<!-- Allows Betfair credentials to be kept out of source control via dotnet user-secrets -->
+		<UserSecretsId>horse-racing-ml-8c1f4a6e</UserSecretsId>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -11,6 +13,12 @@
 		<Content Remove="Views\NewFolder\**" />
 		<EmbeddedResource Remove="Views\NewFolder\**" />
 		<None Remove="Views\NewFolder\**" />
+		<!-- The test project lives below this project; do not compile its source
+		     or generated obj/ files into the web application. -->
+		<Compile Remove="Tests\**" />
+		<Content Remove="Tests\**" />
+		<EmbeddedResource Remove="Tests\**" />
+		<None Remove="Tests\**" />
 	</ItemGroup>
 	<!--<ItemGroup>
 		<PackageReference Include="DotNetSeleniumExtras.WaitHelpers" Version="3.11.0" />
@@ -32,7 +40,12 @@
 		<!-- Data access packages for inserting parsed race data -->
 		<PackageReference Include="Dapper" Version="2.1.24" />
 		<PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.0" />
+		<PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.8" />
+		<!-- BZip2 decoding for the Betfair .tar.bz2 historical data downloads. -->
+		<PackageReference Include="SharpZipLib" Version="1.4.2" />
 		<PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="8.0.0" />
+		<PackageReference Include="Microsoft.ML" Version="2.0.0" />
+		<PackageReference Include="Microsoft.ML.LightGbm" Version="2.0.0" />
 	</ItemGroup>
 	<ItemGroup>
 		<PackageReference Include="TensorFlow.NET" Version="0.110.0" />
@@ -41,19 +54,13 @@
 		<PackageReference Include="SciSharp.TensorFlow.Redist-Linux-GPU" Version="2.10.1" Condition="'$(OS)'!='Windows_NT'" />
 	</ItemGroup>
 	<ItemGroup>
-		<!-- ML.NET packages used for winner prediction -->
-		<PackageReference Include="Microsoft.ML" Version="2.0.0" />
-		<PackageReference Include="Microsoft.ML.LightGbm" Version="2.0.0" />
-		<PackageReference Include="xunit.abstractions" Version="2.0.3" />
-		<PackageReference Include="xunit.assert" Version="2.9.3" />
-		<PackageReference Include="xunit.extensibility.core" Version="2.9.3" />
-	</ItemGroup>
-	<ItemGroup>
 		<Folder Include="NewFolder\" />
 		<Folder Include="Views\NewFolder1\" />
 	</ItemGroup>
 	<ItemGroup>
-	  <None Include="tests\HorseRacingML.Tests.csproj" />
+		<!-- Embedded so the database can be provisioned automatically on startup -->
+		<EmbeddedResource Include="Data\Schema.sql" />
+		<EmbeddedResource Include="Data\Migrations\*.sql" />
 	</ItemGroup>
 
 </Project>

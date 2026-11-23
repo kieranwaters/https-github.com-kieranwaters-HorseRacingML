@@ -16,26 +16,36 @@ namespace HorseRacingML.Scraping
 {
     public class BetfairNavigationService : IDisposable
     {
-        private const string HardCodedUsername = "kierandpwaters@gmail.com";
-        private const string HardCodedPassword = "AZQ2v.b=$e$!e!u";
-
         private readonly string _username;
         private readonly string _password;
         private readonly IWebDriver _driver;
         private readonly decimal _configuredBankroll;
         private decimal _bankroll;
         private readonly decimal? _maxKellyFraction;
+        private readonly decimal _commissionRate;
         private readonly bool _useMarketFallbackForAiDegeneracy;
+        private readonly string _modelDirectory;
         private static readonly Regex NonNumericCharactersRegex = new("[^0-9.,-]", RegexOptions.Compiled);
 
         public BetfairNavigationService(IConfiguration config)
         {
-            _username = config["Betfair:Username"] ?? HardCodedUsername;
-            _password = config["Betfair:Password"] ?? HardCodedPassword;
+            _username = config["Betfair:Username"] ?? string.Empty;
+            _password = config["Betfair:Password"] ?? string.Empty;
+
+            if (string.IsNullOrWhiteSpace(_username) || string.IsNullOrWhiteSpace(_password))
+            {
+                throw new InvalidOperationException(
+                    "Betfair credentials are not configured. Set them with user secrets " +
+                    "(dotnet user-secrets set \"Betfair:Username\" \"...\" --project HorseRacingML) " +
+                    "or with the Betfair__Username and Betfair__Password environment variables.");
+            }
+
             _configuredBankroll = config.GetValue<decimal?>("Betting:Bankroll") ?? 100m;
             _bankroll = _configuredBankroll;
             _maxKellyFraction = config.GetValue<decimal?>("Betting:MaxKellyFraction");
+            _commissionRate = Math.Clamp(config.GetValue<decimal?>("Betting:CommissionRate") ?? 0.05m, 0m, 1m);
             _useMarketFallbackForAiDegeneracy = config.GetValue<bool?>("Betting:UseMarketFallbackForAiDegeneracy") ?? true;
+            _modelDirectory = ModelArtifactStore.ResolveDirectory(config.GetValue<string>("Training:ModelDirectory"));
 
             var options = new ChromeOptions();
             options.AddArguments(
@@ -58,7 +68,9 @@ namespace HorseRacingML.Scraping
                 trainer,
                 bankroll,
                 _maxKellyFraction,
-                _useMarketFallbackForAiDegeneracy);
+                _useMarketFallbackForAiDegeneracy,
+                _commissionRate,
+                _modelDirectory);
             return scraper.ScrapeOpenRaceTabs(_driver);
         }
 
@@ -390,7 +402,9 @@ namespace HorseRacingML.Scraping
                 trainer,
                 bankroll,
                 _maxKellyFraction,
-                _useMarketFallbackForAiDegeneracy);
+                _useMarketFallbackForAiDegeneracy,
+                _commissionRate,
+                _modelDirectory);
             var races = scraper.ScrapeOpenRaceTabsForReport(_driver);
             return new DayReportViewModel
             {

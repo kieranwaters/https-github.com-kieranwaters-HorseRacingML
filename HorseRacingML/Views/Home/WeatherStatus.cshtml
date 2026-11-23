@@ -1,0 +1,140 @@
+@model HorseRacingML.Services.WeatherStatusReport
+@{
+    ViewData["Title"] = "Weather Status";
+}
+
+<h1 class="h3">Weather coverage</h1>
+<p class="text-muted">
+    The backfill is resumable. It skips course-years that are already complete, so running it
+    again fills the remaining gaps without refetching finished data.
+</p>
+
+<div class="row mb-4">
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="text-muted small">CourseWeatherDaily</div>
+                <div class="fs-4">@Model.Daily.Rows.ToString("N0") rows</div>
+                <div class="small">@Model.Daily.Courses courses</div>
+                @if (Model.Daily.MinDate.HasValue && Model.Daily.MaxDate.HasValue)
+                {
+                    <div class="small text-muted">@Model.Daily.MinDate.Value.ToString("yyyy-MM-dd") to @Model.Daily.MaxDate.Value.ToString("yyyy-MM-dd")</div>
+                }
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="text-muted small">RaceWeather</div>
+                <div class="fs-4">@Model.Races.Rows.ToString("N0") rows</div>
+                <div class="small">@Model.Races.Courses courses</div>
+                @if (Model.Races.MinDate.HasValue && Model.Races.MaxDate.HasValue)
+                {
+                    <div class="small text-muted">@Model.Races.MinDate.Value.ToString("yyyy-MM-dd") to @Model.Races.MaxDate.Value.ToString("yyyy-MM-dd")</div>
+                }
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="text-muted small">Race coverage</div>
+                <div class="fs-4">@Model.CoveragePercent.ToString("0.0")%</div>
+                <div class="small">@Model.TotalWithWeather.ToString("N0") of @Model.TotalRaces.ToString("N0") races</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="alert alert-secondary py-2">
+    <span class="small">
+        Extended race features:
+        wind <strong>@Model.Extended.WithWindDirection.ToString("N0")</strong>,
+        humidity <strong>@Model.Extended.WithHumidity.ToString("N0")</strong>,
+        soil moisture <strong>@Model.Extended.WithSoilMoisture.ToString("N0")</strong>,
+        rain anomaly <strong>@Model.Extended.WithRainAnomaly.ToString("N0")</strong>,
+        frost days <strong>@Model.Extended.WithFrostDays.ToString("N0")</strong>
+        of @Model.Extended.Rows.ToString("N0") race rows.
+    </span>
+</div>
+
+<div class="d-flex flex-wrap gap-2 mb-2">
+    <form method="post" asp-area="" asp-controller="Home" asp-action="BackfillWeather">
+        <button type="submit" class="btn btn-primary">Run / resume backfill</button>
+    </form>
+    <form method="post" asp-area="" asp-controller="Home" asp-action="RefreshWeather">
+        <button type="submit" class="btn btn-outline-primary">Refresh weather data</button>
+    </form>
+    <form method="post" asp-area="" asp-controller="Home" asp-action="PopulateWeatherFeatures">
+        <button type="submit" class="btn btn-outline-secondary">Rebuild features from cache</button>
+    </form>
+</div>
+<p class="text-muted small mb-4">
+    <strong>Run / resume</strong> fetches only course-years that still need race rows.
+    <strong>Refresh</strong> re-downloads the selected range even when race rows exist, so it picks up
+    newly added raw variables (wind direction, humidity, dew point, rain hours, soil moisture).
+    <strong>Rebuild from cache</strong> recomputes race features from <code>CourseWeatherDaily</code>
+    with no API calls.
+</p>
+
+<h2 class="h5">Coverage by year</h2>
+<table class="table table-sm table-striped align-middle">
+    <thead>
+        <tr>
+            <th>Year</th>
+            <th class="text-end">Races</th>
+            <th class="text-end">With weather</th>
+            <th class="text-end">Missing</th>
+            <th class="text-end">Coverage</th>
+        </tr>
+    </thead>
+    <tbody>
+    @foreach (var year in Model.Years)
+    {
+        <tr class="@(year.Missing > 0 ? "table-warning" : "")">
+            <td>@year.Year</td>
+            <td class="text-end">@year.Races.ToString("N0")</td>
+            <td class="text-end">@year.WithWeather.ToString("N0")</td>
+            <td class="text-end">@year.Missing.ToString("N0")</td>
+            <td class="text-end">@year.Percent.ToString("0.0")%</td>
+        </tr>
+    }
+    </tbody>
+</table>
+
+@if (Model.CourseGaps.Count > 0)
+{
+    <h2 class="h5">Courses with races but no weather rows</h2>
+    <table class="table table-sm table-striped align-middle">
+        <thead>
+            <tr>
+                <th>Course</th>
+                <th class="text-end">Races</th>
+                <th>Location</th>
+            </tr>
+        </thead>
+        <tbody>
+        @foreach (var gap in Model.CourseGaps)
+        {
+            <tr>
+                <td>@gap.Name</td>
+                <td class="text-end">@gap.Races.ToString("N0")</td>
+                <td>@(gap.HasLocation ? "located" : "missing coordinates")</td>
+            </tr>
+        }
+        </tbody>
+    </table>
+}
+
+@if (Model.UnlocatedCourses.Count > 0)
+{
+    <h2 class="h5">Unlocated courses</h2>
+    <p>These have no coordinates in the built-in catalogue, so they keep null weather features:</p>
+    <p>@string.Join(", ", Model.UnlocatedCourses)</p>
+}
+
+<p class="text-muted small">
+    CLI equivalent: <code>dotnet run --project HorseRacingML -- --weather-status</code>.
+    To fill a specific range: <code>--backfill-weather --from 2015-01-01 --to 2026-12-31</code>.
+</p>

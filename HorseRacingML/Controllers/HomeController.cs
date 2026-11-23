@@ -1,3 +1,4 @@
+using HorseRacingML.Jobs;
 using HorseRacingML.Models;
 using HorseRacingML.Scraping;
 using HorseRacingML.Data;
@@ -16,12 +17,21 @@ namespace HorseRacingML.Controllers
         private readonly ILogger<HomeController> _logger;
         private readonly RacingRepository _repository;
         private readonly ScrapingStatusService _status;
+        private readonly BackgroundJobQueue _jobQueue;
+        private readonly BackgroundJobStore _jobStore;
 
-        public HomeController(ILogger<HomeController> logger, RacingRepository repository, ScrapingStatusService status)
+        public HomeController(
+            ILogger<HomeController> logger,
+            RacingRepository repository,
+            ScrapingStatusService status,
+            BackgroundJobQueue jobQueue,
+            BackgroundJobStore jobStore)
         {
             _logger = logger;
             _repository = repository;
             _status = status;
+            _jobQueue = jobQueue;
+            _jobStore = jobStore;
         }
         public IActionResult CalculateFavouritesAccuracy()
         {
@@ -92,28 +102,225 @@ namespace HorseRacingML.Controllers
         //    TempData["Message"] = $"Scraping of race results from {startDate:dd/MM/yy} to {endDate:dd/MM/yy} has started.";
         //    return RedirectToAction("Index");
         //}
-        public IActionResult ScrapeRaceResults([FromServices] RaceResultsScraper scraper)
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public IActionResult ScrapeRaceResults()
         {
-            _status.Update($"Scraping started at {DateTime.Now:G}");
-            Task.Run(() =>
+            if (!_jobQueue.TryEnqueue(BackgroundJobKind.ScrapeRaceResults, "Scrape race results", new Dictionary<string, string?>()))
             {
-                try
+                TempData["Message"] = "A scrape job is already running or queued.";
+            }
+            else
+            {
+                TempData["Message"] = "Scraping of recent race results has been queued.";
+            }
+
+            return RedirectToAction("Index");
+        }
+
+        [HttpGet]
+        public IActionResult WeatherStatus([FromServices] WeatherStatusService weather)
+        {
+            return View(weather.BuildReport());
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public IActionResult BackfillWeather()
+        {
+            if (!_jobQueue.TryEnqueue(
+                    BackgroundJobKind.BackfillWeather,
+                    "Backfill weather",
+                    new Dictionary<string, string?>()))
+            {
+                TempData["Message"] = "A weather backfill is already running or queued.";
+            }
+            else
+            {
+                TempData["Message"] =
+                    "Weather backfill has been queued. It applies course coordinates and downloads " +
+                    "Open-Meteo daily weather for every course with race history.";
+            }
+
+            return RedirectToAction("Index");
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public IActionResult BackfillSectionals()
+        {
+            if (!_jobQueue.TryEnqueue(
+                    BackgroundJobKind.BackfillSectionals,
+                    "Backfill sectionals",
+                    new Dictionary<string, string?>()))
+            {
+                TempData["Message"] = "A sectionals backfill is already running or queued.";
+            }
+            else
+            {
+                TempData["Message"] =
+                    "Sectional backfill has been queued. It downloads Racing TV / RaceiQ furlong " +
+                    "splits for every matched British and Irish race from March 2023 onward.";
+            }
+
+            return RedirectToAction("Index");
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public IActionResult BackfillBreeding()
+        {
+            if (!_jobQueue.TryEnqueue(
+                    BackgroundJobKind.BackfillBreeding,
+                    "Backfill breeding",
+                    new Dictionary<string, string?>()))
+            {
+                TempData["Message"] = "A breeding backfill is already running or queued.";
+            }
+            else
+            {
+                TempData["Message"] =
+                    "Breeding backfill has been queued. It downloads sire, dam and damsire for " +
+                    "runners from the Racing TV public racecards.";
+            }
+
+            return RedirectToAction("Index");
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public IActionResult RefreshWeather()
+        {
+            return EnqueueWeatherJob(
+                WeatherBackfillMode.Refresh,
+                "Refresh weather",
+                "Weather refresh has been queued. It re-downloads daily weather (including the " +
+                "extended variables) even for course-years that already have race rows.");
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public IActionResult PopulateWeatherFeatures()
+        {
+            return EnqueueWeatherJob(
+                WeatherBackfillMode.CacheOnly,
+                "Populate weather features",
+                "Weather feature rebuild has been queued. It recomputes race features from the " +
+                "cached CourseWeatherDaily rows without calling Open-Meteo.");
+        }
+
+        private IActionResult EnqueueWeatherJob(
+            WeatherBackfillMode mode,
+            string displayName,
+            string queuedMessage)
+        {
+            var payload = new Dictionary<string, string?>
+            {
+                ["mode"] = mode.ToString()
+            };
+
+            if (!_jobQueue.TryEnqueue(BackgroundJobKind.BackfillWeather, displayName, payload))
+            {
+                TempData["Message"] = "A weather job is already running or queued.";
+            }
+            else
+            {
+                TempData["Message"] = queuedMessage;
+            }
+
+            return RedirectToAction(nameof(WeatherStatus));
+        }
+
+        [NonAction]
+        public void RunAutomateBetsWork(JobExecutionContext context)
+        {
+            var betfair = context.Services.GetRequiredService<BetfairNavigationService>();
+            var trainer = context.Services.GetRequiredService<HyperparameterTrainer>();
+            try
+            {
+                context.CancellationToken.ThrowIfCancellationRequested();
+                betfair.LoginAsync().GetAwaiter().GetResult();
+                context.CancellationToken.ThrowIfCancellationRequested();
+                betfair.OpenHorseRaceMeetingsInNewTabsAsync().GetAwaiter().GetResult();
+                context.CancellationToken.ThrowIfCancellationRequested();
+                var recommendations = betfair.ScrapeOpenRaceTabs(_repository, trainer);
+                if (recommendations.Count > 0)
                 {
-                    scraper.ScrapeFromTodayBackwards();
-                    _status.Update($"Scraping completed at {DateTime.Now:G}");
+                    var best = recommendations
+                        .OrderByDescending(r => r.Differential)
+                        .ThenByDescending(r => r.KellyFraction)
+                        .First();
+
+                    var horse = string.IsNullOrWhiteSpace(best.HorseName) ? "selection" : best.HorseName;
+                    var race = string.IsNullOrWhiteSpace(best.RaceTitle) ? "race" : best.RaceTitle;
+                    var venue = string.IsNullOrWhiteSpace(best.VenueName) ? string.Empty : $" at {best.VenueName}";
+                    var message = $"Best value bet: {horse}{venue} ({race}).";
+                    _status.Update(message);
+                    context.Report(message, 100);
                 }
-                catch (Exception ex)
+                else
                 {
-                    _status.Update($"Scraping failed: {ex.Message}");
+                    const string message = "No positive expected value opportunities were found while scanning markets.";
+                    _status.Update(message);
+                    context.Report(message, 100);
                 }
-            });
-            TempData["Message"] = "Scraping of recent race results has started.";
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Automated betting failed.");
+                _status.Update($"Automated betting failed: {ex.Message}");
+                context.Report($"Automated betting failed: {ex.Message}", null);
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// One-off/periodic backfill of parsed run styles from historical
+        /// comments. Optional maxRows is useful for a smoke test before running
+        /// the whole history.
+        /// </summary>
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public IActionResult BackfillRunStyles(int? maxRows = null)
+        {
+            var payload = new Dictionary<string, string?>();
+            if (maxRows.HasValue)
+            {
+                payload["maxRows"] = maxRows.Value.ToString();
+            }
+
+            if (!_jobQueue.TryEnqueue(BackgroundJobKind.BackfillRunStyles, "Backfill run styles", payload))
+            {
+                TempData["Message"] = "A backfill job is already running or queued.";
+            }
+            else
+            {
+                TempData["Message"] = "Run-style backfill has been queued.";
+            }
+
+            return RedirectToAction("Index");
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public IActionResult AutomateBets()
+        {
+            if (!_jobQueue.TryEnqueue(BackgroundJobKind.AutomateBets, "Automate bets", new Dictionary<string, string?>()))
+            {
+                TempData["Message"] = "An automated betting job is already running or queued.";
+            }
+            else
+            {
+                TempData["Message"] = "Automated betting has been queued.";
+            }
+
             return RedirectToAction("Index");
         }
 
         public IActionResult Index()
         {
             ViewData["StatusMessage"] = _status.Message;
+            ViewData["Jobs"] = _jobStore.List();
             return View();
         }
         public async Task<IActionResult> DayReport(

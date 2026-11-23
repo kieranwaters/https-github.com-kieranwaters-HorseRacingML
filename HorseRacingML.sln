@@ -4,7 +4,7 @@ VisualStudioVersion = 17.12.35527.113
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HorseRacingML", "HorseRacingML\HorseRacingML.csproj", "{BEF05E6A-3F05-44AD-9359-7DB8838EEE25}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HorseRacingML.Tests", "HorseRacingML.Tests\HorseRacingML.Tests.csproj", "{4589B0E7-B970-4308-A1BE-9DE5EDE7D016}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HorseRacingML.Tests", "HorseRacingML\Tests\HorseRacingML.Tests.csproj", "{4589B0E7-B970-4308-A1BE-9DE5EDE7D016}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

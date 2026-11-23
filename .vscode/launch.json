@@ -1,0 +1,90 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Launch HorseRacingML (http)",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build",
+            "program": "${workspaceFolder}/HorseRacingML/bin/Debug/net8.0/HorseRacingML.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}/HorseRacingML",
+            "stopAtEntry": false,
+            "console": "internalConsole",
+            "env": {
+                "ASPNETCORE_ENVIRONMENT": "Development",
+                "ASPNETCORE_URLS": "http://localhost:5051"
+            },
+            "serverReadyAction": {
+                "action": "openExternally",
+                "pattern": "\\bNow listening on:\\s+(https?://\\S+)"
+            },
+            "sourceFileMap": {
+                "/Views": "${workspaceFolder}/HorseRacingML/Views"
+            }
+        },
+        {
+            "name": "Launch HorseRacingML (https)",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build",
+            "program": "${workspaceFolder}/HorseRacingML/bin/Debug/net8.0/HorseRacingML.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}/HorseRacingML",
+            "stopAtEntry": false,
+            "console": "internalConsole",
+            "env": {
+                "ASPNETCORE_ENVIRONMENT": "Development",
+                "ASPNETCORE_URLS": "https://localhost:7251;http://localhost:5051"
+            },
+            "serverReadyAction": {
+                "action": "openExternally",
+                "pattern": "\\bNow listening on:\\s+(https?://\\S+)"
+            },
+            "sourceFileMap": {
+                "/Views": "${workspaceFolder}/HorseRacingML/Views"
+            }
+        },
+        {
+            "name": "Launch HorseRacingML (Release)",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build-release",
+            "program": "${workspaceFolder}/HorseRacingML/bin/Release/net8.0/HorseRacingML.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}/HorseRacingML",
+            "stopAtEntry": false,
+            "console": "internalConsole",
+            "env": {
+                "ASPNETCORE_ENVIRONMENT": "Development",
+                "ASPNETCORE_URLS": "http://localhost:5051"
+            },
+            "serverReadyAction": {
+                "action": "openExternally",
+                "pattern": "\\bNow listening on:\\s+(https?://\\S+)"
+            },
+            "sourceFileMap": {
+                "/Views": "${workspaceFolder}/HorseRacingML/Views"
+            }
+        },
+        {
+            "name": "Backfill run styles",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build",
+            "program": "${workspaceFolder}/HorseRacingML/bin/Debug/net8.0/HorseRacingML.dll",
+            "args": ["--backfill-run-styles"],
+            "cwd": "${workspaceFolder}/HorseRacingML",
+            "stopAtEntry": false,
+            "console": "internalConsole",
+            "env": {
+                "ASPNETCORE_ENVIRONMENT": "Development"
+            }
+        },
+        {
+            "name": "Attach to HorseRacingML",
+            "type": "coreclr",
+            "request": "attach"
+        }
+    ]
+}

@@ -5,9 +5,9 @@
 
 <h1>Test AI</h1>
 <p>
-    Run an evaluation using the most recent saved AI parameters. The model is retrained on all
-    available races except for the last month, and accuracy is calculated using the most recent month
-    of completed races.
+    Run an evaluation using the most recent saved AI parameters. The model is retrained only on
+    priced races that occurred before the selected window, using the epoch count and temperature
+    frozen from training. Accuracy is calculated on the selected window.
 </p>
 
 <form asp-action="TestAI" method="post">
@@ -54,13 +54,30 @@
                 <dd class="col-sm-8">@Model.TrainingRaceCount</dd>
                 <dt class="col-sm-4">Validation accuracy</dt>
                 <dd class="col-sm-8">@Model.ValidationAccuracy?.ToString("P2")</dd>
-                <dt class="col-sm-4">Training accuracy</dt>
-@@ -42,26 +60,98 @@
+                <dt class="col-sm-4">Validation log loss</dt>
                 <dd class="col-sm-8">@Model.ValidationLoss?.ToString("F4")</dd>
-                <dt class="col-sm-4">Training loss</dt>
-                <dd class="col-sm-8">@Model.TrainLoss?.ToString("F4")</dd>
                 <dt class="col-sm-4">Validation Brier score</dt>
                 <dd class="col-sm-8">@Model.ValidationBrier?.ToString("F4")</dd>
+                <dt class="col-sm-4">Market log loss</dt>
+                <dd class="col-sm-8">@Model.MarketLogLoss?.ToString("F4")</dd>
+                <dt class="col-sm-4">Market Brier score</dt>
+                <dd class="col-sm-8">@Model.MarketBrier?.ToString("F4")</dd>
+                <dt class="col-sm-4">Fair market log loss</dt>
+                <dd class="col-sm-8">@Model.FairMarketLogLoss?.ToString("F4")</dd>
+                <dt class="col-sm-4">Fair market Brier score</dt>
+                <dd class="col-sm-8">@Model.FairMarketBrier?.ToString("F4")</dd>
+                <dt class="col-sm-4">Blend log loss</dt>
+                <dd class="col-sm-8">@Model.BlendLogLoss?.ToString("F4")</dd>
+                <dt class="col-sm-4">Blend Brier score</dt>
+                <dd class="col-sm-8">@Model.BlendBrier?.ToString("F4")</dd>
+                <dt class="col-sm-4">Blend weights (model / market)</dt>
+                <dd class="col-sm-8">@(Model.BlendModelWeight?.ToString("F2") ?? "—") / @(Model.BlendMarketWeight?.ToString("F2") ?? "—")</dd>
+                <dt class="col-sm-4">Calibration temperature</dt>
+                <dd class="col-sm-8">@Model.ValidationTemperature?.ToString("F2")</dd>
+                <dt class="col-sm-4">Training accuracy</dt>
+                <dd class="col-sm-8">@Model.TrainAccuracy?.ToString("P2")</dd>
+                <dt class="col-sm-4">Training log loss</dt>
+                <dd class="col-sm-8">@Model.TrainLoss?.ToString("F4")</dd>
                 <dt class="col-sm-4">Training Brier score</dt>
                 <dd class="col-sm-8">@Model.TrainBrier?.ToString("F4")</dd>
             </dl>
@@ -75,6 +92,13 @@
                     <li>Learning Rate: @Model.ParameterUsed.LearningRate</li>
                     <li>Epochs: @Model.ParameterUsed.Epochs</li>
                     <li>Batch Size: @Model.ParameterUsed.BatchSize</li>
+                    <li>Objective: @(Model.ParameterUsed.Objective ?? "Binary")</li>
+                    <li>Seed: @(Model.ParameterUsed.Seed?.ToString() ?? "—")</li>
+                    <li>Race batch size: @(Model.ParameterUsed.RaceBatchSize?.ToString() ?? "—")</li>
+                    <li>Market offset scale: @(Model.ParameterUsed.MarketOffsetScale?.ToString("F4") ?? "—")</li>
+                    <li>Market offset mode: @(Model.ParameterUsed.MarketOffsetMode ?? "Logit")</li>
+                    <li>Market blind: @(Model.ParameterUsed.MarketBlind?.ToString() ?? "false")</li>
+                    <li>Blend weights: model @(Model.ParameterUsed.BlendModelWeight?.ToString("F2") ?? "1.00"), market @(Model.ParameterUsed.BlendMarketWeight?.ToString("F2") ?? "0.00")</li>
                 </ul>
             }
         </div>
@@ -114,6 +138,7 @@
                                 <th scope="col">Market prob</th>
                                 <th scope="col">Differential</th>
                                 <th scope="col">Odds</th>
+                                <th scope="col">Net odds</th>
                                 <th scope="col">Stake</th>
                                 <th scope="col">Profit</th>
                                 <th scope="col">Bankroll after</th>
@@ -131,6 +156,7 @@
                                     <td>@bet.MarketProbability.ToString("P2")</td>
                                     <td>@bet.Differential.ToString("P2")</td>
                                     <td>@bet.DecimalOdds.ToString("0.00")</td>
+                                    <td>@bet.EffectiveDecimalOdds.ToString("0.00")</td>
                                     <td>@bet.Stake.ToString("C")</td>
                                     <td class="@(bet.Profit >= 0 ? "text-success" : "text-danger")">@bet.Profit.ToString("C")</td>
                                     <td>@bet.BankrollAfter.ToString("C")</td>
@@ -145,6 +171,25 @@
             {
                 <p class="text-muted mb-0">No qualifying bets were identified during the validation window.</p>
             }
+        </div>
+    </div>
+}
+
+@if (Model.Simulation != null && Model.Simulation.BetCount > 0)
+{
+    <div class="card mt-4">
+        <div class="card-body">
+            <h5 class="card-title">ROI breakdown</h5>
+            <partial name="_ValidationBreakdown"
+                     model="@(new ValidationBreakdownViewModel { Title = "By race type", Rows = Model.Simulation.ByRaceType })" />
+            <partial name="_ValidationBreakdown"
+                     model="@(new ValidationBreakdownViewModel { Title = "By field size", Rows = Model.Simulation.ByFieldSize })" />
+            <partial name="_ValidationBreakdown"
+                     model="@(new ValidationBreakdownViewModel { Title = "By class", Rows = Model.Simulation.ByClass })" />
+            <partial name="_ValidationBreakdown"
+                     model="@(new ValidationBreakdownViewModel { Title = "By going", Rows = Model.Simulation.ByGoing })" />
+            <partial name="_ValidationBreakdown"
+                     model="@(new ValidationBreakdownViewModel { Title = "By surface", Rows = Model.Simulation.BySurface })" />
         </div>
     </div>
 }

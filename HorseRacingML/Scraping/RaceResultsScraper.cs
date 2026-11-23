@@ -28,6 +28,36 @@ namespace HorseRacingML.Scraping
         private DateTime _estimateStartUtc = DateTime.MinValue;
         private DateTime _lastEstimateOutputUtc = DateTime.MinValue;
         private long _racesProcessed = 0;
+        // Reference data repeats constantly (the same jockey/trainer rides many times a
+        // day). Caching the ids avoids three database round-trips per runner, which is
+        // by far the slowest part of a long backfill. Lazy guarantees one insert per
+        // name even when the parallel drivers race each other.
+        private readonly ConcurrentDictionary<string, Lazy<int>> _trainerIds = new(StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentDictionary<string, Lazy<int>> _jockeyIds = new(StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentDictionary<string, Lazy<int>> _horseIds = new(StringComparer.OrdinalIgnoreCase);
+        private sealed class RawRunnerRow
+        {
+            public string? Pos { get; set; }
+            public string? Cloth { get; set; }
+            public string? Stall { get; set; }
+            public string? Horse { get; set; }
+            public string? Age { get; set; }
+            public string? Weight { get; set; }
+            public string? Trainer { get; set; }
+            public string? Jockey { get; set; }
+            public string? Sp { get; set; }
+            public string? Beaten { get; set; }
+            public string? Comment { get; set; }
+        }
+        private static int ResolveCachedId(ConcurrentDictionary<string, Lazy<int>> cache, string name, Func<int> insert)
+        {
+            var lazy = cache.GetOrAdd(name, n => new Lazy<int>(insert, LazyThreadSafetyMode.ExecutionAndPublication));
+            return lazy.Value;
+        }
+        private static readonly System.Text.RegularExpressions.Regex BracketTextRegex =
+            new(@"\s*\([^\)]*\)|\s*\[[^\]]*\]", System.Text.RegularExpressions.RegexOptions.Compiled);
+        private static string CleanName(string? value)
+            => string.IsNullOrWhiteSpace(value) ? "" : BracketTextRegex.Replace(value, "").Trim();
         public RaceResultsScraper(RacingRepository repo, ScrapingStatusService status)
         {
             _repo = repo;
@@ -63,24 +93,19 @@ namespace HorseRacingML.Scraping
         {
             try
             {
-                var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(5))
-                {
-                    PollingInterval = TimeSpan.FromMilliseconds(200)
-                };
-                wait.IgnoreExceptionTypes(
-                    typeof(NoSuchElementException),
-                    typeof(StaleElementReferenceException),
-                    typeof(WebDriverException));
-
+                // Poll manually: WebDriverWait.Until<bool?> is rejected by Selenium 4.35,
+                // which only supports bool/object conditions. A cookie banner appears
+                // slightly after load, so keep looking for a short grace period.
                 var stopwatch = Stopwatch.StartNew();
-                var seenCandidate = false;
+                var timeout = TimeSpan.FromSeconds(5);
                 var candidateGracePeriod = TimeSpan.FromSeconds(1.5); // allow a short window for banners to appear
+                var seenCandidate = false;
 
-                var result = wait.Until<bool?>(d =>
+                while (stopwatch.Elapsed < timeout)
                 {
                     try
                     {
-                        var buttons = d.FindElements(By.XPath("//button|//a"));
+                        var buttons = driver.FindElements(By.XPath("//button|//a"));
                         var foundCandidateThisPass = false;
                         foreach (var button in buttons)
                         {
@@ -107,7 +132,7 @@ namespace HorseRacingML.Scraping
                             }
                             catch (ElementClickInterceptedException)
                             {
-                                if (d is IJavaScriptExecutor js)
+                                if (driver is IJavaScriptExecutor js)
                                 {
                                     try
                                     {
@@ -135,13 +160,21 @@ namespace HorseRacingML.Scraping
                         {
                             seenCandidate = true;
                         }
-
+                        else if (!seenCandidate && stopwatch.Elapsed >= candidateGracePeriod)
+                        {
+                            return false;
+                        }
+                    }
+                    catch (NoSuchElementException)
+                    {
                         if (!seenCandidate && stopwatch.Elapsed >= candidateGracePeriod)
                         {
                             return false;
                         }
-
-                        return null;
+                    }
+                    catch (StaleElementReferenceException)
+                    {
+                        // page re-rendered, try again
                     }
                     catch (WebDriverException)
                     {
@@ -149,15 +182,11 @@ namespace HorseRacingML.Scraping
                         {
                             return false;
                         }
-
-                        return null;
                     }
-                });
 
-                return result ?? false;
-            }
-            catch (WebDriverTimeoutException)
-            {
+                    Thread.Sleep(200);
+                }
+
                 return false;
             }
             catch (WebDriverException)
@@ -254,29 +283,48 @@ namespace HorseRacingML.Scraping
             }
             _status.Update("Scraping finished.");
         }
-        private void ScrapeMeetingTabs(IWebDriver driver, WebDriverWait wait, DateTime raceDate, string dayHandle, List<RunnerResult> sessionResults)
+        private void ScrapeMeetingTabs(IWebDriver driver, WebDriverWait wait, DateTime raceDate, string dayHandle, List<RunnerResult> sessionResults, CancellationToken cancellationToken = default)
         {
-            try { wait.Until(d => d.FindElements(By.CssSelector("[data-test-id='generic-tab']")).Count > 0 || d.FindElements(By.CssSelector("[data-test-id*='no-meetings']")).Count > 0); } catch { Console.WriteLine("Meeting tab elements not found."); return; } // ensure tabs or no-meetings
+            cancellationToken.ThrowIfCancellationRequested();
+            try { wait.Until(d => d.FindElements(By.CssSelector("[data-testid='generic-tab']")).Count > 0 || d.FindElements(By.CssSelector("[data-testid*='no-meetings']")).Count > 0); } catch { Console.WriteLine("Meeting tab elements not found."); return; } // ensure tabs or no-meetings
+            var visitedRaceUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             int tabIndex = 0; while (true)
             {
-                var tabs = driver.FindElements(By.CssSelector("[data-test-id='generic-tab']")); if (tabIndex >= tabs.Count) break; // done
+                var tabs = driver.FindElements(By.CssSelector("[data-testid='generic-tab']")); if (tabIndex >= tabs.Count) break; // done
                 var tab = tabs[tabIndex];
+                string tabName = "";
+                try { tabName = tab.Text; } catch { }
                 try { ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].scrollIntoView({block:'center'});", tab); ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].click();", tab); } catch { tabIndex++; continue; } // click meeting tab
-                try { wait.Until(d => d.FindElements(By.CssSelector("[data-test-id='race-container'] a[href]")).Count > 0 || d.FindElements(By.CssSelector("[data-test-id='race-container']")).Count > 0); } catch { tabIndex++; continue; } // wait races
-                var raceLinks = driver.FindElements(By.CssSelector("[data-test-id='race-container'] a[href]"));
+                try { wait.Until(d => d.FindElements(By.CssSelector("[data-testid='race-container'] a[href]")).Count > 0 || d.FindElements(By.CssSelector("[data-testid='race-container']")).Count > 0); } catch { tabIndex++; continue; } // wait races
+                var raceLinks = driver.FindElements(By.CssSelector("[data-testid='race-container'] a[href]"));
                 var meetingHandle = driver.CurrentWindowHandle; // remember meeting page handle
-                var raceHandles = new List<string>();
+                var hrefs = new List<string>();
                 foreach (var a in raceLinks)
                 {
                     var href = a.GetAttribute("href");
                     if (string.IsNullOrWhiteSpace(href)) continue; // skip bad links
-                    var beforeOpen = driver.WindowHandles.ToList();
-                    ((IJavaScriptExecutor)driver).ExecuteScript("window.open(arguments[0], '_blank');", href); // open race in new tab
-                    var handle = driver.WindowHandles.Except(beforeOpen).FirstOrDefault();
-                    if (!string.IsNullOrEmpty(handle)) raceHandles.Add(handle); else Console.WriteLine("Failed to detect new tab handle, skipping.");
+                    // Race containers also link to "#video-player"; strip fragments so each
+                    // race is parsed once instead of twice.
+                    var hashIndex = href.IndexOf('#');
+                    if (hashIndex >= 0) href = href.Substring(0, hashIndex);
+                    if (string.IsNullOrWhiteSpace(href)) continue;
+                    if (visitedRaceUrls.Add(href)) hrefs.Add(href); // de-duplicate across meeting tabs
                 }
-                foreach (var newHandle in raceHandles)
+                Console.WriteLine($"[{raceDate:yyyy-MM-dd}] meeting '{tabName}': {hrefs.Count} races");
+                foreach (var href in hrefs)
                 {
+                    // Open and parse one race at a time. Opening every race in the
+                    // meeting at once left dozens of tabs loading and looked like a hang.
+                    string newHandle = null;
+                    try
+                    {
+                        var beforeOpen = driver.WindowHandles.ToList();
+                        ((IJavaScriptExecutor)driver).ExecuteScript("window.open(arguments[0], '_blank');", href); // open race in new tab
+                        newHandle = driver.WindowHandles.Except(beforeOpen).FirstOrDefault();
+                    }
+                    catch (WebDriverException ex) { Console.WriteLine($"Open race tab error: {ex.Message}"); }
+                    if (string.IsNullOrEmpty(newHandle)) { Console.WriteLine("Failed to detect new tab handle, skipping."); continue; }
+
                     try { driver.SwitchTo().Window(newHandle); }
                     catch (WebDriverException ex) { Console.WriteLine($"Switch to race tab error: {ex.Message}"); continue; } // switch to race
                     int attempts = 0;
@@ -285,6 +333,7 @@ namespace HorseRacingML.Scraping
                         try
                         {
                             ParseRacePage(driver, wait, raceDate, sessionResults);
+                            Console.WriteLine($"[{raceDate:yyyy-MM-dd}] parsed {href.Substring(href.LastIndexOf('/') + 1)}");
                             break;
                         }
                         catch (StaleElementReferenceException ex)
@@ -323,15 +372,21 @@ namespace HorseRacingML.Scraping
                     }
                     catch (WebDriverException ex) { Console.WriteLine($"Switch back error: {ex.Message}"); break; } // bail out cleanly for this meeting
                 }
+                // Persist this meeting immediately so an interrupted/parallel run keeps
+                // the results it has already parsed instead of losing the whole day.
+                if (sessionResults.Count > 0)
+                {
+                    try { _repo.BulkInsertRunnerResults(sessionResults); }
+                    catch (Exception ex) { Console.Error.WriteLine($"Bulk insert error for {raceDate:yyyy-MM-dd}: {ex.Message}"); }
+                    sessionResults.Clear();
+                }
                 tabIndex++; // next meeting
                 try { if (!driver.WindowHandles.Contains(dayHandle)) { dayHandle = driver.WindowHandles.FirstOrDefault() ?? dayHandle; } } catch { } // keep dayHandle valid
             }
         }
 
-        private static decimal? FractionToDecimal(string frac)
-        {
-            if (string.IsNullOrWhiteSpace(frac)) return null; frac = frac.Trim().ToLowerInvariant(); frac = frac.Replace("jf", "").Replace("cf", "").Replace("f", "").Trim(); var m = System.Text.RegularExpressions.Regex.Match(frac, @"(\d+)\s*/\s*(\d+)"); if (!m.Success) return null; var a = decimal.Parse(m.Groups[1].Value); var b = decimal.Parse(m.Groups[2].Value); return Math.Round(1 + (a / b), 3); // decimal incl stake
-        }
+        internal static decimal? FractionToDecimal(string frac)
+            => MarketOddsParser.Parse(frac); // decimal incl stake; handles Evens and favourites
         public void ScrapeFromLatest()
         {
             ResetEstimateSession();
@@ -349,7 +404,7 @@ namespace HorseRacingML.Scraping
             }
             _status.Update("Scraping finished.");
         }//
-        public void Scrape(DateTime startDate, DateTime endDate)
+        public void Scrape(DateTime startDate, DateTime endDate, CancellationToken cancellationToken = default)
         {
             EnsureEstimateSession();
             var start = startDate.Date;
@@ -378,7 +433,8 @@ namespace HorseRacingML.Scraping
 
                     while (queue.TryDequeue(out var date))
                     {
-                        ScrapeDay(driver, date);
+                        cancellationToken.ThrowIfCancellationRequested();
+                        ScrapeDay(driver, date, cancellationToken);
                         var msg = $"[{date:yyyy-MM-dd}] parsed and inserted";
                         Console.WriteLine(msg);
                         _status.Update(msg);
@@ -390,7 +446,7 @@ namespace HorseRacingML.Scraping
 
             Task.WaitAll(tasks.ToArray());
         }
-        public void ScrapeFromTodayBackwards()
+        public void ScrapeFromTodayBackwards(CancellationToken cancellationToken = default)
         {
             ResetEstimateSession();
             var minDate = new DateTime(2000, 1, 1);
@@ -423,7 +479,8 @@ namespace HorseRacingML.Scraping
                 }
 
                 _status.Update($"Scraping {start:yyyy-MM-dd} to {currentEnd:yyyy-MM-dd}");
-                Scrape(start, currentEnd);
+                cancellationToken.ThrowIfCancellationRequested();
+                Scrape(start, currentEnd, cancellationToken);
 
                 currentEnd = start.AddDays(-1);
             }
@@ -432,21 +489,17 @@ namespace HorseRacingML.Scraping
         }
         private static string ExtractFavouriteTag(string frac) { if (string.IsNullOrWhiteSpace(frac)) return null; frac = frac.ToUpperInvariant(); if (frac.Contains("JF")) return "JF"; if (frac.Contains("CF")) return "CF"; if (frac.EndsWith("F")) return "F"; return null; } // F/JF/CF
 
-        private static decimal? ParseBeatenLengths(string s) { if (string.IsNullOrWhiteSpace(s)) return null; s = s.Trim().ToLowerInvariant(); if (s == "nk" || s == "neck") return 0.3m; if (s == "hd" || s == "head") return 0.2m; if (s == "shd" || s == "short head" || s == "shorthead" || s == "s.h" || s == "sh") return 0.1m; if (s == "nse" || s == "nose") return 0.05m; s = s.Replace("¾", ".75").Replace("½", ".5").Replace("¼", ".25"); if (decimal.TryParse(s, NumberStyles.Any, CultureInfo.InvariantCulture, out var v)) return v; return null; } // adds s.h/sh/nse/nose/neck/head
+        internal static decimal? ParseBeatenLengths(string s) { if (string.IsNullOrWhiteSpace(s)) return null; s = s.Trim().ToLowerInvariant(); if (s == "nk" || s == "neck") return 0.3m; if (s == "hd" || s == "head") return 0.2m; if (s == "shd" || s == "short head" || s == "shorthead" || s == "s.h" || s == "sh") return 0.1m; if (s == "nse" || s == "nose") return 0.05m; s = s.Replace("¾", ".75").Replace("½", ".5").Replace("¼", ".25"); if (decimal.TryParse(s, NumberStyles.Any, CultureInfo.InvariantCulture, out var v)) return v; return null; } // adds s.h/sh/nse/nose/neck/head
 
 
-        private static string ExtractOddsToken(string s, string key) { if (string.IsNullOrWhiteSpace(s)) return null; var m = System.Text.RegularExpressions.Regex.Match(s, $@"\b{System.Text.RegularExpressions.Regex.Escape(key)}\s+(\d+/\d+\w*)", System.Text.RegularExpressions.RegexOptions.IgnoreCase); return m.Success ? m.Groups[1].Value : null; } // "op 33/1"
+        internal static string? ExtractOddsToken(string? s, string key)
+            => MarketOddsParser.ExtractToken(s, key);
 
-        private static (string? low, string? high) ExtractTouchedTokens(string s)
-        {
-            if (string.IsNullOrWhiteSpace(s)) return (null, null);
-            var lowMatch = System.Text.RegularExpressions.Regex.Match(s, @"(tchd|low)\s+(\d+/\d+\w*)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-            var highMatch = System.Text.RegularExpressions.Regex.Match(s, @"high\s+(\d+/\d+\w*)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-            string? low = lowMatch.Success ? lowMatch.Groups[2].Value : null; string? high = highMatch.Success ? highMatch.Groups[1].Value : null; return (low, high); // low/high
-        }
+        internal static (string? low, string? high) ExtractTouchedTokens(string? s)
+            => MarketOddsParser.ExtractTouchedTokens(s);
 
         private static int? TryParseInt(string? s) { return int.TryParse(s?.Trim(), out var v) ? v : null; } // int?
-        private static byte? TryParseByte(string? s) { return byte.TryParse(s?.Trim(), out var v) ? v : null; } // byte?
+        internal static byte? TryParseByte(string? s) { return byte.TryParse(s?.Trim(), out var v) ? v : null; } // byte?
         private static DateTime? ParseDateSafe(string? s) { if (string.IsNullOrWhiteSpace(s)) return null; if (DateTime.TryParse(s, out var d)) return d.Date; return null; } // date?
         private static string TextOrEmpty(IWebDriver d, By by)
         {
@@ -474,15 +527,16 @@ namespace HorseRacingML.Scraping
             }
             return "";
         } // element text
-        private void ScrapeDay(IWebDriver driver, DateTime date)
+        private void ScrapeDay(IWebDriver driver, DateTime date, CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             try
             {
                 var url = $"https://www.sportinglife.com/racing/results/{date:yyyy-MM-dd}"; driver.Navigate().GoToUrl(url); // go to date page
                 AcceptTermsIfPresent(driver); // cookies
                 var dayHandle = driver.CurrentWindowHandle; // remember the top-level window for this day
                 var dayResults = new List<RunnerResult>();
-                string[] regions = { "UK & Ireland", "International" }; bool hasRegionToggle = driver.FindElements(By.CssSelector("[data-test-id='new-switch-button']")).Count > 0; // detect region toggle
+                string[] regions = { "UK & Ireland", "International" }; bool hasRegionToggle = driver.FindElements(By.CssSelector("[data-testid='new-switch-button']")).Count > 0; // detect region toggle
                 bool anyMeetingsProcessed = false; // track if we managed to scrape anything
                 if (hasRegionToggle)
                 {
@@ -496,7 +550,7 @@ namespace HorseRacingML.Scraping
                                 try
                                 {
                                     regionBtn = driver
-                                        .FindElements(By.XPath($"//*[self::button or self::span][contains(normalize-space(.), '{region}') and ancestor::*[@data-test-id='new-switch-button']]"))
+                                        .FindElements(By.XPath($"//*[self::button or self::span][contains(normalize-space(.), '{region}') and ancestor::*[@data-testid='new-switch-button']]"))
                                         .FirstOrDefault(e =>
                                         {
                                             try { return e.Displayed && e.Enabled; } catch { return false; }
@@ -523,7 +577,7 @@ namespace HorseRacingML.Scraping
                                     try
                                     {
                                         regionBtn = driver
-                                            .FindElements(By.XPath($"//*[self::button or self::span][contains(normalize-space(.), '{region}') and ancestor::*[@data-test-id='new-switch-button']]"))
+                                            .FindElements(By.XPath($"//*[self::button or self::span][contains(normalize-space(.), '{region}') and ancestor::*[@data-testid='new-switch-button']]"))
                                             .FirstOrDefault(e =>
                                             {
                                                 try { return e.Displayed && e.Enabled; } catch { return false; }
@@ -539,15 +593,15 @@ namespace HorseRacingML.Scraping
                             if (!clicked) { Console.Error.WriteLine($"[{date:yyyy-MM-dd}] Region '{region}' click failed"); continue; }
 
                             var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(5));
-                            wait.Until(d => d.FindElements(By.CssSelector("[data-test-id='generic-tab']")).Count > 0 || d.FindElements(By.CssSelector("[data-test-id*='no-meetings']")).Count > 0); // wait meetings
-                            ScrapeMeetingTabs(driver, new WebDriverWait(driver, TimeSpan.FromSeconds(10)), date, dayHandle, dayResults); anyMeetingsProcessed = true; // scrape meetings for this region
+                            wait.Until(d => d.FindElements(By.CssSelector("[data-testid='generic-tab']")).Count > 0 || d.FindElements(By.CssSelector("[data-testid*='no-meetings']")).Count > 0); // wait meetings
+                            ScrapeMeetingTabs(driver, new WebDriverWait(driver, TimeSpan.FromSeconds(10)), date, dayHandle, dayResults, cancellationToken); anyMeetingsProcessed = true; // scrape meetings for this region
                         }
                         catch (WebDriverException ex) { Console.Error.WriteLine($"[{date:yyyy-MM-dd}] Region '{region}' error: {ex.Message}"); }
                         catch (Exception ex) { Console.Error.WriteLine($"[{date:yyyy-MM-dd}] Unexpected region error '{region}': {ex.Message}"); }
                     }
-                    if (!anyMeetingsProcessed) { ScrapeMeetingTabs(driver, new WebDriverWait(driver, TimeSpan.FromSeconds(12)), date, dayHandle, dayResults); } // fallback if toggle failed
+                    if (!anyMeetingsProcessed) { ScrapeMeetingTabs(driver, new WebDriverWait(driver, TimeSpan.FromSeconds(12)), date, dayHandle, dayResults, cancellationToken); } // fallback if toggle failed
                 }
-                else { ScrapeMeetingTabs(driver, new WebDriverWait(driver, TimeSpan.FromSeconds(12)), date, dayHandle, dayResults); } // no toggle present, scrape directly
+                else { ScrapeMeetingTabs(driver, new WebDriverWait(driver, TimeSpan.FromSeconds(12)), date, dayHandle, dayResults, cancellationToken); } // no toggle present, scrape directly
                 if (dayResults.Count > 0) _repo.BulkInsertRunnerResults(dayResults);
             }
             catch (WebDriverException ex) { Console.Error.WriteLine($"[Skip Day] {date:yyyy-MM-dd} WebDriverException: {ex.Message}"); }
@@ -569,23 +623,24 @@ namespace HorseRacingML.Scraping
         }
         private void ParseRacePage(IWebDriver driver, WebDriverWait wait, DateTime defaultDate, List<RunnerResult> sessionResults)
         {
+            var sw = Stopwatch.StartNew();
             string headerText = TextOrEmpty(driver, By.CssSelector("p[class*='CourseListingHeader__StyledMainTitle']")); // header text
-            if (string.IsNullOrWhiteSpace(headerText)) headerText = TextOrEmpty(driver, By.CssSelector("[data-test-id='course-title'], [class*='CourseListingHeader__StyledMainTitle']")); // alt header
+            if (string.IsNullOrWhiteSpace(headerText)) headerText = TextOrEmpty(driver, By.CssSelector("[data-testid='course-title'], [class*='CourseListingHeader__StyledMainTitle']")); // alt header
             string courseName = ExtractCourseNameFromHeader(headerText); // course from header
             if (string.IsNullOrEmpty(courseName)) courseName = GuessCourseFromBreadcrumb(driver); // fallback course
-            var dateText = TextOrEmpty(driver, By.CssSelector("p[class*='CourseListingHeader__StyledMainSubTitle'], [data-test-id='course-subtitle']")); // date text
+            var dateText = TextOrEmpty(driver, By.CssSelector("p[class*='CourseListingHeader__StyledMainSubTitle'], [data-testid='course-subtitle']")); // date text
             DateTime raceDate = ParseDateSafe(dateText) ?? defaultDate; // parsed date
-            var raceTitle = TextOrEmpty(driver, By.CssSelector("h1[data-test-id='racecard-race-name'], h1[class*='RacingRacecardSummary__StyledTitle']")); // race title
+            var raceTitle = TextOrEmpty(driver, By.CssSelector("h1[data-testid='racecard-race-name'], h1[class*='RacingRacecardSummary__StyledTitle']")); // race title
 
             string metaLine = CollectMetaLine(driver); // combined meta text
             if (string.IsNullOrWhiteSpace(metaLine))
             {
-                metaLine = TextOrEmpty(driver, By.CssSelector("li[class*='RacingRacecardSummary__StyledAdditionalInfo'], [data-test-id='racecard-additional-info']")); // primary meta fallback
+                metaLine = TextOrEmpty(driver, By.CssSelector("li[class*='RacingRacecardSummary__StyledAdditionalInfo'], [data-testid='racecard-additional-info']")); // primary meta fallback
                 if (string.IsNullOrWhiteSpace(metaLine))
                 {
                     try
                     {
-                        metaLine = (string)((IJavaScriptExecutor)driver).ExecuteScript("var cand=[\"li[class*='RacingRacecardSummary__StyledAdditionalInfo']\",\"[data-test-id='racecard-additional-info']\",\"[class*='RacingRacecardSummary__StyledAdditionalInfoWrapper']\",\"[data-test-id='race-summary']\",\"[data-test-id='result-additional-info']\"];for(var i=0;i<cand.length;i++){var el=document.querySelector(cand[i]);if(el){return (el.innerText||el.textContent||'');}}return ''"); // scan likely containers
+                        metaLine = (string)((IJavaScriptExecutor)driver).ExecuteScript("var cand=[\"li[class*='RacingRacecardSummary__StyledAdditionalInfo']\",\"[data-testid='racecard-additional-info']\",\"[class*='RacingRacecardSummary__StyledAdditionalInfoWrapper']\",\"[data-testid='race-summary']\",\"[data-testid='result-additional-info']\"];for(var i=0;i<cand.length;i++){var el=document.querySelector(cand[i]);if(el){return (el.innerText||el.textContent||'');}}return ''"); // scan likely containers
                     }
                     catch { metaLine = ""; } // ignore
                 }
@@ -593,20 +648,20 @@ namespace HorseRacingML.Scraping
                 {
                     try
                     {
-                        metaLine = (string)((IJavaScriptExecutor)driver).ExecuteScript("var w=document.querySelector(\"[data-test-id='race-container']\");return w?(w.innerText||''):''"); // broad section grab
+                        metaLine = (string)((IJavaScriptExecutor)driver).ExecuteScript("var w=document.querySelector(\"[data-testid='race-container']\");return w?(w.innerText||''):''"); // broad section grab
                     }
                     catch { }
                 }
             }
             metaLine = Normalize(metaLine.Replace("•", "|").Replace("·", "|")); // normalize bullets
 
-            var status = TextOrEmpty(driver, By.CssSelector(".RacingRacecardSummary__StyledEndState, [data-test-id='racecard-end-state']")); // end state
+            var status = TextOrEmpty(driver, By.CssSelector(".RacingRacecardSummary__StyledEndedState, .RacingRacecardSummary__StyledEndState, [data-testid='racecard-end-state'], [data-test-id='racecard-end-state']")); // end state
             if (string.IsNullOrWhiteSpace(status)) status = TextOrEmpty(driver, By.XPath("//li[contains(@class,'RacingRacecardSummary__StyledAdditionalInfo')]//span[contains(@class,'EndState') or contains(.,'Weighed In') or contains(.,'Abandoned') or contains(.,'Void')]")); // alt end state
             status = Normalize(status); // tidy
             string ageRestriction = null, distanceText = null, going = null, runners = null, offTime = null, winTime = null, surface = null; byte? classVal = null;
             try
             {
-                string detailsJson = (string)((IJavaScriptExecutor)driver).ExecuteScript("var cont=document.querySelector(\"[data-test-id='race-summary'],[data-test-id='racecard-additional-info'],[data-test-id='result-additional-info'],ul[class*='MainDetailsList']\"); if(!cont) return ''; var res={}; var items=cont.querySelectorAll('li'); for(var i=0;i<items.length;i++){var spans=items[i].querySelectorAll('span'); if(spans.length>=2){var key=spans[0].innerText.trim().toLowerCase(); var val=spans[1].innerText.trim(); if(key&&val) res[key]=val;}} return JSON.stringify(res);");
+                string detailsJson = (string)((IJavaScriptExecutor)driver).ExecuteScript("var cont=document.querySelector(\"[data-testid='race-summary'],[data-testid='racecard-additional-info'],[data-testid='result-additional-info'],ul[class*='MainDetailsList']\"); if(!cont) return ''; var res={}; var items=cont.querySelectorAll('li'); for(var i=0;i<items.length;i++){var spans=items[i].querySelectorAll('span'); if(spans.length>=2){var key=spans[0].innerText.trim().toLowerCase(); var val=spans[1].innerText.trim(); if(key&&val) res[key]=val;}} return JSON.stringify(res);");
                 if (!string.IsNullOrWhiteSpace(detailsJson))
                 {
                     var dict = JsonSerializer.Deserialize<Dictionary<string, string>>(detailsJson);
@@ -641,11 +696,11 @@ namespace HorseRacingML.Scraping
             if (!classVal.HasValue) classVal = ExtractClass(metaLine); // class
             if (string.IsNullOrWhiteSpace(surface)) surface = InferSurface(metaLine); // surface guess
 
-            if (string.IsNullOrWhiteSpace(going)) { going = TextOrEmpty(driver, By.CssSelector("[data-test-id='going'], [class*='Going']")); going = Normalize(going); } // going fallback
-            if (string.IsNullOrWhiteSpace(distanceText)) { distanceText = TextOrEmpty(driver, By.CssSelector("[data-test-id='distance'], [class*='Distance']")); distanceText = Normalize(distanceText); } // distance fallback
+            if (string.IsNullOrWhiteSpace(going)) { going = TextOrEmpty(driver, By.CssSelector("[data-testid='going'], [class*='Going']")); going = Normalize(going); } // going fallback
+            if (string.IsNullOrWhiteSpace(distanceText)) { distanceText = TextOrEmpty(driver, By.CssSelector("[data-testid='distance'], [class*='Distance']")); distanceText = Normalize(distanceText); } // distance fallback
             if (string.IsNullOrWhiteSpace(winTime))
             {
-                var wt = TextOrEmpty(driver, By.CssSelector("[data-test-id='winning-time'], [class*='WinningTime']")); // winning time container
+                var wt = TextOrEmpty(driver, By.CssSelector("[data-testid='winning-time'], [class*='WinningTime']")); // winning time container
                 if (!string.IsNullOrWhiteSpace(wt))
                 {
                     var mWT = System.Text.RegularExpressions.Regex.Match(wt, @"([0-9]+m\s*[0-9.]+s|[0-9.]+s)"); // extract "Xm Y.s" or "Y.s"
@@ -654,7 +709,7 @@ namespace HorseRacingML.Scraping
             }
             if (!classVal.HasValue)
             {
-                var clsTxt = TextOrEmpty(driver, By.CssSelector("[data-test-id='race-class'], [class*='RaceClass']")); // class label
+                var clsTxt = TextOrEmpty(driver, By.CssSelector("[data-testid='race-class'], [class*='RaceClass']")); // class label
                 var mC = System.Text.RegularExpressions.Regex.Match(clsTxt ?? "", @"Class\s*(\d)"); // parse digit
                 if (mC.Success) classVal = byte.Parse(mC.Groups[1].Value); // set class
             }
@@ -715,27 +770,67 @@ namespace HorseRacingML.Scraping
                 RunnerCount = runnerCount.HasValue ? (byte?)runnerCount : null, // runners
                 Status = status, // status
                 WinningTimeMs = winningMs, // ms
-                WinningTimeText = winTime // text
+                WinningTimeText = winTime, // text
+                Source = "SportingLife",
+                SourceRaceId = driver.Url
             };
             var raceId = _repo.InsertRace(raceEntity); // insert race
+            var metaMs = sw.ElapsedMilliseconds;
 
-            wait.Until(d => d.FindElements(By.CssSelector("[class*='ResultRunner__StyledResultRunnerWrapper']")).Count > 0 || d.FindElements(By.CssSelector("[data-test-id='horse-sub-info']")).Count > 0); // wait rows
-            var rows = driver.FindElements(By.CssSelector("[class*='ResultRunner__StyledResultRunnerWrapper']")); // rows
+            wait.Until(d => d.FindElements(By.CssSelector("[class*='ResultRunner__StyledResultRunnerWrapper']")).Count > 0 || d.FindElements(By.CssSelector("[data-testid='horse-sub-info']")).Count > 0); // wait rows
+            // Pull every row's text in one round-trip. The old code made ~12 WebDriver
+            // calls per runner, which made parsing dominate the whole backfill.
+            const string rowsScript = """
+var rows = document.querySelectorAll("[class*='ResultRunner__StyledResultRunnerWrapper']");
+var out = [];
+for (var i = 0; i < rows.length; i++) {
+  var r = rows[i];
+  var txt = function (sel) { var el = r.querySelector(sel); return el ? (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim() : ''; };
+  var sub = r.querySelector("[data-testid='horse-sub-info'], [data-test-id='horse-sub-info']");
+  var spans = sub ? sub.querySelectorAll('span') : [];
+  var names = r.querySelectorAll("[class*='StyledPersonName']");
+  out.push({
+    pos: txt("[data-testid='position-no'], [data-test-id='position-no'], .position-no .ordinal"),
+    cloth: txt("[data-testid='saddle-cloth-no']"),
+    stall: txt("[data-testid='stall-no']"),
+    horse: txt("a[href*='/racing/profiles/horse/'], [data-testid='horse-name']"),
+    age: spans.length >= 1 ? (spans[0].innerText || '').trim() : '',
+    weight: spans.length >= 2 ? (spans[spans.length - 1].innerText || '').trim() : '',
+    trainer: names.length >= 1 ? (names[0].innerText || '').trim() : '',
+    jockey: names.length >= 2 ? (names[1].innerText || '').trim() : '',
+    sp: txt("span[class*='BetLinkStyle'], [data-testid='sp-odds']"),
+    beaten: txt("[class*='StyledFinishDistance']"),
+    comment: txt("[data-testid='ride-description'], [class*='StyledRideDescription']")
+  });
+}
+return JSON.stringify(out);
+""";
+            var rowsJson = (string)((IJavaScriptExecutor)driver).ExecuteScript(rowsScript);
+            var rawRows = string.IsNullOrWhiteSpace(rowsJson)
+                ? new List<RawRunnerRow>()
+                : JsonSerializer.Deserialize<List<RawRunnerRow>>(rowsJson, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new List<RawRunnerRow>();
             var results = new List<RunnerResult>(); // collect
 
-            foreach (var row in rows)
+            // Resolve all horses/trainers/jockeys for this race on one connection.
+            var refs = _repo.EnsureReferenceData(
+                rawRows.Select(r => r.Horse ?? ""),
+                rawRows.Select(r => r.Trainer ?? ""),
+                rawRows.Select(r => r.Jockey ?? ""));
+            foreach (var kv in refs.Horses) _horseIds.TryAdd(kv.Key, new Lazy<int>(() => kv.Value));
+            foreach (var kv in refs.Trainers) _trainerIds.TryAdd(kv.Key, new Lazy<int>(() => kv.Value));
+            foreach (var kv in refs.Jockeys) _jockeyIds.TryAdd(kv.Key, new Lazy<int>(() => kv.Value));
+
+            foreach (var raw in rawRows)
             {
-                string posRaw = SafeText(row, By.CssSelector("[data-test-id='position-no'], .position-no .ordinal")); // position text
+                string posRaw = raw.Pos ?? ""; // position text
                 int? finishPos = TryParseOrdinalInt(posRaw); // numeric pos
                 string outcome = finishPos.HasValue ? "" : ParseOutcomeCode(posRaw); // outcome code
-                string cloth = SafeText(row, By.CssSelector("[data-test-id='saddle-cloth-no']")); // saddle cloth
+                string cloth = raw.Cloth ?? ""; // saddle cloth
                 byte? saddle = TryParseByte(cloth); // saddle no
-                string drawRaw = (string)((IJavaScriptExecutor)driver).ExecuteScript("var el=arguments[0].querySelector('[data-test-id=\"stall-no\"]'); return el?(el.textContent||'').trim():'';", row); // stall text
-                byte? stall = TryParseByteLoose(drawRaw); // stall no
-                string horseName = SafeText(row, By.CssSelector("a[href*='/racing/profiles/horse/'], [data-test-id='horse-name']")); // horse
-                string ageTxt = (string)((IJavaScriptExecutor)driver).ExecuteScript("var el=arguments[0].querySelector('[data-test-id=\"horse-sub-info\"] span:first-child'); return el?(el.textContent||'').trim():'';", row); // age text
-                byte? age = TryParseByte(ageTxt); // age
-                string weightTxt = (string)((IJavaScriptExecutor)driver).ExecuteScript("var el=arguments[0].querySelector('[data-test-id=\"horse-sub-info\"] span:last-child'); return el?(el.textContent||'').trim():'';", row); // weight text
+                byte? stall = TryParseByteLoose(raw.Stall ?? ""); // stall no
+                string horseName = CleanName(raw.Horse); // horse
+                byte? age = TryParseByte(raw.Age ?? ""); // age
+                string weightTxt = (raw.Weight ?? "").Trim(); // weight text
                 byte? weightLbs = null; // weight lbs
                 var m = System.Text.RegularExpressions.Regex.Match(weightTxt ?? "", @"^\s*(\d{1,2})\s*-\s*(\d{1,2})\s*$"); // "s-st"
                 if (m.Success)
@@ -745,20 +840,19 @@ namespace HorseRacingML.Scraping
                     int total = stones * 14 + pounds; // total lbs
                     if (total >= byte.MinValue && total <= byte.MaxValue) weightLbs = (byte)total; // clamp
                 }
-                var (trainer, jockey) = ExtractTrainerJockey(row); // names
-                string spFrac = SafeText(row, By.CssSelector("span[class*='BetLinkStyle'], [data-test-id='sp-odds']")); // sp frac
+                string trainer = CleanName(raw.Trainer); // trainer
+                string jockey = CleanName(raw.Jockey); // jockey
+                string spFrac = raw.Sp ?? ""; // sp frac
                 decimal? spDec = FractionToDecimal(spFrac); // sp dec
                 string favTag = ExtractFavouriteTag(spFrac); // fav tag
-                string beatenTxt = SafeText(row, By.CssSelector("[class*='StyledFinishDistance'], [data-test-id='finish-distance']")); // beaten text
+                string beatenTxt = raw.Beaten ?? ""; // beaten text
                 decimal? beatenLen = ParseBeatenLengths(beatenTxt); // beaten len
-                string opTxt = SafeText(row, By.XPath(".//*[contains(.,'op ') and contains(@class,'small')]")); // opening odds
-                string tchTxt = SafeText(row, By.XPath(".//*[contains(.,'tchd ') or contains(.,'tch ') and contains(@class,'small')]")); // touched odds
-                string opFrac = ExtractOddsToken(opTxt, "op"); // op frac
-                (string? tchLow, string? tchHigh) = ExtractTouchedTokens(tchTxt); // low/high
-                string comment = SafeText(row, By.CssSelector("[data-test-id='ride-description'], [class*='StyledRideDescription']")); // comment
-                var trainerId = string.IsNullOrWhiteSpace(trainer) ? (int?)null : _repo.InsertTrainer(new Trainer { Name = trainer }); // trainer id
-                var jockeyId = string.IsNullOrWhiteSpace(jockey) ? (int?)null : _repo.InsertJockey(new Jockey { Name = jockey }); // jockey id
-                var horseId = _repo.InsertHorse(new Horse { Name = horseName }); // horse id
+                string comment = raw.Comment ?? ""; // comment (also contains op/tchd tokens)
+                string opFrac = ExtractOddsToken(comment, "op"); // op frac
+                (string? tchLow, string? tchHigh) = ExtractTouchedTokens(comment); // low/high
+                var trainerId = string.IsNullOrWhiteSpace(trainer) ? (int?)null : ResolveCachedId(_trainerIds, trainer, () => _repo.InsertTrainer(new Trainer { Name = trainer })); // trainer id
+                var jockeyId = string.IsNullOrWhiteSpace(jockey) ? (int?)null : ResolveCachedId(_jockeyIds, jockey, () => _repo.InsertJockey(new Jockey { Name = jockey })); // jockey id
+                var horseId = ResolveCachedId(_horseIds, horseName, () => _repo.InsertHorse(new Horse { Name = horseName })); // horse id
                 var result = new RunnerResult
                 {
                     RaceId = raceId, // race
@@ -780,11 +874,14 @@ namespace HorseRacingML.Scraping
                     OpeningFraction = opFrac, // op
                     TouchedHighFraction = tchHigh, // high
                     TouchedLowFraction = tchLow, // low
-                    Comment = comment // comment
+                    Comment = comment, // comment
+                    Source = "SportingLife",
+                    SourceRunnerId = $"{driver.Url}#{saddle?.ToString(CultureInfo.InvariantCulture) ?? horseName}"
                 };
                 results.Add(result); // add row
             }
             if (results.Count > 0) sessionResults.AddRange(results); // accumulate for bulk insert
+            if (sw.ElapsedMilliseconds > 8000) Console.WriteLine($"[timing] slow race {courseName} {raceTitle}: meta+build {metaMs}ms, rows {rawRows.Count} took {sw.ElapsedMilliseconds - metaMs}ms");
             RecordRaceProcessed();
         }
         private static Dictionary<string, string> NormalizeDetailDictionary(Dictionary<string, string> source)
@@ -828,9 +925,9 @@ namespace HorseRacingML.Scraping
             {
                 var selectors = new[]
                 {
-                    "[data-test-id='race-summary'] li",
-                    "[data-test-id='racecard-additional-info'] li",
-                    "[data-test-id='result-additional-info'] li",
+                    "[data-testid='race-summary'] li",
+                    "[data-testid='racecard-additional-info'] li",
+                    "[data-testid='result-additional-info'] li",
                     "ul[class*='MainDetailsList'] li",
                     "li[class*='RacingRacecardSummary__StyledAdditionalInfo']"
                 };
@@ -872,7 +969,7 @@ namespace HorseRacingML.Scraping
             }
             catch { return ("", ""); } // safe default
         }
-        private static int? TryParseOrdinalInt(string? s)
+        internal static int? TryParseOrdinalInt(string? s)
         {
             if (string.IsNullOrWhiteSpace(s)) return null; s = s.Trim(); var m = System.Text.RegularExpressions.Regex.Match(s, @"^\s*(\d+)\s*(st|nd|rd|th)?\s*$", System.Text.RegularExpressions.RegexOptions.IgnoreCase); if (m.Success && int.TryParse(m.Groups[1].Value, out var v)) return v; return int.TryParse(s, out var v2) ? v2 : (int?)null; // handles 1st/2nd/3rd/4th
         }
@@ -940,7 +1037,7 @@ namespace HorseRacingML.Scraping
             value = value.TrimEnd('.', ';', ',');
             return value;
         }
-        private static int? ParseWinningMs(string? t)
+        internal static int? ParseWinningMs(string? t)
         {
             if (string.IsNullOrWhiteSpace(t) || t == "-") return null; // "1m 15.11s" or "59.87s"
             try
@@ -977,7 +1074,7 @@ namespace HorseRacingML.Scraping
             s = s.ToLowerInvariant();
             return System.Text.RegularExpressions.Regex.IsMatch(s, @"\b\d+\s*(miles?|m|furlongs?|f|yards?|y)\b");
         } // match typical distance patterns like "2m 5f"
-        private static int ParseDistanceToYards(string? text)
+        internal static int ParseDistanceToYards(string? text)
         {
             if (string.IsNullOrWhiteSpace(text)) return 0; int yards = 0; // accumulate
             foreach (var tok in text.Split(' ', StringSplitOptions.RemoveEmptyEntries))
@@ -989,8 +1086,8 @@ namespace HorseRacingML.Scraping
             return yards;
         }
 
-        private static TimeSpan? ParseClockTime(string? t) { if (string.IsNullOrWhiteSpace(t)) return null; return TimeSpan.TryParse(t, CultureInfo.InvariantCulture, out var ts) ? ts : null; } // HH:mm
-        private static string ParseOutcomeCode(string posText)
+        internal static TimeSpan? ParseClockTime(string? t) { if (string.IsNullOrWhiteSpace(t)) return null; return TimeSpan.TryParse(t, CultureInfo.InvariantCulture, out var ts) ? ts : null; } // HH:mm
+        internal static string ParseOutcomeCode(string posText)
         {
             if (string.IsNullOrWhiteSpace(posText)) return ""; var t = posText.Trim().ToUpperInvariant(); var letters = new string(t.Where(char.IsLetter).ToArray()); if (letters.Length == 0) return "";
             switch (letters) { case "PU": case "F": case "UR": case "RO": case "DSQ": case "BD": case "SU": case "RR": case "REF": case "WD": case "NR": case "VOID": case "CO": case "DNF": return letters; default: return letters; } // map codes
