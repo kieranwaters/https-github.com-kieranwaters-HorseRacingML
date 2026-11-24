@@ -64,8 +64,11 @@ namespace HorseRacingML.Data
             ["UTC"] = "UTC"
         };
 
+        private const int DefaultMarketAnchorMinutes = 5;
+
         private readonly BetfairHistoricalRepository _repository;
         private readonly Action<string>? _log;
+        private readonly int _marketAnchorMinutes;
         private readonly Dictionary<string, BetfairCourseRow?> _courseCache =
             new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<(short CourseId, DateTime Date), IReadOnlyList<BetfairRaceCandidate>> _raceCache = new();
@@ -74,10 +77,12 @@ namespace HorseRacingML.Data
 
         public BetfairHistoricalDataImporter(
             BetfairHistoricalRepository repository,
-            Action<string>? log = null)
+            Action<string>? log = null,
+            int marketAnchorMinutes = DefaultMarketAnchorMinutes)
         {
             _repository = repository ?? throw new ArgumentNullException(nameof(repository));
             _log = log;
+            _marketAnchorMinutes = Math.Max(0, marketAnchorMinutes);
         }
 
         private IReadOnlyList<BetfairCourseRow> Courses =>
@@ -311,7 +316,7 @@ namespace HorseRacingML.Data
             }
         }
 
-        private static BetfairMarketImport ToImport(MarketAccumulator accumulator)
+        private BetfairMarketImport ToImport(MarketAccumulator accumulator)
         {
             var market = new BetfairMarketImport
             {
@@ -328,8 +333,19 @@ namespace HorseRacingML.Data
                 BspReconciled = accumulator.BspReconciled
             };
 
+            // Anchor at the last observed price at or before T-N, where T is
+            // the actual suspend time when the stream provides one and the
+            // scheduled market time otherwise.
+            DateTime? anchorCutoffUtc = null;
+            var offTimeUtc = accumulator.SuspendTimeUtc ?? accumulator.MarketTimeUtc;
+            if (offTimeUtc.HasValue)
+            {
+                anchorCutoffUtc = offTimeUtc.Value.AddMinutes(-_marketAnchorMinutes);
+            }
+
             foreach (var runner in accumulator.Runners.Values)
             {
+                var anchor = ResolveMarketAnchor(runner, anchorCutoffUtc);
                 market.Runners.Add(new BetfairRunnerImport
                 {
                     SelectionId = runner.SelectionId,
@@ -338,6 +354,8 @@ namespace HorseRacingML.Data
                     SortPriority = runner.SortPriority,
                     Bsp = runner.Bsp,
                     LastTradedPrice = runner.LastTradedPrice,
+                    MarketAnchorPrice = anchor.Price,
+                    MarketAnchorCapturedUtc = anchor.CapturedUtc,
                     PreOffHigh = runner.PreOffHigh,
                     PreOffLow = runner.PreOffLow,
                     TradedVolume = ResolveTradedVolume(runner),
@@ -480,17 +498,26 @@ namespace HorseRacingML.Data
 
                 if (preOff)
                 {
-                    ApplyPreOffChange(runner, change);
+                    ApplyPreOffChange(runner, change, timestamp);
                 }
             }
         }
 
-        private static void ApplyPreOffChange(RunnerAccumulator runner, JsonElement change)
+        private static void ApplyPreOffChange(
+            RunnerAccumulator runner,
+            JsonElement change,
+            DateTime? timestampUtc)
         {
             var ltp = TryGetDecimal(change, "ltp");
             if (ltp.HasValue && ltp.Value > 1m)
             {
                 runner.LastTradedPrice = ltp;
+                if (timestampUtc.HasValue)
+                {
+                    // Keep every pre-off LTP point: the suspend time may only
+                    // appear later in the stream, which moves the T-N cutoff.
+                    runner.PreOffTradedPrices.Add((timestampUtc.Value, ltp.Value));
+                }
                 runner.PreOffHigh = !runner.PreOffHigh.HasValue || ltp.Value > runner.PreOffHigh.Value
                     ? ltp
                     : runner.PreOffHigh;
@@ -700,6 +727,8 @@ namespace HorseRacingML.Data
                     PreOffHigh = runner.PreOffHigh,
                     PreOffLow = runner.PreOffLow,
                     LastTradedPrice = runner.LastTradedPrice,
+                    MarketAnchorPrice = runner.MarketAnchorPrice,
+                    MarketAnchorCapturedUtc = runner.MarketAnchorCapturedUtc,
                     TradedVolume = runner.TradedVolume,
                     ProjectedSp = runner.ProjectedSp,
                     AvailableToBack = runner.AvailableToBack,
@@ -737,6 +766,39 @@ namespace HorseRacingML.Data
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// Last LTP observed at or before the cutoff. The observations are
+        /// retained so a suspend time that arrives after the early prices still
+        /// produces the correct anchor.
+        /// </summary>
+        private static (decimal? Price, DateTime? CapturedUtc) ResolveMarketAnchor(
+            RunnerAccumulator runner,
+            DateTime? cutoffUtc)
+        {
+            if (!cutoffUtc.HasValue || runner.PreOffTradedPrices.Count == 0)
+            {
+                return (null, null);
+            }
+
+            decimal? price = null;
+            DateTime? captured = null;
+            foreach (var observation in runner.PreOffTradedPrices)
+            {
+                if (observation.TimestampUtc > cutoffUtc.Value)
+                {
+                    continue;
+                }
+
+                if (!captured.HasValue || observation.TimestampUtc >= captured.Value)
+                {
+                    price = observation.Price;
+                    captured = observation.TimestampUtc;
+                }
+            }
+
+            return (price, captured);
         }
 
         private static decimal? ResolveTradedVolume(RunnerAccumulator runner)
@@ -1081,6 +1143,7 @@ namespace HorseRacingML.Data
             public int? SortPriority { get; set; }
             public decimal? Bsp { get; set; }
             public decimal? LastTradedPrice { get; set; }
+            public List<(DateTime TimestampUtc, decimal Price)> PreOffTradedPrices { get; } = new();
             public decimal? PreOffHigh { get; set; }
             public decimal? PreOffLow { get; set; }
             public decimal? ProjectedSp { get; set; }

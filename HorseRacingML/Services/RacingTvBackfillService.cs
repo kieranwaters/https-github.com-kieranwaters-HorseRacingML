@@ -20,7 +20,7 @@ namespace HorseRacingML.Services
     ///
     /// Breeding: the Racing TV racecard for a historical meeting carries
     /// sire, dam and damsire for every declared runner, so one request covers
-    /// a whole field.
+    /// a whole field. The public racecard archive starts on 1 January 2009.
     ///
     /// The source exposes the same JSON endpoints its public website uses.
     /// Requests are serialised by <see cref="RacingTvClient"/> and the run is
@@ -137,9 +137,9 @@ namespace HorseRacingML.Services
                 return;
             }
 
-            var sectionalCounts = includeSectionals
-                ? _repository.GetSectionalRowCounts(date)
-                : new Dictionary<int, int>();
+            var sectionalCoverage = includeSectionals
+                ? _repository.GetSectionalCoverage(date)
+                : new Dictionary<int, (int Rows, int Finishers)>();
             var pedigreeCoverage = includeBreeding
                 ? _repository.GetPedigreeCoverage(date)
                 : new Dictionary<int, (int Runners, int WithPedigree)>();
@@ -183,11 +183,19 @@ namespace HorseRacingML.Services
                         continue;
                     }
 
+                    // A race is only complete when every finisher has a sectional
+                    // row. Checking "any row exists" left races that were interrupted
+                    // mid-field, or where a runner was temporarily unmatched, stuck
+                    // forever; compare against the finishers instead so a rerun
+                    // repairs them. Non-finishers legitimately have no splits.
                     bool needsSectionals = includeSectionals &&
-                        (force || !sectionalCounts.TryGetValue(matchedRace.RaceId, out int existingRows) || existingRows == 0);
+                        (force ||
+                         !sectionalCoverage.TryGetValue(matchedRace.RaceId, out var coverage) ||
+                         coverage.Rows == 0 ||
+                         (coverage.Finishers > 0 && coverage.Rows < coverage.Finishers));
                     bool needsBreeding = includeBreeding &&
-                        (force || !pedigreeCoverage.TryGetValue(matchedRace.RaceId, out var coverage) ||
-                         coverage.Runners == 0 || coverage.WithPedigree < coverage.Runners);
+                        (force || !pedigreeCoverage.TryGetValue(matchedRace.RaceId, out var pedigree) ||
+                         pedigree.Runners == 0 || pedigree.WithPedigree < pedigree.Runners);
                     if (!needsSectionals && !needsBreeding)
                     {
                         continue;
@@ -299,7 +307,10 @@ namespace HorseRacingML.Services
                     continue;
                 }
 
-                var databaseRunner = FindRunner(databaseRunners, sourceRunner.ClothNumber, sourceRunner.HorseName);
+                var databaseRunner = RunnerMatcher.FindRunner(
+                    databaseRunners,
+                    sourceRunner.ClothNumber,
+                    sourceRunner.HorseName);
                 if (databaseRunner is null || !seenHorseIds.Add(databaseRunner.HorseId))
                 {
                     continue;
@@ -341,7 +352,10 @@ namespace HorseRacingML.Services
                     continue;
                 }
 
-                var databaseRunner = FindRunner(databaseRunners, sourceRunner.ClothNumber, sourceRunner.HorseName);
+                var databaseRunner = RunnerMatcher.FindRunner(
+                    databaseRunners,
+                    sourceRunner.ClothNumber,
+                    sourceRunner.HorseName);
                 if (databaseRunner is null)
                 {
                     continue;
@@ -360,64 +374,6 @@ namespace HorseRacingML.Services
             }
 
             return rows;
-        }
-
-        private static RaceRunnerReference? FindRunner(
-            IReadOnlyList<RaceRunnerReference> runners,
-            int? clothNumber,
-            string? horseName)
-        {
-            if (runners is null || runners.Count == 0)
-            {
-                return null;
-            }
-
-            string normalized = NormalizeHorseName(horseName);
-            var nameMatches = normalized.Length == 0
-                ? new List<RaceRunnerReference>()
-                : runners
-                    .Where(runner => NormalizeHorseName(runner.HorseName) == normalized)
-                    .ToList();
-
-            if (clothNumber.HasValue)
-            {
-                var byClothAndName = nameMatches.FirstOrDefault(
-                    runner => runner.SaddleclothNumber.HasValue &&
-                              runner.SaddleclothNumber.Value == clothNumber.Value);
-                if (byClothAndName is not null)
-                {
-                    return byClothAndName;
-                }
-            }
-
-            if (nameMatches.Count == 1)
-            {
-                return nameMatches[0];
-            }
-
-            if (clothNumber.HasValue)
-            {
-                var byCloth = runners.FirstOrDefault(
-                    runner => runner.SaddleclothNumber.HasValue &&
-                              runner.SaddleclothNumber.Value == clothNumber.Value);
-                if (byCloth is not null)
-                {
-                    return byCloth;
-                }
-            }
-
-            return null;
-        }
-
-        private static string NormalizeHorseName(string? value)
-        {
-            if (string.IsNullOrWhiteSpace(value))
-            {
-                return string.Empty;
-            }
-
-            string withoutSuffix = BracketSuffix.Replace(value.Trim(), string.Empty);
-            return RacingTvDataParser.NormalizeTitle(withoutSuffix);
         }
 
         private static string? CleanName(string? value)

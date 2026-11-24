@@ -36,6 +36,13 @@ namespace HorseRacingML.Models
         public int? SortPriority { get; set; }
         public decimal? Bsp { get; set; }
         public decimal? LastTradedPrice { get; set; }
+        /// <summary>
+        /// Last traded price at or before the pre-off anchor cutoff. The
+        /// importer computes the cutoff from the market suspend/off time.
+        /// </summary>
+        public decimal? MarketAnchorPrice { get; set; }
+        /// <summary>UTC timestamp of <see cref="MarketAnchorPrice"/>.</summary>
+        public DateTime? MarketAnchorCapturedUtc { get; set; }
         public decimal? PreOffHigh { get; set; }
         public decimal? PreOffLow { get; set; }
         public decimal? TradedVolume { get; set; }

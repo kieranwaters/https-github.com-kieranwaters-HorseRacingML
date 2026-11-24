@@ -1,0 +1,1065 @@
+@model HorseRacingML.Models.BettingSimulatorViewModel
+@using System.Globalization
+@using System.Text.Json
+@{
+    ViewData["Title"] = "Betting Simulator";
+
+    var raceTypeOptions = new List<string> { "Any" };
+    var surfaceOptions = new List<string> { "Any" };
+    var goingOptions = new List<string> { "Any" };
+    var ageOptions = new List<string> { "Any" };
+    if (Model.Snapshot is not null)
+    {
+        raceTypeOptions.AddRange((Model.Snapshot.RaceTypes ?? new List<string>()).Where(value => !string.Equals(value, "Any", StringComparison.OrdinalIgnoreCase)));
+        surfaceOptions.AddRange((Model.Snapshot.Surfaces ?? new List<string>()).Where(value => !string.Equals(value, "Any", StringComparison.OrdinalIgnoreCase)));
+        goingOptions.AddRange((Model.Snapshot.Goings ?? new List<string>()).Where(value => !string.Equals(value, "Any", StringComparison.OrdinalIgnoreCase)));
+        ageOptions.AddRange((Model.Snapshot.AgeRestrictions ?? new List<string>()).Where(value => !string.Equals(value, "Any", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    string Money(decimal value) => value.ToString("C", CultureInfo.CurrentCulture);
+    string ProfitFactor(decimal? value) => value.HasValue ? value.Value.ToString("0.00") : "∞";
+}
+
+<div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+        <h1 class="mb-1">Betting Simulator</h1>
+        <p class="text-muted mb-0">
+            Re-price cached validation predictions with your own race, value, price and staking rules.
+            Preparing the snapshot is the only expensive step; every filter change after that is instant.
+            Results are settled at the selected price and net of commission.
+        </p>
+    </div>
+    <a asp-action="TrainAI" class="btn btn-outline-secondary">Train AI</a>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(Model.Message))
+{
+    <div class="alert alert-info" role="alert">@Model.Message</div>
+}
+
+@if (!string.IsNullOrWhiteSpace(Model.StaleModelWarning))
+{
+    <div class="alert alert-warning" role="alert">@Model.StaleModelWarning</div>
+}
+
+@if (Model.Snapshots.Count > 1)
+{
+    <div class="card mt-3">
+        <div class="card-body py-3">
+            <form method="get" asp-action="BettingSimulator" class="row g-2 align-items-end">
+                <div class="col-md-8">
+                    <label class="form-label" for="snapshotKey">Stored snapshot</label>
+                    <select id="snapshotKey" name="snapshotKey" class="form-select">
+                        @foreach (var item in Model.Snapshots)
+                        {
+                            <option value="@item.Key" selected="@(string.Equals(item.Key, Model.SelectedSnapshotKey, StringComparison.OrdinalIgnoreCase) ? "selected" : null)">
+                                @item.Source · @item.ValidationStart.ToString("yyyy-MM-dd") to @item.ValidationEnd.ToString("yyyy-MM-dd")
+                                · @(item.UsedSavedModel ? "saved model" : "retrained")
+                            </option>
+                        }
+                    </select>
+                </div>
+                <div class="col-auto">
+                    <button type="submit" class="btn btn-outline-primary">Load snapshot</button>
+                </div>
+            </form>
+        </div>
+    </div>
+}
+
+<div class="card mt-3">
+    <div class="card-body">
+        <h5 class="card-title">1. Prepare the prediction snapshot</h5>
+        <p class="card-text text-muted">
+            The saved model is scored over the evaluation window. If the window is after the model's
+            held-out period, the active model can be used directly; otherwise a replica is retrained on
+            history before the window. The default end date is the latest race in the database, not today.
+        </p>
+        <form asp-action="SimulatorRun" method="post" class="row g-3 align-items-end">
+            @Html.AntiForgeryToken()
+            <div class="col-12">
+                <div asp-validation-summary="All" class="text-danger"></div>
+            </div>
+            <div class="col-sm-4 col-md-2">
+                <label asp-for="Run.Months" class="form-label">Window length</label>
+                <select asp-for="Run.Months" class="form-select">
+                    @for (int months = SimulatorRunRequest.MinimumMonths; months <= SimulatorRunRequest.MaximumMonths; months++)
+                    {
+                        <option value="@months">@months @(months == 1 ? "month" : "months")</option>
+                    }
+                </select>
+            </div>
+            <div class="col-sm-4 col-md-2">
+                <label asp-for="Run.FromDate" class="form-label">From (optional)</label>
+                <input asp-for="Run.FromDate" class="form-control" type="date" />
+                <div class="form-text">Overrides the length.</div>
+            </div>
+            <div class="col-sm-4 col-md-2">
+                <label asp-for="Run.ToDate" class="form-label">To (optional)</label>
+                <input asp-for="Run.ToDate" class="form-control" type="date" />
+            </div>
+            <div class="col-sm-6 col-md-3">
+                <div class="form-check mt-4">
+                    <input asp-for="Run.UseSavedModel" class="form-check-input" />
+                    <label asp-for="Run.UseSavedModel" class="form-check-label">Use active model directly when safe</label>
+                </div>
+            </div>
+            <div class="col-auto">
+                <button type="submit" class="btn btn-primary" disabled="@(Model.IsPreparing ? "disabled" : null)">
+                    @(Model.IsPreparing ? "Preparing…" : "Queue snapshot preparation")
+                </button>
+            </div>
+        </form>
+
+        @if (Model.PrepareJob is not null)
+        {
+            var job = Model.PrepareJob;
+            var jobClass = job.Status switch
+            {
+                "Succeeded" => "alert-success",
+                "Failed" => "alert-danger",
+                "Cancelled" => "alert-warning",
+                _ => "alert-info"
+            };
+            <div class="alert @jobClass mt-3 mb-0" role="alert" id="simJobAlert">
+                <strong>Snapshot preparation: <span id="simJobStatus">@job.Status</span></strong>
+                <span class="ms-2" id="simJobMessage">@job.Message</span>
+                @if (job.IsActive)
+                {
+                    <div class="progress mt-2" style="height: 8px;">
+                        <div id="simJobProgress" class="progress-bar progress-bar-striped progress-bar-animated"
+                             role="progressbar"
+                             style="width: @(job.Progress ?? 0)%;"
+                             aria-valuenow="@(job.Progress ?? 0)"
+                             aria-valuemin="0"
+                             aria-valuemax="100"></div>
+                    </div>
+                    <div class="small mt-1">
+                        Started @(job.StartedUtc?.ToLocalTime().ToString("g") ?? "—").
+                        This page updates automatically without discarding filter edits.
+                    </div>
+                    <form asp-action="SimulatorCancel" method="post" class="mt-2">
+                        @Html.AntiForgeryToken()
+                        <button type="submit" class="btn btn-sm btn-outline-danger">Cancel preparation</button>
+                    </form>
+                }
+                @if (!string.IsNullOrWhiteSpace(job.Error))
+                {
+                    <div class="mt-2" id="simJobError"><strong>Error:</strong> @job.Error</div>
+                }
+                @if (job.CompletedUtc.HasValue)
+                {
+                    <div class="small mt-1">Completed @job.CompletedUtc.Value.ToLocalTime().ToString("g").</div>
+                }
+            </div>
+        }
+
+        @if (Model.Snapshot is not null)
+        {
+            <hr />
+            <dl class="row mb-0 small">
+                <dt class="col-sm-3">Snapshot</dt>
+                <dd class="col-sm-9">@Model.Snapshot.Source <span class="text-muted">(@Model.Snapshot.Key)</span></dd>
+                <dt class="col-sm-3">Validation window</dt>
+                <dd class="col-sm-9">
+                    @Model.Snapshot.ValidationStart.ToString("yyyy-MM-dd") &ndash;
+                    @Model.Snapshot.ValidationEnd.ToString("yyyy-MM-dd")
+                    @if (Model.Snapshot.FirstRaceDate.HasValue && Model.Snapshot.LastRaceDate.HasValue)
+                    {
+                        <span class="text-muted">
+                            (actual races @Model.Snapshot.FirstRaceDate.Value.ToString("yyyy-MM-dd") &ndash;
+                            @Model.Snapshot.LastRaceDate.Value.ToString("yyyy-MM-dd"))
+                        </span>
+                    }
+                </dd>
+                <dt class="col-sm-3">Races / runners</dt>
+                <dd class="col-sm-9">
+                    @Model.Snapshot.TrainingRaceCount training races,
+                    @Model.Snapshot.ValidationRaceCount validation races,
+                    @Model.Snapshot.RunnerCount runner rows
+                </dd>
+                <dt class="col-sm-3">Price coverage</dt>
+                <dd class="col-sm-9">
+                    @Model.Snapshot.PricedRunnerCount priced, @Model.Snapshot.UnpricedRunnerCount unpriced
+                    (@Model.Snapshot.PriceCoverage.ToString("P1"))
+                    @if (Model.Snapshot.HasBetfairPrices)
+                    {
+                        <span class="text-muted">&middot; Betfair prices available</span>
+                    }
+                </dd>
+                <dt class="col-sm-3">Model</dt>
+                <dd class="col-sm-9">
+                    @(Model.Snapshot.Objective ?? "Unknown objective")
+                    @if (!string.IsNullOrWhiteSpace(Model.Snapshot.ModelArtifact))
+                    {
+                        <span class="text-muted"> &middot; @Model.Snapshot.ModelArtifact</span>
+                    }
+                    <span class="text-muted"> &middot; blend model @Model.Snapshot.BlendModelWeight.ToString("0.00") / market @Model.Snapshot.BlendMarketWeight.ToString("0.00")</span>
+                    @if (Model.Snapshot.UsedSavedModel)
+                    {
+                        <span class="badge bg-success ms-1">active model</span>
+                    }
+                    else
+                    {
+                        <span class="badge bg-secondary ms-1">model run</span>
+                    }
+                </dd>
+                <dt class="col-sm-3">Prepared</dt>
+                <dd class="col-sm-9">
+                    @Model.Snapshot.CreatedUtc.ToLocalTime().ToString("g")
+                    <span class="text-muted">(persisted between app sessions)</span>
+                </dd>
+            </dl>
+        }
+    </div>
+</div>
+
+@if (Model.Snapshot is not null)
+{
+    <div class="card mt-3">
+        <div class="card-body">
+            <h5 class="card-title">2. Betting filters</h5>
+            <form asp-action="SimulatorApply" method="get" id="filterForm">
+                <input type="hidden" asp-for="Filter.SnapshotKey" />
+                <div asp-validation-summary="All" class="text-danger"></div>
+
+                <h6 class="mt-3">Race conditions</h6>
+                <div class="row g-3">
+                    <div class="col-sm-6 col-md-2">
+                        <label asp-for="Filter.RaceType" class="form-label">Race type</label>
+                        <select asp-for="Filter.RaceType" class="form-select">
+                            @foreach (var option in raceTypeOptions)
+                            {
+                                <option value="@option">@option</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-sm-6 col-md-2">
+                        <label asp-for="Filter.Surface" class="form-label">Surface</label>
+                        <select asp-for="Filter.Surface" class="form-select">
+                            @foreach (var option in surfaceOptions)
+                            {
+                                <option value="@option">@option</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-sm-6 col-md-2">
+                        <label asp-for="Filter.Going" class="form-label">Going</label>
+                        <select asp-for="Filter.Going" class="form-select">
+                            @foreach (var option in goingOptions)
+                            {
+                                <option value="@option">@option</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-sm-6 col-md-2">
+                        <label asp-for="Filter.AgeRestriction" class="form-label">Age restriction</label>
+                        <select asp-for="Filter.AgeRestriction" class="form-select">
+                            @foreach (var option in ageOptions)
+                            {
+                                <option value="@option">@option</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-sm-6 col-md-2">
+                        <label asp-for="Filter.MinRunners" class="form-label">Min runners</label>
+                        <input asp-for="Filter.MinRunners" class="form-control" type="number" min="0" max="60" step="1" />
+                    </div>
+                    <div class="col-sm-6 col-md-2">
+                        <label asp-for="Filter.MaxRunners" class="form-label">Max runners</label>
+                        <input asp-for="Filter.MaxRunners" class="form-control" type="number" min="0" max="60" step="1" placeholder="No limit" />
+                    </div>
+                    <div class="col-6 col-md-2">
+                        <label asp-for="Filter.ClassMin" class="form-label">Min class</label>
+                        <select asp-for="Filter.ClassMin" class="form-select">
+                            <option value="">Any</option>
+                            @for (int raceClass = 1; raceClass <= 10; raceClass++)
+                            {
+                                <option value="@raceClass">Class @raceClass</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-6 col-md-2">
+                        <label asp-for="Filter.ClassMax" class="form-label">Max class</label>
+                        <select asp-for="Filter.ClassMax" class="form-select">
+                            <option value="">Any</option>
+                            @for (int raceClass = 1; raceClass <= 10; raceClass++)
+                            {
+                                <option value="@raceClass">Class @raceClass</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-6 col-md-2">
+                        <label asp-for="Filter.MinDistanceYards" class="form-label">Min distance (y)</label>
+                        <input asp-for="Filter.MinDistanceYards" class="form-control" type="number" min="0" max="12000" step="1" />
+                    </div>
+                    <div class="col-6 col-md-2">
+                        <label asp-for="Filter.MaxDistanceYards" class="form-label">Max distance (y)</label>
+                        <input asp-for="Filter.MaxDistanceYards" class="form-control" type="number" min="0" max="12000" step="1" placeholder="No limit" />
+                    </div>
+                    <div class="col-6 col-md-2">
+                        <label asp-for="Filter.FromDate" class="form-label">From date</label>
+                        <input asp-for="Filter.FromDate" class="form-control" type="date" />
+                    </div>
+                    <div class="col-6 col-md-2">
+                        <label asp-for="Filter.ToDate" class="form-label">To date</label>
+                        <input asp-for="Filter.ToDate" class="form-control" type="date" />
+                    </div>
+                    <div class="col-sm-6 col-md-4">
+                        <label asp-for="Filter.Courses" class="form-label">Courses (leave unselected for any)</label>
+                        <select asp-for="Filter.Courses" class="form-select" multiple size="5" id="Filter_Courses">
+                            @foreach (var course in Model.Snapshot.Courses ?? new List<string>())
+                            {
+                                <option value="@course">@course</option>
+                            }
+                        </select>
+                        <div class="form-text d-flex justify-content-between align-items-center gap-2">
+                            <span>Use Ctrl+click to select more than one. No selection means every course.</span>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="clearCourseFilter">Clear</button>
+                        </div>
+                    </div>
+                    <div class="col-sm-6 col-md-3">
+                        <label asp-for="Filter.CourseContains" class="form-label">Course contains</label>
+                        <input asp-for="Filter.CourseContains" class="form-control" placeholder="e.g. Ascot" />
+                    </div>
+                </div>
+
+                <h6 class="mt-4">Value and price filters</h6>
+                <div class="row g-3">
+                    <div class="col-sm-6 col-md-2">
+                        <label asp-for="Filter.MinEdgePercent" class="form-label">Min edge %</label>
+                        <input asp-for="Filter.MinEdgePercent" class="form-control" type="number" step="any" />
+                        <div class="form-text">AI probability &times; net odds &minus; 1.</div>
+                    </div>
+                    <div class="col-sm-6 col-md-2">
+                        <label asp-for="Filter.MaxEdgePercent" class="form-label">Max edge %</label>
+                        <input asp-for="Filter.MaxEdgePercent" class="form-control" type="number" step="any" placeholder="No limit" />
+                    </div>
+                    <div class="col-sm-6 col-md-2">
+                        <label asp-for="Filter.MinOdds" class="form-label">Min odds</label>
+                        <input asp-for="Filter.MinOdds" class="form-control" type="number" step="any" />
+                    </div>
+                    <div class="col-sm-6 col-md-2">
+                        <label asp-for="Filter.MaxOdds" class="form-label">Max odds</label>
+                        <input asp-for="Filter.MaxOdds" class="form-control" type="number" step="any" placeholder="No limit" />
+                    </div>
+                    <div class="col-sm-6 col-md-2">
+                        <label asp-for="Filter.MinAiProbabilityPercent" class="form-label">Min AI prob %</label>
+                        <input asp-for="Filter.MinAiProbabilityPercent" class="form-control" type="number" step="any" />
+                    </div>
+                    <div class="col-sm-6 col-md-2">
+                        <label asp-for="Filter.MaxAiProbabilityPercent" class="form-label">Max AI prob %</label>
+                        <input asp-for="Filter.MaxAiProbabilityPercent" class="form-control" type="number" step="any" placeholder="No limit" />
+                    </div>
+                    <div class="col-sm-6 col-md-2">
+                        <label asp-for="Filter.MinProbabilitySpread" class="form-label">Min prob. spread</label>
+                        <input asp-for="Filter.MinProbabilitySpread" class="form-control" type="number" step="any" />
+                        <div class="form-text">Skip near-uniform races.</div>
+                    </div>
+                    <div class="col-sm-6 col-md-2">
+                        <label asp-for="Filter.CommissionPercent" class="form-label">Commission %</label>
+                        <input asp-for="Filter.CommissionPercent" class="form-control" type="number" step="any" />
+                    </div>
+                    <div class="col-sm-6 col-md-2">
+                        <label asp-for="Filter.PriceSource" class="form-label">Price source</label>
+                        <select asp-for="Filter.PriceSource" asp-items="Html.GetEnumSelectList<SimulatorPriceSource>()" class="form-select"></select>
+                    </div>
+                    <div class="col-sm-6 col-md-2">
+                        <label asp-for="Filter.PriceSlippagePercent" class="form-label">Price slippage %</label>
+                        <input asp-for="Filter.PriceSlippagePercent" class="form-control" type="number" step="any" min="0" max="50" />
+                        <div class="form-text">Worse fill than the quoted price.</div>
+                    </div>
+                    <div class="col-sm-6 col-md-3">
+                        <label asp-for="Filter.SelectionStrategy" class="form-label">Selection strategy</label>
+                        <select asp-for="Filter.SelectionStrategy" asp-items="Html.GetEnumSelectList<SimulatorSelectionStrategy>()" class="form-select"></select>
+                        <div class="form-text">Market favourite / model top pick ignore value filters for baseline comparison.</div>
+                    </div>
+                    <div class="col-sm-6 col-md-2">
+                        <label asp-for="Filter.BetsPerRace" class="form-label">Bets per race</label>
+                        <input asp-for="Filter.BetsPerRace" class="form-control" type="number" min="1" max="10" step="1" />
+                    </div>
+                </div>
+
+                <h6 class="mt-4">Staking and risk</h6>
+                <div class="row g-3">
+                    <div class="col-sm-6 col-md-2">
+                        <label asp-for="Filter.StartingBankroll" class="form-label">Starting bankroll</label>
+                        <input asp-for="Filter.StartingBankroll" class="form-control" type="number" step="0.01" min="0" />
+                    </div>
+                    <div class="col-sm-6 col-md-3">
+                        <label asp-for="Filter.StakeMode" class="form-label">Stake mode</label>
+                        <select asp-for="Filter.StakeMode" asp-items="Html.GetEnumSelectList<SimulatorStakeMode>()" class="form-select"></select>
+                    </div>
+                    <div class="col-sm-6 col-md-2">
+                        <label asp-for="Filter.MaxKellyPercent" class="form-label">Max Kelly %</label>
+                        <input asp-for="Filter.MaxKellyPercent" class="form-control" type="number" step="any" />
+                    </div>
+                    <div class="col-sm-6 col-md-2">
+                        <label asp-for="Filter.FlatStake" class="form-label">Flat stake</label>
+                        <input asp-for="Filter.FlatStake" class="form-control" type="number" step="0.01" min="0" />
+                    </div>
+                    <div class="col-sm-6 col-md-2">
+                        <label asp-for="Filter.BankrollPercent" class="form-label">Bankroll %</label>
+                        <input asp-for="Filter.BankrollPercent" class="form-control" type="number" step="any" min="0" max="100" />
+                    </div>
+                    <div class="col-sm-6 col-md-2">
+                        <label asp-for="Filter.MaxStakePercent" class="form-label">Max stake %</label>
+                        <input asp-for="Filter.MaxStakePercent" class="form-control" type="number" step="any" min="0" max="100" />
+                        <div class="form-text">0 disables the cap.</div>
+                    </div>
+                    <div class="col-sm-6 col-md-2">
+                        <label asp-for="Filter.MaxStakeAmount" class="form-label">Max stake amount</label>
+                        <input asp-for="Filter.MaxStakeAmount" class="form-control" type="number" step="0.01" min="0" placeholder="No cap" />
+                    </div>
+                    <div class="col-sm-6 col-md-2">
+                        <label asp-for="Filter.MinStake" class="form-label">Min stake</label>
+                        <input asp-for="Filter.MinStake" class="form-control" type="number" step="0.01" min="0" />
+                    </div>
+                    <div class="col-sm-6 col-md-2">
+                        <label asp-for="Filter.MaxDailyStakePercent" class="form-label">Max daily stake %</label>
+                        <input asp-for="Filter.MaxDailyStakePercent" class="form-control" type="number" step="any" min="0" max="100" />
+                        <div class="form-text">0 disables the cap.</div>
+                    </div>
+                    <div class="col-sm-6 col-md-2">
+                        <label asp-for="Filter.MaxDailyLossPercent" class="form-label">Max daily loss %</label>
+                        <input asp-for="Filter.MaxDailyLossPercent" class="form-control" type="number" step="any" min="0" max="100" />
+                        <div class="form-text">0 disables the stop.</div>
+                    </div>
+                </div>
+
+                <h6 class="mt-4">Analysis</h6>
+                <div class="row g-3">
+                    <div class="col-sm-6 col-md-2">
+                        <label asp-for="Filter.ConfirmPercent" class="form-label">Confirm %</label>
+                        <input asp-for="Filter.ConfirmPercent" class="form-control" type="number" step="any" min="0" max="50" />
+                        <div class="form-text">Last N% held back.</div>
+                    </div>
+                    <div class="col-sm-6 col-md-2">
+                        <label asp-for="Filter.BootstrapSamples" class="form-label">Bootstrap samples</label>
+                        <input asp-for="Filter.BootstrapSamples" class="form-control" type="number" min="0" max="10000" step="100" />
+                    </div>
+                    <div class="col-sm-6 col-md-2">
+                        <label asp-for="Filter.PageSize" class="form-label">Rows per page</label>
+                        <input asp-for="Filter.PageSize" class="form-control" type="number" min="10" max="1000" step="10" />
+                    </div>
+                </div>
+
+                <div class="mt-4 d-flex flex-wrap gap-2">
+                    <button type="submit" class="btn btn-success">Apply filters</button>
+                    <a asp-action="BettingSimulator" asp-route-snapshotKey="@Model.SelectedSnapshotKey" class="btn btn-outline-secondary">Reset filters</a>
+                    <button type="submit" formaction="@Url.Action("SimulatorExport")" formmethod="get" class="btn btn-outline-primary">Download CSV</button>
+                </div>
+            </form>
+        </div>
+    </div>
+}
+else
+{
+    <div class="alert alert-secondary mt-3">
+        No prediction snapshot is loaded yet. Run <strong>Train AI</strong> or <strong>Test AI</strong>
+        (both publish a snapshot automatically), or prepare a window above.
+    </div>
+}
+
+@if (Model.Result is not null)
+{
+    var result = Model.Result;
+    <div class="row row-cols-1 row-cols-sm-2 row-cols-xl-4 g-3 mt-1">
+        <div class="col">
+            <div class="card h-100">
+                <div class="card-body">
+                    <div class="text-muted small">ROI (95% race-bootstrap CI)</div>
+                    <div class="fs-3 fw-semibold @(result.Roi >= 0 ? "text-success" : "text-danger")">@result.Roi.ToString("P2")</div>
+                    <div class="small">
+                        @result.RoiConfidenceLow.ToString("P2") to @result.RoiConfidenceHigh.ToString("P2")
+                        &middot; P(profit) @result.ProbabilityOfProfit.ToString("P1")
+                    </div>
+                    <div class="small">Profit @Money(result.Profit) on @Money(result.TotalStaked) turnover</div>
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card h-100">
+                <div class="card-body">
+                    <div class="text-muted small">Ending bankroll</div>
+                    <div class="fs-3 fw-semibold">@Money(result.EndingBankroll)</div>
+                    <div class="small">Started at @Money(result.StartingBankroll) &middot; max drawdown @result.MaxDrawdownPercent.ToString("P2")</div>
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card h-100">
+                <div class="card-body">
+                    <div class="text-muted small">Bets / strike rate</div>
+                    <div class="fs-3 fw-semibold">@result.BetCount</div>
+                    <div class="small">@result.WinCount wins, @result.LossCount losses &middot; @result.StrikeRate.ToString("P1")</div>
+                    <div class="small">Break-even @result.BreakEvenStrikeRate.ToString("P1") &middot; selection @result.SelectionRate.ToString("P1")</div>
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card h-100">
+                <div class="card-body">
+                    <div class="text-muted small">Expected vs realised</div>
+                    <div class="fs-3 fw-semibold @(result.Profit >= result.ExpectedProfit ? "text-success" : "text-warning")">@Money(result.Profit)</div>
+                    <div class="small">Expected @Money(result.ExpectedProfit) &middot; t-stat @result.TStatistic.ToString("0.00")</div>
+                    <div class="small">Expected wins @result.ExpectedWins.ToString("0.0") vs actual @result.WinCount</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mt-3">
+        <div class="card-body">
+            <h5 class="card-title">Selection funnel</h5>
+            <div class="row row-cols-2 row-cols-md-4 row-cols-xl-7 g-2 small">
+                <div><span class="text-muted d-block">Races considered</span>@result.RacesConsidered</div>
+                <div><span class="text-muted d-block">Passed race filters</span>@result.RacesPassedRaceFilter</div>
+                <div><span class="text-muted d-block">Skipped low spread</span>@result.RacesSkippedLowSpread</div>
+                <div><span class="text-muted d-block">With candidate</span>@result.RacesWithCandidate</div>
+                <div><span class="text-muted d-block">With a bet</span>@result.RacesWithStake</div>
+                <div><span class="text-muted d-block">Unpriced rows</span>@result.UnpricedRunnerRows</div>
+                <div><span class="text-muted d-block">Stopped for bankroll</span>@(result.StoppedForBankroll ? "Yes" : "No")</div>
+            </div>
+            @if (result.BetCount == 0)
+            {
+                <div class="alert alert-warning mt-3 mb-0">
+                    No qualifying bets. The funnel shows which stage removed them. Try lowering the minimum
+                    edge, widening the odds/runner range, or clearing race filters.
+                </div>
+            }
+        </div>
+    </div>
+
+    @if (Model.Comparison is not null)
+    {
+        var comparison = Model.Comparison;
+        <div class="card mt-3">
+            <div class="card-body">
+                <h5 class="card-title">Tune / confirm split</h5>
+                <p class="text-muted small mb-2">
+                    Tuning should use the left column only. The right column is the held-out
+                    confirmation sample from @comparison.SplitDate.ToString("yyyy-MM-dd") onward
+                    (@comparison.ConfirmPercent.ToString("0")% of the window).
+                </p>
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle">
+                        <thead>
+                            <tr>
+                                <th>Sample</th>
+                                <th class="text-end">Bets</th>
+                                <th class="text-end">Staked</th>
+                                <th class="text-end">Profit</th>
+                                <th class="text-end">ROI</th>
+                                <th class="text-end">ROI 95% CI</th>
+                                <th class="text-end">P(profit)</th>
+                                <th class="text-end">Max DD</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>Tune</td>
+                                <td class="text-end">@comparison.Tune.BetCount</td>
+                                <td class="text-end">@Money(comparison.Tune.TotalStaked)</td>
+                                <td class="text-end @(comparison.Tune.Profit >= 0 ? "text-success" : "text-danger")">@Money(comparison.Tune.Profit)</td>
+                                <td class="text-end">@comparison.Tune.Roi.ToString("P2")</td>
+                                <td class="text-end">@comparison.Tune.RoiConfidenceLow.ToString("P2") to @comparison.Tune.RoiConfidenceHigh.ToString("P2")</td>
+                                <td class="text-end">@comparison.Tune.ProbabilityOfProfit.ToString("P1")</td>
+                                <td class="text-end">@comparison.Tune.MaxDrawdownPercent.ToString("P2")</td>
+                            </tr>
+                            <tr>
+                                <td>Confirm</td>
+                                <td class="text-end">@comparison.Confirm.BetCount</td>
+                                <td class="text-end">@Money(comparison.Confirm.TotalStaked)</td>
+                                <td class="text-end @(comparison.Confirm.Profit >= 0 ? "text-success" : "text-danger")">@Money(comparison.Confirm.Profit)</td>
+                                <td class="text-end">@comparison.Confirm.Roi.ToString("P2")</td>
+                                <td class="text-end">@comparison.Confirm.RoiConfidenceLow.ToString("P2") to @comparison.Confirm.RoiConfidenceHigh.ToString("P2")</td>
+                                <td class="text-end">@comparison.Confirm.ProbabilityOfProfit.ToString("P1")</td>
+                                <td class="text-end">@comparison.Confirm.MaxDrawdownPercent.ToString("P2")</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (Model.Baselines.Count > 0)
+    {
+        <div class="card mt-3">
+            <div class="card-body">
+                <h5 class="card-title">Baselines over the same window</h5>
+                <p class="text-muted small mb-2">
+                    Each baseline uses a flat stake of 1% of the starting bankroll so the return is comparable.
+                </p>
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle">
+                        <thead>
+                            <tr>
+                                <th>Strategy</th>
+                                <th class="text-end">Bets</th>
+                                <th class="text-end">Staked</th>
+                                <th class="text-end">Profit</th>
+                                <th class="text-end">ROI</th>
+                                <th class="text-end">Strike</th>
+                                <th class="text-end">PF</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var baseline in Model.Baselines)
+                            {
+                                <tr>
+                                    <td>@baseline.Name<div class="small text-muted">@baseline.Note</div></td>
+                                    <td class="text-end">@baseline.Bets</td>
+                                    <td class="text-end">@Money(baseline.Staked)</td>
+                                    <td class="text-end @(baseline.Profit >= 0 ? "text-success" : "text-danger")">@Money(baseline.Profit)</td>
+                                    <td class="text-end @(baseline.Roi >= 0 ? "text-success" : "text-danger")">@baseline.Roi.ToString("P2")</td>
+                                    <td class="text-end">@baseline.StrikeRate.ToString("P1")</td>
+                                    <td class="text-end">@ProfitFactor(baseline.ProfitFactor)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (Model.WalkForward.Count > 0)
+    {
+        <div class="card mt-3">
+            <div class="card-body">
+                <h5 class="card-title">Walk-forward stability</h5>
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle">
+                        <thead>
+                            <tr>
+                                <th>Period</th>
+                                <th class="text-end">Bets</th>
+                                <th class="text-end">Staked</th>
+                                <th class="text-end">Profit</th>
+                                <th class="text-end">ROI</th>
+                                <th class="text-end">Strike</th>
+                                <th class="text-end">Max DD</th>
+                                <th class="text-end">PF</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var period in Model.WalkForward)
+                            {
+                                <tr>
+                                    <td>@period.Label</td>
+                                    <td class="text-end">@period.Bets</td>
+                                    <td class="text-end">@Money(period.Staked)</td>
+                                    <td class="text-end @(period.Profit >= 0 ? "text-success" : "text-danger")">@Money(period.Profit)</td>
+                                    <td class="text-end @(period.Roi >= 0 ? "text-success" : "text-danger")">@period.Roi.ToString("P2")</td>
+                                    <td class="text-end">@period.StrikeRate.ToString("P1")</td>
+                                    <td class="text-end">@Money(period.MaxDrawdown)</td>
+                                    <td class="text-end">@ProfitFactor(period.ProfitFactor)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    }
+
+    <div class="card mt-3">
+        <div class="card-body">
+            <h5 class="card-title">Metrics</h5>
+            <dl class="row mb-0 small">
+                <dt class="col-sm-4">Profit / expected profit</dt>
+                <dd class="col-sm-8 @(result.Profit >= 0 ? "text-success" : "text-danger")">
+                    @Money(result.Profit) / @Money(result.ExpectedProfit)
+                </dd>
+                <dt class="col-sm-4">ROI / expected ROI</dt>
+                <dd class="col-sm-8">@result.Roi.ToString("P2") / @result.ExpectedRoi.ToString("P2")</dd>
+                <dt class="col-sm-4">Average stake</dt>
+                <dd class="col-sm-8">@Money(result.AverageStake)</dd>
+                <dt class="col-sm-4">Profit per bet</dt>
+                <dd class="col-sm-8">@Money(result.RealisedProfitPerBet) realised &middot; @Money(result.ExpectedProfitPerBet) expected</dd>
+                <dt class="col-sm-4">Average AI / market probability</dt>
+                <dd class="col-sm-8">@result.AverageAiProbability.ToString("P2") / @result.AverageMarketProbability.ToString("P2")</dd>
+                <dt class="col-sm-4">Average odds / net odds</dt>
+                <dd class="col-sm-8">@result.AverageOdds.ToString("0.00") / @result.AverageEffectiveOdds.ToString("0.00")</dd>
+                <dt class="col-sm-4">Longest win / loss streak</dt>
+                <dd class="col-sm-8">@result.LongestWinStreak / @result.LongestLosingStreak</dd>
+                <dt class="col-sm-4">Max drawdown</dt>
+                <dd class="col-sm-8">@Money(result.MaxDrawdown) (@result.MaxDrawdownPercent.ToString("P2"))</dd>
+                <dt class="col-sm-4">Gross winnings / losses</dt>
+                <dd class="col-sm-8">@Money(result.GrossWinnings) / @Money(result.GrossLosses)</dd>
+                <dt class="col-sm-4">Profit factor</dt>
+                <dd class="col-sm-8">@ProfitFactor(result.ProfitFactor)</dd>
+                <dt class="col-sm-4">Standard error / t-stat</dt>
+                <dd class="col-sm-8">@result.StandardError.ToString("0.0000") / @result.TStatistic.ToString("0.00")</dd>
+                <dt class="col-sm-4">Bootstrap samples</dt>
+                <dd class="col-sm-8">@result.BootstrapSamples</dd>
+                <dt class="col-sm-4">Price source / slippage</dt>
+                <dd class="col-sm-8">@result.PriceSource / @Model.Filter.PriceSlippagePercent.ToString("0.0")%</dd>
+            </dl>
+        </div>
+    </div>
+
+    <div class="card mt-3">
+        <div class="card-body">
+            <h5 class="card-title">Bankroll curve</h5>
+            @if (result.EquityCurve.Count > 1)
+            {
+                <canvas id="equityChart" style="width: 100%; height: 280px;" aria-label="Bankroll curve"></canvas>
+                <div class="small text-muted mt-1">Hover the line for the bet date, number and bankroll.</div>
+            }
+            else
+            {
+                <p class="text-muted mb-0">Not enough bets to draw a curve.</p>
+            }
+        </div>
+    </div>
+
+    @if (result.BetCount > 0)
+    {
+        <div class="card mt-3">
+            <div class="card-body">
+                <h5 class="card-title">Breakdowns</h5>
+                <partial name="_SimulatorBreakdown"
+                         model="@(new SimulatorBreakdownViewModel { Title = "By race type", Rows = result.ByRaceType })" />
+                <partial name="_SimulatorBreakdown"
+                         model="@(new SimulatorBreakdownViewModel { Title = "By field size", Rows = result.ByFieldSize })" />
+                <partial name="_SimulatorBreakdown"
+                         model="@(new SimulatorBreakdownViewModel { Title = "By edge band", Rows = result.ByEdgeBand })" />
+                <partial name="_SimulatorBreakdown"
+                         model="@(new SimulatorBreakdownViewModel { Title = "By odds band", Rows = result.ByOddsBand })" />
+                <partial name="_SimulatorBreakdown"
+                         model="@(new SimulatorBreakdownViewModel { Title = "By class", Rows = result.ByClass })" />
+                <partial name="_SimulatorBreakdown"
+                         model="@(new SimulatorBreakdownViewModel { Title = "By going", Rows = result.ByGoing })" />
+                <partial name="_SimulatorBreakdown"
+                         model="@(new SimulatorBreakdownViewModel { Title = "By surface", Rows = result.BySurface })" />
+                <partial name="_SimulatorBreakdown"
+                         model="@(new SimulatorBreakdownViewModel { Title = "By course", Rows = result.ByCourse })" />
+                <partial name="_SimulatorBreakdown"
+                         model="@(new SimulatorBreakdownViewModel { Title = "By age restriction", Rows = result.ByAgeRestriction })" />
+                <partial name="_SimulatorBreakdown"
+                         model="@(new SimulatorBreakdownViewModel { Title = "By distance", Rows = result.ByDistance })" />
+                <partial name="_SimulatorBreakdown"
+                         model="@(new SimulatorBreakdownViewModel { Title = "By month", Rows = result.ByMonth })" />
+            </div>
+        </div>
+
+        <div class="card mt-3">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">Bets</h5>
+                    <div class="small text-muted">
+                        Showing @((Model.Page - 1) * Model.PageSize + 1)&ndash;@(Math.Min(Model.Page * Model.PageSize, result.BetCount))
+                        of @result.BetCount
+                    </div>
+                </div>
+                <div class="table-responsive mt-2">
+                    <table class="table table-sm table-striped align-middle">
+                        <thead>
+                            <tr>
+                                <th scope="col">Date</th>
+                                <th scope="col">Race</th>
+                                <th scope="col">Course</th>
+                                <th scope="col">Horse</th>
+                                <th scope="col">Type</th>
+                                <th scope="col" class="text-end">Runners</th>
+                                <th scope="col" class="text-end">Odds</th>
+                                <th scope="col" class="text-end">Net</th>
+                                <th scope="col" class="text-end">BSP</th>
+                                <th scope="col" class="text-end">AI %</th>
+                                <th scope="col" class="text-end">Mkt %</th>
+                                <th scope="col" class="text-end">Edge</th>
+                                <th scope="col" class="text-end">CLV</th>
+                                <th scope="col" class="text-end">Stake</th>
+                                <th scope="col" class="text-end">Exp. P/L</th>
+                                <th scope="col" class="text-end">P/L</th>
+                                <th scope="col" class="text-end">Bankroll</th>
+                                <th scope="col">Result</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var bet in Model.PagedBets)
+                            {
+                                <tr>
+                                    <td>@bet.RaceDate?.ToString("yyyy-MM-dd")</td>
+                                    <td>@(string.IsNullOrWhiteSpace(bet.RaceTitle) ? $"Race {bet.RaceId}" : bet.RaceTitle)</td>
+                                    <td>@(string.IsNullOrWhiteSpace(bet.CourseName) ? "—" : bet.CourseName)</td>
+                                    <td>@(string.IsNullOrWhiteSpace(bet.HorseName) ? "—" : bet.HorseName)</td>
+                                    <td>@(string.IsNullOrWhiteSpace(bet.RaceType) ? "—" : bet.RaceType)</td>
+                                    <td class="text-end">@bet.RunnerCount</td>
+                                    <td class="text-end">@bet.DecimalOdds.ToString("0.00")</td>
+                                    <td class="text-end">@bet.EffectiveDecimalOdds.ToString("0.00")</td>
+                                    <td class="text-end">@(bet.BetfairSp?.ToString("0.00") ?? "—")</td>
+                                    <td class="text-end">@bet.AiProbability.ToString("P2")</td>
+                                    <td class="text-end">@bet.MarketProbability.ToString("P2")</td>
+                                    <td class="text-end">@bet.Edge.ToString("P2")</td>
+                                    <td class="text-end">@bet.ClvPercent.ToString("P2")</td>
+                                    <td class="text-end">@Money(bet.Stake)</td>
+                                    <td class="text-end">@Money(bet.ExpectedProfit)</td>
+                                    <td class="text-end @(bet.Profit >= 0 ? "text-success" : "text-danger")">@Money(bet.Profit)</td>
+                                    <td class="text-end">@Money(bet.BankrollAfter)</td>
+                                    <td>@(bet.Won ? "Won" : "Lost")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                @if (Model.PageCount > 1)
+                {
+                    <div class="d-flex flex-wrap gap-1">
+                        @for (int pageNumber = 1; pageNumber <= Model.PageCount; pageNumber++)
+                        {
+                            <button type="submit"
+                                    form="filterForm"
+                                    name="Page"
+                                    value="@pageNumber"
+                                    class="btn btn-sm @(pageNumber == Model.Page ? "btn-primary" : "btn-outline-secondary")">@pageNumber</button>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    }
+}
+
+<a asp-action="TestAI" class="btn btn-link mt-3">Back to Test AI</a>
+
+@section Scripts {
+    @{ await Html.RenderPartialAsync("_ValidationScriptsPartial"); }
+
+    @if (Model.Result is not null && Model.Result.EquityCurve.Count > 1)
+    {
+        var chartData = JsonSerializer.Serialize(new
+        {
+            values = Model.Result.EquityCurve.Select(point => (double)point.Bankroll).ToArray(),
+            labels = Model.Result.EquityCurve
+                .Select(point => point.RaceDate?.ToString("yyyy-MM-dd") ?? string.Empty)
+                .ToArray(),
+            betNumbers = Model.Result.EquityCurve.Select(point => point.BetNumber).ToArray(),
+            start = (double)Model.Result.StartingBankroll
+        });
+
+        <script>
+            (function () {
+                const data = @Html.Raw(chartData);
+                const canvas = document.getElementById('equityChart');
+                if (!canvas || !data || !data.values || data.values.length < 2) {
+                    return;
+                }
+
+                const values = data.values;
+                const step = Math.max(1, Math.floor(values.length / 1500));
+                const indices = [];
+                for (let i = 0; i < values.length; i += step) {
+                    indices.push(i);
+                }
+                if (indices[indices.length - 1] !== values.length - 1) {
+                    indices.push(values.length - 1);
+                }
+
+                const sampled = indices.map(i => values[i]);
+                const min = Math.min(data.start, ...sampled);
+                const max = Math.max(data.start, ...sampled);
+                const range = max - min || 1;
+                let geometry = null;
+
+                function drawTooltip(ctx, width, height, padding, hoverIndex) {
+                    if (!geometry || hoverIndex < 0 || hoverIndex >= sampled.length) {
+                        return;
+                    }
+
+                    const x = geometry.x(hoverIndex);
+                    ctx.strokeStyle = 'rgba(128, 128, 128, 0.55)';
+                    ctx.setLineDash([3, 3]);
+                    ctx.beginPath();
+                    ctx.moveTo(x, padding.top);
+                    ctx.lineTo(x, height - padding.bottom);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+
+                    const value = sampled[hoverIndex];
+                    const y = geometry.y(value);
+                    ctx.fillStyle = '#0d6efd';
+                    ctx.beginPath();
+                    ctx.arc(x, y, 3, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    const originalIndex = indices[hoverIndex];
+                    const label = data.labels[originalIndex] || '';
+                    const betNumber = data.betNumbers[originalIndex] || 0;
+                    const lines = [
+                        label,
+                        'Bet #' + betNumber,
+                        'Bankroll ' + value.toFixed(2)
+                    ];
+                    const boxWidth = 150;
+                    const boxHeight = 58;
+                    const boxX = Math.min(width - padding.right - boxWidth, Math.max(padding.left, x + 8));
+                    const boxY = Math.min(height - padding.bottom - boxHeight, Math.max(padding.top, y - boxHeight - 8));
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+                    ctx.strokeStyle = 'rgba(0, 0, 0, 0.15)';
+                    ctx.lineWidth = 1;
+                    ctx.fillRect(boxX, boxY, boxWidth, boxHeight);
+                    ctx.strokeRect(boxX, boxY, boxWidth, boxHeight);
+                    ctx.fillStyle = '#212529';
+                    ctx.font = '11px sans-serif';
+                    lines.forEach((line, index) => ctx.fillText(line, boxX + 8, boxY + 15 + index * 15));
+                }
+
+                function draw(hoverIndex = -1) {
+                    const ratio = window.devicePixelRatio || 1;
+                    const width = canvas.clientWidth || canvas.parentElement.clientWidth;
+                    const height = canvas.clientHeight || 280;
+                    canvas.width = width * ratio;
+                    canvas.height = height * ratio;
+
+                    const ctx = canvas.getContext('2d');
+                    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+                    ctx.clearRect(0, 0, width, height);
+
+                    const padding = { left: 62, right: 14, top: 14, bottom: 22 };
+                    const usableWidth = Math.max(1, width - padding.left - padding.right);
+                    const usableHeight = Math.max(1, height - padding.top - padding.bottom);
+                    const x = index => padding.left + (index / (sampled.length - 1)) * usableWidth;
+                    const y = value => padding.top + (max - value) / range * usableHeight;
+                    geometry = { x, y };
+
+                    ctx.font = '11px sans-serif';
+                    ctx.fillStyle = 'rgba(128, 128, 128, 0.9)';
+                    ctx.strokeStyle = 'rgba(128, 128, 128, 0.25)';
+                    ctx.lineWidth = 1;
+
+                    for (let line = 0; line <= 4; line++) {
+                        const value = min + (range * line) / 4;
+                        const yPosition = y(value);
+                        ctx.beginPath();
+                        ctx.moveTo(padding.left, yPosition);
+                        ctx.lineTo(width - padding.right, yPosition);
+                        ctx.stroke();
+                        ctx.fillText(value.toFixed(0), 6, yPosition + 4);
+                    }
+
+                    const startY = y(data.start);
+                    ctx.strokeStyle = 'rgba(128, 128, 128, 0.6)';
+                    ctx.setLineDash([4, 4]);
+                    ctx.beginPath();
+                    ctx.moveTo(padding.left, startY);
+                    ctx.lineTo(width - padding.right, startY);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+
+                    ctx.strokeStyle = values[values.length - 1] >= data.start ? '#198754' : '#dc3545';
+                    ctx.lineWidth = 1.75;
+                    ctx.beginPath();
+                    sampled.forEach((value, index) => {
+                        const xPosition = x(index);
+                        const yPosition = y(value);
+                        if (index === 0) {
+                            ctx.moveTo(xPosition, yPosition);
+                        } else {
+                            ctx.lineTo(xPosition, yPosition);
+                        }
+                    });
+                    ctx.stroke();
+
+                    ctx.fillStyle = 'rgba(128, 128, 128, 0.9)';
+                    ctx.fillText(data.labels[0] || '', padding.left, height - 6);
+                    const lastLabel = data.labels[data.labels.length - 1] || '';
+                    const labelWidth = ctx.measureText(lastLabel).width;
+                    ctx.fillText(lastLabel, width - padding.right - labelWidth, height - 6);
+
+                    drawTooltip(ctx, width, height, padding, hoverIndex);
+                }
+
+                canvas.addEventListener('mousemove', function (event) {
+                    if (!geometry) {
+                        return;
+                    }
+
+                    const rect = canvas.getBoundingClientRect();
+                    const mouseX = event.clientX - rect.left;
+                    let nearest = 0;
+                    let nearestDistance = Number.MAX_VALUE;
+                    for (let i = 0; i < sampled.length; i++) {
+                        const distance = Math.abs(geometry.x(i) - mouseX);
+                        if (distance < nearestDistance) {
+                            nearestDistance = distance;
+                            nearest = i;
+                        }
+                    }
+
+                    draw(nearest);
+                });
+                canvas.addEventListener('mouseleave', function () { draw(-1); });
+
+                draw();
+                window.addEventListener('resize', function () { draw(-1); });
+            })();
+        </script>
+    }
+
+    @if (Model.IsPreparing)
+    {
+        <script>
+            (function () {
+                const statusUrl = '@Url.Action("SimulatorJobStatus")';
+                let wasActive = true;
+                let reloadScheduled = false;
+
+                async function poll() {
+                    try {
+                        const response = await fetch(statusUrl, { headers: { 'Accept': 'application/json' } });
+                        if (!response.ok) {
+                            return;
+                        }
+
+                        const job = await response.json();
+                        const status = document.getElementById('simJobStatus');
+                        const message = document.getElementById('simJobMessage');
+                        const progress = document.getElementById('simJobProgress');
+                        if (status && job.status) {
+                            status.textContent = job.status;
+                        }
+                        if (message && job.message) {
+                            message.textContent = job.message;
+                        }
+                        if (progress && job.progress !== null && job.progress !== undefined) {
+                            progress.style.width = job.progress + '%';
+                            progress.setAttribute('aria-valuenow', job.progress);
+                        }
+
+                        if (!job.isActive && wasActive && !reloadScheduled) {
+                            reloadScheduled = true;
+                            window.setTimeout(function () { window.location.reload(); }, 800);
+                        }
+                        wasActive = job.isActive;
+                    } catch {
+                        // Leave the existing status visible; the next poll retries.
+                    }
+                }
+
+                window.setInterval(poll, 5000);
+                window.setTimeout(poll, 1000);
+            })();
+        </script>
+    }
+
+    <script>
+        (function () {
+            const courseSelect = document.getElementById('Filter_Courses');
+            const clearButton = document.getElementById('clearCourseFilter');
+            if (!courseSelect || !clearButton) {
+                return;
+            }
+
+            clearButton.addEventListener('click', function () {
+                for (const option of courseSelect.options) {
+                    option.selected = false;
+                }
+                courseSelect.focus();
+            });
+        })();
+    </script>
+}

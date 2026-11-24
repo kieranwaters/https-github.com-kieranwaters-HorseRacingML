@@ -44,6 +44,11 @@ namespace HorseRacingML.ML
         /// </summary>
         public float AuxiliaryFinishLossWeight { get; set; }
         /// <summary>
+        /// Weight of the training-only winner-versus-field pairwise ranking
+        /// regulariser. It is not part of the inference graph.
+        /// </summary>
+        public float PairwiseLossWeight { get; set; }
+        /// <summary>
         /// Additive market offset scale used by RaceSoftmax models. The offset
         /// itself is selected by <see cref="MarketOffsetMode"/>.
         /// </summary>
@@ -87,5 +92,38 @@ namespace HorseRacingML.ML
         /// Artifact format version. Increased when the inference contract changes.
         /// </summary>
         public string ModelVersion { get; set; } = "2";
+
+        /// <summary>
+        /// Optional seed ensemble. When this list is non-empty the top-level
+        /// weights are ignored for scoring and each member contributes one
+        /// probability vector, averaged in log space within the race. The
+        /// members share the feature schema and normalisation; they differ only
+        /// in their weights, market offset scale and temperature.
+        /// </summary>
+        public List<TrainedModel> Members { get; set; } = new();
+
+        public bool IsEnsemble => Members is { Count: > 0 };
+
+        /// <summary>
+        /// Optional ML.NET LightGBM ranking model stored next to this JSON
+        /// artifact. When set, the member is scored by LightGBM (scores are
+        /// softmaxed within the race) instead of the TensorFlow trunk.
+        /// </summary>
+        public string? LightGbmModelFile { get; set; }
+
+        /// <summary>
+        /// Optional deployable field-size-bucket Platt calibration. The final
+        /// per-runner probabilities are calibrated after the model/ensemble
+        /// combination and renormalised within the race. Buckets are ordered by
+        /// maximum field size; the last bucket should normally be int.MaxValue.
+        /// </summary>
+        public List<FieldCalibrationBucket> FieldCalibration { get; set; } = new();
+    }
+
+    public class FieldCalibrationBucket
+    {
+        public int MaxFieldSize { get; set; } = int.MaxValue;
+        public double Intercept { get; set; }
+        public double Slope { get; set; } = 1d;
     }
 }

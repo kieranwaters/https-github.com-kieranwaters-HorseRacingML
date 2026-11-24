@@ -48,7 +48,7 @@ namespace HorseRacingML.Jobs
             var (fromDate, toDate, maxDays, force) = RacingTvJobOptions.Parse(
                 context,
                 configuration.GetValue<DateTime?>("RacingTv:BreedingBackfillFrom")
-                    ?? new DateTime(2010, 1, 1));
+                    ?? new DateTime(2009, 1, 1));
 
             context.Report($"Breeding backfill started ({fromDate:yyyy-MM-dd} to {toDate:yyyy-MM-dd})", 0);
             var summary = await backfill.BackfillAsync(

@@ -47,6 +47,8 @@ namespace HorseRacingML.Data
         public decimal? PreOffHigh { get; set; }
         public decimal? PreOffLow { get; set; }
         public decimal? LastTradedPrice { get; set; }
+        public decimal? MarketAnchorPrice { get; set; }
+        public DateTime? MarketAnchorCapturedUtc { get; set; }
         public decimal? TradedVolume { get; set; }
         public decimal? ProjectedSp { get; set; }
         public decimal? AvailableToBack { get; set; }
@@ -134,6 +136,8 @@ namespace HorseRacingML.Data
             runnerTable.Columns.Add("PreOffHigh", typeof(decimal));
             runnerTable.Columns.Add("PreOffLow", typeof(decimal));
             runnerTable.Columns.Add("LastTradedPrice", typeof(decimal));
+            runnerTable.Columns.Add("MarketAnchorPrice", typeof(decimal));
+            runnerTable.Columns.Add("MarketAnchorCapturedUtc", typeof(DateTime));
             runnerTable.Columns.Add("TradedVolume", typeof(decimal));
             runnerTable.Columns.Add("ProjectedSp", typeof(decimal));
             runnerTable.Columns.Add("AvailableToBack", typeof(decimal));
@@ -158,6 +162,8 @@ namespace HorseRacingML.Data
                         (object?)runner.PreOffHigh ?? DBNull.Value,
                         (object?)runner.PreOffLow ?? DBNull.Value,
                         (object?)runner.LastTradedPrice ?? DBNull.Value,
+                        (object?)runner.MarketAnchorPrice ?? DBNull.Value,
+                        (object?)runner.MarketAnchorCapturedUtc ?? DBNull.Value,
                         (object?)runner.TradedVolume ?? DBNull.Value,
                         (object?)runner.ProjectedSp ?? DBNull.Value,
                         (object?)runner.AvailableToBack ?? DBNull.Value,
@@ -195,6 +201,8 @@ CREATE TABLE #BetfairRunner
     PreOffHigh DECIMAL(9,2) NULL,
     PreOffLow DECIMAL(9,2) NULL,
     LastTradedPrice DECIMAL(9,2) NULL,
+    MarketAnchorPrice DECIMAL(9,2) NULL,
+    MarketAnchorCapturedUtc DATETIME2(0) NULL,
     TradedVolume DECIMAL(18,2) NULL,
     ProjectedSp DECIMAL(9,2) NULL,
     AvailableToBack DECIMAL(18,2) NULL,
@@ -251,6 +259,8 @@ SET BetfairSelectionId = COALESCE(b.SelectionId, rr.BetfairSelectionId),
     BetfairPreOffHigh = COALESCE(b.PreOffHigh, rr.BetfairPreOffHigh),
     BetfairPreOffLow = COALESCE(b.PreOffLow, rr.BetfairPreOffLow),
     BetfairLastTradedPrice = COALESCE(b.LastTradedPrice, rr.BetfairLastTradedPrice),
+    MarketAnchorPrice = COALESCE(b.MarketAnchorPrice, rr.MarketAnchorPrice),
+    MarketAnchorCapturedUtc = COALESCE(b.MarketAnchorCapturedUtc, rr.MarketAnchorCapturedUtc),
     BetfairTradedVolume = COALESCE(b.TradedVolume, rr.BetfairTradedVolume),
     BetfairProjectedSP = COALESCE(b.ProjectedSp, rr.BetfairProjectedSP),
     BetfairAvailableToBack = COALESCE(b.AvailableToBack, rr.BetfairAvailableToBack),

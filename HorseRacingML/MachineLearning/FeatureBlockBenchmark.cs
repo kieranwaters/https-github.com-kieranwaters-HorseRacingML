@@ -388,7 +388,7 @@ namespace HorseRacingML.ML
             return keys;
         }
 
-        private static HyperparameterTrainer.TrainingDataset SubsetFeatures(
+        internal static HyperparameterTrainer.TrainingDataset SubsetFeatures(
             HyperparameterTrainer.TrainingDataset source,
             IList<string> keys)
         {

@@ -59,6 +59,26 @@ namespace HorseRacingML.ML
             bool useLogProbOffset = string.Equals(marketOffsetMode, "LogProb", StringComparison.OrdinalIgnoreCase);
 
             int featureCount = dataset.FeatureCount;
+            bool[]? marketFeatureMask = null;
+            if (marketBlind)
+            {
+                marketFeatureMask = new bool[featureCount];
+                int maskOffset = 0;
+                foreach (var key in dataset.FeatureKeys)
+                {
+                    int dimension = dataset.FeatureDimensions.TryGetValue(key, out var dim) ? dim : 0;
+                    if (IsMarketFeatureKey(key))
+                    {
+                        for (int j = 0; j < dimension && maskOffset + j < featureCount; j++)
+                        {
+                            marketFeatureMask[maskOffset + j] = true;
+                        }
+                    }
+
+                    maskOffset += dimension;
+                }
+            }
+
             var trainRaces = dataset.TrainingRaces;
             var valRaces = dataset.ValidationRaces;
             var trainExamples = trainRaces.SelectMany(r => r.Runners).ToList();
@@ -196,6 +216,32 @@ namespace HorseRacingML.ML
             var probabilities = tf.reshape(softmax, new object[] { -1 });
             var inferenceProbabilities = tf.reshape(inferenceSoftmax, new object[] { -1 });
 
+            // Top-of-the-field ranking regulariser. The softmax loss is a
+            // proper conditional likelihood, but a field of longshots can
+            // still dominate the gradient. This extra term asks the winner's
+            // logit to exceed the mean loser logit, which is closer to the
+            // top-1 accuracy objective used to choose a live bet.
+            Tensor pairwiseLoss = tf.constant(0f);
+            if (_pairwiseLossWeight > 0f)
+            {
+                var winnerMask2D = labels;
+                var loserMask2D = mask2D * (1f - labels);
+                var winnerCount = tf.reduce_sum(winnerMask2D, axis: new[] { 1 });
+                var loserCount = tf.reduce_sum(loserMask2D, axis: new[] { 1 });
+                var winnerLogitSum = tf.reduce_sum(logits * winnerMask2D, axis: new[] { 1 });
+                var loserLogitSum = tf.reduce_sum(logits * loserMask2D, axis: new[] { 1 });
+                var winnerMeanLogit = winnerLogitSum / tf.maximum(winnerCount, tf.constant(1f));
+                var loserMeanLogit = loserLogitSum / tf.maximum(loserCount, tf.constant(1f));
+                var margin = winnerMeanLogit - loserMeanLogit;
+                var softplus = tf.maximum(-margin, tf.constant(0f)) +
+                               tf.log(1f + tf.exp(-tf.abs(-margin)));
+                var validRaces = tf.cast(
+                    tf.logical_and(winnerCount > 0f, loserCount > 0f),
+                    tf.float32);
+                pairwiseLoss = tf.reduce_sum(softplus * validRaces) /
+                               tf.maximum(tf.reduce_sum(validRaces), tf.constant(1f));
+            }
+
             Tensor l2Penalty = tf.constant(0f);
             foreach (var weight in hiddenWeightVars)
             {
@@ -219,6 +265,10 @@ namespace HorseRacingML.ML
             if (auxFinishWeight > 0f)
             {
                 totalLoss = totalLoss + (auxFinishWeight * auxFinishLoss);
+            }
+            if (_pairwiseLossWeight > 0f)
+            {
+                totalLoss = totalLoss + (_pairwiseLossWeight * pairwiseLoss);
             }
             var optimizer = tf.train.AdamOptimizer((float)param.LearningRate).minimize(totalLoss);
 
@@ -279,7 +329,8 @@ namespace HorseRacingML.ML
                             includeFlatIndices: false,
                             useLogProbOffset,
                             referenceDate: recencyReferenceDate,
-                            recencyHalfLifeDays: _recencyHalfLifeDays);
+                            recencyHalfLifeDays: _recencyHalfLifeDays,
+                            marketFeatureMask: marketFeatureMask);
 
                         sess.run(
                             optimizer,
@@ -310,16 +361,18 @@ namespace HorseRacingML.ML
                             means,
                             stdDevs,
                             evalRaceBatchSize,
-                            useLogProbOffset);
+                            useLogProbOffset,
+                            marketFeatureMask);
 
                         NormalizePerRace(valPreds, valRaceIds);
-                        double epochValidationLoss = ComputeLogLossScore(valPreds, valLabels);
-                        double epochAccuracy = ComputeWinnerAccuracy(valRaceIds, valPreds, valLabels);
+                        var epochMetrics = RaceMetrics.Compute(valRaceIds, valPreds, valLabels);
+                        double epochValidationLoss = epochMetrics.RaceLogLoss;
+                        double epochAccuracy = epochMetrics.Top1Accuracy;
 
                         if (shouldLog)
                         {
                             Console.WriteLine(
-                                $"Epoch {epoch + 1}/{epochCount} [race-softmax] - val loss: {epochValidationLoss:F4} - winner acc: {epochAccuracy:F4}");
+                                $"Epoch {epoch + 1}/{epochCount} [race-softmax] - val race LL: {epochValidationLoss:F4} - runner LL: {epochMetrics.RunnerLogLoss:F4} - top1: {epochAccuracy:F4} - top3: {epochMetrics.Top3Accuracy:F4}");
                         }
 
                         if (earlyStopOnValidation &&
@@ -373,7 +426,8 @@ namespace HorseRacingML.ML
                     means,
                     stdDevs,
                     evalRaceBatchSize,
-                    useLogProbOffset);
+                    useLogProbOffset,
+                    marketFeatureMask);
 
                 NormalizePerRace(trainPreds, trainRaceIds);
 
@@ -393,12 +447,13 @@ namespace HorseRacingML.ML
                         means,
                         stdDevs,
                         evalRaceBatchSize,
-                        useLogProbOffset);
+                        useLogProbOffset,
+                        marketFeatureMask);
 
                     NormalizePerRace(valPreds, valRaceIds);
                     validationTemperature = temperatureOverride.HasValue
                         ? temperatureOverride.Value
-                        : FitTemperaturePerRace(valPreds, valLabels, valRaceIds);
+                        : FitTemperaturePerRaceCategorical(valPreds, valLabels, valRaceIds);
                 }
                 else if (temperatureOverride.HasValue)
                 {
@@ -417,16 +472,14 @@ namespace HorseRacingML.ML
                 throw;
             }
 
-            double trainLoss = ComputeLogLossScore(trainPreds, trainLabels);
-            double trainBrier = ComputeBrierScore(trainPreds, trainLabels);
-            double valLoss = ComputeLogLossScore(valPreds, valLabels);
-            double valBrier = ComputeBrierScore(valPreds, valLabels);
-            double trainAccuracy = trainPreds.Length > 0
-                ? ComputeWinnerAccuracy(trainRaceIds, trainPreds, trainLabels)
-                : 0;
-            double valAccuracy = valPreds.Length > 0
-                ? ComputeWinnerAccuracy(valRaceIds, valPreds, valLabels)
-                : 0;
+            var trainMetrics = RaceMetrics.Compute(trainRaceIds, trainPreds, trainLabels);
+            var valMetrics = RaceMetrics.Compute(valRaceIds, valPreds, valLabels);
+            double trainLoss = trainMetrics.RunnerLogLoss;
+            double trainBrier = trainMetrics.Brier;
+            double valLoss = valMetrics.RunnerLogLoss;
+            double valBrier = valMetrics.Brier;
+            double trainAccuracy = trainMetrics.Top1Accuracy;
+            double valAccuracy = valMetrics.Top1Accuracy;
 
             float offsetScaleValue = 1f;
             try
@@ -466,6 +519,7 @@ namespace HorseRacingML.ML
                 Objective = "RaceSoftmax",
                 AuxiliaryWinLossWeight = auxWinWeight,
                 AuxiliaryFinishLossWeight = auxFinishWeight,
+                PairwiseLossWeight = _pairwiseLossWeight,
                 MarketOffsetScale = useMarketOffset ? offsetScaleValue : 0f,
                 MarketOffsetMode = marketOffsetMode,
                 MarketBlind = marketBlind,
@@ -495,7 +549,17 @@ namespace HorseRacingML.ML
                 artifact = PersistTrainedModel(model, activateModel);
             }
 
-            HyperparameterCompleted(param, trainAccuracy, valAccuracy, trainLoss, valLoss, trainBrier, valBrier);
+            HyperparameterCompleted(
+                param,
+                trainAccuracy,
+                valAccuracy,
+                trainLoss,
+                valLoss,
+                trainBrier,
+                valBrier,
+                trainMetrics.RaceLogLoss,
+                valMetrics.RaceLogLoss,
+                valMetrics.Top3Accuracy);
 
             // A hyperparameter sweep trains many graphs in one process. Reset the
             // default graph after the session has been disposed so native graph
@@ -510,9 +574,13 @@ namespace HorseRacingML.ML
                 TrainAccuracy = trainAccuracy,
                 TrainLoss = trainLoss,
                 TrainBrier = trainBrier,
+                TrainRaceLogLoss = trainMetrics.RaceLogLoss,
+                TrainTop3Accuracy = trainMetrics.Top3Accuracy,
                 ValidationAccuracy = valAccuracy,
                 ValidationLoss = valLoss,
                 ValidationBrier = valBrier,
+                ValidationRaceLogLoss = valMetrics.RaceLogLoss,
+                ValidationTop3Accuracy = valMetrics.Top3Accuracy,
                 ValidationTemperature = validationTemperature,
                 Objective = "RaceSoftmax",
                 AuxiliaryWinLossWeight = auxWinWeight,
@@ -532,7 +600,8 @@ namespace HorseRacingML.ML
                 ValidationExamples = new System.Collections.ObjectModel.ReadOnlyCollection<RunnerExample>(valExamples),
                 ModelArtifactFileName = artifact?.FileName,
                 ModelHash = artifact?.Sha256,
-                FeatureSchemaHash = model.FeatureSchemaHash
+                FeatureSchemaHash = model.FeatureSchemaHash,
+                Model = model
             };
         }
 
@@ -603,7 +672,8 @@ namespace HorseRacingML.ML
             bool includeFlatIndices,
             bool useLogProbOffset,
             DateTime referenceDate = default,
-            double recencyHalfLifeDays = 0d)
+            double recencyHalfLifeDays = 0d,
+            bool[]? marketFeatureMask = null)
         {
             int maxRunners = 1;
             for (int r = 0; r < raceCount; r++)
@@ -648,6 +718,14 @@ namespace HorseRacingML.ML
                     for (int j = 0; j < featureCount; j++)
                     {
                         float normalized = (runner.Features[j] - means[j]) / stdDevs[j];
+                        if (marketFeatureMask is not null && marketFeatureMask[j])
+                        {
+                            // A market-blind ensemble member must not see the
+                            // price, even though the shared schema contains the
+                            // market columns.
+                            normalized = 0f;
+                        }
+
                         batch.Features[slot, j] = Math.Clamp(normalized, -5f, 5f);
                     }
 
@@ -686,7 +764,8 @@ namespace HorseRacingML.ML
             float[] means,
             float[] stdDevs,
             int raceBatchSize,
-            bool useLogProbOffset)
+            bool useLogProbOffset,
+            bool[]? marketFeatureMask = null)
         {
             if (races.Count == 0)
             {
@@ -707,7 +786,8 @@ namespace HorseRacingML.ML
                     stdDevs,
                     flatStarts,
                     includeFlatIndices: true,
-                    useLogProbOffset);
+                    useLogProbOffset,
+                    marketFeatureMask: marketFeatureMask);
 
                 var results = session.run(
                     new[] { probabilities },
@@ -768,6 +848,111 @@ namespace HorseRacingML.ML
 
                 start = end;
             }
+        }
+
+        /// <summary>
+        /// Fits a single temperature by minimising the race-level conditional
+        /// log loss (<c>-log p(winner)</c>). This is the metric RaceSoftmax is
+        /// trained with and the metric live betting is judged on. The old
+        /// runner-level binary fit is kept for the legacy Binary objective.
+        /// </summary>
+        private static double FitTemperaturePerRaceCategorical(
+            float[] predictions,
+            float[] labels,
+            IReadOnlyList<int> raceIds)
+        {
+            if (predictions.Length == 0 || predictions.Length != labels.Length || raceIds.Count != predictions.Length)
+            {
+                return 1.0;
+            }
+
+            double bestTemperature = 1.0;
+            double bestLoss = double.MaxValue;
+
+            double Evaluate(double temperature)
+            {
+                if (!(temperature > 0) || !double.IsFinite(temperature))
+                {
+                    return double.MaxValue;
+                }
+
+                double loss = 0;
+                int races = 0;
+                int index = 0;
+                while (index < predictions.Length)
+                {
+                    int end = index + 1;
+                    while (end < predictions.Length && raceIds[end] == raceIds[index])
+                    {
+                        end++;
+                    }
+
+                    double sum = 0;
+                    for (int i = index; i < end; i++)
+                    {
+                        double p = Math.Clamp((double)predictions[i], 1e-12, 1.0);
+                        sum += Math.Pow(p, 1.0 / temperature);
+                    }
+
+                    if (sum <= double.Epsilon || !double.IsFinite(sum))
+                    {
+                        index = end;
+                        continue;
+                    }
+
+                    double winnerMass = 0;
+                    bool hasWinner = false;
+                    for (int i = index; i < end; i++)
+                    {
+                        if (labels[i] < 0.5f)
+                        {
+                            continue;
+                        }
+
+                        hasWinner = true;
+                        double p = Math.Clamp((double)predictions[i], 1e-12, 1.0);
+                        winnerMass += Math.Pow(p, 1.0 / temperature);
+                    }
+
+                    if (hasWinner && winnerMass > double.Epsilon)
+                    {
+                        double q = Math.Clamp(winnerMass / sum, 1e-12, 1d);
+                        loss -= Math.Log(q);
+                        races++;
+                    }
+
+                    index = end;
+                }
+
+                return races == 0 ? double.MaxValue : loss / races;
+            }
+
+            for (double temperature = 0.25; temperature <= 4.0; temperature += 0.05)
+            {
+                double loss = Evaluate(temperature);
+                if (loss < bestLoss)
+                {
+                    bestLoss = loss;
+                    bestTemperature = temperature;
+                }
+            }
+
+            // Refine around the coarse optimum so the final temperature is not
+            // quantised to a 0.05 step.
+            double coarse = bestTemperature;
+            for (double temperature = Math.Max(0.1, coarse - 0.1);
+                 temperature <= Math.Min(6.0, coarse + 0.1);
+                 temperature += 0.01)
+            {
+                double loss = Evaluate(temperature);
+                if (loss < bestLoss)
+                {
+                    bestLoss = loss;
+                    bestTemperature = temperature;
+                }
+            }
+
+            return Math.Round(bestTemperature, 4);
         }
 
         private static double FitTemperaturePerRace(

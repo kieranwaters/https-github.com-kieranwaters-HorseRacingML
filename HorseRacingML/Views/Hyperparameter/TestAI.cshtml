@@ -7,7 +7,8 @@
 <p>
     Run an evaluation using the most recent saved AI parameters. The model is retrained only on
     priced races that occurred before the selected window, using the epoch count and temperature
-    frozen from training. Accuracy is calculated on the selected window.
+    frozen from training. When the saved model is a seed ensemble, the same number of members is
+    retrained and their probabilities are averaged. Accuracy is calculated on the selected window.
 </p>
 
 <form asp-action="TestAI" method="post">
@@ -17,7 +18,7 @@
         <div class="col-md-4">
             <label asp-for="SelectedValidationMonths" class="form-label">Validation window</label>
             <select asp-for="SelectedValidationMonths" class="form-select">
-                @for (int months = 1; months <= 24; months++)
+                @for (int months = SimulatorRunRequest.MinimumMonths; months <= SimulatorRunRequest.MaximumMonths; months++)
                 {
                     <option value="@months">@months @(months == 1 ? "month" : "months")</option>
                 }
@@ -52,24 +53,38 @@
                 <dd class="col-sm-8">@Model.ValidationRaceCount</dd>
                 <dt class="col-sm-4">Training races</dt>
                 <dd class="col-sm-8">@Model.TrainingRaceCount</dd>
-                <dt class="col-sm-4">Validation accuracy</dt>
+                <dt class="col-sm-4">Validation top-1 accuracy</dt>
                 <dd class="col-sm-8">@Model.ValidationAccuracy?.ToString("P2")</dd>
-                <dt class="col-sm-4">Validation log loss</dt>
+                <dt class="col-sm-4">Validation top-3 accuracy</dt>
+                <dd class="col-sm-8">@Model.ValidationTop3Accuracy?.ToString("P2")</dd>
+                <dt class="col-sm-4">Validation race log loss</dt>
+                <dd class="col-sm-8">@Model.ValidationRaceLogLoss?.ToString("F4")</dd>
+                <dt class="col-sm-4">Validation runner log loss</dt>
                 <dd class="col-sm-8">@Model.ValidationLoss?.ToString("F4")</dd>
                 <dt class="col-sm-4">Validation Brier score</dt>
                 <dd class="col-sm-8">@Model.ValidationBrier?.ToString("F4")</dd>
-                <dt class="col-sm-4">Market log loss</dt>
+                <dt class="col-sm-4">SP market top-1 accuracy</dt>
+                <dd class="col-sm-8">@Model.MarketTop1Accuracy?.ToString("P2")</dd>
+                <dt class="col-sm-4">SP market top-3 accuracy</dt>
+                <dd class="col-sm-8">@Model.MarketTop3Accuracy?.ToString("P2")</dd>
+                <dt class="col-sm-4">SP market race log loss</dt>
+                <dd class="col-sm-8">@Model.MarketRaceLogLoss?.ToString("F4")</dd>
+                <dt class="col-sm-4">SP market runner log loss</dt>
                 <dd class="col-sm-8">@Model.MarketLogLoss?.ToString("F4")</dd>
-                <dt class="col-sm-4">Market Brier score</dt>
+                <dt class="col-sm-4">SP market Brier score</dt>
                 <dd class="col-sm-8">@Model.MarketBrier?.ToString("F4")</dd>
                 <dt class="col-sm-4">Fair market log loss</dt>
                 <dd class="col-sm-8">@Model.FairMarketLogLoss?.ToString("F4")</dd>
                 <dt class="col-sm-4">Fair market Brier score</dt>
                 <dd class="col-sm-8">@Model.FairMarketBrier?.ToString("F4")</dd>
+                <dt class="col-sm-4">Fair market race log loss</dt>
+                <dd class="col-sm-8">@Model.FairMarketRaceLogLoss?.ToString("F4")</dd>
                 <dt class="col-sm-4">Blend log loss</dt>
                 <dd class="col-sm-8">@Model.BlendLogLoss?.ToString("F4")</dd>
                 <dt class="col-sm-4">Blend Brier score</dt>
                 <dd class="col-sm-8">@Model.BlendBrier?.ToString("F4")</dd>
+                <dt class="col-sm-4">Blend race log loss</dt>
+                <dd class="col-sm-8">@Model.BlendRaceLogLoss?.ToString("F4")</dd>
                 <dt class="col-sm-4">Blend weights (model / market)</dt>
                 <dd class="col-sm-8">@(Model.BlendModelWeight?.ToString("F2") ?? "—") / @(Model.BlendMarketWeight?.ToString("F2") ?? "—")</dd>
                 <dt class="col-sm-4">Calibration temperature</dt>
@@ -99,6 +114,7 @@
                     <li>Market offset mode: @(Model.ParameterUsed.MarketOffsetMode ?? "Logit")</li>
                     <li>Market blind: @(Model.ParameterUsed.MarketBlind?.ToString() ?? "false")</li>
                     <li>Blend weights: model @(Model.ParameterUsed.BlendModelWeight?.ToString("F2") ?? "1.00"), market @(Model.ParameterUsed.BlendMarketWeight?.ToString("F2") ?? "0.00")</li>
+                    <li>Ensemble size: @(Model.ParameterUsed.EnsembleSize?.ToString() ?? "1")</li>
                 </ul>
             }
         </div>
@@ -195,6 +211,7 @@
 }
 
 <a asp-action="TrainAI" class="btn btn-link mt-3">Back to Train AI</a>
+<a asp-action="BettingSimulator" class="btn btn-outline-info mt-3 ms-2">Open in Betting Simulator</a>
 
 @section Scripts {
     @{await Html.RenderPartialAsync("_ValidationScriptsPartial");}

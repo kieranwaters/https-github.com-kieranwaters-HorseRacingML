@@ -58,6 +58,7 @@ namespace HorseRacingML.Models
         public int RaceId { get; set; }
         public int CourseId { get; set; }
         public string CourseName { get; set; } = string.Empty;
+        public string? TimeZoneId { get; set; }
         public TimeSpan? ScheduledOff { get; set; }
         public string? Title { get; set; }
         public byte? RunnerCount { get; set; }

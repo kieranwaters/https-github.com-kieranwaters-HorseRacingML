@@ -2,7 +2,6 @@ using System;
 using System.Threading.Tasks;
 using HorseRacingML.Models;
 using HorseRacingML.Services;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace HorseRacingML.Jobs
@@ -14,10 +13,8 @@ namespace HorseRacingML.Jobs
         public async Task ExecuteAsync(JobExecutionContext context)
         {
             var weather = context.Services.GetRequiredService<WeatherBackfillService>();
-            var configuration = context.Services.GetRequiredService<IConfiguration>();
 
-            var defaultFrom = configuration.GetValue<DateTime?>("Weather:BackfillFrom")
-                ?? new DateTime(2010, 1, 1);
+            var defaultFrom = weather.GetDefaultBackfillStart();
 
             DateTime fromDate = defaultFrom;
             if (context.Payload.TryGetValue("from", out var fromText) &&

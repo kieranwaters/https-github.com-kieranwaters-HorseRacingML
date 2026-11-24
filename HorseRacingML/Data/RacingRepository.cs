@@ -1120,11 +1120,15 @@ INSERT INTO MLParameters(
     BlendModelWeight, BlendMarketWeight, NormalizationMode, FeatureBlocks, RaceBatchSize,
     TrainingStartDate, TrainingEndDate, DevStartDate, DevEndDate, TestStartDate, TestEndDate,
     TrainingRaceCount, DevRaceCount, TestRaceCount, TrainingRowCount, DevRowCount, TestRowCount,
-    DevAccuracy, DevLoss, DevBrier, DevTemperature, DevMarketLogLoss, DevMarketBrier,
+    DevAccuracy, DevLoss, DevBrier, DevRaceLogLoss, DevTop3Accuracy,
+    DevMarketRaceLogLoss, DevMarketTop1Accuracy, DevMarketTop3Accuracy,
+    DevTemperature, DevMarketLogLoss, DevMarketBrier,
     DevFairMarketLogLoss, DevFairMarketBrier, DevBlendLogLoss, DevBlendBrier, DevBlendRaceLogLoss,
-    TestAccuracy, TestLoss, TestBrier, TestTemperature, TestMarketLogLoss, TestMarketBrier,
+    TestAccuracy, TestLoss, TestBrier, TestRaceLogLoss, TestTop3Accuracy,
+    TestMarketRaceLogLoss, TestMarketTop1Accuracy, TestMarketTop3Accuracy,
+    TestTemperature, TestMarketLogLoss, TestMarketBrier,
     TestFairMarketLogLoss, TestFairMarketBrier, TestBlendLogLoss, TestBlendBrier, TestBlendRaceLogLoss,
-    WinRateAlpha, WinRateBeta, SelectedOn, ModelArtifact, ModelHash, FeatureSchemaHash, IsActive)
+    WinRateAlpha, WinRateBeta, SelectedOn, ModelArtifact, ModelHash, FeatureSchemaHash, EnsembleSize, IsActive)
 VALUES(
     @RunDate, @EarliestTrainingDate, @Units, @Dropout, @Layers, @LearningRate,
     @TrainAccuracy, @ValidationAccuracy, @ValidationLoss, @Epochs, @BatchSize, @Folds,
@@ -1133,11 +1137,15 @@ VALUES(
     @BlendModelWeight, @BlendMarketWeight, @NormalizationMode, @FeatureBlocks, @RaceBatchSize,
     @TrainingStartDate, @TrainingEndDate, @DevStartDate, @DevEndDate, @TestStartDate, @TestEndDate,
     @TrainingRaceCount, @DevRaceCount, @TestRaceCount, @TrainingRowCount, @DevRowCount, @TestRowCount,
-    @DevAccuracy, @DevLoss, @DevBrier, @DevTemperature, @DevMarketLogLoss, @DevMarketBrier,
+    @DevAccuracy, @DevLoss, @DevBrier, @DevRaceLogLoss, @DevTop3Accuracy,
+    @DevMarketRaceLogLoss, @DevMarketTop1Accuracy, @DevMarketTop3Accuracy,
+    @DevTemperature, @DevMarketLogLoss, @DevMarketBrier,
     @DevFairMarketLogLoss, @DevFairMarketBrier, @DevBlendLogLoss, @DevBlendBrier, @DevBlendRaceLogLoss,
-    @TestAccuracy, @TestLoss, @TestBrier, @TestTemperature, @TestMarketLogLoss, @TestMarketBrier,
+    @TestAccuracy, @TestLoss, @TestBrier, @TestRaceLogLoss, @TestTop3Accuracy,
+    @TestMarketRaceLogLoss, @TestMarketTop1Accuracy, @TestMarketTop3Accuracy,
+    @TestTemperature, @TestMarketLogLoss, @TestMarketBrier,
     @TestFairMarketLogLoss, @TestFairMarketBrier, @TestBlendLogLoss, @TestBlendBrier, @TestBlendRaceLogLoss,
-    @WinRateAlpha, @WinRateBeta, @SelectedOn, @ModelArtifact, @ModelHash, @FeatureSchemaHash, @IsActive);
+    @WinRateAlpha, @WinRateBeta, @SelectedOn, @ModelArtifact, @ModelHash, @FeatureSchemaHash, @EnsembleSize, ISNULL(@IsActive, 0));
 SELECT CAST(SCOPE_IDENTITY() as int);";
             using var conn = OpenConnection();
             return conn.QuerySingle<int>(sql, param);
@@ -1175,6 +1183,14 @@ WHERE Id = @Id;";
             tx.Commit();
         }
 
+        public MLParameter? GetMLParameterById(int id)
+        {
+            using var conn = OpenConnection();
+            return conn.QueryFirstOrDefault<MLParameter>(
+                "SELECT * FROM MLParameters WHERE Id = @Id",
+                new { Id = id });
+        }
+
         public MLParameter? GetActiveMLParameter()
         {
             const string sql = @"
@@ -1186,11 +1202,15 @@ SELECT TOP (1)
     BlendModelWeight, BlendMarketWeight, NormalizationMode, FeatureBlocks, RaceBatchSize,
     TrainingStartDate, TrainingEndDate, DevStartDate, DevEndDate, TestStartDate, TestEndDate,
     TrainingRaceCount, DevRaceCount, TestRaceCount, TrainingRowCount, DevRowCount, TestRowCount,
-    DevAccuracy, DevLoss, DevBrier, DevTemperature, DevMarketLogLoss, DevMarketBrier,
+    DevAccuracy, DevLoss, DevBrier, DevRaceLogLoss, DevTop3Accuracy,
+    DevMarketRaceLogLoss, DevMarketTop1Accuracy, DevMarketTop3Accuracy,
+    DevTemperature, DevMarketLogLoss, DevMarketBrier,
     DevFairMarketLogLoss, DevFairMarketBrier, DevBlendLogLoss, DevBlendBrier, DevBlendRaceLogLoss,
-    TestAccuracy, TestLoss, TestBrier, TestTemperature, TestMarketLogLoss, TestMarketBrier,
+    TestAccuracy, TestLoss, TestBrier, TestRaceLogLoss, TestTop3Accuracy,
+    TestMarketRaceLogLoss, TestMarketTop1Accuracy, TestMarketTop3Accuracy,
+    TestTemperature, TestMarketLogLoss, TestMarketBrier,
     TestFairMarketLogLoss, TestFairMarketBrier, TestBlendLogLoss, TestBlendBrier, TestBlendRaceLogLoss,
-    WinRateAlpha, WinRateBeta, SelectedOn, ModelArtifact, ModelHash, FeatureSchemaHash, IsActive
+    WinRateAlpha, WinRateBeta, SelectedOn, ModelArtifact, ModelHash, FeatureSchemaHash, EnsembleSize, IsActive
 FROM MLParameters
 WHERE ISNULL(IsActive, 0) = 1
 ORDER BY RunDate DESC, Id DESC;";
@@ -1231,9 +1251,10 @@ ORDER BY RaceDate, RaceId";
 
         /// <summary>
         /// Race IDs in the date range that have a usable pre-off market: at least
-        /// two runners carry an opening price. Training on these races keeps the
-        /// market features present in every training row, matching the live
-        /// pipeline where every runner has a current back price.
+        /// two runners carry an opening price or a T-N Betfair anchor. Training
+        /// on these races keeps the market features present in most rows,
+        /// matching the live pipeline where every runner has a current back
+        /// price.
         /// </summary>
         public DateTime? GetRaceDate(int raceId)
         {
@@ -1255,8 +1276,10 @@ FROM Race r
 JOIN RunnerResult rr ON rr.RaceId = r.RaceId
 WHERE r.RaceDate >= @Start
   AND r.RaceDate <= @End
-  AND rr.OpeningFraction IS NOT NULL
-  AND LTRIM(RTRIM(rr.OpeningFraction)) <> ''
+  AND (
+        (rr.OpeningFraction IS NOT NULL AND LTRIM(RTRIM(rr.OpeningFraction)) <> '')
+        OR (rr.MarketAnchorPrice IS NOT NULL AND rr.MarketAnchorPrice > 1)
+      )
 GROUP BY r.RaceId
 HAVING COUNT(*) >= 2
 ORDER BY MIN(r.RaceDate), r.RaceId";
@@ -1353,6 +1376,11 @@ WHERE r.RaceId IN @Ids";
     DevAccuracy,
     DevLoss,
     DevBrier,
+    DevRaceLogLoss,
+    DevTop3Accuracy,
+    DevMarketRaceLogLoss,
+    DevMarketTop1Accuracy,
+    DevMarketTop3Accuracy,
     DevTemperature,
     DevMarketLogLoss,
     DevMarketBrier,
@@ -1364,6 +1392,11 @@ WHERE r.RaceId IN @Ids";
     TestAccuracy,
     TestLoss,
     TestBrier,
+    TestRaceLogLoss,
+    TestTop3Accuracy,
+    TestMarketRaceLogLoss,
+    TestMarketTop1Accuracy,
+    TestMarketTop3Accuracy,
     TestTemperature,
     TestMarketLogLoss,
     TestMarketBrier,
@@ -1378,6 +1411,7 @@ WHERE r.RaceId IN @Ids";
     ModelArtifact,
     ModelHash,
     FeatureSchemaHash,
+    EnsembleSize,
     IsActive
 FROM MLParameters
 WHERE Units > 0
@@ -1389,11 +1423,13 @@ WHERE Units > 0
   -- Baseline rows are reference points, not trainable hyperparameter
   -- candidates. Keep them out of automatic selection.
   AND ISNULL(SelectedOn, '') <> 'Baseline'
+  AND ISNULL(SelectedOn, '') <> 'MarketRejected'
   AND COALESCE(DevBrier, ValidationBrier) IS NOT NULL
   AND COALESCE(DevBrier, ValidationBrier) > 0
 -- Selection is model-only: legacy rows marked Rejected were rejected by the
 -- old post-model blend gate, so they remain eligible here.
 ORDER BY CASE WHEN ISNULL(IsActive, 0) = 1 THEN 0 ELSE 1 END,
+         ISNULL(DevRaceLogLoss, 1E9) ASC,
          COALESCE(DevBrier, ValidationBrier) ASC,
          ISNULL(COALESCE(DevLoss, ValidationLoss), 1E9) ASC,
          ISNULL(DevBlendLogLoss, 1E9) ASC,

@@ -93,6 +93,60 @@
                 "${workspaceFolder}/HorseRacingML/Tests/HorseRacingML.Tests.csproj"
             ],
             "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "train-ensemble",
+            "detail": "Full chronological TrainAI ensemble (writes MLParameters)",
+            "command": "dotnet",
+            "type": "process",
+            "args": [
+                "run",
+                "--project",
+                "${workspaceFolder}/HorseRacingML/HorseRacingML.csproj",
+                "--",
+                "--train-ensemble",
+                "--minimum-race-date",
+                "2017-01-01",
+                "--seed-count",
+                "3",
+                "--ensemble-size",
+                "3"
+            ],
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "benchmark-lightgbm",
+            "detail": "LightGBM LambdaRank benchmark on the current split",
+            "command": "dotnet",
+            "type": "process",
+            "args": [
+                "run",
+                "--project",
+                "${workspaceFolder}/HorseRacingML/HorseRacingML.csproj",
+                "--",
+                "--benchmark-lightgbm",
+                "--minimum-race-date",
+                "2017-01-01"
+            ],
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "benchmark-pairwise",
+            "detail": "Dev-only sweep of Training:PairwiseLossWeight",
+            "command": "dotnet",
+            "type": "process",
+            "args": [
+                "run",
+                "--project",
+                "${workspaceFolder}/HorseRacingML/HorseRacingML.csproj",
+                "--",
+                "--benchmark-pairwise",
+                "--weights",
+                "0,0.02,0.05,0.1",
+                "--seeds",
+                "42,43"
+            ],
+            "problemMatcher": "$msCompile"
         }
     ]
 }

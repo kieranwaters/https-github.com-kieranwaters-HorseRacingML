@@ -59,6 +59,11 @@ namespace HorseRacingML.Models
         public double? DevAccuracy { get; set; }
         public double? DevLoss { get; set; }
         public double? DevBrier { get; set; }
+        public double? DevRaceLogLoss { get; set; }
+        public double? DevTop3Accuracy { get; set; }
+        public double? DevMarketRaceLogLoss { get; set; }
+        public double? DevMarketTop1Accuracy { get; set; }
+        public double? DevMarketTop3Accuracy { get; set; }
         public double? DevTemperature { get; set; }
         // DevMarket* uses the closing SP (with commission) and is kept for
         // comparison with older runs. DevFairMarket* uses the same no-vig
@@ -74,6 +79,11 @@ namespace HorseRacingML.Models
         public double? TestAccuracy { get; set; }
         public double? TestLoss { get; set; }
         public double? TestBrier { get; set; }
+        public double? TestRaceLogLoss { get; set; }
+        public double? TestTop3Accuracy { get; set; }
+        public double? TestMarketRaceLogLoss { get; set; }
+        public double? TestMarketTop1Accuracy { get; set; }
+        public double? TestMarketTop3Accuracy { get; set; }
         public double? TestTemperature { get; set; }
         public double? TestMarketLogLoss { get; set; }
         public double? TestMarketBrier { get; set; }
@@ -92,6 +102,7 @@ namespace HorseRacingML.Models
         public string? ModelArtifact { get; set; }
         public string? ModelHash { get; set; }
         public string? FeatureSchemaHash { get; set; }
+        public int? EnsembleSize { get; set; }
         public bool? IsActive { get; set; }
     }
 }

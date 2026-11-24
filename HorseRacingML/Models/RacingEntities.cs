@@ -90,6 +90,14 @@ namespace HorseRacingML.Models
         public decimal? BetfairPreOffHigh { get; set; }
         public decimal? BetfairPreOffLow { get; set; }
         public decimal? BetfairLastTradedPrice { get; set; }
+        /// <summary>
+        /// Last traded price observed at or before the configured anchor point
+        /// (typically five minutes before the off). Null when the imported
+        /// stream has no observation before the cutoff.
+        /// </summary>
+        public decimal? MarketAnchorPrice { get; set; }
+        /// <summary>UTC timestamp of <see cref="MarketAnchorPrice"/>.</summary>
+        public DateTime? MarketAnchorCapturedUtc { get; set; }
         public decimal? BetfairTradedVolume { get; set; }
         public decimal? BetfairProjectedSP { get; set; }
         public decimal? BetfairAvailableToBack { get; set; }

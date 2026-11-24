@@ -199,6 +199,8 @@ BEGIN
         BetfairPreOffHigh     DECIMAL(9,2)  NULL,
         BetfairPreOffLow      DECIMAL(9,2)  NULL,
         BetfairLastTradedPrice DECIMAL(9,2) NULL,
+        MarketAnchorPrice     DECIMAL(9,2)  NULL,
+        MarketAnchorCapturedUtc DATETIME2(0) NULL,
         BetfairTradedVolume   DECIMAL(18,2) NULL,
         BetfairProjectedSP    DECIMAL(9,2)  NULL,
         BetfairAvailableToBack DECIMAL(18,2) NULL,
@@ -231,6 +233,14 @@ IF COL_LENGTH(N'dbo.RunnerResult', N'BetfairPreOffLow') IS NULL
     ALTER TABLE dbo.RunnerResult ADD BetfairPreOffLow DECIMAL(9,2) NULL;
 IF COL_LENGTH(N'dbo.RunnerResult', N'BetfairLastTradedPrice') IS NULL
     ALTER TABLE dbo.RunnerResult ADD BetfairLastTradedPrice DECIMAL(9,2) NULL;
+/* Timestamped pre-off market anchor: the last traded price at or before the
+   configured cutoff (default five minutes before the off). Historical feature
+   engineering uses this instead of the opening show so training and live
+   scoring read the market at the same point. */
+IF COL_LENGTH(N'dbo.RunnerResult', N'MarketAnchorPrice') IS NULL
+    ALTER TABLE dbo.RunnerResult ADD MarketAnchorPrice DECIMAL(9,2) NULL;
+IF COL_LENGTH(N'dbo.RunnerResult', N'MarketAnchorCapturedUtc') IS NULL
+    ALTER TABLE dbo.RunnerResult ADD MarketAnchorCapturedUtc DATETIME2(0) NULL;
 IF COL_LENGTH(N'dbo.RunnerResult', N'BetfairTradedVolume') IS NULL
     ALTER TABLE dbo.RunnerResult ADD BetfairTradedVolume DECIMAL(18,2) NULL;
 IF COL_LENGTH(N'dbo.RunnerResult', N'BetfairProjectedSP') IS NULL
@@ -482,6 +492,16 @@ IF COL_LENGTH(N'dbo.MLParameters', N'DevLoss') IS NULL
     ALTER TABLE dbo.MLParameters ADD DevLoss FLOAT NULL;
 IF COL_LENGTH(N'dbo.MLParameters', N'DevBrier') IS NULL
     ALTER TABLE dbo.MLParameters ADD DevBrier FLOAT NULL;
+IF COL_LENGTH(N'dbo.MLParameters', N'DevRaceLogLoss') IS NULL
+    ALTER TABLE dbo.MLParameters ADD DevRaceLogLoss FLOAT NULL;
+IF COL_LENGTH(N'dbo.MLParameters', N'DevTop3Accuracy') IS NULL
+    ALTER TABLE dbo.MLParameters ADD DevTop3Accuracy FLOAT NULL;
+IF COL_LENGTH(N'dbo.MLParameters', N'DevMarketRaceLogLoss') IS NULL
+    ALTER TABLE dbo.MLParameters ADD DevMarketRaceLogLoss FLOAT NULL;
+IF COL_LENGTH(N'dbo.MLParameters', N'DevMarketTop1Accuracy') IS NULL
+    ALTER TABLE dbo.MLParameters ADD DevMarketTop1Accuracy FLOAT NULL;
+IF COL_LENGTH(N'dbo.MLParameters', N'DevMarketTop3Accuracy') IS NULL
+    ALTER TABLE dbo.MLParameters ADD DevMarketTop3Accuracy FLOAT NULL;
 IF COL_LENGTH(N'dbo.MLParameters', N'DevTemperature') IS NULL
     ALTER TABLE dbo.MLParameters ADD DevTemperature FLOAT NULL;
 IF COL_LENGTH(N'dbo.MLParameters', N'DevMarketLogLoss') IS NULL
@@ -504,6 +524,16 @@ IF COL_LENGTH(N'dbo.MLParameters', N'TestLoss') IS NULL
     ALTER TABLE dbo.MLParameters ADD TestLoss FLOAT NULL;
 IF COL_LENGTH(N'dbo.MLParameters', N'TestBrier') IS NULL
     ALTER TABLE dbo.MLParameters ADD TestBrier FLOAT NULL;
+IF COL_LENGTH(N'dbo.MLParameters', N'TestRaceLogLoss') IS NULL
+    ALTER TABLE dbo.MLParameters ADD TestRaceLogLoss FLOAT NULL;
+IF COL_LENGTH(N'dbo.MLParameters', N'TestTop3Accuracy') IS NULL
+    ALTER TABLE dbo.MLParameters ADD TestTop3Accuracy FLOAT NULL;
+IF COL_LENGTH(N'dbo.MLParameters', N'TestMarketRaceLogLoss') IS NULL
+    ALTER TABLE dbo.MLParameters ADD TestMarketRaceLogLoss FLOAT NULL;
+IF COL_LENGTH(N'dbo.MLParameters', N'TestMarketTop1Accuracy') IS NULL
+    ALTER TABLE dbo.MLParameters ADD TestMarketTop1Accuracy FLOAT NULL;
+IF COL_LENGTH(N'dbo.MLParameters', N'TestMarketTop3Accuracy') IS NULL
+    ALTER TABLE dbo.MLParameters ADD TestMarketTop3Accuracy FLOAT NULL;
 IF COL_LENGTH(N'dbo.MLParameters', N'TestTemperature') IS NULL
     ALTER TABLE dbo.MLParameters ADD TestTemperature FLOAT NULL;
 IF COL_LENGTH(N'dbo.MLParameters', N'TestMarketLogLoss') IS NULL
@@ -532,6 +562,8 @@ IF COL_LENGTH(N'dbo.MLParameters', N'ModelHash') IS NULL
     ALTER TABLE dbo.MLParameters ADD ModelHash NVARCHAR(64) NULL;
 IF COL_LENGTH(N'dbo.MLParameters', N'FeatureSchemaHash') IS NULL
     ALTER TABLE dbo.MLParameters ADD FeatureSchemaHash NVARCHAR(64) NULL;
+IF COL_LENGTH(N'dbo.MLParameters', N'EnsembleSize') IS NULL
+    ALTER TABLE dbo.MLParameters ADD EnsembleSize INT NULL;
 IF COL_LENGTH(N'dbo.MLParameters', N'IsActive') IS NULL
     ALTER TABLE dbo.MLParameters ADD IsActive BIT NOT NULL CONSTRAINT DF_MLParameters_IsActive DEFAULT 0;
 GO

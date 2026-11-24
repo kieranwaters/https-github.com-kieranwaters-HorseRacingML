@@ -318,7 +318,9 @@ namespace HorseRacingML.ML
                 float marketProbability = 0f,
                 float marketLogProbability = 0f,
                 int? finishPosition = null,
-                int fieldSize = 0)
+                int fieldSize = 0,
+                decimal? betfairSp = null,
+                decimal? betfairLastTradedPrice = null)
             {
                 RaceId = raceId;
                 Features = features;
@@ -326,6 +328,8 @@ namespace HorseRacingML.ML
                 HorseId = horseId;
                 HorseName = horseName;
                 StartingPriceDecimal = startingPriceDecimal;
+                BetfairSp = betfairSp;
+                BetfairLastTradedPrice = betfairLastTradedPrice;
                 MarketLogit = marketLogit;
                 HasMarketPrice = hasMarketPrice;
                 MarketProbability = marketProbability;
@@ -356,6 +360,16 @@ namespace HorseRacingML.ML
             public int? HorseId { get; }
             public string? HorseName { get; }
             public decimal? StartingPriceDecimal { get; }
+            /// <summary>
+            /// Betfair starting price, or null when the market has no BSP.
+            /// Stored separately from the industry SP so the simulator can
+            /// model exchange execution and closing-line value.
+            /// </summary>
+            public decimal? BetfairSp { get; }
+            /// <summary>
+            /// Last traded price before the off, or null when unavailable.
+            /// </summary>
+            public decimal? BetfairLastTradedPrice { get; }
             /// <summary>
             /// Official finishing position, or null for a non-finisher / missing
             /// result. Only used by the auxiliary finish loss.
@@ -546,6 +560,7 @@ namespace HorseRacingML.ML
             "MarketDecimalOdds", "MarketMoveEarlyPrice", "MarketMoveLowPrice", "MarketMoveHighPrice",
             "BetfairSelectionId", "BetfairSP", "BetfairPreOffHigh", "BetfairPreOffLow",
             "BetfairLastTradedPrice", "BetfairTradedVolume", "BetfairProjectedSP",
+            "MarketAnchorPrice", "MarketAnchorCapturedUtc",
             "BetfairAvailableToBack", "BetfairAvailableToLay", "BetfairTotalMatched",
             "BetfairMarketId", "BetfairMarketName", "BetfairBspReconciled",
             "HorseName", "JockeyName", "TrainerName", "Title", "RaceMonth", "RaceDayOfWeek", "Season",
@@ -1051,6 +1066,25 @@ namespace HorseRacingML.ML
                    key.StartsWith("Medication", StringComparison.OrdinalIgnoreCase);
         }
 
+        /// <summary>
+        /// True for every feature that is derived from the market price or the
+        /// exchange ladder. Used to build a market-blind ensemble member from
+        /// an already encoded dataset without a second database pass.
+        /// </summary>
+        internal static bool IsMarketFeatureKey(string key)
+        {
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                return false;
+            }
+
+            return key.StartsWith("Market", StringComparison.OrdinalIgnoreCase) ||
+                   key.StartsWith("Betfair", StringComparison.OrdinalIgnoreCase) ||
+                   key.StartsWith("BackPrice", StringComparison.OrdinalIgnoreCase) ||
+                   key.StartsWith("LayPrice", StringComparison.OrdinalIgnoreCase) ||
+                   key.Equals("IsFavourite", StringComparison.OrdinalIgnoreCase);
+        }
+
         internal static bool IsFeatureInBlock(string key, FeatureBlocks block)
         {
             return block switch
@@ -1299,6 +1333,8 @@ namespace HorseRacingML.ML
                 }
 
                 var spDecimal = GetNullableDecimal(row, "SP_Decimal");
+                var betfairSp = GetNullableDecimal(row, "BetfairSP");
+                var betfairLastTraded = GetNullableDecimal(row, "BetfairLastTradedPrice");
                 bool hasMarketPrice = marketProbabilities[i] > 0f;
                 float marketLogit = marketProbabilities[i] > 0f
                     ? (float)Math.Log(marketProbabilities[i] / (1f - marketProbabilities[i]))
@@ -1316,7 +1352,9 @@ namespace HorseRacingML.ML
                     marketProbabilities[i],
                     marketLogProbabilities[i],
                     finishPosition,
-                    fieldSize));
+                    fieldSize,
+                    betfairSp,
+                    betfairLastTraded));
             }
 
             DateTime raceDate = preparedRace.Rows.Count > 0 &&

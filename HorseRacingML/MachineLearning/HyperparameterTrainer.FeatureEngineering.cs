@@ -2,6 +2,7 @@ using Dapper;
 using HorseRacingML.Models;
 using HorseRacingML.Services;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Configuration;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -318,9 +319,12 @@ namespace HorseRacingML.ML
                     }
                 }
 
-                // Pre-off market features. Historical rows use the opening Betfair
-                // price (known before the off); live rows use the current back price
-                // captured by the scraper. The final SP is deliberately not used.
+                // Pre-off market features. Historical rows use the timestamped
+                // Betfair anchor (T-N, normally five minutes before the off)
+                // when the importer stored one, and fall back to the opening
+                // show otherwise. Live rows use the back price at the same
+                // anchor point, falling back to the latest captured snapshot.
+                // The final SP is deliberately not used.
                 int rowCount = rows.Count;
                 var marketPrices = new float[rowCount];
                 var marketProbabilities = new float[rowCount];
@@ -330,12 +334,20 @@ namespace HorseRacingML.ML
                 for (int i = 0; i < rowCount; i++)
                 {
                     var marketRow = rows[i];
-                    float price = 0f;
-                    if (marketRow.TryGetValue("MarketDecimalOdds", out var livePrice) && livePrice != null)
+                    float price = ReadHistoricalMarketPrice(marketRow, "MarketAnchorPrice");
+                    if (price <= 1f &&
+                        marketRow.TryGetValue("MarketDecimalOdds", out var livePrice) &&
+                        livePrice != null)
                     {
-                        price = Convert.ToSingle(livePrice);
+                        float live = Convert.ToSingle(livePrice, CultureInfo.InvariantCulture);
+                        if (live > 1f && float.IsFinite(live))
+                        {
+                            price = live;
+                        }
                     }
-                    else if (marketRow.TryGetValue("OpeningFraction", out var opening) && opening is string openingText)
+                    if (price <= 1f &&
+                        marketRow.TryGetValue("OpeningFraction", out var opening) &&
+                        opening is string openingText)
                     {
                         price = ParseMarketPrice(openingText);
                     }
@@ -457,13 +469,31 @@ namespace HorseRacingML.ML
                         if (marketMovementEnabled)
                         {
                             float earlyPrice = ReadHistoricalMarketPrice(row, "OpeningFraction");
-                            float touchedLow = ReadHistoricalMarketPrice(row, "TouchedLowFraction");
-                            float touchedHigh = ReadHistoricalMarketPrice(row, "TouchedHighFraction");
                             if (row.TryGetValue("MarketMoveEarlyPrice", out var earlyValue) &&
                                 earlyValue is not null)
                             {
                                 earlyPrice = Convert.ToSingle(earlyValue, CultureInfo.InvariantCulture);
                             }
+
+                            // Prefer the live snapshot range (already limited to
+                            // the T-N cutoff by ResolveFlowPriceRange). For
+                            // historical rows the only safe movement is opening
+                            // -> anchor; the full-day touched high/low includes
+                            // prices observed after the live decision time, so
+                            // it is opt-in for ablation only.
+                            float anchorPrice = ReadHistoricalMarketPrice(row, "MarketAnchorPrice");
+                            float touchedLow = 0f;
+                            float touchedHigh = 0f;
+                            if (anchorPrice > 1f && earlyPrice > 1f)
+                            {
+                                // The only two prices known at the decision
+                                // time are the opening show and the T-N anchor.
+                                // Treat them as a two-point movement range so
+                                // backed/drifted flags remain meaningful.
+                                touchedLow = Math.Min(earlyPrice, anchorPrice);
+                                touchedHigh = Math.Max(earlyPrice, anchorPrice);
+                            }
+
                             if (row.TryGetValue("MarketMoveLowPrice", out var lowValue) &&
                                 lowValue is not null)
                             {
@@ -473,6 +503,11 @@ namespace HorseRacingML.ML
                                 highValue is not null)
                             {
                                 touchedHigh = Convert.ToSingle(highValue, CultureInfo.InvariantCulture);
+                            }
+                            else if (touchedLow <= 1f && _trainer.UseFullDayMarketMovement)
+                            {
+                                touchedLow = ReadHistoricalMarketPrice(row, "TouchedLowFraction");
+                                touchedHigh = ReadHistoricalMarketPrice(row, "TouchedHighFraction");
                             }
 
                             AddMarketMovementFeatures(
@@ -3637,6 +3672,8 @@ namespace HorseRacingML.ML
                 "BetfairPreOffHigh",
                 "BetfairPreOffLow",
                 "BetfairLastTradedPrice",
+                "MarketAnchorPrice",
+                "MarketAnchorCapturedUtc",
                 "BetfairTradedVolume",
                 "BetfairProjectedSP",
                 "BetfairAvailableToBack",
@@ -3759,6 +3796,12 @@ namespace HorseRacingML.ML
             string betfairPreOffLowColumn = runnerColumns.Contains("BetfairPreOffLow")
                 ? "rr.BetfairPreOffLow AS BetfairPreOffLow"
                 : "CAST(NULL AS DECIMAL(9,2)) AS BetfairPreOffLow";
+            string marketAnchorPriceColumn = runnerColumns.Contains("MarketAnchorPrice")
+                ? "rr.MarketAnchorPrice AS MarketAnchorPrice"
+                : "CAST(NULL AS DECIMAL(9,2)) AS MarketAnchorPrice";
+            string marketAnchorCapturedColumn = runnerColumns.Contains("MarketAnchorCapturedUtc")
+                ? "rr.MarketAnchorCapturedUtc AS MarketAnchorCapturedUtc"
+                : "CAST(NULL AS DATETIME2(0)) AS MarketAnchorCapturedUtc";
             string betfairProjectedSpColumn = runnerColumns.Contains("BetfairProjectedSP")
                 ? "rr.BetfairProjectedSP AS BetfairProjectedSP"
                 : "CAST(NULL AS DECIMAL(9,2)) AS BetfairProjectedSP";
@@ -3850,6 +3893,8 @@ namespace HorseRacingML.ML
                                    rr.OutcomeCode,
                                    rr.DistanceBeatenText,
                                    rr.SP_Decimal,
+                                   rr.BetfairSP,
+                                   rr.BetfairLastTradedPrice,
                                    rr.OpeningFraction,
                                    rr.TouchedHighFraction,
                                    rr.TouchedLowFraction,
@@ -3857,6 +3902,8 @@ namespace HorseRacingML.ML
                                    {betfairTradedVolumeColumn},
                                    {betfairPreOffHighColumn},
                                    {betfairPreOffLowColumn},
+                                   {marketAnchorPriceColumn},
+                                   {marketAnchorCapturedColumn},
                                    {betfairProjectedSpColumn},
                                    {betfairAvailableToBackColumn},
                                    {betfairAvailableToLayColumn},
@@ -3892,7 +3939,9 @@ namespace HorseRacingML.ML
                     "JockeyId",
                     "SaddleclothNumber",
                     "Draw",
-                    "SP_Decimal"
+                    "SP_Decimal",
+                    "BetfairSP",
+                    "BetfairLastTradedPrice"
                 };
             }
 
@@ -4225,7 +4274,7 @@ namespace HorseRacingML.ML
             int raceId)
         {
             var rows = new List<Dictionary<string, object?>>(flows.Count);
-            var (courseId, courseName) = ResolveCourse(conn, upcoming);
+            var (courseId, courseName, courseTimeZoneId) = ResolveCourse(conn, upcoming);
             var weatherFeatures = TryBuildUpcomingWeatherFeatures(
                 conn,
                 courseId,
@@ -4233,6 +4282,11 @@ namespace HorseRacingML.ML
                 upcoming.ScheduledOff,
                 upcoming.Surface);
             int runnerCount = flows.Count;
+            int marketAnchorMinutes = _marketAnchorMinutes;
+            var anchorCutoffUtc = ResolveMarketAnchorCutoffUtc(
+                upcoming,
+                courseTimeZoneId,
+                marketAnchorMinutes);
 
             foreach (var flow in flows)
             {
@@ -4366,12 +4420,30 @@ namespace HorseRacingML.ML
                     }
                 }
 
-                var priceRange = ResolveFlowPriceRange(conn, flow);
-                if (priceRange.HasValue)
+                var priceRange = ResolveFlowPriceRange(conn, flow, anchorCutoffUtc);
+                if (priceRange is not null)
                 {
-                    row["MarketMoveEarlyPrice"] = priceRange.Value.EarlyPrice;
-                    row["MarketMoveLowPrice"] = priceRange.Value.LowPrice;
-                    row["MarketMoveHighPrice"] = priceRange.Value.HighPrice;
+                    if (priceRange.EarlyPrice.HasValue)
+                    {
+                        row["MarketMoveEarlyPrice"] = priceRange.EarlyPrice.Value;
+                    }
+                    if (priceRange.LowPrice.HasValue)
+                    {
+                        row["MarketMoveLowPrice"] = priceRange.LowPrice.Value;
+                    }
+                    if (priceRange.HighPrice.HasValue)
+                    {
+                        row["MarketMoveHighPrice"] = priceRange.HighPrice.Value;
+                    }
+                    if (priceRange.MarketPrice.HasValue && priceRange.MarketPrice.Value > 1m)
+                    {
+                        row["MarketDecimalOdds"] = priceRange.MarketPrice.Value;
+                    }
+                    if (priceRange.AnchorPrice.HasValue)
+                    {
+                        row["MarketAnchorPrice"] = priceRange.AnchorPrice.Value;
+                        row["MarketAnchorCapturedUtc"] = priceRange.AnchorCapturedUtc;
+                    }
                 }
 
                 rows.Add(row);
@@ -4396,20 +4468,30 @@ namespace HorseRacingML.ML
             public decimal? EarlyPrice { get; set; }
             public decimal? LowPrice { get; set; }
             public decimal? HighPrice { get; set; }
+            public decimal? EarliestPrice { get; set; }
+            public decimal? AnchorPrice { get; set; }
+            public DateTime? AnchorCapturedUtc { get; set; }
+            public decimal? MarketPrice { get; set; }
         }
 
-        private static (float EarlyPrice, float LowPrice, float HighPrice)? ResolveFlowPriceRange(
+        private static FlowPriceRange? ResolveFlowPriceRange(
             SqlConnection conn,
-            RunnerFlow flow)
+            RunnerFlow flow,
+            DateTime? anchorCutoffUtc)
         {
-            if (flow.BackPrice1 is null || flow.BackPrice1.Value <= 1m)
-            {
-                return null;
-            }
-
+            decimal? current = flow.BackPrice1 is > 1m ? flow.BackPrice1 : null;
             if (!TableExists(conn, "dbo.RunnerFlow"))
             {
-                return null;
+                return current.HasValue
+                    ? new FlowPriceRange
+                    {
+                        EarlyPrice = current,
+                        LowPrice = current,
+                        HighPrice = current,
+                        EarliestPrice = current,
+                        MarketPrice = current
+                    }
+                    : null;
             }
 
             const string sql = @"
@@ -4419,44 +4501,151 @@ SELECT
       WHERE rf.MarketId = @MarketId
         AND ((@SelectionId IS NOT NULL AND rf.SelectionId = @SelectionId)
              OR (@SelectionId IS NULL AND rf.HorseName = @HorseName))
-        AND rf.BackPrice1 IS NOT NULL
+        AND rf.BackPrice1 > 1
       ORDER BY rf.RunnerFlowId ASC) AS EarlyPrice,
     (SELECT MIN(rf.BackPrice1)
        FROM dbo.RunnerFlow rf
       WHERE rf.MarketId = @MarketId
         AND ((@SelectionId IS NOT NULL AND rf.SelectionId = @SelectionId)
              OR (@SelectionId IS NULL AND rf.HorseName = @HorseName))
-        AND rf.BackPrice1 IS NOT NULL) AS LowPrice,
+        AND rf.BackPrice1 > 1
+        AND (@AnchorCutoffUtc IS NULL OR rf.CapturedUtc <= @AnchorCutoffUtc)) AS LowPrice,
     (SELECT MAX(rf.BackPrice1)
        FROM dbo.RunnerFlow rf
       WHERE rf.MarketId = @MarketId
         AND ((@SelectionId IS NOT NULL AND rf.SelectionId = @SelectionId)
              OR (@SelectionId IS NULL AND rf.HorseName = @HorseName))
-        AND rf.BackPrice1 IS NOT NULL) AS HighPrice";
+        AND rf.BackPrice1 > 1
+        AND (@AnchorCutoffUtc IS NULL OR rf.CapturedUtc <= @AnchorCutoffUtc)) AS HighPrice,
+    (SELECT TOP (1) rf.BackPrice1
+       FROM dbo.RunnerFlow rf
+      WHERE rf.MarketId = @MarketId
+        AND ((@SelectionId IS NOT NULL AND rf.SelectionId = @SelectionId)
+             OR (@SelectionId IS NULL AND rf.HorseName = @HorseName))
+        AND rf.BackPrice1 > 1
+        AND @AnchorCutoffUtc IS NOT NULL
+        AND rf.CapturedUtc <= @AnchorCutoffUtc
+      ORDER BY rf.CapturedUtc DESC, rf.RunnerFlowId DESC) AS AnchorPrice,
+    (SELECT TOP (1) rf.CapturedUtc
+       FROM dbo.RunnerFlow rf
+      WHERE rf.MarketId = @MarketId
+        AND ((@SelectionId IS NOT NULL AND rf.SelectionId = @SelectionId)
+             OR (@SelectionId IS NULL AND rf.HorseName = @HorseName))
+        AND rf.BackPrice1 > 1
+        AND @AnchorCutoffUtc IS NOT NULL
+        AND rf.CapturedUtc <= @AnchorCutoffUtc
+      ORDER BY rf.CapturedUtc DESC, rf.RunnerFlowId DESC) AS AnchorCapturedUtc,
+    (SELECT TOP (1) rf.BackPrice1
+       FROM dbo.RunnerFlow rf
+      WHERE rf.MarketId = @MarketId
+        AND ((@SelectionId IS NOT NULL AND rf.SelectionId = @SelectionId)
+             OR (@SelectionId IS NULL AND rf.HorseName = @HorseName))
+        AND rf.BackPrice1 > 1
+      ORDER BY rf.CapturedUtc ASC, rf.RunnerFlowId ASC) AS EarliestPrice";
 
-            var range = conn.QueryFirstOrDefault<FlowPriceRange>(
+            var range = conn.QuerySingleOrDefault<FlowPriceRange>(
                 sql,
                 new
                 {
                     MarketId = flow.MarketId,
                     SelectionId = flow.SelectionId,
-                    HorseName = flow.HorseName
+                    HorseName = flow.HorseName,
+                    AnchorCutoffUtc = anchorCutoffUtc
                 });
 
-            decimal current = flow.BackPrice1.Value;
-            decimal early = range?.EarlyPrice ?? current;
-            decimal low = range?.LowPrice ?? current;
-            decimal high = range?.HighPrice ?? current;
-            if (current < low)
+            decimal? anchor = range?.AnchorPrice is > 1m ? range.AnchorPrice : null;
+            DateTime? anchorCaptured = anchor.HasValue ? range?.AnchorCapturedUtc : null;
+            decimal? earliest = range?.EarliestPrice is > 1m ? range.EarliestPrice : null;
+            decimal? early = range?.EarlyPrice is > 1m ? range.EarlyPrice : current;
+            decimal? low = range?.LowPrice is > 1m ? range.LowPrice : current;
+            decimal? high = range?.HighPrice is > 1m ? range.HighPrice : current;
+            if (current.HasValue)
             {
-                low = current;
-            }
-            if (current > high)
-            {
-                high = current;
+                low = !low.HasValue || current.Value < low.Value ? current : low;
+                high = !high.HasValue || current.Value > high.Value ? current : high;
             }
 
-            return ((float)early, (float)low, (float)high);
+            // The latest snapshot at or before T-N is the aligned price. If
+            // the race is still more than N minutes away, or no earlier
+            // snapshot exists, use the current quote; the earliest stored
+            // snapshot is the last resort.
+            decimal? marketPrice = anchor ?? current ?? earliest;
+            if (!marketPrice.HasValue &&
+                !early.HasValue &&
+                !low.HasValue &&
+                !high.HasValue)
+            {
+                return null;
+            }
+
+            return new FlowPriceRange
+            {
+                EarlyPrice = early,
+                LowPrice = low,
+                HighPrice = high,
+                EarliestPrice = earliest,
+                AnchorPrice = anchor,
+                AnchorCapturedUtc = anchorCaptured,
+                MarketPrice = marketPrice
+            };
+        }
+
+        /// <summary>
+        /// Converts the local race date and scheduled off time to a UTC cutoff
+        /// of T-N. The course time zone is used when known; otherwise the
+        /// process time zone is the best available approximation for the
+        /// locally displayed racecard time.
+        /// </summary>
+        private static DateTime? ResolveMarketAnchorCutoffUtc(
+            UpcomingRace upcoming,
+            string? courseTimeZoneId,
+            int marketAnchorMinutes)
+        {
+            if (!upcoming.ScheduledOff.HasValue)
+            {
+                return null;
+            }
+
+            var localOff = DateTime.SpecifyKind(
+                upcoming.RaceDate.Date + upcoming.ScheduledOff.Value,
+                DateTimeKind.Unspecified);
+            var timeZone = ResolveTimeZone(courseTimeZoneId) ?? TimeZoneInfo.Local;
+            DateTime offUtc;
+            try
+            {
+                offUtc = TimeZoneInfo.ConvertTimeToUtc(localOff, timeZone);
+            }
+            catch (ArgumentException)
+            {
+                offUtc = DateTime.SpecifyKind(localOff, DateTimeKind.Utc);
+            }
+
+            return offUtc.AddMinutes(-Math.Max(0, marketAnchorMinutes));
+        }
+
+        private static TimeZoneInfo? ResolveTimeZone(string? timeZoneId)
+        {
+            if (string.IsNullOrWhiteSpace(timeZoneId))
+            {
+                return null;
+            }
+
+            if (TimeZoneInfo.TryFindSystemTimeZoneById(timeZoneId, out var timeZone))
+            {
+                return timeZone;
+            }
+
+            // Windows installations without ICU only understand Windows IDs.
+            if (timeZoneId.Equals("Europe/London", StringComparison.OrdinalIgnoreCase) ||
+                timeZoneId.Equals("Europe/Dublin", StringComparison.OrdinalIgnoreCase))
+            {
+                if (TimeZoneInfo.TryFindSystemTimeZoneById("GMT Standard Time", out timeZone))
+                {
+                    return timeZone;
+                }
+            }
+
+            return null;
         }
 
         private sealed class PedigreeLookup
@@ -4525,21 +4714,25 @@ ORDER BY r.RaceDate DESC, rr.RunnerResultId DESC";
                 new { HorseId = horseId, RaceDate = raceDate.Date });
         }
 
-        private (int CourseId, string? CourseName) ResolveCourse(SqlConnection conn, UpcomingRace upcoming)
+        private (int CourseId, string? CourseName, string? TimeZoneId) ResolveCourse(
+            SqlConnection conn,
+            UpcomingRace upcoming)
         {
             if (!string.IsNullOrWhiteSpace(upcoming.VenueName))
             {
-                const string exactSql = "SELECT TOP (1) CourseId, Name FROM Course WHERE Name = @Name ORDER BY CourseId";
-                var exact = conn.QuerySingleOrDefault<(int CourseId, string Name)?>(exactSql, new { Name = upcoming.VenueName });
+                const string exactSql = "SELECT TOP (1) CourseId, Name, TimeZoneId FROM Course WHERE Name = @Name ORDER BY CourseId";
+                var exact = conn.QuerySingleOrDefault<(int CourseId, string Name, string? TimeZoneId)?>(
+                    exactSql,
+                    new { Name = upcoming.VenueName });
                 if (exact.HasValue)
                 {
-                    return (exact.Value.CourseId, exact.Value.Name);
+                    return (exact.Value.CourseId, exact.Value.Name, exact.Value.TimeZoneId);
                 }
 
-                const string courseSql = "SELECT CourseId, Name FROM Course";
-                var allCourses = conn.Query<(int CourseId, string Name)>(courseSql).ToList();
+                const string courseSql = "SELECT CourseId, Name, TimeZoneId FROM Course";
+                var allCourses = conn.Query<(int CourseId, string Name, string? TimeZoneId)>(courseSql).ToList();
                 var normalizedVenue = NormalizeLookupKey(upcoming.VenueName);
-                (int CourseId, string Name)? best = null;
+                (int CourseId, string Name, string? TimeZoneId)? best = null;
                 int bestScore = int.MaxValue;
                 foreach (var course in allCourses)
                 {
@@ -4568,12 +4761,12 @@ ORDER BY r.RaceDate DESC, rr.RunnerResultId DESC";
 
                 if (best.HasValue)
                 {
-                    return (best.Value.CourseId, best.Value.Name);
+                    return (best.Value.CourseId, best.Value.Name, best.Value.TimeZoneId);
                 }
             }
             Console.WriteLine($"\t\tNo match found in Course.Name for venue '{upcoming.VenueName ?? "<null>"}'; using synthetic course metadata.");
             int syntheticCourseId = GenerateSyntheticId("course:" + (upcoming.VenueName ?? upcoming.MarketId ?? string.Empty));
-            return (syntheticCourseId, upcoming.VenueName);
+            return (syntheticCourseId, upcoming.VenueName, null);
         }
 
         private int ResolveHorseId(SqlConnection conn, string horseName)

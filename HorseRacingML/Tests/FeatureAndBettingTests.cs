@@ -272,6 +272,7 @@ namespace HorseRacingML.Tests
                 .AddInMemoryCollection(new Dictionary<string, string?>
                 {
                     ["ConnectionStrings:HorseRacingDb"] = "Server=(local);Database=HorseRacingMLTest;Trusted_Connection=True;",
+                    ["Training:UseFullDayMarketMovement"] = "true",
                     ["Training:FeatureBlocks"] = "all"
                 })
                 .Build();

@@ -148,8 +148,10 @@ T-SQL specifics such as `IDENTITY`/`SCOPE_IDENTITY()`, `DATE`/`TIME(0)`, `sys.in
   the history (`git filter-repo`/BFG) and force-pushing.
 * The TensorFlow package is the Windows GPU build (`TensorFlow.Redist-Windows-GPU`).
   TensorFlow 2.10 needs a compatible CUDA/cuDNN install.
-* The old ML.NET/LightGBM winner-prediction path was removed: it was unused by the
-  live betting path and used post-race/SP fields as features.
+* The old live ML.NET/LightGBM winner-prediction path was removed: it was unused by
+  the live betting path and used post-race/SP fields as features. A new
+  `--benchmark-lightgbm` LambdaRank comparison uses only pre-off features and is
+  benchmark-only; it does not persist or activate an artifact.
 
 ## Model and validation changes
 
@@ -165,8 +167,10 @@ live pipeline match the backtest:
 * `TrainAI` uses a chronological train/dev/test split. Dev is used for early stopping,
   temperature calibration and model selection; test is reported once and never used for
   selection. The persisted model is trained on train+dev with the dev-selected epoch
-  count and the dev temperature. Models that do not beat the dev market baseline are
-  recorded as `Rejected` and are not eligible for selection.
+  count and the dev temperature. Dev and test reports include race-level log loss and
+  top-1/top-3 accuracy alongside runner-level log loss/Brier. Model selection is gated
+  against the raw no-vig market: a model whose dev race log loss does not beat that
+  baseline is recorded as `MarketRejected` and is not eligible for activation.
 * Training and evaluation use every race from `Training:MinimumRaceDate` (default
   `1988-01-01`, the start of the stored history). `Training:RequirePreOffPrice` is
   `false` by default, so races from before the market-data era are included even though
@@ -193,7 +197,7 @@ live pipeline match the backtest:
   ```json
   "Betting": {
     "MaxKellyFraction": 0.10,
-    "CommissionRate": 0.05
+    "CommissionRate": 0.02
   },
   "Training": {
     "ValidationFraction": 0.10,
@@ -205,14 +209,111 @@ live pipeline match the backtest:
     "Objective": "RaceSoftmax",
     "AuxiliaryWinLossWeight": 0.2,
     "AuxiliaryFinishLossWeight": 0.2,
+    "PairwiseLossWeight": 0.1,
     "UseMarketOffset": true,
+    "MarketAnchorMinutes": 5,
+    "UseFullDayMarketMovement": false,
+    "RecencyHalfLifeDays": 0,
     "RaceBatchSize": 64,
     "Seed": 42,
-    "SeedCount": 1,
+    "SeedCount": 3,
+    "EnsembleSize": 3,
+    "MarketBlindEnsembleMembers": 1,
+    "LightGbmEnsembleMember": true,
+    "LightGbmIterations": 200,
     "RequireMarketEdge": true,
     "EnablePaceFeatures": true
   }
   ```
+
+### Betting simulator
+
+`TrainAI` and `TestAI` publish the runner-level validation predictions to a
+`BettingSimulatorStore` snapshot. The **Betting Simulator** page
+(`/Hyperparameter/BettingSimulator`) replays that snapshot with user-supplied
+filters, so changing race type, field size, edge, odds, class, going, surface,
+course, age, distance, date range or staking does **not** retrain the model.
+
+The page has two steps:
+
+1. **Prepare the prediction snapshot** (optional if you just ran Train AI or
+   Test AI). It scores or retrains the saved model over history before the
+   selected window and evaluates the window once, then caches every runner's
+   probability, SP, Betfair SP and last-traded price in memory and on disk. The
+   preparation runs on the background job worker, so the browser request
+   returns immediately and the page polls for progress without discarding
+   filter edits. The window end defaults to the latest race in the database,
+   not today; explicit From/To dates make a run reproducible. Snapshots are
+   stored under `%LOCALAPPDATA%\HorseRacingML\simulator` and can be re-loaded
+   after an app restart. Override the directory with
+   `Training:SimulatorSnapshotDirectory`.
+
+2. **Apply filters** to re-run the one-bet-per-race selection, Kelly/flat/
+   bankroll-percentage staking and commission, and show ROI, profit, turnover,
+   strike rate, average edge/odds, max drawdown, losing streaks, profit factor
+   and breakdowns by race type, field size, edge band, odds band, class, going,
+   surface, course, age, distance and month. The filter form is a GET request,
+   so results are bookmarkable and refresh-safe; the bet list is paged and the
+   full un-paged list can be downloaded as CSV.
+
+`Edge % = AI probability × net decimal odds − 1`
+
+The default minimum edge is 0.01%, so exactly zero-EV bets are not placed.
+A positive minimum edge is the quickest way to test whether a more selective
+bettor rule would have improved ROI over the same window.
+
+#### Statistical safeguards
+
+* **ROI uncertainty.** The result includes a 95% race-level bootstrap interval,
+  probability of profit, standard error and t-statistic. Treat a positive point
+  estimate with a wide interval as unproven.
+* **Tune / confirm split.** The last `ConfirmPercent` of the window is held back
+  and reported separately. Choose filters using the tune sample only; the
+  confirmation sample is the closer approximation to live results.
+* **Walk-forward stability.** The page reports the same filter over four
+  consecutive date periods so a result driven by one hot month is visible.
+* **Baselines.** Market favourite, model top pick and all-positive-EV flat
+  strategies are shown over the same window for comparison.
+* **Selection funnel.** Races considered, passed race filters, skipped for a
+  near-uniform probability vector, with a value candidate, and with a stake are
+  all reported. This explains a zero-bet result without guesswork.
+
+#### Realism options
+
+* **Price source:** industry SP, Betfair SP, last traded, or the best available.
+  Missing Betfair prices fall back to SP.
+* **Price slippage:** a configurable haircut models a worse-than-quoted fill.
+* **Stake controls:** maximum stake as a percentage of bankroll or an absolute
+  amount, a minimum stake, a daily stake cap and a daily loss stop.
+* **Multiple selections:** up to ten bets per race can be selected, ranked by
+  edge, differential, Kelly fraction or shortest price.
+* **Saved-model inference:** when the evaluation window starts after the active
+  model's training cutoff (the end of its train+dev period) and the feature
+  schema matches, the persisted weights are used directly. The held-out test
+  rows can be scored because the model never trained on them. Only the
+  validation rows are encoded in this path, so the full training history is not
+  materialised in memory. Otherwise a replica is retrained on history before
+  the window. The snapshot summary labels which path was used.
+
+Snapshot preparation is bounded to avoid the full-history memory spike when a
+replica has to be retrained. It trains from the saved model's
+`EarliestTrainingDate`, but never earlier than
+`Training:SimulatorMinimumRaceDate` (default `2017-01-01`), refuses a retrain
+with more than `Training:SimulatorMaxTrainingRaces` (default `200000`) training
+races, and refuses a retrain with more than `Training:SimulatorMaxRunners`
+(default `1000000`) runner rows. Raise either setting if you deliberately want a
+larger run. A window that starts after the active model's `TrainingEndDate` uses
+saved-model inference instead and is not subject to the runner-row limit.
+
+Training calls are serialised inside `HyperparameterTrainer`: TensorFlow.NET
+uses a process-wide default graph, so overlapping training requests can corrupt
+it and terminate the process.
+
+A snapshot is tied to the model hash that produced it. If a different model is
+activated later, the page shows a stale-snapshot warning. Unhandled exception
+and process-exit diagnostics are appended to
+`%LOCALAPPDATA%\HorseRacingML\logs\app-YYYYMMDD.log`.
+
 
 ### Speeding up training
 
@@ -258,6 +359,9 @@ prediction.
 Run the backfill once after the historical results are loaded:
 
 ```powershell
+dotnet run --project HorseRacingML -- --backfill-weather
+
+# Narrow the range explicitly when needed
 dotnet run --project HorseRacingML -- --backfill-weather --from 2015-01-01
 
 # Recompute race features from the daily cache only (no API calls)
@@ -267,6 +371,12 @@ dotnet run --project HorseRacingML -- --populate-weather-features
 # course-years that already have race rows. Use after adding new raw columns.
 dotnet run --project HorseRacingML -- --refresh-weather --from 2024-01-01 --to 2024-12-31
 ```
+
+With no `--from`, the backfill starts at the earliest `Race.RaceDate` in the
+database, so it covers all loaded history instead of a fixed year. The start is
+clamped to 1940-01-01 because that is where the Open-Meteo archive (ERA5) begins;
+soil-moisture variables begin in 1950. Set `Weather:BackfillFrom` only if you
+want to override the discovered start.
 
 The normal backfill is idempotent and resumable: it skips a course-year once every
 race in it has a `RaceWeather` row, so it will not pick up newly added raw columns
@@ -294,10 +404,12 @@ Configuration:
   "RequestTimeoutSeconds": 20,
   "PastDays": 14,
   "ForecastDays": 16,
-  "LookbackDays": 20,
-  "BackfillFrom": "2010-01-01"
+  "LookbackDays": 20
 }
 ```
+
+`Weather:BackfillFrom` is optional; when omitted the backfill uses the earliest
+race date stored in the database.
 
 The free Open-Meteo tier is for non-commercial use (10,000 calls/day) and the
 data is CC BY 4.0. The application reports the attribution
@@ -362,10 +474,15 @@ dev temperature frozen. It is not retrained on test. `TestAI` trains only on rac
 *before* the chosen evaluation window, so historical backtests no longer see future
 form.
 
-New `MLParameters` columns store the objective, seed, chosen epoch, market-offset scale,
-normalization mode, date ranges/race counts, dev and test metrics, and the corresponding
-market baselines. `GetBestMLParameter` selects on the dev Brier (falling back to the old
-`ValidationBrier` for legacy rows) and ignores rows marked `Rejected`.
+Every dev and test report now includes race-level log loss (mean `-log p(winner)`), top-1
+and top-3 accuracy, and the raw no-vig market baselines, alongside the runner-level
+binary log loss/Brier kept for comparison with older runs.
+
+New `MLParameters` columns store the objective, seed, ensemble size, chosen epoch,
+market-offset scale, normalization mode, date ranges/race counts, dev and test metrics,
+and the corresponding market baselines. `GetBestMLParameter` selects on the dev race log
+loss and ignores rows marked `MarketRejected`; legacy rows without race-level metrics
+fall back to dev Brier/`ValidationBrier`.
 
 Feature engineering now includes:
 
@@ -387,8 +504,73 @@ Feature engineering now includes:
 
 Validate the new model on the same probability space that live betting uses: predictions
 are normalised within each race before temperature fitting, Brier/log loss, and early
-stopping. New models also carry `Objective`, `MarketOffsetScale` and `Temperature` in
+stopping. Temperature is fitted on the race-level categorical log loss, not on the
+runner-level Brier, so calibration targets the winner's probability within the field.
+New models also carry `Objective`, `MarketOffsetScale` and `Temperature` in
 `aiweights.json`; old weight files continue to load as `Binary` models.
+
+### Seed ensembles
+
+`Training:EnsembleSize` (default `3`) selects the top dev seeds and averages them in log
+space. Each member is a separately trained network; their per-runner probabilities are
+combined by averaging log probabilities and renormalising within each race, and
+`MLParameters.EnsembleSize` records how many members were retained. Set it to `1` to
+persist a single seed. Set `Training:SeedCount` to at least `EnsembleSize` when you want
+the ensemble to average different seeds rather than different hyperparameter rows.
+
+`Training:MarketBlindEnsembleMembers` (default `1`) adds one form-only member per
+ensemble. The member shares the encoded feature matrix, but the trainer zeroes every
+market-derived column and disables the market offset; at inference the same mask is
+applied. It is skipped if its dev race log loss is more than 0.05 behind the best
+market-aware member.
+
+`Training:PairwiseLossWeight` (default `0.1`) adds a training-only winner-versus-field
+ranking term: the winner's logit is pushed above the mean loser logit. This targets top-1
+accuracy, which calibration alone cannot improve. Set it to `0` to reproduce the pure
+race-softmax objective.
+
+`Training:RecencyHalfLifeDays` (default `0` = all races equal) applies an exponential
+decay to older races. For a 2017+ market window, values around `1095` (3 years) or
+`1825` (5 years) are worth benchmarking; use the existing benchmark commands with the
+same split and seed before enabling it.
+
+`Training:LightGbmEnsembleMember` (default `true`) and `Training:LightGbmIterations`
+(default `200`) train an optional ML.NET LightGBM LambdaRank member on the same feature
+matrix. The member is saved as a `.zip` next to the JSON artifact and is loaded by
+`TrainedModelRuntime` alongside the TensorFlow members; it is skipped if its dev race
+log loss is more than 0.10 behind the best MLP member. `TestAI` re-trains the MLP
+members for its historical window; the LightGBM member is present in the active
+artifact and live scoring, but is not re-trained by `TestAI`.
+
+The same chronological ensemble can be run from the console, which is useful for long
+runs that should outlive a browser request:
+
+```powershell
+dotnet run --project HorseRacingML -c Release -- --train-ensemble `
+  --minimum-race-date 2017-01-01 `
+  --seed-count 3 `
+  --ensemble-size 3
+```
+
+Add `--no-blind` to omit the market-blind member, `--force` to persist/activate even when
+the dev market gate fails, or `--units/--layers/--dropout/--learning-rate/--epochs` to
+override the template hyperparameters. Results are inserted into `MLParameters`; a
+passing run also persists and activates the ensemble artifact.
+
+### Market anchor
+
+`Training:MarketAnchorMinutes` (default `5`) aligns historical and live prices at T-N
+(N minutes before the scheduled off), so training and live scoring read the market at
+the same point. Historical alignment requires the Betfair historical import; if an
+anchored Betfair price is not available for a race, training falls back to the opening
+price. Run `--import-betfair-historical` for the dates you want anchored before
+expecting the default to change anything.
+
+Historical `MarketMove*` features now use opening -> anchor rather than the full-day
+`TouchedLowFraction`/`TouchedHighFraction`, because those touched prices can include
+observations from after the live decision time. `Training:UseFullDayMarketMovement`
+(default `false`) restores the old full-day series for a deliberate ablation; leave it
+off for a live-equivalent model.
 
 ## Run-style / pace features
 
@@ -499,6 +681,115 @@ against the baseline row. Use `--blocks TrainerForm,FormContext` to run a subset
 When benchmarking `Sectionals`, use `--minimum-race-date 2023-03-01` so the rows before
 the RaceiQ archive do not dominate the comparison with neutral values.
 
+For a faster dev-only ablation against the **active** schema (no test retraining):
+
+```powershell
+dotnet run --project HorseRacingML -c Release -- --benchmark-feature-blocks-dev `
+  --blocks TrainerForm,FormContext,DeepForm,WeatherBalance,WeatherExtended `
+  --seed 42 `
+  --output "$env:TEMP\feature-blocks-dev.json"
+```
+
+The history is encoded once with every block enabled; the baseline keeps only the blocks
+in the reference `MLParameters` row, and each candidate adds one block. It reports priced
+dev race LL, top-1/top-3, runner LL and Brier, plus the delta against the active baseline.
+The report is checkpointed after every candidate; rerun the same command with `--resume`
+to keep completed candidates and train only the missing blocks.
+
+An optional LightGBM LambdaRank comparison uses the same split and encoded features:
+
+```powershell
+dotnet run --project HorseRacingML -c Release -- --benchmark-lightgbm `
+  --minimum-race-date 2017-01-01 `
+  --max-races 30000 `
+  --output "$env:TEMP\lightgbm.json"
+```
+
+The same LightGBM trainer is also available as an optional member of the persisted
+ensemble (`Training:LightGbmEnsembleMember`, default `true`). It is trained on the same
+encoded matrix, added only when its dev race log loss is within 0.10 of the best MLP
+member, and its `.zip` model is stored beside the JSON artifact. The command above
+remains the isolated benchmark. `--max-races` is a fast smoke test: it starts the rolling
+feature state at the first selected race, so it is not comparable to a full-history
+benchmark and should not be used to accept or reject the model.
+
+To compare two saved artifacts on the same chronological dev/test rows and fit old/new/
+market blend weights on dev:
+
+```powershell
+dotnet run --project HorseRacingML -c Release -- --blend-evaluate `
+  --new-id 85 `
+  --old-id 81 `
+  --output "$env:TEMP\blend-81-85.json"
+```
+
+The report contains the individual models, the Brier/log-loss/race-log-loss-optimal
+blends, a constrained blend that preserves the old model's dev top-1 accuracy, and a
+temperature-scaled new model. Blend weights are frozen from dev and reported once on
+test; the command does not modify the active artifact.
+
+To sweep the pairwise ranking weight on dev only:
+
+```powershell
+dotnet run --project HorseRacingML -c Release -- --benchmark-pairwise `
+  --weights 0,0.02,0.05,0.1 `
+  --seeds 42,43 `
+  --output "$env:TEMP\pairwise-sweep.json"
+```
+
+The encoded dataset is built once and every candidate trains on the same chronological
+train/dev split. It reports dev race LL, top-1/top-3, runner LL and Brier, and the
+best weight by Brier and by runner LL subject to the reference top-1 constraint. It does
+not retrain on test or persist an artifact.
+
+To compare ensemble-combination rules for an existing artifact:
+
+```powershell
+dotnet run --project HorseRacingML -c Release -- --evaluate-ensemble-combination `
+  --id 85 `
+  --output "$env:TEMP\ensemble-combination-85.json"
+```
+
+It scores each member on the same dev/test rows and compares the live equal-geometric
+mean with equal arithmetic, dev-fitted weighted arithmetic/geometric combinations and
+each member alone. No retraining and no artifact changes.
+
+To compare deployable calibration rules:
+
+```powershell
+dotnet run --project HorseRacingML -c Release -- --benchmark-calibration `
+  --id 85 `
+  --output "$env:TEMP\calibration-85.json"
+```
+
+This fits global Platt scaling, market-rank-bucket Platt scaling and field-size-bucket
+Platt scaling on dev, freezes the parameters, and reports the runner LL/Brier, race LL
+and top-1/top-3 on test. No artifact is changed.
+
+To apply the report's field-bucket parameters to an artifact and activate the calibrated
+bytes:
+
+```powershell
+dotnet run --project HorseRacingML -c Release -- --apply-field-calibration `
+  --id 85 `
+  --report "$env:TEMP\calibration-85.json"
+```
+
+The runtime stores the buckets in `TrainedModel.FieldCalibration` and applies them after
+the model/ensemble combination, renormalising within the race. A retrain does not
+automatically re-fit the calibration; repeat the calibration/apply step after retraining
+if the gain still holds on the new dev window.
+
+Applying calibration updates the active artifact, but the betting simulator replays a
+cached snapshot of probabilities. Re-price that snapshot with the active model's field
+buckets after applying calibration:
+
+```powershell
+dotnet run --project HorseRacingML -c Release -- --apply-simulator-calibration --id 92
+```
+
+This publishes a new snapshot keyed by the calibrated model hash; it does not retrain.
+
 `MarketMovement` and `PriceData` are part of the baseline because each improved both dev
 and test when added. `RaceContext` and `TrackGeometry` are also enabled so their
 higher-cardinality features can be evaluated with a dedicated hyperparameter sweep.
@@ -513,7 +804,7 @@ The two previously blocked blocks now have a source:
 | Block | Source | Coverage | Notes |
 | --- | --- | --- | --- |
 | `Sectionals` | [Racing TV results / RaceiQ](https://www.racingtv.com/results) | British races from March 2023; Irish races from January 2024 | Furlong-by-furlong times, finishing-speed percentage, in-running positions and RaceiQ pace percentiles. Free to view on racingtv.com. |
-| `Breeding` | [Racing TV racecards and horse profiles](https://www.racingtv.com/racing) | Racecard archive from 2010 onward | Sire, dam and damsire for every declared runner. One racecard request covers the whole field. |
+| `Breeding` | [Racing TV racecards and horse profiles](https://www.racingtv.com/racing) | Racecard archive from 2009 onward | Sire, dam and damsire for every declared runner. One racecard request covers the whole field. |
 
 Both backfills use the public JSON endpoints behind racingtv.com. They are serialised
 and rate-limited (`RacingTv:RequestDelayMs`, default 300 ms) and are resumable by date:
@@ -525,12 +816,17 @@ dotnet run --project HorseRacingML -c Release -- --backfill-sectionals `
 
 # Sire/dam/damsire for historical runners.
 dotnet run --project HorseRacingML -c Release -- --backfill-breeding `
-  --from 2010-01-01 --to 2026-12-31
+  --from 2009-01-01 --to 2026-12-31
 ```
 
 Use `--max-days 10` for a smoke test and `--force` to re-fetch races that already have
-rows. The same jobs are available as **Backfill Sectionals** and **Backfill Breeding**
-in the navigation bar. Check progress with:
+rows. Without `--force`, a race is treated as complete only when every finisher has a
+sectional row, so rerunning the backfill also repairs races that were interrupted
+mid-field; non-finishers legitimately have no splits. Racing TV publishes some meetings
+with per-furlong pace categories but no timed splits, and those races are counted as
+"without source data" rather than written as empty sectionals. The same jobs are
+available as **Backfill Sectionals** and **Backfill Breeding** in the navigation bar.
+Check progress with:
 
 ```powershell
 dotnet run --project HorseRacingML -- --racingtv-status
@@ -538,17 +834,81 @@ dotnet run --project HorseRacingML -- --racingtv-status
 
 The sectionals archive is much shorter than the result history. Train and benchmark
 `Sectionals` from `2023-03-01`; earlier rows receive neutral values and an explicit
-`SectionalHasHistory = 0` flag. `Breeding` can start from 2010, when the racecard archive
+`SectionalHasHistory = 0` flag. `Breeding` can start from 2009, when the racecard archive
 begins. Both blocks are enabled in the default configuration; run the backfills before
 expecting them to add signal. On the live path, a runner with no stored pedigree
 is looked up once through the Racing TV horse search/profile endpoints and the result is
 cached in `HorsePedigree`; a failed lookup leaves the Breeding features neutral.
+
+Racing TV's public racecard archive starts on **1 January 2009**; earlier racecards return
+404. Sporting Life results pages go back to about 2005, but their horse profiles do not
+carry sire/dam/damsire for pre-2009 runners, so they cannot fill that gap. A pre-2009
+pedigree backfill needs a licensed source with historical coverage, such as The Racing API,
+Weatherbys/Equineline or the Jockey Club's Thoroughbred Data Hub.
 
 This is an unofficial, free public web API rather than a licensed bulk feed. Keep the
 request rate conservative and check Racing TV's terms before commercial use. Paid
 alternatives with explicit licences include Timeform sectional archives, Total
 Performance Data (TPD) for tracking data and the official Weatherbys/Equineline
 pedigree services.
+
+### At The Races sectional gap fill
+
+Racing TV is not the only free source. **At The Races** publishes the same TPD timing
+data and covers British meetings that are missing from the RaceiQ archive. The importer
+fills only missing rows; it never overwrites a Racing TV row:
+
+```powershell
+dotnet run --project HorseRacingML -c Release -- --backfill-atr-sectionals `
+  --from 2023-03-01 --to 2026-11-18
+```
+
+ATR uses a JavaScript client challenge, so the job needs a visible Chrome session (a
+window will open) and a persistent profile under
+`%LOCALAPPDATA%\HorseRacingML\atr-chrome-profile`. The first run may spend up to a
+minute solving the challenge. `--max-days 1` is a safe smoke test; `--force` re-examines
+races that already have rows, but existing rows are still not overwritten. ATR opens the
+results page once per date, then requests the timed splits and finish-speed tab for each
+gap race using a same-origin `fetch()` in the already-authenticated page. ATR's tracking
+feed is British-only, so Irish gaps remain the Racing TV backfill's responsibility.
+
+ATR rate-limits aggressive backfills. Keep `RequestDelayMs` at 1000 ms or higher and
+run **one ATR backfill at a time**; multiple browser sessions on the same IP will
+eventually receive HTTP 429. The client backs off automatically on 429 using
+`RateLimitBackoffSeconds` (doubling per retry) and permanently slows the request delay
+for the rest of the run. If the results page itself is challenged repeatedly, wait a
+few minutes before resuming; the job is resumable and skips races already inserted.
+
+`FetchFinishSpeed` controls the extra tools request that carries ATR's exact per-horse
+finishing-speed percentage. Leaving it at `true` gives the highest-fidelity feature;
+set it to `false` to skip that request and compute the percentage from the split times
+instead. This removes one request for every race with timed sectionals and is the main
+speed/accuracy trade-off for a long historical backfill.
+
+ATR has British sectionals back to 2018, but coverage before 2024 is only about 18–45%
+of runners, so the default `AtTheRaces:BackfillFrom` matches the RaceiQ era. Set
+`--from 2018-01-01` only if you deliberately want the older, sparse rows. The status
+report below now prints the row count per `RunnerSectional.Source` so the Racing TV and
+ATR contributions are visible.
+
+Configuration:
+
+```json
+"AtTheRaces": {
+  "BaseUrl": "https://www.attheraces.com",
+  "RequestDelayMs": 1000,
+  "ChallengeTimeoutSeconds": 120,
+  "MaxRateLimitRetries": 3,
+  "RateLimitBackoffSeconds": 60,
+  "ResultsPageRetries": 1,
+  "FetchFinishSpeed": true,
+  "Headless": false,
+  "BackfillFrom": "2023-03-01"
+}
+```
+
+Leave `Headless` at `false`: ATR blocks headless Chrome. The browser is only used by the
+backfill, not by live scoring or training.
 
 ### Price-data backfill
 

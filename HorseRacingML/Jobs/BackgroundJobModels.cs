@@ -13,6 +13,7 @@ namespace HorseRacingML.Jobs
         BackfillBreeding,
         TrainAI,
         CustomTraining,
+        SimulatorPrepare,
         AutomateBets
     }
 

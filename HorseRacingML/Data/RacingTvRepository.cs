@@ -28,6 +28,7 @@ namespace HorseRacingML.Data
                 @"SELECT r.RaceId,
                          r.CourseId,
                          c.Name AS CourseName,
+                         c.TimeZoneId,
                          r.ScheduledOff,
                          r.Title,
                          r.RunnerCount
@@ -53,17 +54,21 @@ namespace HorseRacingML.Data
                 new { RaceId = raceId }).ToList();
         }
 
-        public IReadOnlyDictionary<int, int> GetSectionalRowCounts(DateTime date)
+        public IReadOnlyDictionary<int, (int Rows, int Finishers)> GetSectionalCoverage(DateTime date)
         {
             using var connection = new SqlConnection(_connectionString);
-            return connection.Query<(int RaceId, int Rows)>(
-                    @"SELECT rs.RaceId, COUNT(*) AS [Rows]
-                      FROM dbo.RunnerSectional rs
-                      JOIN dbo.Race r ON r.RaceId = rs.RaceId
-                      WHERE r.RaceDate = @Date
-                      GROUP BY rs.RaceId",
-                    new { Date = date.Date })
-                .ToDictionary(row => row.RaceId, row => row.Rows);
+            var rows = connection.Query<(int RaceId, int Rows, int Finishers)>(
+                @"SELECT rr.RaceId,
+                         COUNT(DISTINCT rs.HorseId) AS [Rows],
+                         COUNT(DISTINCT CASE WHEN rr.FinishPos IS NOT NULL THEN rr.HorseId END) AS Finishers
+                  FROM dbo.RunnerResult rr
+                  JOIN dbo.Race r ON r.RaceId = rr.RaceId
+                  LEFT JOIN dbo.RunnerSectional rs ON rs.RaceId = rr.RaceId
+                  WHERE r.RaceDate = @Date
+                  GROUP BY rr.RaceId",
+                new { Date = date.Date });
+
+            return rows.ToDictionary(row => row.RaceId, row => (row.Rows, row.Finishers));
         }
 
         public IReadOnlyDictionary<int, (int Runners, int WithPedigree)> GetPedigreeCoverage(DateTime date)
@@ -130,7 +135,7 @@ VALUES
             return affected;
         }
 
-        public int UpsertRunnerSectionals(IEnumerable<RunnerSectional> rows)
+        public int UpsertRunnerSectionals(IEnumerable<RunnerSectional> rows, bool overwrite = true)
         {
             var list = (rows ?? Enumerable.Empty<RunnerSectional>())
                 .Where(row => row is not null && row.RaceId > 0 && row.HorseId > 0)
@@ -145,11 +150,8 @@ VALUES
             using var connection = new SqlConnection(_connectionString);
             connection.Open();
             using var transaction = connection.BeginTransaction();
-            const string sql = @"
-MERGE dbo.RunnerSectional AS target
-USING (SELECT @RaceId AS RaceId, @HorseId AS HorseId) AS source
-ON target.RaceId = source.RaceId AND target.HorseId = source.HorseId
-WHEN MATCHED THEN UPDATE SET
+            string updateClause = overwrite
+                ? @"WHEN MATCHED THEN UPDATE SET
     FinishPos = @FinishPos,
     ClothNumber = @ClothNumber,
     SectionCount = @SectionCount,
@@ -170,7 +172,13 @@ WHEN MATCHED THEN UPDATE SET
     RawJson = @RawJson,
     Source = @Source,
     FetchedUtc = @FetchedUtc
-WHEN NOT MATCHED THEN INSERT
+"
+                : string.Empty;
+            string sql = $@"
+MERGE dbo.RunnerSectional AS target
+USING (SELECT @RaceId AS RaceId, @HorseId AS HorseId) AS source
+ON target.RaceId = source.RaceId AND target.HorseId = source.HorseId
+{updateClause}WHEN NOT MATCHED THEN INSERT
     (RaceId, HorseId, FinishPos, ClothNumber, SectionCount,
      Last1FSeconds, Last2FSeconds, Last3FSeconds,
      Last1FPercentile, Last2FPercentile, Last3FPercentile,

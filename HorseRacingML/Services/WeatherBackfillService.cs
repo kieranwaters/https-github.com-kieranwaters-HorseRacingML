@@ -16,8 +16,13 @@ namespace HorseRacingML.Services
     /// </summary>
     public sealed class WeatherBackfillService
     {
+        // Open-Meteo's archive starts in 1940 (ERA5). Clamp the discovered
+        // history so a very old Race row cannot produce an invalid request.
+        internal static readonly DateTime EarliestSupportedDate = new DateTime(1940, 1, 1);
+
         private readonly WeatherRepository _repository;
         private readonly OpenMeteoWeatherClient _client;
+        private readonly IConfiguration _configuration;
         private readonly int _lookbackDays;
         private readonly int _pastDays;
         private readonly int _forecastDays;
@@ -29,9 +34,33 @@ namespace HorseRacingML.Services
         {
             _repository = repository ?? throw new ArgumentNullException(nameof(repository));
             _client = client ?? throw new ArgumentNullException(nameof(client));
+            _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
             _lookbackDays = Math.Clamp(configuration.GetValue<int?>("Weather:LookbackDays") ?? 20, 15, 30);
             _pastDays = Math.Clamp(configuration.GetValue<int?>("Weather:PastDays") ?? 14, 1, 92);
             _forecastDays = Math.Clamp(configuration.GetValue<int?>("Weather:ForecastDays") ?? 16, 2, 16);
+        }
+
+        /// <summary>
+        /// Default start date for a backfill: the configured override when
+        /// present, otherwise the earliest race date in the database (clamped
+        /// to Open-Meteo's archive range). Falls back to 1 January 2010 when
+        /// there are no races yet.
+        /// </summary>
+        public DateTime GetDefaultBackfillStart()
+        {
+            var configured = _configuration.GetValue<DateTime?>("Weather:BackfillFrom");
+            if (configured.HasValue)
+            {
+                return configured.Value.Date;
+            }
+
+            var earliest = _repository.GetEarliestRaceDate()?.Date;
+            if (!earliest.HasValue)
+            {
+                return new DateTime(2010, 1, 1);
+            }
+
+            return earliest.Value < EarliestSupportedDate ? EarliestSupportedDate : earliest.Value;
         }
 
         public int ApplyCourseLocations(Action<string>? log = null, CancellationToken cancellationToken = default)

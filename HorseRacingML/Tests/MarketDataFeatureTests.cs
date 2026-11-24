@@ -51,6 +51,45 @@ namespace HorseRacingML.Tests
         }
 
         [Fact]
+        public void AnchorPriceUsesTwoPointMovementWhenFullDayIsDisabled()
+        {
+            var (state, processRace) = CreateState(
+                FeatureBlocks.Pace | FeatureBlocks.MarketMovement,
+                useFullDayMarketMovement: false);
+            var runners = CreateRace();
+            runners[0]["OpeningFraction"] = "6/1";
+            runners[0]["TouchedLowFraction"] = "4/1";
+            runners[0]["TouchedHighFraction"] = "8/1";
+            runners[0]["MarketAnchorPrice"] = 5.0m;
+
+            processRace.Invoke(state, new object?[] { runners, true, true });
+
+            Assert.False(Convert.ToBoolean(runners[0]["MarketMoveLowMissing"]));
+            Assert.False(Convert.ToBoolean(runners[0]["MarketMoveHighMissing"]));
+            Assert.Equal(MathF.Log(7f / 5f), Convert.ToSingle(runners[0]["MarketMoveOpeningToLowLog"]), 3);
+            Assert.Equal(MathF.Log(7f / 5f), Convert.ToSingle(runners[0]["MarketMoveRangeLog"]), 3);
+            Assert.True(Convert.ToBoolean(runners[0]["MarketMoveShortenedFlag"]));
+        }
+
+        [Fact]
+        public void FullDayTouchedRangeIsIgnoredWhenThereIsNoAnchor()
+        {
+            var (state, processRace) = CreateState(
+                FeatureBlocks.Pace | FeatureBlocks.MarketMovement,
+                useFullDayMarketMovement: false);
+            var runners = CreateRace();
+            runners[0]["OpeningFraction"] = "6/1";
+            runners[0]["TouchedLowFraction"] = "4/1";
+            runners[0]["TouchedHighFraction"] = "8/1";
+
+            processRace.Invoke(state, new object?[] { runners, true, true });
+
+            Assert.True(Convert.ToBoolean(runners[0]["MarketMoveLowMissing"]));
+            Assert.True(Convert.ToBoolean(runners[0]["MarketMoveHighMissing"]));
+            Assert.Equal(0f, Convert.ToSingle(runners[0]["MarketMoveOpeningToLowLog"]), 3);
+        }
+
+        [Fact]
         public void MissingTouchedHighSetsTheFlagAndNeutralRange()
         {
             var (state, processRace) = CreateState(FeatureBlocks.Pace | FeatureBlocks.MarketMovement);
@@ -91,13 +130,20 @@ namespace HorseRacingML.Tests
             Assert.False(Convert.ToBoolean(runners[0]["BetfairProjectedSPMissing"]));
         }
 
-        private static (object State, MethodInfo ProcessRace) CreateState(FeatureBlocks blocks)
+        private static (object State, MethodInfo ProcessRace) CreateState(
+            FeatureBlocks blocks,
+            bool useFullDayMarketMovement = true)
         {
             var configuration = new ConfigurationBuilder()
                 .AddInMemoryCollection(new Dictionary<string, string?>
                 {
                     ["ConnectionStrings:HorseRacingDb"] =
                         "Server=(local);Database=HorseRacingMLTest;Trusted_Connection=True;",
+                    // The existing touched-range tests exercise the legacy
+                    // full-day series. Live-equivalent training uses the T-N
+                    // anchor instead.
+                    ["Training:UseFullDayMarketMovement"] =
+                        useFullDayMarketMovement ? "true" : "false",
                     ["Training:FeatureBlocks"] = FeatureBlockNames.Format(blocks)
                 })
                 .Build();

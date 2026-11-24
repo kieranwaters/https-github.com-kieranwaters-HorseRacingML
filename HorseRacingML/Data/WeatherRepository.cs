@@ -40,6 +40,21 @@ namespace HorseRacingML.Data
                   ORDER BY CourseId").ToList();
         }
 
+        /// <summary>
+        /// Earliest race date stored for any course, used as the default lower
+        /// bound for the weather backfill so it covers all available history
+        /// instead of a fixed year.
+        /// </summary>
+        public DateTime? GetEarliestRaceDate()
+        {
+            using var connection = OpenConnection();
+            return connection.QuerySingleOrDefault<DateTime?>(
+                @"SELECT MIN(RaceDate)
+                  FROM dbo.Race
+                  WHERE RaceDate IS NOT NULL
+                    AND RaceDate <= CAST(GETDATE() AS date)");
+        }
+
         public int UpdateCourseLocation(short courseId, double latitude, double longitude, string? timeZoneId)
         {
             using var connection = OpenConnection();

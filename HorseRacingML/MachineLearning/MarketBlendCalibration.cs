@@ -8,6 +8,8 @@ namespace HorseRacingML.ML
         public double LogLoss { get; init; }
         public double Brier { get; init; }
         public double RaceLogLoss { get; init; }
+        public double Top1Accuracy { get; init; }
+        public double Top3Accuracy { get; init; }
         public int RaceCount { get; init; }
         public int RunnerCount { get; init; }
     }
@@ -193,7 +195,25 @@ namespace HorseRacingML.ML
                 0.02d);
             Search(refinedModelWeights, refinedMarketWeights);
 
-            if (!double.IsFinite(bestLoss))
+            if (!double.IsFinite(bestLoss) ||
+                bestMarketWeight < 0.5d ||
+                bestMarketWeight > 2.0d)
+            {
+                bestMarketWeight = 1d;
+            }
+
+            // Never let a noisy subsample fit make the "fair market" worse
+            // than the raw no-vig market. This happened in practice: a fitted
+            // weight around 0.3 produced a dev fair-market log loss of ~0.318
+            // while the raw market was ~0.290. The final metrics are always
+            // evaluated on the full race list, and the raw market is the
+            // fallback whenever it wins.
+            var rawMarketMetrics = EvaluateRaces(
+                races,
+                fitModelWeight ? bestModelWeight : 0d,
+                1d);
+            if (rawMarketMetrics.RunnerCount > 0 &&
+                rawMarketMetrics.LogLoss < EvaluateRaces(races, bestModelWeight, bestMarketWeight).LogLoss)
             {
                 bestModelWeight = 0d;
                 bestMarketWeight = 1d;
@@ -321,6 +341,8 @@ namespace HorseRacingML.ML
             double raceLogLoss = 0d;
             int runners = 0;
             int raceCount = 0;
+            int top1Correct = 0;
+            int top3Correct = 0;
 
             foreach (var race in races)
             {
@@ -349,23 +371,50 @@ namespace HorseRacingML.ML
                     continue;
                 }
 
-                double winnerLogProbability = 0d;
+                var probabilities = new double[length];
+                double winnerMass = 0d;
+                bool hasWinner = false;
                 for (int i = 0; i < length; i++)
                 {
-                    double probability = Math.Clamp(logits[i] / sum, 1e-7, 1d - 1e-7);
+                    double probability = Math.Clamp(logits[i] / sum, MinimumProbability, 1d - MinimumProbability);
+                    probabilities[i] = probability;
                     double label = race.Labels[i];
                     logLoss -= label * Math.Log(probability) +
                                (1d - label) * Math.Log(1d - probability);
                     brier += (probability - label) * (probability - label);
                     if (label >= 0.5d)
                     {
-                        winnerLogProbability -= Math.Log(Math.Max(probability, MinimumProbability));
+                        hasWinner = true;
+                        winnerMass += logits[i] / sum;
                     }
                     runners++;
                 }
 
-                raceLogLoss += winnerLogProbability;
+                if (!hasWinner || winnerMass <= double.Epsilon)
+                {
+                    continue;
+                }
+
+                raceLogLoss -= Math.Log(Math.Max(winnerMass, MinimumProbability));
                 raceCount++;
+
+                var ranked = Enumerable.Range(0, length)
+                    .OrderByDescending(i => probabilities[i])
+                    .ToList();
+                if (ranked.Count > 0 && race.Labels[ranked[0]] >= 0.5d)
+                {
+                    top1Correct++;
+                }
+
+                int topK = Math.Min(3, ranked.Count);
+                for (int k = 0; k < topK; k++)
+                {
+                    if (race.Labels[ranked[k]] >= 0.5d)
+                    {
+                        top3Correct++;
+                        break;
+                    }
+                }
             }
 
             if (runners == 0 || raceCount == 0)
@@ -378,6 +427,8 @@ namespace HorseRacingML.ML
                 LogLoss = logLoss / runners,
                 Brier = brier / runners,
                 RaceLogLoss = raceLogLoss / raceCount,
+                Top1Accuracy = (double)top1Correct / raceCount,
+                Top3Accuracy = (double)top3Correct / raceCount,
                 RaceCount = raceCount,
                 RunnerCount = runners
             };

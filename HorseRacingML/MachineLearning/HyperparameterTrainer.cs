@@ -12,6 +12,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
 using Tensorflow;
 using Tensorflow.NumPy;
 using PreparedDataset = HorseRacingML.ML.HyperparameterTrainer.TrainingDataset.PreparedDataset;
@@ -29,12 +30,20 @@ namespace HorseRacingML.ML
     /// </summary>
     public partial class HyperparameterTrainer
     {
+        /// <summary>
+        /// TensorFlow.NET uses a process-wide default graph/session. Two
+        /// concurrent training calls can corrupt that graph and terminate the
+        /// process, so all training is serialised through this gate.
+        /// </summary>
+        private static readonly SemaphoreSlim TrainingGate = new(1, 1);
+
         private readonly string _connectionString;
         private readonly float _winRateAlpha;
         private readonly float _winRateBeta;
         private readonly float _l2WeightDecay;
         private readonly float _auxiliaryWinLossWeight;
         private readonly float _auxiliaryFinishLossWeight;
+        private readonly float _pairwiseLossWeight;
         private readonly int _earlyStoppingPatience;
         private readonly int _evaluationFrequency;
         private readonly int _liveStateCacheMinutes;
@@ -45,6 +54,8 @@ namespace HorseRacingML.ML
         private readonly int _raceBatchSize;
         private readonly int _seed;
         private readonly double _recencyHalfLifeDays;
+        private readonly int _marketAnchorMinutes;
+        private readonly bool _useFullDayMarketMovement;
         private readonly FeatureBlocks _featureBlocks;
         private readonly bool _enablePaceFeatures;
         private readonly string _modelDirectory;
@@ -86,6 +97,10 @@ namespace HorseRacingML.ML
                 configuration,
                 "Training:AuxiliaryFinishLossWeight",
                 0.2f);
+            _pairwiseLossWeight = ReadNonNegativeWeight(
+                configuration,
+                "Training:PairwiseLossWeight",
+                0f);
             _earlyStoppingPatience = Math.Max(0, configuration.GetValue<int?>("Training:EarlyStoppingPatience") ?? 5);
             _evaluationFrequency = Math.Max(1, configuration.GetValue<int?>("Training:EvaluationFrequency") ?? 5);
             _liveStateCacheMinutes = Math.Max(1, configuration.GetValue<int?>("Training:LiveStateCacheMinutes") ?? 5);
@@ -99,6 +114,12 @@ namespace HorseRacingML.ML
             _recencyHalfLifeDays = Math.Max(
                 0d,
                 configuration.GetValue<double?>("Training:RecencyHalfLifeDays") ?? 0d);
+            _marketAnchorMinutes = Math.Clamp(
+                configuration.GetValue<int?>("Training:MarketAnchorMinutes") ?? 5,
+                0,
+                24 * 60);
+            _useFullDayMarketMovement = configuration.GetValue<bool?>(
+                "Training:UseFullDayMarketMovement") ?? false;
             // Controlled ablation switches. The default schema contains the
             // basic, movement, price, context, geometry, sectional and
             // breeding blocks; the remaining blocks can still be enabled
@@ -133,6 +154,8 @@ namespace HorseRacingML.ML
         internal float AuxiliaryFinishLossWeight => _auxiliaryFinishLossWeight;
 
         public FeatureBlocks EnabledFeatureBlocks => _featureBlocks;
+
+        internal bool UseFullDayMarketMovement => _useFullDayMarketMovement;
 
         internal bool IsFeatureBlockEnabled(FeatureBlocks block) => _featureBlocks.HasFlag(block);
 
@@ -264,9 +287,13 @@ namespace HorseRacingML.ML
             public double TrainAccuracy { get; init; }
             public double TrainLoss { get; init; }
             public double TrainBrier { get; init; }
+            public double TrainRaceLogLoss { get; init; }
+            public double TrainTop3Accuracy { get; init; }
             public double ValidationAccuracy { get; init; }
             public double ValidationLoss { get; init; }
             public double ValidationBrier { get; init; }
+            public double ValidationRaceLogLoss { get; init; }
+            public double ValidationTop3Accuracy { get; init; }
             public double ValidationTemperature { get; init; } = 1.0;
             public double ValidationMarketLogLoss { get; init; }
             public double ValidationMarketBrier { get; init; }
@@ -289,6 +316,12 @@ namespace HorseRacingML.ML
             public string? ModelArtifactFileName { get; init; }
             public string? ModelHash { get; init; }
             public string? FeatureSchemaHash { get; init; }
+            /// <summary>
+            /// In-memory model produced by this training run. It is populated
+            /// even when <c>persistWeights</c> is false so the caller can build
+            /// a seed ensemble from several dev-selected members.
+            /// </summary>
+            public TrainedModel? Model { get; init; }
         }
 
 
@@ -383,8 +416,23 @@ namespace HorseRacingML.ML
             bool activateModel = false,
             CancellationToken cancellationToken = default)
         {
-            var dataset = LoadTrainingDataset();
-            return Train(param, foldIndex, foldCount, dataset, persistWeights, cancellationToken: cancellationToken, activateModel: activateModel);
+            TrainingGate.Wait(cancellationToken);
+            try
+            {
+                var dataset = LoadTrainingDataset();
+                return TrainCore(
+                    param,
+                    foldIndex,
+                    foldCount,
+                    dataset,
+                    persistWeights,
+                    cancellationToken: cancellationToken,
+                    activateModel: activateModel);
+            }
+            finally
+            {
+                TrainingGate.Release();
+            }
         }
         public record PricedSubsetMetrics(double Accuracy, double LogLoss, double Brier, int RaceCount, int RunnerCount);
 
@@ -644,6 +692,41 @@ namespace HorseRacingML.ML
         }
 
         public TrainingResult Train(
+            MLParameter param,
+            int foldIndex,
+            int foldCount,
+            TrainingDataset dataset,
+            bool persistWeights = true,
+            float? temperatureOverride = null,
+            bool earlyStopOnValidation = true,
+            double blendModelWeight = 1d,
+            double blendMarketWeight = 0d,
+            bool activateModel = false,
+            CancellationToken cancellationToken = default)
+        {
+            TrainingGate.Wait(cancellationToken);
+            try
+            {
+                return TrainCore(
+                    param,
+                    foldIndex,
+                    foldCount,
+                    dataset,
+                    persistWeights,
+                    temperatureOverride,
+                    earlyStopOnValidation,
+                    blendModelWeight,
+                    blendMarketWeight,
+                    activateModel,
+                    cancellationToken);
+            }
+            finally
+            {
+                TrainingGate.Release();
+            }
+        }
+
+        private TrainingResult TrainCore(
             MLParameter param,
             int foldIndex,
             int foldCount,
@@ -1328,10 +1411,20 @@ namespace HorseRacingML.ML
                 featureCount);
         }
 
-        private static void HyperparameterCompleted(MLParameter param, double trainAccuracy, double validationAccuracy, double trainLoss, double validationLoss, double trainBrier, double validationBrier)
+        private static void HyperparameterCompleted(
+            MLParameter param,
+            double trainAccuracy,
+            double validationAccuracy,
+            double trainLoss,
+            double validationLoss,
+            double trainBrier,
+            double validationBrier,
+            double trainRaceLogLoss = 0,
+            double validationRaceLogLoss = 0,
+            double validationTop3Accuracy = 0)
         {
             Console.WriteLine(
-                "[Hyperparameter] Training complete | layers: {0}, units: {1}, epochs: {2}, train acc: {3:F4}, val acc: {4:F4}, train loss: {5:F4}, val loss: {6:F4}, train brier: {7:F4}, val brier: {8:F4}",
+                "[Hyperparameter] Training complete | layers: {0}, units: {1}, epochs: {2}, train acc: {3:F4}, val acc: {4:F4}, train loss: {5:F4}, val loss: {6:F4}, train brier: {7:F4}, val brier: {8:F4}, train race LL: {9:F4}, val race LL: {10:F4}, val top3: {11:F4}",
                 param.Layers,
                 param.Units,
                 param.Epochs,
@@ -1340,7 +1433,10 @@ namespace HorseRacingML.ML
                 trainLoss,
                 validationLoss,
                 trainBrier,
-                validationBrier);
+                validationBrier,
+                trainRaceLogLoss,
+                validationRaceLogLoss,
+                validationTop3Accuracy);
         }
         public record RunnerProbability(int RaceId, int? ClothNumber, string? HorseName, string? SelectionId, double Probability);
 
@@ -1379,7 +1475,7 @@ namespace HorseRacingML.ML
             if (model is null)
                 throw new ArgumentNullException(nameof(model));
 
-            var runtime = TrainedModelRuntime.FromModel(model, out _);
+            var runtime = TrainedModelRuntime.FromModel(model, _modelDirectory, out _);
             if (runtime is null || !runtime.IsRaceSoftmax)
             {
                 return Array.Empty<RunnerProbability>();
